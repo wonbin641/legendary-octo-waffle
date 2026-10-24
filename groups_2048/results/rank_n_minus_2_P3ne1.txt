@@ -1,8 +1,10 @@
-d8_k0_r_s1.out:RESULT d=8 k=0 type r seed 1007 : [ 8, 666, 36, 1 ]
-d8_k0_r_s2.out:RESULT d=8 k=0 type r seed 2007 : [ 8, 666, 36, 1 ]
-d8_k1_plus_s1.out:RESULT d=8 k=1 type + seed 1007 : [ 24, 1264, 36, 1 ]
-d8_k1_plus_s2.out:RESULT d=8 k=1 type + seed 2007 : [ 24, 1264, 36, 1 ]
-d9_k0_r_s1.out:RESULT d=9 k=0 type r seed 1007 : [ 9, 1387, 45, 1 ]
-d9_k0_r_s2.out:RESULT d=9 k=0 type r seed 2007 : [ 9, 1387, 45, 1 ]
-d9_k1_plus_s1.out:RESULT d=9 k=1 type + seed 1007 : [ 27, 2682, 45, 1 ]
-d9_k1_plus_s2.out:RESULT d=9 k=1 type + seed 2007 : [ 27, 2682, 45, 1 ]
+# step-1 descendants (Burnside, gap/step1.g final version) of the two parents with nonzero nucleus;
+# result = [count, #conjugacy classes of Aut(H), multiplicator rank, nuclear rank]; all other parents are terminal
+RESULT d=8 k=0 type r seed 1007 : [ 8, 666, 36, 1 ]
+RESULT d=8 k=0 type r seed 2007 : [ 8, 666, 36, 1 ]
+RESULT d=8 k=1 type + seed 1007 : [ 24, 1264, 36, 1 ]
+RESULT d=8 k=1 type + seed 2007 : [ 24, 1264, 36, 1 ]
+RESULT d=9 k=0 type r seed 1007 : [ 9, 1387, 45, 1 ]
+RESULT d=9 k=0 type r seed 2007 : [ 9, 1387, 45, 1 ]
+RESULT d=9 k=1 type + seed 1007 : [ 27, 2682, 45, 1 ]
+RESULT d=9 k=1 type + seed 2007 : [ 27, 2682, 45, 1 ]
