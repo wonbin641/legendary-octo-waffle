@@ -1,3 +1,4 @@
+# Template: replace DIM, KK, TYP (+, -, r) and SEED, then run  gap -q -b <file>  from this directory.
 Read("step1.g");
 Reset(GlobalMersenneTwister, SEED);; Reset(GlobalRandomSource, SEED);;
 H := QFGroup(DIM, KK, "TYP");;

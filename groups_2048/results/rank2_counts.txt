@@ -1,0 +1,10 @@
+# number of 2-generator groups of order 2^n (patched pq tree walk; GAP/AutPGrp walk agrees)
+2^3	3
+2^4	8
+2^5	19
+2^6	53
+2^7	162
+2^8	540
+2^9	2043
+2^10	9121
+2^11	47486

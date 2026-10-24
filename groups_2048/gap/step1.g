@@ -76,7 +76,8 @@ Step1CountC := function(H, Hfp)
   c := PClassPGroup(H);
   pH := Pcgs(H); nH := Length(pH);
   cover := PqPCover(Hfp : Prime := 2, ClassBound := c);
-  pc := Pcgs(cover);
+  pc := FamilyPcgs(cover);   # not Pcgs(cover): PqPCover sets no pcgs, and computing
+                             # PCentralSeries first would install a different one
   # the first nH pc generators of the cover form the pc presentation of H; check that
   # pc[i] -> pH[i] respects all power and conjugate relations of H (modulo the tails)
   for i in [1..nH] do
