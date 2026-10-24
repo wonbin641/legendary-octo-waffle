@@ -1,0 +1,41 @@
+--- /opt/gapbuild/gap-4.14.0/pkg/anupq/src/construct.c	2024-10-21 10:04:27.000000000 +0000
++++ src/construct.c	2026-10-24 06:38:36.947250040 +0000
+@@ -16,6 +16,9 @@
+ 
+ 
+ #define ITERATION 6
++
++/* PATCH: order bound of the current iteration (0 = none) */
++int ANUPQ_order_bound_global = 0;
+ #define SINGLE_STAGE 5
+ 
+ static Logical select_group(int *min_step,
+@@ -50,6 +53,9 @@
+    FILE *tmp_file;
+    Logical change;
+ 
++   if (option == ITERATION)
++      ANUPQ_order_bound_global = order_bound;
++
+    if (option == ITERATION) {
+       restore_pcp(start_file, pcp);
+       auts = restore_pga(start_file, pga, pcp);
+--- /opt/gapbuild/gap-4.14.0/pkg/anupq/src/immediate_descendant.c	2024-10-21 10:04:27.000000000 +0000
++++ src/immediate_descendant.c	2026-10-24 06:38:36.947402242 +0000
+@@ -50,6 +50,16 @@
+ 
+    pga->capable = (pcp->newgen != 0);
+ 
++   /* PATCH: a descendant whose order already equals the order bound of the
++      iteration is never used as a starting group, so do not compute its
++      automorphism group or save it (its count is unaffected) */
++   {
++      extern int ANUPQ_order_bound_global;
++      if (ANUPQ_order_bound_global > 0 && ANUPQ_order_bound_global != ALL &&
++          y[pcp->clend + pcp->cc - 1] >= ANUPQ_order_bound_global)
++         pga->capable = FALSE;
++   }
++
+    /* pga->capable = FALSE;
+    pga->terminal = FALSE;
+    */

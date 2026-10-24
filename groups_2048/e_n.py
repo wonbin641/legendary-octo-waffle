@@ -158,6 +158,7 @@ def GLorder(d):
     return r
 N=int(sys.argv[1])
 tot={n:Fraction(0) for n in range(N+1)}; tot[0]=Fraction(1)
+byd={}
 for d in range(1,N+1):
     mass=Fraction(0); m=d*(d+1)//2
     for cls in classes(d):
@@ -166,8 +167,12 @@ for d in range(1,N+1):
         mass+=1/c
         T=tobits(sym2(rep(cls))); P=inv_subspace_poly(T,m,N-d)
         for r,cnt in P.items():
-            if d+r<=N: tot[d+r]+=Fraction(cnt)/c
+            if d+r<=N:
+                tot[d+r]+=Fraction(cnt)/c
+                byd[(d+r,d)]=byd.get((d+r,d),0)+Fraction(cnt)/c
     assert mass==1,(d,mass)
     print("d",d,"done",file=sys.stderr)
 for n in range(N+1):
     assert tot[n].denominator==1; print(n,tot[n])
+for (n,d),v in sorted(byd.items()):
+    assert v.denominator==1; print('n=%d d=%d'%(n,d),v)

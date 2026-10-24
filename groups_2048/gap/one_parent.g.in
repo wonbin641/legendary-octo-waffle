@@ -1,0 +1,6 @@
+Read("step1.g");
+Reset(GlobalMersenneTwister, SEED);; Reset(GlobalRandomSource, SEED);;
+H := QFGroup(DIM, KK, "TYP");;
+r := Step1CountC(H, QFGroupFp(DIM, KK, "TYP"));;
+Print("RESULT d=", DIM, " k=", KK, " type TYP seed SEED : ", r, "\n");
+QUIT;
