@@ -1,0 +1,19 @@
+configurations: 13884156 (15s)
+orbits: 447635 (238s)
+matrices built (241s)
+float cluster ground energy with these weights: -138817755.663562983274
+  power it    0: ratio spread 3.134e+09  (s - ratio range [-3034601688.298211575, 99790422.142251223])
+  power it  500: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 1000: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 1500: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 2000: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 2500: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 3000: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 3500: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+  power it 3999: ratio spread 2.384e-07  (s - ratio range [-138817755.663563311, -138817755.663563073])
+dynamic range of the Perron vector: 7.051e-21
+weights: [32685485, 7431689, 7735613, 7300540, 2024273, 1000000]  W = 146427506  candidates checked exactly: 447635
+certified: lambda_min(4 H_c) >= -555271022.654253244400  (float 4E_c = -555271022.654251933098)
+certified lower bound E0 >= -211022977365631902022346875/27823861703282098470814
+                         = -7584.2447614214  (per site -0.948030595178)
+status document bound: -7584.244762 ; ours is at least as strong

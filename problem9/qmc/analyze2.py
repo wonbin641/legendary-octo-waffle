@@ -7,7 +7,7 @@ Every line is an average over one bin of sweeps.
 
 Unbiased energy estimators (H = sum_b S_i.S_j, Nb = 24000):
   E_n   = Nb/4 - n/beta                                  standard SSE
-  E_mix = D/4 - n_off/beta                               = E[E_n | world lines]
+  E_mix = D/4 - n_off/beta                               (diagonal + off-diagonal SSE estimators)
   E_RB2 = -conn/4 - (n_same_off + n_diff/2)/beta         = E[E_mix | loop structure]
 Per file the lowest-variance estimator is used (E_mix for sse2 files, E_RB2 for sse3
 files); errors from pairwise rebinning; files combined with inverse-variance weights.
@@ -111,10 +111,16 @@ if __name__ == "__main__":
             results.append(analyse_beta(beta))
     v = np.array([r["E0"] for r in results]); e = np.array([r["E0_err"] for r in results])
     w = 1 / e ** 2
-    E0 = float((w * v).sum() / w.sum()); dE0 = float(1 / np.sqrt(w.sum()))
-    print("combined E0 = %.4f +- %.4f   (per site %.7f +- %.7f)" % (E0, dE0, E0 / N, dE0 / N))
+    E0 = float((w * v).sum() / w.sum()); dE0_stat = float(1 / np.sqrt(w.sum()))
+    # PDG-style scale factor when the temperatures disagree by more than their errors
+    chi2 = float(((v - E0) ** 2 * w).sum()); dof = max(len(v) - 1, 1)
+    scale = max(1.0, np.sqrt(chi2 / dof))
+    dE0 = dE0_stat * scale
+    print("combined E0 = %.4f +- %.4f   (per site %.7f +- %.7f); chi2/dof = %.2f, error scale %.2f"
+          % (E0, dE0, E0 / N, dE0 / N, chi2 / dof, scale))
     if len(results) == 2:
         diff = results[0]["E0"] - results[1]["E0"]
         print("beta=32 vs beta=64 after rotor correction: diff = %.4f +- %.4f" % (diff, np.hypot(*e)))
     if len(sys.argv) > 1:
-        json.dump({"per_beta": results, "E0": E0, "E0_err": dE0}, open(sys.argv[1], "w"), indent=1)
+        json.dump({"per_beta": results, "E0": E0, "E0_err": dE0, "E0_err_stat": dE0_stat,
+                   "chi2_dof_beta": chi2 / dof, "error_scale": scale}, open(sys.argv[1], "w"), indent=1)

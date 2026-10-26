@@ -102,7 +102,7 @@ def main():
             r["beta"], nchains, "{:,}".format(sweeps(r)), paren(En, dEn), paren(r["E_beta"], r["err"]),
             paren(r["mz2"], r["mz2_err"]), "%.0f" % r["I"], r["E_rot"], paren(r["E0"], r["E0_err"])))
     prod.append("| 결합 | | | | | | | | **%s** |" % paren(E0, dE0))
-    prod = [r.replace("| -", "| −").replace("(-", "(−") for r in prod]
+    prod = [r.replace("| -", "| −").replace("(-", "(−").replace("**-", "**−") for r in prod]
 
     # comparison table
     e_lit, de_lit = -0.902325, 0.000011
@@ -116,7 +116,7 @@ def main():
                 "| 문헌 QMC, 무한계 $-0.902325(11)$/site + 스핀파 유한크기 보정 | $%s$ | %s σ | Vlaar–Corboz 2021 (ALPS, L ≤ 12 외삽) |" % (pm(lit_qmc, N * de_lit), "%.1f" % ((lit_qmc - E0) / math.hypot(N * de_lit, dE0))),
                 "| 문헌 iPEPS, 무한계 $-0.9024(1)$/site + 같은 보정 | $%s$ | %s σ | Vlaar–Corboz 2021 ($D\\le4$, $\\xi_D$ 외삽) |" % (pm(lit_peps, dlit_peps), ("%.1f" % ((lit_peps - E0) / math.hypot(dlit_peps, dE0))).replace("-", "−")),
                 "| 변분 PEPS (엄밀 상한) | $\\le -7078.76$ ($D=2$, 본 문서), $< -7176.85$ ($D\\le8$, 기존) | QMC보다 위 | 정합 |",
-                "| 엄밀 하한 | $\\ge -8000$ (본 문서), $> -7584.24$ (기존) | QMC보다 아래 | 정합 |"]
+                "| 엄밀 하한 | $\\ge -7584.2447614214$ (본 문서, 33스핀 재인증), $> -7584.244762$ (기존) | QMC보다 아래 | 정합 |"]
     a_obs = (E0 / N - e_lit) * 20 ** 4
     da_obs = math.hypot(dE0 / N, de_lit) * 20 ** 4
 
@@ -133,6 +133,15 @@ def main():
     # variance ratio E_RB2 / E_n on the sse3 files at beta=32
     ratios = [(f["others"]["E_RB2"][1] / f["others"]["E_n"][1]) ** 2 for f in r32["files"] if "E_RB2" in f["others"]]
     var_ratio = "1/%.1f" % (1 / np.mean(ratios))
+    scale = R.get("error_scale", 1.0)
+    if scale > 1.0:
+        beta_text = ("두 값의 차이가 오차보다 조금 크므로, 결합 오차에 PDG 방식의 척도 인자 "
+                     "$\\max(1,\\sqrt{\\chi^2/\\text{자유도}})=%.2f$를 곱했다." % scale)
+    else:
+        beta_text = ("두 값은 오차 안에서 일치하므로 PDG 방식의 척도 인자 "
+                     "$\\max(1,\\sqrt{\\chi^2/\\text{자유도}})$는 1이다. 측정 도중 한때 차이가 1.6σ까지 "
+                     "벌어졌지만, $\\beta=64$ 체인을 하나 더 돌리자 해소되었다. 그 부호는 남은 열적 들뜸으로 "
+                     "설명할 수 없는 쪽이었으므로(열적 들뜸은 낮은 $\\beta$의 값을 높일 뿐이다) 통계적 요동이었다.")
     ed, chi2 = ed_table()
     subs = {
         "E0_PM": pm(E0, dE0), "E0S_PM": pm(E0 / N, dE0 / N), "IMPROVE": "%.0f" % (0.333 / dE0),
@@ -140,7 +149,9 @@ def main():
         "I32": "%.0f" % r32["I"], "I64": "%.0f" % r64["I"],
         "DIFF_PM": pm(r32["E0"] - r64["E0"], math.hypot(r32["E0_err"], r64["E0_err"])),
         "ED_TABLE": ed, "ED_CHI2": "%.1f" % chi2, "PROD_TABLE": "\n".join(prod), "COMPARE_TABLE": "\n".join(cmp_rows),
-        "A_OBS": pm(a_obs, da_obs, 1), "VAR_RATIO": var_ratio, "EFF": "%.0f" % eff, "YEARS": "10^{%d}" % int(math.floor(math.log10(years))),
+        "A_OBS": pm(a_obs, da_obs, 1), "VAR_RATIO": var_ratio,
+        "CHI2_BETA": "%.1f" % R.get("chi2_dof_beta", 0.0), "ERR_SCALE": "%.2f" % R.get("error_scale", 1.0),
+        "BETA_TEXT": beta_text, "EFF": "%.0f" % eff, "YEARS": "10^{%d}" % int(math.floor(math.log10(years))),
     }
     src = open(os.path.join(HERE, "problem9_final.md")).read()
     for k, v in subs.items():

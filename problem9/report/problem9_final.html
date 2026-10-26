@@ -23,7 +23,7 @@
   </style>
   <link rel="stylesheet" href="style.css" />
   <script defer=""
-  src="file:///tmp/claude-0/-home-user-legendary-octo-waffle/bd32ca69-62a2-5f5f-a29a-7b01e0a2ec2d/scratchpad/katex/package/dist/katex.min.js"></script>
+  src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <script>document.addEventListener("DOMContentLoaded", function () {
  var mathElements = document.getElementsByClassName("math");
  var macros = [];
@@ -39,7 +39,7 @@
 }}});
   </script>
   <link rel="stylesheet"
-  href="file:///tmp/claude-0/-home-user-legendary-octo-waffle/bd32ca69-62a2-5f5f-a29a-7b01e0a2ec2d/scratchpad/katex/package/dist/katex.min.css" />
+  href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
 </head>
 <body>
 <header id="title-block-header">
@@ -55,10 +55,12 @@
 <ol type="1">
 <li><strong>L = 20 계 자체</strong>에 대한 엄밀한 Néel 상관 하한과
 저에너지 삼중항 상한 (§3, 정리 1).</li>
-<li>기존 인증서 파일 없이도 손으로 검증할 수 있는 엄밀 에너지 구간
+<li>기존 문서의 33스핀 하한을 독립적으로 재구성하고 정확한 정수 인증서로
+다시 증명 (<span class="math inline">E_0\ge-7584.2447614214</span>,
+기존보다 미세하게 강함), 그리고 손으로 검증할 수 있는 기초 구간
 (§5.1).</li>
-<li>기존보다 오차가 약 6배 작은 QMC 바닥상태 에너지 <span
-class="math inline">E_0 = -7218.870 \pm 0.055</span> (§5.2–5.4).</li>
+<li>기존보다 오차가 약 12배 작은 QMC 바닥상태 에너지 <span
+class="math inline">E_0 = -7218.873 \pm 0.029</span> (§5.2–5.4).</li>
 <li>문헌의 무한계 QMC·iPEPS 값과의 정량적 비교 (§5.5).</li>
 </ol>
 <p><strong>소수점 아래 15자리의 에너지는 여전히 얻지 못했다. 현재 알려진
@@ -86,24 +88,25 @@ class="math inline">J=1</span>이다. 사이트당 값은 따로 표시했다.</
 <tbody>
 <tr class="odd">
 <td>① 바닥상태 에너지</td>
-<td>QMC: <span class="math inline">E_0 = -7218.870 \pm 0.055</span>, 즉
-<span class="math inline">E_0/N = -0.9023588 \pm 0.0000068</span></td>
+<td>QMC: <span class="math inline">E_0 = -7218.873 \pm 0.029</span>, 즉
+<span class="math inline">E_0/N = -0.9023592 \pm 0.0000036</span></td>
 <td>§5.2–5.5</td>
-<td>통계 1σ 오차로 확정</td>
+<td>수치 결정 (통계 1σ)</td>
 </tr>
 <tr class="even">
 <td></td>
-<td>엄밀 구간 (독립 재현): <span class="math inline">-8000 \le E_0 \le
+<td>엄밀 구간 (본 문서에서 인증): <span
+class="math inline">-7584.2447614214 \le E_0 \le
 -7078.7617937</span></td>
 <td>§5.1</td>
 <td>엄밀</td>
 </tr>
 <tr class="odd">
 <td></td>
-<td>엄밀 구간 (기존 인증서): <span class="math inline">-7584.244762 &lt;
+<td>엄밀 구간 (기존 문서): <span class="math inline">-7584.244762 &lt;
 E_0 &lt; -7176.848195</span></td>
 <td>§1</td>
-<td>구조 검토, 재실행 불가</td>
+<td>하한은 독립 재현·인증, 상한은 재실행 불가</td>
 </tr>
 <tr class="even">
 <td></td>
@@ -179,12 +182,15 @@ class="math inline">(-1)^{4000-n_{A\downarrow}} =
 <tr class="odd">
 <td>§5</td>
 <td>하한 <span class="math inline">-7584.244762</span></td>
-<td>구조 확인</td>
+<td><strong>독립 재현·인증</strong></td>
 <td>분수 <span class="math inline">=-7584.2447614227\ldots</span> 확인.
 33스핀(중심 8 + 잎 25), 결합 48, 바닥 총스핀 <span
 class="math inline">17/2</span>, 구역 크기 <span
-class="math inline">\binom{33}{8}=13\,884\,156</span> 재현. 대표 상태
-447 635개의 출처는 §1.2</td>
+class="math inline">\binom{33}{8}=13\,884\,156</span> 재현. 대칭이
+허용하는 결합 가중치 6개를 다시 최적화하니 사이트당 <span
+class="math inline">-0.9480305952</span>로 기존 값과 10자리까지 같았다.
+정수 인증서로 <span class="math inline">E_0\ge-7584.2447614214</span>를
+정확히 증명했다 (§5.1). 대표 상태 447 635개의 출처는 §1.2</td>
 </tr>
 <tr class="even">
 <td>§6</td>
@@ -241,19 +247,22 @@ Marshall 부호와 가환하고, 세 결합의 가중치가 같으면 클러스�
 대각 중심의 세 잎 결합 가중치가 같다”는 가정을 명시해야 한다.</li>
 <li><strong>QMC 오차 막대.</strong> 기존 문서 §7에서 블록 크기에 따라
 오차 추정이 0.333에서 0.593으로 변한 것은 자기상관이 길었다는 뜻이다.
-SSE 연산자 문자열 길이를 <span class="math inline">M\approx
-1.33\,n</span>으로 두면 대각 연산자 제거의 수락률이 약 0.37에 그쳐 <span
-class="math inline">\tau_{\rm int}\approx 2.5</span> 스윕이 된다. <span
-class="math inline">M = 2n</span>으로 늘리면 대각 갱신이 거의 열욕(heat
-bath)이 되어 <span class="math inline">\tau_{\rm int}\approx
-0.7</span>로 줄어든다 (§5.2).</li>
+따라서 200스윕 블록의 값 0.333은 오차를 과소평가했을 가능성이 크다. 기존
+구현의 설정은 문서에 없지만, 흔히 쓰는 문자열 길이 <span
+class="math inline">M\approx 1.33\,n</span>에서는 대각 연산자 제거의
+수락률이 약 0.37에 그쳐 <span class="math inline">\tau_{\rm int}\approx
+2.5</span> 스윕이 된다(본 계산에서 측정). <span class="math inline">M =
+2n</span>으로 늘리면 대각 갱신이 거의 열욕(heat bath)이 되어 <span
+class="math inline">\tau_{\rm int}\approx 0.7</span>로 줄어든다
+(§5.2).</li>
 <li><strong>위상 결론의 적용 범위.</strong> Kennedy–Lieb–Shastry와
 Tasaki 정리를 결합한 논증은 “충분히 큰 짝수 L”에 대한 것이므로 L = 20
 계에 관해서는 정량적 내용이 없다. §3의 정리 1로 보완했다.</li>
-<li><strong>오류 여부.</strong> 수학적 오류는 발견하지 못했다. 다만
-하한·상한 인증서와 원시 결과 파일이 PDF에 포함되어 있지 않아 두 엄밀
-경계의 수치를 다시 실행하지는 못했다. 그래서 §5.1에서 인증서 없이 검증
-가능한 구간을 따로 제시한다.</li>
+<li><strong>오류 여부.</strong> 수학적 오류는 발견하지 못했다. 인증서와
+원시 결과 파일은 PDF에 포함되어 있지 않았다. 하한은 같은 구성을 처음부터
+다시 계산해 독립적으로 확인했다 (§5.1). 3층 회로 상한은 다시 계산하지
+못했으므로, §5.1에서는 독립적으로 검증 가능한 1층 회로 상한을 따로
+제시한다.</li>
 </ol>
 <h2 id="바닥상태의-유일성과-양자수-확정">2. 바닥상태의 유일성과 양자수
 (확정)</h2>
@@ -295,7 +304,7 @@ class="math inline">E_0+0.00536</span> 이하인 것이 존재한다.</p></li>
 </ol>
 <p>비교하면, (a)의 좌변은 어떤 상태에서도 약 <span
 class="math inline">1/4</span> 이하이고 고전 Néel 상태가 그 값을 갖는다.
-본 QMC 값은 <span class="math inline">0.180</span> (<span
+본 QMC 값은 <span class="math inline">0.181</span> (<span
 class="math inline">\beta=32</span>)이다. (b)의 실제 간격은 회전자
 모형으로 <span class="math inline">1/I\approx0.0019</span>이다 (§5.4).
 정리 1은 L = 20 바닥상태가 거시적인 엇갈림 상관을 갖고, 그 바로 위에
@@ -368,7 +377,8 @@ class="math inline">c</span>를 최적화했다.</li>
 <li><strong>수치 평가(엄밀).</strong> 8000개 운동량에 대한 <span
 class="math inline">S(c)</span>를 바깥 방향으로 반올림하는 구간 산술로
 계산했다 (<code>kls_finite_L.py</code>). <span
-class="math inline">\varepsilon</span>는 §5.1의 기초 구간 <span
+class="math inline">\varepsilon</span>는 §5.1의 가장 거친 구간(별 하한과
+1층 회로 상한) <span
 class="math inline">0.884845\le\varepsilon\le1</span> 전체를 400개
 소구간으로 나누어 훑었다. <span class="math inline">c=2.19</span>에서
 <span class="math inline">m^2\ge0.027574</span>를 얻으므로 (a)가
@@ -384,11 +394,14 @@ class="math inline">m^2</span> 하한을 넣으면 <span
 class="math inline">E_0+0.00536</span> 이하가 되므로 변분 원리에 의해
 (b)가 성립한다. ∎</li>
 </ol>
-<p>기존 문서의 인증서 구간 <span
-class="math inline">0.89711\le\varepsilon\le0.94803</span>을 쓰면 (a)는
-<span class="math inline">0.0838</span>, (b)는 <span
-class="math inline">0.005353</span>이 되어 거의 변하지 않는다. 따라서
-정리 1은 기존 인증서의 정확성에 의존하지 않는다.</p>
+<p>§5.1에서 다시 증명한 33스핀 하한(<span
+class="math inline">\varepsilon\le0.9480306</span>)을 쓰면 (a)는 <span
+class="math inline">0.082745</span>, (b)는 <span
+class="math inline">0.005354</span>다. 기존 문서의 구간 <span
+class="math inline">0.89711\le\varepsilon\le0.94803</span>을 쓰면 <span
+class="math inline">0.0838</span>, <span
+class="math inline">0.005353</span>이다. 어느 쪽이든 거의 변하지
+않으므로, 정리 1은 어떤 인증서의 정확성에도 의존하지 않는다.</p>
 <h2 id="위상적-성질에-대한-결론">4. 위상적 성질에 대한 결론</h2>
 <p>내재적(유한갭) 위상질서의 표준 정의는 열역학적 극한에서 다음 세
 조건을 요구한다. (i) 바닥상태 다양체가 크기와 무관한 양의 갭으로 나머지
@@ -399,9 +412,10 @@ class="math inline">0.005353</span>이 되어 거의 변하지 않는다. 따라
 class="math inline">g_0=1</span>이므로 위상적 바닥상태 축퇴가 없다 (정리
 0). 정리 1(b)에 의해 바닥상태 위 0.00536 안에 삼중항이 있다. 즉 저에너지
 스펙트럼은 간격이 <span class="math inline">O(1/N)</span>인 Anderson 탑
-상태 구조다. 정리 1(a)에 의해 이 저에너지 상태들은 국소 질서변수(엇갈림
-자화)로 구별된다. 이는 위상질서가 아니라 연속 대칭 깨짐의 유한크기
-표지다.</li>
+상태 구조다. 정리 1(a)의 거시적 엇갈림 상관은 이 저에너지 상태들을
+중첩하면 국소 질서변수(엇갈림 자화) 밀도가 0이 아닌 상태를 만들 수
+있음을 뜻한다 (Tasaki 2019의 구성). 즉 저에너지 상태들은 국소적으로
+구별된다. 이는 위상질서가 아니라 연속 대칭 깨짐의 유한크기 표지다.</li>
 <li><strong><span class="math inline">L\to\infty</span> (짝수
 L).</strong> Kennedy–Lieb–Shastry(1988)에 의해 Néel 장거리질서가
 존재한다. 이로부터 Tasaki(2019)의 정리는 임의의 고정된 <span
@@ -415,8 +429,8 @@ class="math inline">E_r(L)-E_0(L)\to0</span>을 준다. 따라서 차원이
 대해서만 주장한다. 이는 기존 문서 §8의 입장과 같다.</li>
 </ul>
 <h2 id="바닥상태-에너지">5. 바닥상태 에너지</h2>
-<h3 id="인증서-없이-검증-가능한-엄밀-구간">5.1 인증서 없이 검증 가능한
-엄밀 구간</h3>
+<h3 id="독립적으로-검증한-엄밀-구간">5.1 독립적으로 검증한 엄밀
+구간</h3>
 <p><strong>하한.</strong> 각 결합은 두 별(star)에 한 번씩 속하므로 <span
 class="math inline">H=\frac12\sum_x\mathbf S_x\cdot\mathbf T_x</span>,
 <span class="math inline">\mathbf T_x=\sum_{y\sim x}\mathbf S_y</span>로
@@ -441,16 +455,57 @@ class="math inline">\tan\theta=111/1250</span>을 넣어 유리수로 정확히
 계산하면 <span class="math inline">E_0\le\langle
 H\rangle_{\psi}=-7078.761793761\ldots</span>이다
 (<code>bounds/elementary_bounds.py</code>).</p>
-<p>따라서 <strong><span class="math inline">-8000\le
-E_0\le-7078.7617937</span></strong> (폭 921)이다. 기존 인증서 구간 <span
-class="math inline">(-7584.244762,\,-7176.848195)</span> (폭 407)과
-모순이 없다.</p>
+<p><strong>33스핀 클러스터 하한 (기존 문서 §5의 독립 재구성).</strong>
+기존 문서와 같은 클러스터를 쓴다 (중심 <span class="math inline">\pm
+e_1,\pm e_2,\pm e_3,\pm(1,1,1)</span>과 이웃 25개, 결합 48개). 결합은
+대칭에 의해 6개 부류로 나뉜다: 축 중심–원점, 축 중심–<span
+class="math inline">2e_k</span>, 축 중심–대각 중심과 공유하는 잎, 축
+중심–나머지 잎, 대각 중심–공유 잎, 대각 중심–전용 잎. 각 부류는 세
+방향에 고르게 분포하므로, 가중치 <span class="math inline">w</span>를 준
+클러스터를 격자 전체로 평행이동해 더하면 <span
+class="math inline">W\cdot H</span> (<span class="math inline">W=\sum_k
+n_kw_k/3</span>)가 된다. 따라서 <span class="math inline">E_0/N\ge
+E_c(w)/W</span>이다.</p>
+<ul>
+<li><strong>최적화.</strong> <span class="math inline">E_c(w)</span>를
+447 635차원 대칭 구역에서 계산하고 Hellmann–Feynman 기울기로 최적화했다.
+최적 가중치는 대략 <span
+class="math inline">(1,\,0.2274,\,0.2367,\,0.2234,\,0.0619,\,0.0306)</span>이고
+최적값은 사이트당 <span class="math inline">-0.9480305952</span>다
+(<code>review/cluster33_opt.py</code>). 기존 문서 값과 10자리까지
+같다.</li>
+<li><strong>정확한 인증.</strong> 가중치를 정수 <span
+class="math inline">(32685485,\,7431689,\,7735613,\,7300540,\,2024273,\,1000000)</span>로
+반올림했다. <span class="math inline">C=4H_c</span> (Marshall 기저,
+비대각 성분 <span class="math inline">\le0</span>)에 대해 양의 정수 벡터
+<span class="math inline">v</span>를 만들고, 모든 궤도에서 <span
+class="math inline">(Cv)_i/v_i</span>를 정확한 유리수로 계산했다. 그러면
+<span class="math inline">C-{\rm diag}((Cv)_i/v_i)\succeq0</span>이므로
+<span
+class="math inline">\lambda_{\min}(C)\ge\min_i(Cv)_i/v_i</span>이다.
+<span class="math inline">v</span>는 고유벡터를 비음수 행렬 <span
+class="math inline">sI-H_c</span>의 거듭제곱 반복으로 다듬은 것이다.
+이렇게 해야 성분의 동적 범위 <span
+class="math inline">7\times10^{-21}</span>에서도 비가 정확하다. 결과는
+다음과 같다 (<code>review/cluster33_certificate.py</code>). <span
+class="math display">E_0\;\ge\;-\frac{211022977365631902022346875}{27823861703282098470814}=-7584.2447614214\ldots</span>
+이는 기존 문서의 <span
+class="math inline">-7584.2447614227\ldots</span>보다 <span
+class="math inline">1.3\times10^{-9}</span>만큼 강하다.</li>
+</ul>
+<p>따라서 본 문서에서 처음부터 다시 증명한 구간은 <strong><span
+class="math inline">-7584.2447614214\le
+E_0\le-7078.7617937</span></strong> (폭 505)이다. 별 분해만 쓰는 더 거친
+하한 <span class="math inline">-8000</span>은 손으로 확인할 수 있다.
+기존 문서의 상한 <span class="math inline">-7176.848195</span>를
+받아들이면 폭은 407이다.</p>
 <h3 id="양자-몬테카를로-방법">5.2 양자 몬테카를로 방법</h3>
 <p>Marshall 부호 회전 후 모든 가중치가 양수가 되므로 부호 문제가 없다.
 연산자 루프 갱신을 쓰는 확률적 급수 전개(SSE)는 Trotter 오차가 없는
 정확한 유한온도 방법이다. 결합 연산자는 <span
 class="math inline">H_b=\frac14-\mathbf S_i\cdot\mathbf S_j</span>이다.
-기존 구현에 대해 다음을 바꾸었다 (<code>qmc/sse3.c</code>).</p>
+표준 구현(Sandvik 1999)에 대해 다음을 바꾸었다
+(<code>qmc/sse3.c</code>).</p>
 <ul>
 <li><strong>문자열 길이 <span class="math inline">M=2n</span>.</strong>
 대각 갱신이 거의 열욕이 되어 <span class="math inline">\tau_{\rm
@@ -464,27 +519,37 @@ union–find로 합쳐 메모리 지연을 숨겼다. 루프 단계가 2.6배 �
 class="math inline">D=\sum_b s_is_j</span>의 시간 평균, <span
 class="math inline">n_{\rm off}</span>는 비대각 연산자 수). <span
 class="math display">E_n=\frac{N_b}{4}-\frac{n}{\beta},\qquad E_{\rm
-mix}=\frac{\bar D}{4}-\frac{n_{\rm off}}{\beta}=\mathbb
-E[E_n\,|\,\text{세계선}],</span> <span class="math display">E_{\rm
-RB2}=-\frac{\overline{\rm conn}}{4}-\frac{n_{\rm diff}}{2\beta}=\mathbb
-E[E_{\rm mix}\,|\,\text{루프 구조}].</span>
+mix}=\frac{\bar D}{4}-\frac{n_{\rm off}}{\beta},</span> <span
+class="math display">E_{\rm RB2}=-\frac{\overline{\rm
+conn}}{4}-\frac{n_{\rm diff}}{2\beta}=\mathbb E[E_{\rm
+mix}\,|\,\text{루프 구조}].</span>
 <ul>
-<li><span class="math inline">E_{\rm mix}</span>는 세계선이 주어졌을 때
-대각 연산자에 대한 조건부 기댓값이다.</li>
-<li><span class="math inline">E_{\rm RB2}</span>는 거기에 더해 <span
-class="math inline">2^{\#\text{루프}}</span>개의 루프 뒤집기에 대한
-조건부 기댓값이다. 여기서 <span class="math inline">\overline{\rm
-conn}</span>은 같은 루프에 놓인 최근접 쌍의 수를 시간 평균한 값이고,
-<span class="math inline">n_{\rm diff}</span>는 들어오는 다리 쌍과
-나가는 다리 쌍이 서로 다른 루프에 속하는 꼭짓점의 수다. 한 루프 위에서는
-엇갈림 스핀 <span class="math inline">(-1)^x s_x</span>가 일정하므로, 두
-다리 쌍이 같은 루프에 있는 꼭짓점은 항상 대각이다. 반면 서로 다른 루프에
-있는 꼭짓점은 루프 뒤집기에 대해 확률 1/2로 비대각이다.</li>
-<li>조건부 기댓값이므로 세 추정량의 평균은 같고, 분산은 Rao–Blackwell
-정리에 의해 차례로 줄어든다.</li>
+<li><span class="math inline">E_{\rm mix}</span>는 SSE의 표준 대각
+추정량(시간 평균한 <span class="math inline">\sum_b S^z_iS^z_j</span>)과
+표준 비대각 추정량(<span class="math inline">-n_{\rm
+off}/\beta</span>)의 합이므로 불편이다. 연속 시간 표현에서는 세계선이
+주어졌을 때 대각 연산자에 대한 <span class="math inline">E_n</span>의
+조건부 기댓값에 해당한다.</li>
+<li><span class="math inline">E_{\rm RB2}</span>는 연산자 위치(루프
+구조)를 고정하고 <span class="math inline">2^{\#\text{루프}}</span>개의
+루프 뒤집기에 대해 <span class="math inline">E_{\rm mix}</span>를 평균한
+것으로, 정확한 조건부 기댓값이다. 여기서 <span
+class="math inline">\overline{\rm conn}</span>은 같은 루프에 놓인 최근접
+쌍의 수를 시간 평균한 값이고, <span class="math inline">n_{\rm
+diff}</span>는 들어오는 다리 쌍과 나가는 다리 쌍이 서로 다른 루프에
+속하는 꼭짓점의 수다. 한 루프 위에서는 엇갈림 스핀 <span
+class="math inline">(-1)^x s_x</span>가 일정하므로, 두 다리 쌍이 같은
+루프에 있는 꼭짓점은 항상 대각이다. 반면 서로 다른 루프에 있는 꼭짓점은
+루프 뒤집기에 대해 확률 1/2로 비대각이다.</li>
+<li>따라서 세 추정량의 평균은 같다. <span
+class="math inline">\mathrm{Var}\,E_{\rm RB2}\le\mathrm{Var}\,E_{\rm
+mix}</span>는 Rao–Blackwell 정리에서 나오고, <span
+class="math inline">E_{\rm mix}</span>가 <span
+class="math inline">E_n</span>보다 분산이 작은 것은 측정으로
+확인했다.</li>
 <li>L = 20, <span class="math inline">\beta=32</span>에서 <span
 class="math inline">E_{\rm RB2}</span>의 분산은 <span
-class="math inline">E_n</span>의 약 1/3.9이다. 대각 부분만 SU(2)로 3배
+class="math inline">E_n</span>의 약 1/3.4이다. 대각 부분만 SU(2)로 3배
 하는 “개선” 추정량은 이 질서상에서 거대 루프 때문에 분산이 수백 배 커서
 쓰지 않았다.</li>
 </ul></li>
@@ -598,13 +663,15 @@ class="math inline">E_n</span>의 약 1/3.9이다. 대각 부분만 SU(2)로 3�
 <h3 id="생산-계산-l-20">5.3 생산 계산 (L = 20)</h3>
 <ul>
 <li><strong>체인.</strong> <span class="math inline">\beta=32</span>에서
-독립 체인 3개, <span class="math inline">\beta=64</span>에서 1개를
+독립 체인 3개, <span class="math inline">\beta=64</span>에서 2개를
 돌렸다. 각 체인은 Néel 상태에서 출발해 3000 스윕 동안 열평형화했다.</li>
-<li><strong>측정.</strong> 앞부분은 <code>sse2</code>로 <span
-class="math inline">E_n</span>, <span class="math inline">E_{\rm
-mix}</span>만 기록했다. 이후 같은 배치에서 새 난수열로 갈라져
-<code>sse3</code>로 <span class="math inline">E_{\rm RB2}</span>까지
-기록했다.</li>
+<li><strong>측정.</strong> 처음 네 체인은 앞부분을 <code>sse2</code>로
+측정해 <span class="math inline">E_n</span>, <span
+class="math inline">E_{\rm mix}</span>만 기록했다. 이후 같은 배치에서 새
+난수열로 갈라져 <code>sse3</code>로 <span class="math inline">E_{\rm
+RB2}</span>까지 기록했다. 다섯 번째 체인(<span
+class="math inline">\beta=64</span>)은 처음부터 <code>sse3</code>로
+측정했다.</li>
 <li><strong>오차.</strong> 파일마다 분산이 가장 작은 추정량을 쓰고,
 오차는 짝지어 재묶기(rebinning)의 평탄값으로 정했다. 파일들은 역분산
 가중으로 결합했다.</li>
@@ -640,24 +707,24 @@ tot})^2\rangle</span></th>
 <tr class="odd">
 <td>32</td>
 <td>3</td>
-<td>87,600</td>
-<td>−7218.845(95)</td>
-<td>−7218.856(63)</td>
-<td>10.587(72)</td>
+<td>187,700</td>
+<td>−7218.864(65)</td>
+<td>−7218.864(39)</td>
+<td>10.598(55)</td>
 <td>514</td>
-<td>0.03092</td>
-<td>−7218.887(63)</td>
+<td>0.03093</td>
+<td>−7218.895(39)</td>
 </tr>
 <tr class="even">
 <td>64</td>
-<td>1</td>
-<td>12,950</td>
-<td>−7218.76(16)</td>
-<td>−7218.80(11)</td>
-<td>5.11(10)</td>
-<td>501</td>
-<td>0.01529</td>
-<td>−7218.82(11)</td>
+<td>2</td>
+<td>43,300</td>
+<td>−7218.796(77)</td>
+<td>−7218.832(42)</td>
+<td>5.219(55)</td>
+<td>512</td>
+<td>0.01530</td>
+<td>−7218.848(42)</td>
 </tr>
 <tr class="odd">
 <td>결합</td>
@@ -668,7 +735,7 @@ tot})^2\rangle</span></th>
 <td></td>
 <td></td>
 <td></td>
-<td><strong>-7218.870(55)</strong></td>
+<td><strong>−7218.873(29)</strong></td>
 </tr>
 </tbody>
 </table>
@@ -690,19 +757,30 @@ S(S+1)/2I}\simeq\beta^{-1}-(6I)^{-1}</span>이다. <span
 class="math inline">I</span>는 같은 계산의 <span
 class="math inline">\langle(S^z_{\rm tot})^2\rangle=\langle
 S(S+1)\rangle/3</span>에서 정했다. 두 온도에서 얻은 <span
-class="math inline">I</span>는 <span class="math inline">514</span>와
-<span class="math inline">501</span>로 서로 일치한다.</li>
+class="math inline">I</span> 값(<span
+class="math inline">\beta=32</span>: <span
+class="math inline">514</span>, <span
+class="math inline">\beta=64</span>: <span
+class="math inline">512</span>)은 서로 일치한다.</li>
 <li><strong>두 온도의 일치.</strong> 보정 후 <span
 class="math inline">\beta=32</span>와 <span
 class="math inline">\beta=64</span>의 차이는 <span
-class="math inline">-0.07 \pm 0.13</span>이다. 회전자 보정의 모형
-오차(<span class="math inline">\lesssim10^{-4}</span>)는 통계 오차보다
-훨씬 작다.</li>
+class="math inline">-0.047 \pm 0.058</span>이다 (<span
+class="math inline">\chi^2/\text{자유도}=0.7</span>). 두 값은 오차
+안에서 일치하므로 PDG 방식의 척도 인자 <span
+class="math inline">\max(1,\sqrt{\chi^2/\text{자유도}})</span>는 1이다.
+측정 도중 한때 차이가 1.6σ까지 벌어졌지만, <span
+class="math inline">\beta=64</span> 체인을 하나 더 돌리자 해소되었다. 그
+부호는 남은 열적 들뜸으로 설명할 수 없는 쪽이었으므로(열적 들뜸은 낮은
+<span class="math inline">\beta</span>의 값을 높일 뿐이다) 통계적
+요동이었다. 회전자 보정의 모형 오차(<span
+class="math inline">\lesssim10^{-4}</span>)는 통계 오차보다 훨씬
+작다.</li>
 </ul>
 <h3 id="결과와-교차검증">5.5 결과와 교차검증</h3>
-<p><span class="math display">E_0=-7218.870 \pm
-0.055\qquad\Big(E_0/N=-0.9023588 \pm 0.0000068\Big)\qquad\text{(통계
-1σ)}</span></p>
+<p><span class="math display">E_0=-7218.873 \pm
+0.029\qquad\Big(E_0/N=-0.9023592 \pm 0.0000036\Big)</span></p>
+<p>오차는 통계 1σ이며 §5.4의 척도 인자를 포함한다.</p>
 <table>
 <colgroup>
 <col style="width: 32%" />
@@ -723,7 +801,7 @@ class="math inline">-0.07 \pm 0.13</span>이다. 회전자 보정의 모형
 <td>본 문서 SSE (<span class="math inline">\beta=32,64</span>, <span
 class="math inline">E_{\rm RB2}</span>·<span class="math inline">E_{\rm
 mix}</span>)</td>
-<td><span class="math inline">-7218.870 \pm 0.055</span></td>
+<td><span class="math inline">-7218.873 \pm 0.029</span></td>
 <td>—</td>
 <td>통계 1σ</td>
 </tr>
@@ -738,7 +816,7 @@ mix}</span>)</td>
 <td>문헌 QMC, 무한계 <span class="math inline">-0.902325(11)</span>/site
 + 스핀파 유한크기 보정</td>
 <td><span class="math inline">-7218.746 \pm 0.088</span></td>
-<td>1.2 σ</td>
+<td>1.4 σ</td>
 <td>Vlaar–Corboz 2021 (ALPS, L ≤ 12 외삽)</td>
 </tr>
 <tr class="even">
@@ -759,8 +837,9 @@ class="math inline">D=2</span>, 본 문서), <span class="math inline">&lt;
 </tr>
 <tr class="even">
 <td>엄밀 하한</td>
-<td><span class="math inline">\ge -8000</span> (본 문서), <span
-class="math inline">&gt; -7584.24</span> (기존)</td>
+<td><span class="math inline">\ge -7584.2447614214</span> (본 문서,
+33스핀 재인증), <span class="math inline">&gt; -7584.244762</span>
+(기존)</td>
 <td>QMC보다 아래</td>
 <td>정합</td>
 </tr>
@@ -791,10 +870,12 @@ class="math inline">10^{-4}</span> 수준에서 정합한다. 이것이 현재 �
 <span class="math inline">5\times10^{-16}</span>보다 작아야 한다. <span
 class="math inline">|E_0|\approx7.2\times10^3</span>이므로 상대 정밀도
 <span class="math inline">7\times10^{-20}</span>이다.</li>
-<li><strong>확률적 방법.</strong> 본 계산의 최선 추정량은 “분산 × 계산
-시간”이 스윕당 약 <span class="math inline">23</span> (에너지²·초, 코어
-하나)다. 따라서 오차 <span class="math inline">5\times10^{-16}</span>에
-약 <span class="math inline">10^{24}</span>년이 필요하다. 지구상 모든
+<li><strong>확률적 방법.</strong> 본 계산의 최선 추정량에서 (스윕당
+분산) × (스윕당 계산 시간)은 약 <span class="math inline">43</span>
+에너지²·초(코어 하나)다. 오차 <span class="math inline">\delta</span>를
+얻는 데 <span class="math inline">43/\delta^2</span>초가 걸리므로, <span
+class="math inline">\delta=5\times10^{-16}</span>이면 약 <span
+class="math inline">10^{24}</span>년이 필요하다. 지구상 모든
 컴퓨터(<span class="math inline">10^9</span> 코어로 가정)를 써도 우주의
 나이보다 훨씬 길다. 추정량 개선은 분산을 상수배 줄일 뿐 <span
 class="math inline">1/\sqrt{\text{표본 수}}</span> 법칙을 바꾸지 못한다.
@@ -802,7 +883,7 @@ class="math inline">1/\sqrt{\text{표본 수}}</span> 법칙을 바꾸지 못한
 하한도 같은 결론이다.</li>
 <li><strong>결정론적 방법.</strong> 대칭 축약 후에도 행렬 차원이 <span
 class="math inline">10^{2397}</span>보다 크다. 엄밀 경계의 현재 최선
-폭은 407이고, 인증서 없이 재현 가능한 폭은 921이다.</li>
+폭은 407이고, 본 문서에서 처음부터 다시 증명한 구간의 폭은 505다.</li>
 <li><strong>원리적 절차.</strong> Collatz–Wielandt 반복은 원리적으로
 반올림을 결정하지만, 실행하려면 <span
 class="math inline">10^{2406}</span>개 성분의 벡터가 필요하다.</li>
@@ -811,7 +892,7 @@ class="math inline">10^{2406}</span>개 성분의 벡터가 필요하다.</li>
 없다. 이는 풀이의 미비라기보다 문제가 현재 계산 가능성의 범위를 넘어서
 있기 때문이다. 다만 모든 알고리즘에 대한 불가능성 정리는 아니다.
 정직하게 제시할 수 있는 최종 답은 <span
-class="math inline">E_0=-7218.870 \pm 0.055</span> (통계 1σ)와 §5.1의
+class="math inline">E_0=-7218.873 \pm 0.029</span> (통계 1σ)와 §5.1의
 엄밀 구간이다.</p>
 <h2 id="재현-방법">7. 재현 방법</h2>
 <table>
@@ -859,7 +940,10 @@ class="math inline">E_0=-7218.870 \pm 0.055</span> (통계 1σ)와 §5.1의
 </tr>
 <tr class="even">
 <td><code>review/</code></td>
-<td>기존 문서 수치 검증, 33스핀 궤도 수, 스핀파 유한크기 보정</td>
+<td>기존 문서 수치 검증, 33스핀 궤도 수, 33스핀 하한의
+재최적화(<code>cluster33_opt.py</code>)와 정수
+인증(<code>cluster33_certificate.py</code>, 로그 포함), 스핀파 유한크기
+보정</td>
 </tr>
 </tbody>
 </table>
@@ -873,17 +957,19 @@ python3 analyze2.py results.json</code></pre>
 <li><strong>해결됨 (엄밀).</strong> 바닥상태의
 유일성·총스핀·운동량·공간대칭(정리 0). L = 20 계 자체의 Néel 상관 하한과
 <span class="math inline">O(1/N)</span> 삼중항(정리 1). 명시적
-정의에서의 유한갭 위상질서 배제(§4). 인증서 없이 검증 가능한 에너지 구간
-<span class="math inline">[-8000,\,-7078.7617937]</span>.</li>
+정의에서의 유한갭 위상질서 배제(§4). 독립적으로 다시 증명한 에너지 구간
+<span class="math inline">[-7584.2447614214,\,-7078.7617937]</span>
+(하한은 기존 문서의 33스핀 인증을 재현).</li>
 <li><strong>해결됨 (수치, 통계 오차 포함).</strong> <span
-class="math inline">E_0=-7218.870 \pm 0.055</span>. 독립적인 두 온도, 세
+class="math inline">E_0=-7218.873 \pm 0.029</span>. 독립적인 두 온도, 세
 추정량, 기존 문서의 QMC, 문헌의 무한계 QMC·iPEPS 값과 일치한다.</li>
 <li><strong>해결 불가 (현재 알려진 방법의 한계).</strong> 소수점 아래
 15자리의 <span class="math inline">E_0</span>와 그 정밀도에서의 QMC·TN
 일치.</li>
-<li><strong>추가 작업이 필요한 것.</strong> 기존 문서의 하한·상한 인증서
-재실행에는 원 인증서 파일이 필요하다. “넓은 의미의 모든 위상질서” 부재는
-먼저 정의가 필요하다.</li>
+<li><strong>추가 작업이 필요한 것.</strong> 기존 문서의 3층 회로
+상한(<span class="math inline">-7176.848195</span>)을 재실행하려면 원
+인증서 파일이 필요하다. “넓은 의미의 모든 위상질서” 부재는 먼저 정의가
+필요하다.</li>
 </ul>
 <h2 id="참고문헌">참고문헌</h2>
 <ul>
