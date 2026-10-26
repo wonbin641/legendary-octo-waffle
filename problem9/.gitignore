@@ -1,0 +1,11 @@
+# SSE binaries and checkpoints (large, regenerable)
+qmc/sse
+qmc/sse2
+qmc/sse3
+qmc/*_dbg
+qmc/runs/*.ckpt
+qmc/runs/*.ckpt.tmp
+# scratch benchmarks
+qmc/bench/
+qmc/test/
+__pycache__/
