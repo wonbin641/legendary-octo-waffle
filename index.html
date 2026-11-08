@@ -270,7 +270,7 @@ body.portrait #touch #t-anti { top: calc(var(--view-h, 62vh) - 74px); bottom: au
 /* stage map: stages 1-4 in a row joined by lines, 1-1 and 1-2 hanging below stage 1 */
 .stagetree { --gx: 22px; --gy: 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--gx); row-gap: var(--gy); }
 #st1btn { grid-area: 1 / 1; } #st2btn { grid-area: 1 / 2; } #st3btn { grid-area: 1 / 3; } #st4btn { grid-area: 1 / 4; }
-#st6btn { grid-area: 2 / 1; } #st5btn { grid-area: 3 / 1; } #st7btn { grid-area: 2 / 2; }
+#st6btn { grid-area: 2 / 1; } #st5btn { grid-area: 3 / 1; } #st7btn { grid-area: 2 / 3; } #st8btn { grid-area: 3 / 3; }
 .stage { position: relative; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 12px 13px; background: rgba(242, 163, 58, .08); border: 1px solid var(--panel-line); color: var(--ink); cursor: pointer; font-family: var(--font-body); min-width: 0; }
 .stage b { font-family: var(--font-display); font-size: 21px; font-weight: 400; letter-spacing: .01em; line-height: 1.12; word-break: keep-all; }
 .stage .sdesc { font-size: 12px; line-height: 1.45; color: var(--steel); word-break: keep-all; }
@@ -288,6 +288,23 @@ body.portrait #touch #t-anti { top: calc(var(--view-h, 62vh) - 74px); bottom: au
 #st3btn { background: rgba(214, 161, 46, .1); }
 .roster i.d { background: #d6a12e; }
 .carbar { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+/* the rocket launcher's lock on its target */
+#lockbox { position: absolute; width: 0; height: 0; pointer-events: none; }
+#lockbox[hidden] { display: none !important; }
+#lockbox i { position: absolute; left: -20px; top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b3a; transform: rotate(45deg); box-shadow: 0 0 8px rgba(255, 70, 50, .7), inset 0 0 6px rgba(255, 70, 50, .4); animation: lockspin 1.2s linear infinite; }
+#lockbox span { position: absolute; left: 26px; top: -30px; font: 700 11px var(--font-mono); color: #ff6b5a; letter-spacing: .1em; text-shadow: 0 1px 2px rgba(0,0,0,.9); }
+@keyframes lockspin { 0% { transform: rotate(45deg) scale(1); } 50% { transform: rotate(45deg) scale(.82); } 100% { transform: rotate(45deg) scale(1); } }
+/* the mount's and the watchtower's health: tall red bars on the right edge, big numbers on top */
+.vbars { position: absolute; right: max(18px, env(safe-area-inset-right, 0px)); top: 20%; bottom: 30%; display: flex; gap: 16px; align-items: stretch; pointer-events: none; }
+.vbar { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 64px; }
+.vbar[hidden] { display: none !important; }
+.vbar .vnum { font: 400 30px/1 var(--font-display); color: #ff6b62; text-shadow: 0 2px 4px rgba(0,0,0,.85), 0 0 10px rgba(255,60,50,.35); letter-spacing: .01em; white-space: nowrap; }
+.vbar i { position: relative; flex: 1; width: 30px; min-height: 80px; display: block; background: rgba(13, 18, 32, .75); border: 2px solid rgba(255, 98, 88, .7); box-shadow: 0 0 10px rgba(0,0,0,.55); }
+.vbar i b { position: absolute; left: 3px; right: 3px; bottom: 3px; height: calc(100% - 6px); background: linear-gradient(180deg, #ff7a6e, #d6261c); box-shadow: 0 0 12px rgba(255, 60, 50, .55); transition: height .15s; }
+.vbar.low i b { animation: ipulse .4s ease-in-out infinite alternate; }
+.vbar .vlbl { font: 700 13px var(--font-body); color: var(--ink); text-shadow: 0 1px 3px rgba(0,0,0,.9); white-space: pre-line; text-align: center; line-height: 1.3; }
+body.portrait .vbars { top: 16%; bottom: 14%; gap: 10px; }
+body.portrait .vbar { min-width: 50px; } body.portrait .vbar .vnum { font-size: 22px; } body.portrait .vbar i { width: 22px; } body.portrait .vbar .vlbl { font-size: 11px; }
 /* the lab: which cage opens next and in how many seconds */
 .cagebar { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; font: 700 13px var(--font-body); color: var(--ink); text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .cagebar .lbl { color: var(--sodium); }
@@ -333,6 +350,36 @@ body.devmode #menucode::after { content: ' · 개발자 모드'; color: var(--vi
 .codein:focus-visible { outline: 2px solid var(--sodium); outline-offset: 2px; }
 .btn.danger { background: var(--alarm); color: #fff; }
 .shoplist { display: grid; gap: 8px; }
+/* the encyclopaedias */
+.cxsheet { width: min(1060px, 100%); }
+.cxsheet .sheet-body { gap: 14px; }
+.cxtabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--panel-line); }
+.cxtabs button { font-family: var(--font-display); font-size: 22px; letter-spacing: .03em; color: var(--steel); background: transparent; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 6px 18px 9px; cursor: pointer; }
+.cxtabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--sodium); }
+.cxtabs button:focus-visible, .cxchips button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.cxchips { display: flex; gap: 6px; flex-wrap: wrap; }
+.cxchips[hidden] { display: none; }
+.cxchips button { font: 600 12px var(--font-mono); letter-spacing: .04em; color: var(--steel); background: transparent; border: 1px solid var(--panel-line); padding: 7px 11px; cursor: pointer; }
+.cxchips button.on { color: var(--night); background: var(--sodium); border-color: var(--sodium); }
+.cxlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(310px, 100%), 1fr)); gap: 10px; }
+.cxcard { min-width: 0; display: grid; gap: 7px; align-content: start; padding: 12px 14px 13px; border: 1px solid var(--panel-line); background: rgba(236, 230, 216, .03); }
+.cxcard.own { border-color: rgba(242, 163, 58, .45); }
+.cxcard.boss { border-color: rgba(255, 82, 96, .55); background: rgba(255, 82, 96, .05); }
+.cxcard.mid { border-color: rgba(242, 163, 58, .55); background: rgba(242, 163, 58, .04); }
+.cxtop { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cxtop > b { font-family: var(--font-display); font-size: 21px; font-weight: 400; color: var(--ink); line-height: 1.1; }
+.cxtags { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.cxst { font: 600 10px var(--font-mono); color: var(--ink); border: 1px solid var(--panel-line); padding: 1px 5px; }
+.cxbadge { font: 700 10px var(--font-mono); font-style: normal; color: #fff; background: var(--alarm); padding: 2px 6px; letter-spacing: .06em; }
+.cxcard.mid .cxbadge { background: var(--sodium); color: var(--night); }
+.cxsub { font-size: 12px; color: var(--steel); }
+.cxprice { font: 600 11px var(--font-mono); color: var(--sodium); }
+.cxstats { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; margin: 0; }
+.cxstats dt { font: 600 11px var(--font-mono); color: var(--steel); letter-spacing: .04em; white-space: nowrap; padding-top: 2px; }
+.cxstats dd { margin: 0; min-width: 0; font-size: 13px; line-height: 1.45; color: #d9dee8; overflow-wrap: anywhere; }
+.cxbar { display: block; height: 4px; margin-top: 4px; background: rgba(236, 230, 216, .12); }
+.cxbar b { display: block; height: 100%; background: var(--sodium); }
+.cxnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--steel); }
 .wrow { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--panel-line); background: rgba(236, 230, 216, .03); }
 .wrow.own { border-color: rgba(242, 163, 58, .45); }
 .wtitle { display: grid; gap: 2px; min-width: 0; }
@@ -445,6 +492,13 @@ body.portrait #t-swap { display: none; }
 
 <div class="hud" id="hud" hidden>
   <div id="viewhud">
+    <!-- the rocket launcher's lock: a red diamond on the enemy the next rocket will chase -->
+    <div id="lockbox" hidden><i></i><span>LOCK</span></div>
+    <!-- big vertical health bars on the right: the watchtower (3-1) and the animal you ride -->
+    <div class="vbars" id="vbars">
+      <div class="vbar" id="vbarT" hidden><b class="vnum" id="vnumT">10,000</b><i><b id="vfillT"></b></i><span class="vlbl" id="vlblT">감시탑</span></div>
+      <div class="vbar" id="vbarM" hidden><b class="vnum" id="vnumM">0</b><i><b id="vfillM"></b></i><span class="vlbl" id="vlblM">탈것</span></div>
+    </div>
     <div id="hurt"></div>
     <div id="lowhp"></div>
     <div id="toxic"></div>
@@ -520,10 +574,11 @@ body.portrait #t-swap { display: none; }
         <button class="stage main" id="st3btn"><span class="lbl"><span class="lw">스테이지 </span>3</span><b>동물 연구소</b><span class="sdesc" id="st3note"></span><span class="sstat" id="st3stat"></span></button>
         <button class="stage main" id="st4btn"><span class="lbl"><span class="lw">스테이지 </span>4</span><b>우주선</b><span class="sdesc" id="st4note"></span><span class="sstat" id="st4stat"></span></button>
         <button class="stage side" id="st6btn"><span class="lbl"><span class="lw">스테이지 </span>1-1</span><b>헬멧 부두</b><span class="sdesc" id="st6note"></span><span class="sstat" id="st6stat"></span></button>
-        <button class="stage side" id="st7btn"><span class="lbl"><span class="lw">스테이지 </span>2-1</span><b>사파리 감시탑</b><span class="sdesc" id="st7note"></span><span class="sstat" id="st7stat"></span></button>
+        <button class="stage side" id="st7btn"><span class="lbl"><span class="lw">스테이지 </span>3-1</span><b>사파리 감시탑</b><span class="sdesc" id="st7note"></span><span class="sstat" id="st7stat"></span></button>
+        <button class="stage side" id="st8btn"><span class="lbl"><span class="lw">스테이지 </span>3-2</span><b>차례 연구소</b><span class="sdesc" id="st8note"></span><span class="sstat" id="st8stat"></span></button>
         <button class="stage side" id="st5btn"><span class="lbl"><span class="lw">스테이지 </span>1-2</span><b>무장 부두</b><span class="sdesc" id="st5note"></span><span class="sstat" id="st5stat"></span></button>
       </div>
-      <div class="bagline"><span class="best">가방 <b id="bagmoney">0원</b></span><button class="ghost" id="shopbtn">상점</button><button class="ghost" id="lobtn">무기 편성</button><span class="best" id="bestline"></span></div>
+      <div class="bagline"><span class="best">가방 <b id="bagmoney">0원</b></span><button class="ghost" id="shopbtn">상점</button><button class="ghost" id="lobtn">무기 편성</button><button class="ghost" id="cxbtn">도감</button><span class="best" id="bestline"></span></div>
       <div class="metarow"><button class="ghost small" id="savebtn">저장</button><button class="ghost small" id="loadbtn">불러오기</button><button class="ghost small" id="resetbtn">초기화</button><button class="ghost small" id="devbtn">개발자 모드</button></div>
       <p class="lede">부두 7번 야드에서 시작합니다. 스테이지마다 적이 미리 자리를 잡고 있고 더는 나타나지 않습니다. 한 명을 잡을 때마다 돈이 가방에 들어오지만, 다 잡고 빠져나와야 그 돈을 가지고 나옵니다. 쓰러지면 이번에 번 돈은 잃습니다. 체력은 1000이고 저절로 차지 않습니다(스테이지 2는 체력 대신 감염과 중독뿐). 스테이지 1을 깨면 2와 1-1이, 1-1을 깨면 1-2가 열립니다.</p>
       <div class="cols">
@@ -540,7 +595,7 @@ body.portrait #t-swap { display: none; }
             <kbd>V · 마우스 뒤로</kbd><span>근접 공격 (소리가 나지 않음)</span>
             <kbd>1~7 · 휠</kbd><span>무기 교체</span>
             <kbd>F</kbd><span>해독약 사용</span>
-            <kbd>E · G</kbd><span>동물 타기 · 옮겨 타기 (스테이지 3, 2-1)</span>
+            <kbd>E · G</kbd><span>동물 타기 · 옮겨 타기 (스테이지 3, 3-1, 3-2)</span>
             <kbd>X</kbd><span>동물에서 내리기</span>
             <kbd>M</kbd><span>작전 지도</span>
             <kbd>Esc</kbd><span>일시정지 · 상점</span>
@@ -592,6 +647,22 @@ body.portrait #t-swap { display: none; }
       <div class="shoplist" id="shoplist"></div>
       <div class="actions"><button class="btn" id="shopclose">돌아가기</button><span class="msg" id="shopmsg"></span></div>
       <p class="note">아이템은 한 번 사면 다 쓸 때까지 가지고 다닙니다(헬멧은 머리 공격 1번, 조끼는 10번, 제트백팩은 한 번 날기). 무기는 권총과 보스 보물상자에서 얻은 총(영구 소유, 살아서 나가야 내 것)이 무료이고, 다른 총은 대여료(옛 값의 30%)를 내고 빌리며 한 스테이지를 쓰면 반납합니다(클리어, 실패, 작전 포기 모두). 출동 전에는 대여를 취소하고 돌려받을 수 있습니다. 예비 총알은 480발로 시작하고 기관단총은 720발, 저격총은 100발, 유탄발사기는 42발입니다. 싸우는 중에는 일시정지에서 아이템, 대여, 총알 100발을 살 수 있습니다.</p>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="codex" hidden>
+  <div class="sheet cxsheet">
+    <div class="sheet-head"><span>도감 · 무기와 적의 모든 수치</span><span class="code">CODEX</span></div>
+    <div class="sheet-body">
+      <div class="cxtabs" role="tablist" aria-label="도감 종류">
+        <button type="button" role="tab" id="cxtabg" aria-selected="true">총기도감</button>
+        <button type="button" role="tab" id="cxtabe" aria-selected="false">적 도감</button>
+      </div>
+      <div class="cxchips" id="cxchips" role="group" aria-label="스테이지" hidden></div>
+      <div class="cxlist" id="cxlist"></div>
+      <p class="note" id="cxinfo"></p>
+      <div class="actions"><button class="btn" id="cxclose">돌아가기</button></div>
     </div>
   </div>
 </div>
@@ -664,6 +735,7 @@ body.portrait #t-swap { display: none; }
         <button class="ghost" id="pmapbtn">지도</button>
         <button class="ghost" id="pshopbtn">상점 · 총알</button>
         <button class="ghost" id="plobtn">편성</button>
+        <button class="ghost" id="pcxbtn">도감</button>
         <button class="ghost" id="quitbtn">작전 포기</button>
       </div>
       <div class="msg" id="pausemsg"></div>
