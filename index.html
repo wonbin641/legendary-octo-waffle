@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="minigame-claim" content="mgc_9LCwxJsBMlEyBeGlZD9t2nv5t4XbpNLOWbaHZZr5bK4">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
-<title>야드 07</title>
+<title>야르 07</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
@@ -45,13 +45,13 @@ body {
 
 /* crosshair */
 #cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
-#cross i { position: absolute; background: var(--ink); box-shadow: 0 0 2px rgba(0,0,0,.8); }
+#cross i { position: absolute; background: var(--ch, var(--ink)); box-shadow: 0 0 2px rgba(0,0,0,.8); }
 #cross .h { width: 9px; height: 2px; top: -1px; }
 #cross .v { width: 2px; height: 9px; left: -1px; }
 #cross .dot { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; }
-#cross.ads .dot { width: 6px; height: 6px; left: -3px; top: -3px; background: #ff4b3a; box-shadow: 0 0 6px rgba(255, 70, 50, .9), 0 0 1px #000; }
+#cross.ads .dot { width: 6px; height: 6px; left: -3px; top: -3px; background: var(--chads, #ff4b3a); box-shadow: 0 0 6px rgba(255, 70, 50, .9), 0 0 1px #000; }
 /* crosshair styles (settings): the cross, a circle that opens with the spread, a big circle, or just a dot */
-#cross .ring { display: none; left: 0; top: 0; width: 16px; height: 16px; background: transparent; border: 1.5px solid var(--ink); border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 2px rgba(0,0,0,.85), inset 0 0 2px rgba(0,0,0,.85); }
+#cross .ring { display: none; left: 0; top: 0; width: 16px; height: 16px; background: transparent; border: 1.5px solid var(--ch, var(--ink)); border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 2px rgba(0,0,0,.85), inset 0 0 2px rgba(0,0,0,.85); }
 body[data-ch="circle"] #cross .h, body[data-ch="circle"] #cross .v, body[data-ch="big"] #cross .h, body[data-ch="big"] #cross .v, body[data-ch="dot"] #cross .h, body[data-ch="dot"] #cross .v { display: none; }
 body[data-ch="circle"] #cross .ring, body[data-ch="big"] #cross .ring { display: block; }
 body[data-ch="big"] #cross .ring { border-width: 2px; }
@@ -237,6 +237,14 @@ body.touch #feed div.hs { border-left-color: var(--alarm); }
 .cutcap { position: absolute; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(11vh + 22px); max-width: 82%; animation: capin .9s ease-out both; }
 .cutcap .ct { font-family: var(--font-display); font-size: clamp(26px, 5vw, 46px); color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,.75); text-wrap: balance; }
 .cutcap .cs { font-family: var(--font-mono); font-size: 13px; letter-spacing: .08em; color: var(--sodium); margin-top: 4px; text-shadow: 0 1px 4px rgba(0,0,0,.9); text-wrap: balance; word-break: keep-all; }
+/* 5.13: the name of what waits behind a ship door, big in the bottom right of the short look inside */
+.bosscard { position: absolute; right: max(28px, env(safe-area-inset-right, 0px)); bottom: calc(11vh + 20px); max-width: 88vw; text-align: right; font-family: var(--font-display);
+  font-size: clamp(40px, 7.4vw, 104px); line-height: 1.02; letter-spacing: .01em; text-wrap: balance; word-break: keep-all; animation: bcin .35s ease-out both;
+  text-shadow: 0 4px 26px rgba(0,0,0,.7), 0 0 2px rgba(0,0,0,.95); }
+.bosscard[hidden] { display: none; }
+.bosscard.bee { color: #ffd23a; }
+.bosscard.boss { color: #36ff7a; }
+@keyframes bcin { from { opacity: 0; transform: translateX(46px); } to { opacity: 1; transform: none; } }
 .cutskip { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 3.2vh); font-family: var(--font-mono); font-size: 11px; color: rgba(236, 230, 216, .65); }
 #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 16; transition: opacity .7s; }
 @keyframes capin { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -380,6 +388,9 @@ body.devmode #menucode::after { content: ' · 개발자 모드'; color: var(--vi
 .cxbar { display: block; height: 4px; margin-top: 4px; background: rgba(236, 230, 216, .12); }
 .cxbar b { display: block; height: 100%; background: var(--sodium); }
 .cxnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--steel); }
+.cxcard.locked { border-style: dashed; background: rgba(236, 230, 216, .015); }
+.cxcard.locked .cxtop > b { color: var(--steel); letter-spacing: .12em; }
+.ghost:disabled { opacity: .45; cursor: not-allowed; }
 .wrow { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--panel-line); background: rgba(236, 230, 216, .03); }
 .wrow.own { border-color: rgba(242, 163, 58, .45); }
 .wtitle { display: grid; gap: 2px; min-width: 0; }
@@ -560,14 +571,14 @@ body.portrait #t-swap { display: none; }
   <div class="tbtn" id="t-map">지도</div>
 </div>
 
-<div id="cutbars" hidden><div class="lb top"></div><div class="lb bot"></div><div class="cutcap"><div class="ct" id="cuttitle"></div><div class="cs" id="cutsub"></div></div><div class="cutskip" id="cutskip"></div></div>
+<div id="cutbars" hidden><div class="lb top"></div><div class="lb bot"></div><div class="cutcap"><div class="ct" id="cuttitle"></div><div class="cs" id="cutsub"></div></div><div class="bosscard" id="bosscard" hidden></div><div class="cutskip" id="cutskip"></div></div>
 <div id="fade"></div>
 
 <div class="screen" id="menu">
   <div class="sheet">
     <div class="sheet-head"><span>작업 지시서 · 단독 작전</span><span class="code" id="menucode">YRDU 070707 0</span></div>
     <div class="sheet-body">
-      <div class="title">야드 <em>07</em></div>
+      <div class="title">야르 <em>07</em></div>
       <div class="stagetree" id="stagetree" role="group" aria-label="스테이지">
         <button class="stage main root" id="st1btn"><span class="lbl"><span class="lw">스테이지 </span>1</span><b>컨테이너 부두</b><span class="sdesc" id="st1note"></span><span class="sstat" id="st1stat"></span></button>
         <button class="stage main" id="st2btn"><span class="lbl"><span class="lw">스테이지 </span>2</span><b>불타는 마을</b><span class="sdesc" id="st2note"></span><span class="sstat" id="st2stat"></span></button>
@@ -595,7 +606,7 @@ body.portrait #t-swap { display: none; }
             <kbd>V · 마우스 뒤로</kbd><span>근접 공격 (소리가 나지 않음)</span>
             <kbd>1~7 · 휠</kbd><span>무기 교체</span>
             <kbd>F</kbd><span>해독약 사용</span>
-            <kbd>E · G</kbd><span>동물 타기 · 옮겨 타기 (스테이지 3, 3-1, 3-2)</span>
+            <kbd>E · G</kbd><span>동물 타기 · 옮겨 타기 (스테이지 3, 3-1, 3-2) · E는 열쇠 줍기 (스테이지 4)</span>
             <kbd>X</kbd><span>동물에서 내리기</span>
             <kbd>M</kbd><span>작전 지도</span>
             <kbd>Esc</kbd><span>일시정지 · 상점</span>
@@ -604,20 +615,9 @@ body.portrait #t-swap { display: none; }
         <section>
           <h3>규칙</h3>
           <div class="roster">
-            <div><i></i><span class="nm">스테이지 1 · 조직원은 권총으로 응사합니다</span><span>HP 100</span></div>
-            <div><i class="c"></i><span class="nm">스테이지 2 · 체력 없음. 물리면 감염(5초), 돌진에 맞으면 중독(8초) · 해독약 주사로 치료</span><span>HP 180</span></div>
-            <div><i class="b"></i><span class="nm">쓰러진 좀비는 3초 안에 한 번 더 쏴야 사라집니다 · 30%에서 돌진(맞으면 중독)</span><span>3초</span></div>
-            <div><i class="b"></i><span class="nm">거대 좀비는 체력 절반에서 폭주 · 돌진에 맞으면 2초 기절</span><span>보스</span></div>
             <div><i class="d"></i><span class="nm">스테이지 3 · 연구소 우리 10개가 10초 뒤부터 15초마다 하나씩 열림 · 창살 사이로 쏠 수 있음</span><span>10개</span></div>
-            <div><i class="b"></i><span class="nm">거대 고릴라 · 주먹 500, 돌진 300에 3초 기절, 점프해 내려찍기는 즉사(타고 있어도), 포효하면 졸개 7마리</span><span>보스</span></div>
-            <div><i class="d"></i><span class="nm">얼룩말은 공격하지 않고 쏘면 빠르게 도망 · 물소는 벽까지 일직선 돌진(비스듬한 벽은 타고 계속, 모서리에서 멈춤) 50에 3초 기절</span><span>패턴</span></div>
-            <div><i class="d"></i><span class="nm">하마·숫사자는 입을 벌려 물기 50 · 치타·호랑이는 옆을 스치며 물고 지나감 120 · 모두 출혈(초당 10, 10초, 중첩되면 시간 초기화)</span><span>출혈</span></div>
-            <div><i class="d"></i><span class="nm">코뿔소 뿔에 맞으면 수직으로 날아가 떨어질 때 100과 출혈, 밑에 깔린 적은 최대 체력 30% · 떨어지다 또 맞으면 더 높이</span><span>공중</span></div>
-            <div><i class="d"></i><span class="nm">호랑이 포효는 1초 공포(저절로 도망) · 숫사자 포효는 호랑이 빼고 모두 무릎 꿇고 회복, 영구히 빨라짐</span><span>포효</span></div>
             <div><i class="f"></i><span class="nm">얼룩말 → 기린 → 코끼리 순서로 올라탐(E) · 기린·코끼리 위에서는 공포 없고 공격은 동물이 대신 맞음 · 탄 동물은 길들인 것으로 처치 인정</span><span>탑승</span></div>
-            <div><i class="f"></i><span class="nm">기린은 머리가 약점(피해 10배) 대신 체력 10배 · 코끼리는 체력이 엄청나고 잡으면 상아 · 상점에서 비싸게 팔림</span><span>상아</span></div>
-            <div><i class="d"></i><span class="nm">스테이지 4 · 에어록 → 통로 → 복도 · 천장 CCTV(약함) · 순찰 로봇(야광봉 60) · 메인홀 드론 · 바닥에 숨은 스파이더 마인(100, 한 발에 터짐)</span><span>로봇</span></div>
-            <div><i class="b"></i><span class="nm">운전실의 황금 지휘 드론(중간 보스, 돈 10배) · 메인홀 보스 드론은 체력 1/3마다 작아지고 빨라짐(5 m → 3 m → 1.5 m) · 눈이 빨개지면 3·2·1초 뒤 레이저 즉사 · 유도 로켓 1·10·100발(벽 뒤로) · 마인 5·10·20개</span><span>보스</span></div>
+            <div><i class="d"></i><span class="nm">적과 동물의 체력·속도·데미지·스킬, 무기의 연사속도·DPS·사거리는 도감에서 볼 수 있습니다 (스테이지를 깨면 열림)</span><span>도감</span></div>
             <div><i class="e"></i><span class="nm">스테이지마다 보스 1마리 · 돈 20배와 보물상자(아직 없는 총 하나를 영구히 · 탄약 가득)</span><span>×20</span></div>
             <div><i class="f"></i><span class="nm">나무 상자를 쏴서 부수면 회복 물약(최대 체력의 10%, 출혈도 멈춤) · 스테이지 2에서는 해독약</span><span>상자</span></div>
             <div><i class="e"></i><span class="nm">권총과 보물상자에서 얻은 총은 무료 · 다른 총은 한 스테이지 대여 · 깬 스테이지는 다시 해도 돈 없음</span><span>대여</span></div>
@@ -633,6 +633,7 @@ body.portrait #t-swap { display: none; }
         <label for="autofire" class="touchonly"><input type="checkbox" id="autofire"> 자동 사격</label>
         <label for="gfx" class="pconly">그래픽 <select id="gfx"><option value="auto">자동</option><option value="high">최고 화질</option><option value="fast">프레임 우선</option></select></label>
 <label for="chsel">조준선 <select id="chsel"><option value="cross">십자</option><option value="circle">원</option><option value="big">큰 원</option><option value="dot">점</option></select></label>
+<label for="chcol">조준선 색 <select id="chcol"><option value="white">흰색</option><option value="green">초록</option><option value="red">빨강</option><option value="yellow">노랑</option><option value="cyan">하늘</option><option value="pink">분홍</option><option value="orange">주황</option></select></label>
         <label for="fps"><input type="checkbox" id="fps"> FPS 표시</label>
       </div>
       <div class="msg" id="menumsg"></div>
@@ -728,6 +729,7 @@ body.portrait #t-swap { display: none; }
         <label for="autofire2" class="touchonly"><input type="checkbox" id="autofire2"> 자동 사격</label>
         <label for="gfx2" class="pconly">그래픽 <select id="gfx2"><option value="auto">자동</option><option value="high">최고 화질</option><option value="fast">프레임 우선</option></select></label>
 <label for="chsel2">조준선 <select id="chsel2"><option value="cross">십자</option><option value="circle">원</option><option value="big">큰 원</option><option value="dot">점</option></select></label>
+<label for="chcol2">조준선 색 <select id="chcol2"><option value="white">흰색</option><option value="green">초록</option><option value="red">빨강</option><option value="yellow">노랑</option><option value="cyan">하늘</option><option value="pink">분홍</option><option value="orange">주황</option></select></label>
         <label for="fps2"><input type="checkbox" id="fps2"> FPS 표시</label>
       </div>
       <div class="actions">

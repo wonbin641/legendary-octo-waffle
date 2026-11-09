@@ -1491,26 +1491,77 @@ const HALL_PILLARS = [[74, -18], [74, 14], [111, -19], [111, 15]];
 /* the bridge's gallery: 7 m up, 5 m deep along the north, south and east walls; the north and south runs start as stairs */
 const BRIDGE = { gy: 7, x0: -123, x1: -92, z0: -28, z1: 13, stairX0: -117, stairX1: -107.4, eastX: -97, steps: 16 };
 /* the sliding doors where the corridor meets the bridge and the hall, and the hatches in the hall floor that open at the boss's third phase */
-const SHIP_DOORS = [{ x: -91.7, z0: -12.5, z1: -2.5, h: 6, name: '운전실' }, { x: 67.7, z0: -12.5, z1: -2.5, h: 6, name: '메인홀' }];
+const SHIP_DOORS = [{ x: -91.7, z0: -12.5, z1: -2.5, h: 6, name: '운전실', inward: -1, room: 'bridge', who: 'gdrone', title: '황금꿀벌드론', tone: 'bee', needKey: false },
+  { x: 67.7, z0: -12.5, z1: -2.5, h: 6, name: '메인홀', inward: 1, room: 'hall', who: 'bdrone', title: '최첨단 감시 드론 보스 B-3', tone: 'boss', needKey: true }];
+/* the main hall's key, stuck upright in the commander's console in the middle of the bridge */
+const SHIP_KEY = { x: -105, y: 1.6, z: -7.5 };
+/* where the save point puts you back: on the bridge, just inside its door, facing out */
+const SHIP_SAVE = { x: -98.5, z: -7.5, yaw: -Math.PI / 2 };
 const HATCHES = [[71.6, -9], [71.6, 10], [79, 19], [93, 19.4], [109, 9], [109, -15], [93, -22.4], [77, -20]];
 /* the room a point is in (the airlock does not count: you never get in there) */
 function shipRoom(x, z) { for (const R of SHIP_ROOMS) if (R[5] !== 'lock' && x >= R[0] && x <= R[2] && z >= R[1] && z <= R[3]) return R; return null; }
 function shipCeil(x, z) { const R = shipRoom(x, z); return R ? R[4] : 30; }
 const Ship = {
   active: false, door: null, doorOpen: 0, closing: false, coreMat: null, ring: null, screens: null, doors: [], hatches: [], hatchQ: [], hatchWait: 0,
-  reset() { this.active = false; this.door = null; this.doorOpen = 0; this.closing = false; this.coreMat = null; this.ring = null; this.screens = null; this.doors = []; this.hatches = []; this.hatchQ = []; this.hatchWait = 0; },
-  /* the sliding doors: open while you or a robot (not a mine) is within 7 m, shut again when nobody is. shut, they stop bullets */
+  key: false, keyObj: null, keyGlow: null, keyHintT: 0, saveT: 0,
+  reset() { this.active = false; this.door = null; this.doorOpen = 0; this.closing = false; this.coreMat = null; this.ring = null; this.screens = null; this.doors = []; this.hatches = []; this.hatchQ = []; this.hatchWait = 0;
+    this.key = false; this.keyObj = null; this.keyGlow = null; this.keyHintT = 0; this.saveT = 0; },
+  /* the gold bee on the bridge and the boss in the hall (5.13): each sits behind its door and takes no notice of anything until you come through it */
+  drone(D) { return Enemies.list.find((o) => o.alive && o.type === D.who) || null; },
+  enter(D) {
+    const e = this.drone(D);
+    if (!e) { D.mode = 'open'; return; } // nothing left in there: just a door
+    D.mode = 'cut'; state = 'cutscene'; Gun.trigger = false; Gun.adsHeld = false; keys.clear(); jetEnd(); Sound.clank({ x: D.x, y: 2, z: (D.z0 + D.z1) / 2 });
+    Cut.startBossIntro(D, e, () => this.lockIn(D));
+  },
+  /* after the look inside: you are just through the door, it slides shut behind you and locks until the thing in there is dead */
+  lockIn(D) {
+    const cz = (D.z0 + D.z1) / 2, e = this.drone(D);
+    // nobody follows you in: anything standing in the doorway goes back out into the corridor
+    for (const o of Enemies.list) if (o.alive && o !== e && !o.fly && Math.abs(o.pos.z - cz) < 6) { const inside = (o.pos.x - D.x) * D.inward; if (inside > -0.6 && inside < 3.5) o.pos.x = D.x - D.inward * 2.5; }
+    player.pos.set(D.x + D.inward * 2.4, 0, cz); player.vel.set(0, 0, 0); player.yaw = D.inward < 0 ? Math.PI / 2 : -Math.PI / 2; player.pitch = 0;
+    D.mode = 'locked';
+    if (e) { e.sealed = false; Enemies.alarm(e); }
+    HUD.banner('문이 잠겼습니다', D.room === 'bridge' ? '황금꿀벌드론을 쓰러뜨려야 문이 열립니다' : '눈이 빨개지면 레이저 · 맞으면 즉사 · 벽 뒤로 숨으세요', 2.6);
+    backToPlay();
+  },
+  /* the thing behind a door is dead: that door opens for good. the bee's also makes the save point (Game.takeSave) */
+  onDown(e) {
+    const D = this.doors.find((d) => d.who === e.type); if (!D) return;
+    D.mode = 'open'; Sound.clank({ x: D.x, y: 2, z: (D.z0 + D.z1) / 2 });
+    if (D.room === 'bridge') this.saveT = 2.4; // the save point banner, once the kill banner has had its moment
+  },
+  keyNear() { return !!this.keyObj && !this.key && Math.hypot(player.pos.x - SHIP_KEY.x, player.pos.z - SHIP_KEY.z) < 2.6 && player.pos.y < 2.5; },
+  takeKey() {
+    if (state !== 'playing' || !this.keyNear()) return false;
+    this.key = true; this.keyObj.visible = false; Sound.pickup('ammo'); Sound.buy();
+    HUD.banner('메인홀 열쇠 획득', '메인홀 문 앞에 바짝 다가가면 열립니다', 2.6); HUD.feed('메인홀 열쇠 획득', 0);
+    return true;
+  },
+  /* back from the save point: the bridge door stands open and the key is where it was (or in your pocket) */
+  restore(sp) {
+    const D = this.doors.find((d) => d.room === 'bridge'); if (D) { D.mode = 'open'; D.open = 1; if (D.col) { removeCollider(D.col); D.col = null; } this.slide(D); }
+    if (sp.key) { this.key = true; if (this.keyObj) this.keyObj.visible = false; }
+  },
+  slide(D) { const w = (D.z1 - D.z0) / 2, k = D.open * D.open * (3 - 2 * D.open); D.a.position.z = D.z0 + w / 2 - k * w; D.b.position.z = D.z1 - w / 2 + k * w; },
+  /* the two doors: shut until you stand right against one from the corridor side (the hall's also wants the key); then they slide open
+     for the look inside, shut and lock behind you, and open for good once what is inside is dead. shut, they stop bullets */
   doorTick(dt) {
+    this.keyHintT -= dt;
     for (const D of this.doors) {
-      const cx = D.x, cz = (D.z0 + D.z1) / 2, near = (x, z, y) => Math.abs(x - cx) < 7 && Math.abs(z - cz) < 9 && y < D.h;
-      let want = near(player.pos.x, player.pos.z, player.pos.y);
-      if (!want) for (const e of Enemies.list) if (e.alive && e.robot && e.T.mode !== 'mine' && e.awake && near(e.pos.x, e.pos.z, e.pos.y)) { want = true; break; }
-      const o0 = D.open; D.open = clamp(D.open + (want ? dt * 2.6 : -dt * 2), 0, 1);
+      if (D.mode === 'shut' && state === 'playing' && !Game.ended) {
+        const out = (player.pos.x - D.x) * -D.inward; // how far out in the corridor
+        if (out > 0 && out < 1.3 && player.pos.z > D.z0 + 0.3 && player.pos.z < D.z1 - 0.3 && player.pos.y < 2.5) {
+          if (D.needKey && !this.key) { if (this.keyHintT <= 0) { this.keyHintT = 3.5; HUD.hint('메인홀 문이 잠겨 있습니다 · 운전실 조종석에 꽂힌 열쇠가 필요합니다', 3); Sound.clank({ x: D.x, y: 2, z: (D.z0 + D.z1) / 2 }); } }
+          else this.enter(D);
+        }
+      }
+      const want = D.mode === 'cut' || D.mode === 'open';
+      const o0 = D.open; D.open = clamp(D.open + (want ? dt * 2.6 : -dt * 2.4), 0, 1);
       if (D.open > 0.55 && D.col) { removeCollider(D.col); D.col = null; }
       if (D.open < 0.45 && !D.col) { D.col = addCollider(D.x - 0.2, 0, D.z0, D.x + 0.2, D.h, D.z1, 'metal'); D.col.door = true; }
-      if ((o0 === 0 && D.open > 0) || (o0 === 1 && D.open < 1)) Sound.clank({ x: cx, y: 2, z: cz });
-      const w = (D.z1 - D.z0) / 2, k = D.open * D.open * (3 - 2 * D.open);
-      D.a.position.z = D.z0 + w / 2 - k * w; D.b.position.z = D.z1 - w / 2 + k * w;
+      if ((o0 === 0 && D.open > 0) || (o0 === 1 && D.open < 1)) Sound.clank({ x: D.x, y: 2, z: (D.z0 + D.z1) / 2 });
+      if (D.open !== o0) this.slide(D);
     }
   },
   /* the boss's third phase: every hatch in the hall floor slides open and drones come up out of them, a few at a time */
@@ -1530,6 +1581,8 @@ const Ship = {
     if (this.coreMat) { const k = 0.82 + 0.14 * Math.sin(t * 2.6) + 0.04 * Math.sin(t * 19); this.coreMat.color.setRGB(0.45 * k, 0.82 * k, 1.0 * k); }
     if (this.ring) this.ring.rotation.y += dt * 0.35;
     if (this.screens) this.screens.material.color.setScalar(0.85 + 0.15 * Math.sin(t * 4.3));
+    if (this.keyObj && this.keyObj.visible) { this.keyObj.rotation.y += dt * 1.2; this.keyGlow.material.opacity = 0.55 + 0.3 * Math.sin(t * 4); }
+    if (this.saveT > 0 && (this.saveT -= dt) <= 0) { HUD.banner('세이브 포인트', '운전실 문이 열렸습니다 · 이제 쓰러져도 여기서 다시 시작합니다 · 조종석의 메인홀 열쇠를 챙기세요', 3.6); Sound.pickup('hp'); HUD.feed('세이브 포인트 · 운전실', 0); }
   },
 };
 /* a box whose texture keeps its size in metres on every face (s metres per tile) */
@@ -1689,7 +1742,7 @@ function buildShip(G, S, R, r) {
   const dMat = new THREE.MeshStandardMaterial({ map: dTex, roughness: 0.5, metalness: 0.55 });
   for (const D of SHIP_DOORS) {
     const w = (D.z1 - D.z0) / 2, leaf = () => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, D.h, w), dMat); m.position.set(D.x, D.h / 2, 0); m.castShadow = true; G.add(m); return m; };
-    const d = Object.assign({}, D, { open: 0, a: leaf(), b: leaf(), col: addCollider(D.x - 0.2, 0, D.z0, D.x + 0.2, D.h, D.z1, 'metal') });
+    const d = Object.assign({}, D, { open: 0, mode: 'shut', a: leaf(), b: leaf(), col: addCollider(D.x - 0.2, 0, D.z0, D.x + 0.2, D.h, D.z1, 'metal') });
     d.col.door = true; d.a.position.z = D.z0 + w / 2; d.b.position.z = D.z1 - w / 2; Ship.doors.push(d);
     signMesh(sign(D.name, D.name === '운전실' ? 'BRIDGE' : 'MAIN HALL · REACTOR', D.name === '운전실' ? '#5ed6b0' : '#f2a33a'), D.x + (D.x < 0 ? 0.36 : -0.36), D.h + 1.4, -7.5, D.x < 0 ? Math.PI / 2 : -Math.PI / 2, 4.6);
     glow.push(B(0.06, 0.1, D.z1 - D.z0 + 0.4, D.x + (D.x < 0 ? 0.32 : -0.32), D.h + 0.15, -7.5, '#e8b040'));
@@ -1729,6 +1782,17 @@ function buildShip(G, S, R, r) {
   }
   box(-108, 0, -11, -102, 0.45, -4, '#2a2f3a'); glow.push(B(6.04, 0.04, 0.04, -105, 0.46, -11, '#e8b040'), B(6.04, 0.04, 0.04, -105, 0.46, -4, '#e8b040'));
   box(-105.5, 0.45, -8.1, -104.5, 1.6, -6.9, '#3b4252'); solid.push(B(1.1, 0.12, 1.1, -105, 0.95, -7.5, '#5a6378'));
+  // the main hall's key, stuck upright in the commander's console: a gold bow and collar over a short shaft, glowing so you can find it
+  {
+    const km = new THREE.MeshStandardMaterial({ color: 0xffc83a, metalness: 0.85, roughness: 0.25, emissive: 0x7a4c00, emissiveIntensity: 0.9 });
+    const kg = new THREE.Group(); kg.position.set(SHIP_KEY.x, SHIP_KEY.y, SHIP_KEY.z);
+    const part = (geo, y, x) => { const m = new THREE.Mesh(geo, km); m.position.set(x || 0, y, 0); m.castShadow = true; kg.add(m); return m; };
+    part(new THREE.TorusGeometry(0.17, 0.05, 10, 24), 0.5); part(new THREE.BoxGeometry(0.16, 0.05, 0.09), 0.3); part(new THREE.BoxGeometry(0.065, 0.3, 0.065), 0.15);
+    part(new THREE.BoxGeometry(0.08, 0.05, 0.05), 0.08, 0.06);
+    const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex('rgba(255,220,120,0.95)', 'rgba(255,170,40,0.2)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 }));
+    gl.scale.setScalar(1.4); gl.position.y = 0.38; kg.add(gl);
+    G.add(kg); Ship.keyObj = kg; Ship.keyGlow = gl;
+  }
   for (const z of [BR.z0 + 0.4, BR.z1 - 0.4]) for (const x of [-104, -99]) { box(x - 1.4, 0, z - 0.3, x + 1.4, 1.1, z + 0.3, '#2c3240'); screens.push(B(2.4, 0.9, 0.05, x, 2.1, z + (z < 0 ? 0.3 : -0.3), '#3fd0ff')); }
   // up on the gallery: consoles against the walls, and a big status board high on the east wall
   for (const x of [-104, -98]) for (const z of [BR.z0 + 0.4, BR.z1 - 0.4]) { box(x - 1.4, GY, z - 0.3, x + 1.4, GY + 1.1, z + 0.3, '#2c3240'); screens.push(B(2.4, 0.9, 0.05, x, GY + 2.1, z + (z < 0 ? 0.3 : -0.3), '#3fd0ff')); }
@@ -2716,7 +2780,7 @@ const WEAPONS = {
   // the rocket goes for the enemy nearest the crosshair when it is fired (a red diamond marks it) and steers after it. dear to rent, 10,000 a rocket
   rocket: { name: '유도로켓발사기', model: 'R-12', short: '유도로켓', tab: '로켓', cls: '유도 로켓발사기 · 한 발씩 장전', price: 300000, real: 30000000, dmg: 1000, splash: 6, splashDmg: 500, rocket: true,
     rate: 0.6, auto: false, mag: 1, reserve: 11, reload: 2.2, spread: 0.004, adsSpread: 0.002, moveSpread: 0.012, pellets: 1, recoil: 0.06, kick: 0.16, range: 200, adsFov: 50, sound: 'rocket',
-    flash: 3.4, head: 1, bloom: 0, ammoCost: 0, moveMul: 0.88, adsSpeed: 5, note: '쏠 때 조준선에 가장 가까운 적을 쫓아감 · 직격 1,000 · 폭발 반경 6 m · 한 발마다 재장전 · 최대 12발' },
+    flash: 3.4, head: 1, bloom: 0, ammoCost: 0, moveMul: 0.88, adsSpeed: 5, note: '쏠 때 조준선에 가장 가까운 적을 쫓아감 · 직격 1,000 · 폭발 반경 6 m (나도 맞음) · 한 발마다 재장전 · 최대 12발' },
 };
 const ORDER = ['pistol', 'shotgun', 'rifle', 'smg', 'sniper', 'gl', 'lmg', 'rocket'];
 /* guns are rented for one stage now: the fee is 30% of the old price (real price / 100), the pistol is free */
@@ -3359,7 +3423,7 @@ const Enemies = (() => {
   }
   /* wake an enemy up: it starts hunting you */
   function alarm(e) {
-    if (e.alert || !e.alive || e.downed) return;
+    if (e.alert || !e.alive || e.downed || e.sealed) return;
     e.alert = true;
     if (e.type === 'thug' || e.robot) { e.state = 'move'; e.react = Math.max(e.react, rand(0.4, 0.8)); }
     else if (e.type === 'zombie') { e.state = 'move'; if (e.dist < 30) Sound.moan(e.pos); }
@@ -3576,6 +3640,9 @@ const Proj = (() => {
     if (e && e.alive) { _rd.copy(p.vel).normalize(); if (Enemies.damage(e, p.dmg, c, _rd, false)) HUD.hitmark(true, false); else HUD.hitmark(false, false); }
     Enemies.splash(c, p.radius, p.splashDmg, e);
     for (const cr of crates.slice()) if (!cr.dead && Math.hypot(cr.x - c.x, (cr.y || 0) + 0.6 - c.y, cr.z - c.z) < p.radius) damageCrate(cr, 100, { x: cr.x, y: (cr.y || 0) + 0.6, z: cr.z });
+    // 5.13: the blast does not spare you either. the same splash an enemy would take: 35-100% of 500 inside 6 m, nothing through a wall
+    const pd = Math.hypot(c.x - player.pos.x, c.y - (player.pos.y + 0.9), c.z - player.pos.z), pr = p.radius + player.r;
+    if (pd < pr && state === 'playing' && lineOfSight(c, _t.set(player.pos.x, player.pos.y + 0.9, player.pos.z))) player.hurt(Math.round(p.splashDmg * (0.35 + 0.65 * (1 - pd / pr))), c, 'body');
   }
   function rocketCentre(e, out) { return out.set(e.pos.x, e.pos.y + (e.fly ? 0 : e.H * 0.55), e.pos.z); }
   function explode(p) {
@@ -3673,7 +3740,7 @@ const Proj = (() => {
     }
   }
   function clear() { for (const p of list) { scene.remove(p.m); pool.push(p); } list.length = 0; }
-  return { bullet, grenade, rocket, egrenade, bomb, blast, update, clear, list, rocketCentre };
+  return { bullet, grenade, rocket, egrenade, bomb, blast, update, clear, list, rocketCentre, rocketHit };
 })();
 
 const Loot = (() => {
@@ -3741,7 +3808,9 @@ const Loot = (() => {
     }
   }
   function clear() { for (const L of list) scene.remove(L.g); list.length = 0; for (const c of chests) scene.remove(c.g); chests.length = 0; }
-  return { drop, chest, update, clear };
+  /* a boss chest nobody has opened yet (the way out waits for it) */
+  function pending() { for (const c of chests) if (!c.open) return c; return null; }
+  return { drop, chest, update, clear, pending };
 })();
 
 const _to = new THREE.Vector3(), _eye = new THREE.Vector3(), _aim = new THREE.Vector3(), _fd = { x: 0, z: 0 }, _mz = new THREE.Vector3();
@@ -5688,7 +5757,7 @@ Object.assign(ROBOTS, {
   patrol: { name: '순찰 로봇', hp: 160, speed: 1.6, r: 0.4, h: 1.95, money: 1000, mode: 'patrol', sight: 26, dmg: 60, mapKind: 'patrol' },
   droneA: { name: '드론', hp: 1, speed: 5.5, r: 0.45, h: 0.35, money: 800, mode: 'droneA', sight: 36, range: 40, shot: [2, 3, 0.16, 5, 1.1, 1.9], mapKind: 'droneA' },
   mine: { name: '스파이더 마인', hp: 1, speed: 8.5, r: 0.35, h: 0.32, money: 500, mode: 'mine', sight: 7.5, dmg: 100, mapKind: 'mine' },
-  gdrone: { name: '황금 지휘 드론', hp: 3200, speed: 3.2, r: 1.3, h: 1.6, money: 1500, mode: 'gdrone', sight: 34, range: 42, shot: [5, 7, 0.09, 9, 1.3, 2.0], mapKind: 'midboss', mid: true },
+  gdrone: { name: '황금꿀벌드론', hp: 3200, speed: 3.2, r: 1.3, h: 1.6, money: 1500, mode: 'gdrone', sight: 34, range: 42, shot: [5, 7, 0.09, 9, 1.3, 2.0], mapKind: 'midboss', mid: true },
   bdrone: { name: '보스 드론', hp: 9000, speed: 5, r: 2.5, h: 5, money: 2000, mode: 'bdrone', sight: 60, range: 70, mapKind: 'boss' },
 });
 const SHIPBOT = { cctv: 1, patrol: 1, droneA: 1, mine: 1, gdrone: 1, bdrone: 1 };
@@ -6011,7 +6080,7 @@ function gdroneDrones(e) {
     if (!m) continue; m.fromBee = true; m.alert = true; m.awake = true; m.lod = 0; m.vel.set(Math.cos(a) * 4, 0, Math.sin(a) * 4);
   }
   Game.goal += n; FX.puff({ x: e.pos.x, y: e.pos.y - 0.5, z: e.pos.z }, 6, 0.7, 0.6); Sound.spawn(e.pos);
-  HUD.feed('황금 드론이 드론 ' + n + '대를 불러냈습니다', 0, 'hs');
+  HUD.feed('황금꿀벌드론이 드론 ' + n + '대를 불러냈습니다', 0, 'hs');
   return n;
 }
 function gdroneAI(e, dt, dist, faceYaw) {
@@ -6019,16 +6088,17 @@ function gdroneAI(e, dt, dist, faceYaw) {
   if (e.baseY === undefined) e.baseY = e.pos.y;
   // wings beating all the time, faster when it is roused
   if (e.wings) { const f = Math.sin(e.spin * (e.alert ? 46 : 30)); for (const W of e.wings) W.g.rotation.z = W.sx * (0.18 + f * 0.42); }
+  if (e.sealed) { e.pos.y = e.baseY + Math.sin(e.spin * 1.2) * 0.15; e.g.rotation.z = Math.sin(e.spin * 0.8) * 0.03; return; } // behind its shut door: deaf and blind to you
   if (!e.alert) {
     e.pos.y = e.baseY + Math.sin(e.spin * 1.2) * 0.15; e.g.rotation.z = Math.sin(e.spin * 0.8) * 0.03;
     if ((e.los && dist < T.sight) || dist < 10) {
       Enemies.alarm(e); Sound.alarm(); let n = 0;
       for (const o of Enemies.list) if (o.robot && !o.alert && o !== e && !o.boss && o.T.mode !== 'mine' && Math.hypot(o.pos.x - e.pos.x, o.pos.z - e.pos.z) < 75) { Enemies.alarm(o); n++; }
-      HUD.feed('황금 지휘 드론이 경보를 울렸습니다 · 로봇 ' + n + '대가 몰려옵니다', 0, 'hs');
+      HUD.feed('황금꿀벌드론이 경보를 울렸습니다 · 로봇 ' + n + '대가 몰려옵니다', 0, 'hs');
     } else return;
   }
   const Rm = SHIP_ROOMS[0];
-  if (!e.rage && e.hp < e.maxHp * 0.4) { e.rage = true; HUD.feed('황금 지휘 드론이 분노했습니다 · 더 빠르고 자주 돌진합니다', 0, 'hs'); }
+  if (!e.rage && e.hp < e.maxHp * 0.4) { e.rage = true; HUD.feed('황금꿀벌드론이 분노했습니다 · 더 빠르고 자주 돌진합니다', 0, 'hs'); }
   // the charge: a wind-up (shaking, eyes glowing), then straight at where you stood; a wall or a hit ends it, and it hangs there a second
   if (e.dash) {
     const D = e.dash; D.t += dt;
@@ -6144,7 +6214,8 @@ function bdroneAI(e, dt, dist, faceYaw) {
   e.spin += dt;
   if (k.mode === 'idle') {
     e.pos.y += Math.sin(e.spin * 1.1) * dt * 0.3;
-    if ((e.los && dist < 45) || e.alert || dist < 20) { k.mode = 'move'; k.cd = 2; e.alert = true; HUD.banner('보스 드론', '눈이 빨개지면 3초 뒤 레이저 · 맞으면 즉사 · 벽 뒤로', 2.6); Sound.alarm(); }
+    if (e.sealed) { e.yaw += dt * 0.25; e.g.rotation.y = e.yaw; return; } // behind its shut door: turning slowly, aware of nothing
+    if ((e.los && dist < 45) || e.alert || dist < 20) { k.mode = 'move'; k.cd = 2; e.alert = true; Sound.alarm(); }
     else { turnToward(e, faceYaw, 0.6, dt); return; }
   }
   // where to be: round you at its own distance and height, inside the hall, clear of the reactor
@@ -6290,24 +6361,20 @@ const ShipFX = (() => {
   return { aim, aimOff, beam: fireBeam, mineBlast, update, clear };
 })();
 
-/* ---------- stage 4's hundred: the boss over the hall, the commander on the bridge, cameras up the passage and along the corridor,
-   patrols on the corridor and the bridge, drones in the hall, and mines in the floor of the corridor and the hall ---------- */
+/* ---------- stage 4's hundred: the boss over the hall, the gold bee alone on the bridge, cameras up the passage and along the corridor,
+   patrols and little drones along the corridor, and mines in the floor of the corridor and the hall ---------- */
 function populateShip(G, put, find, rand, randi, SR) {
-  put('bdrone', { x: 87, z: 10, y: 9.5 }, Object.assign({ boss: true, yaw: -Math.PI / 2 }, BOSS[4]));
-  put('gdrone', { x: -108, z: -7.5, y: 9.5 }, { scale: 1.25, yaw: Math.PI / 2 });
+  // the boss over the hall and the bee on the bridge, each sealed behind its door until you come through it (5.13)
+  const boss = put('bdrone', { x: 87, z: 10, y: 9.5 }, Object.assign({ boss: true, yaw: -Math.PI / 2 }, BOSS[4])); if (boss) boss.sealed = true;
+  const bee = put('gdrone', { x: -108, z: -7.5, y: 9.5 }, { scale: 1.25, yaw: Math.PI / 2 }); if (bee) bee.sealed = true;
   // cameras: two in the last leg from the airlock, two along the jog, two up into the corridor, twelve along the corridor's ceiling corners
   const cams = [[-43.4, 18, Math.PI / 2], [-39.9, 14.2, -Math.PI / 2], [-35, 7.45, 0], [-28, 12.55, Math.PI], [-26.1, 4, Math.PI / 2], [-22.4, 0, -Math.PI / 2]];
   for (const [x, z, yaw] of cams) put('cctv', { x, z, y: 4.05 }, { yaw });
   for (let i = 0; i < 12; i++) { const x = -86 + i * 13.3, north = i % 2 === 0; put('cctv', { x, z: north ? -12.05 : -2.95, y: 5.55 }, { yaw: north ? 0 : Math.PI }); }
-  // patrols: twelve walking beats along the corridor in two lanes; on the bridge four on the floor and four up on the gallery
-  for (let i = 0; i < 12; i++) {
-    const z = i % 2 ? -5.2 : -9.8, x0 = -88 + i * 12.6, x1 = Math.min(64, x0 + rand(8, 12)), e = put('patrol', { x: x0 + rand(0.5, 2), z }, { yaw: Math.PI / 2 });
+  // patrols: twenty walking beats along the corridor in two lanes (5.13: none on the bridge, where the bee is alone)
+  for (let i = 0; i < 20; i++) {
+    const z = i % 2 ? -5.2 : -9.8, x0 = -86 + i * 7.5, x1 = Math.min(64, x0 + rand(6, 9)), e = put('patrol', { x: x0 + rand(0.5, 2), z }, { yaw: Math.PI / 2 });
     if (e) { e.wp = [{ x: x0, z }, { x: x1, z }]; e.wi = 1; e.waitT = rand(0, 2); }
-  }
-  const GY = BRIDGE.gy;
-  for (const [x0, z0, x1, z1, y] of [[-116, -21, -116, 6, 0], [-110.5, -21, -110.5, 6, 0], [-100, -20, -100, -12.5, 0], [-100, -2.5, -100, 6, 0],
-    [-106, -25.5, -93.5, -25.5, GY], [-106, 10.5, -93.5, 10.5, GY], [-94.5, -20, -94.5, -11, GY], [-94.5, -4, -94.5, 5, GY]]) {
-    const e = put('patrol', { x: x0, z: z0, y }, { yaw: rand(0, TAU) }); if (e) { e.wp = [{ x: x0, z: z0 }, { x: x1, z: z1 }]; e.wi = 1; e.waitT = rand(0, 2); }
   }
   // little drones: two dozen along the corridor (none in the hall until the boss calls them up through the floor)
   for (let i = 0; i < 24; i++) put('droneA', { x: -86 + i * 6.3 + rand(-1.5, 1.5), z: rand(-11, -4), y: rand(3, 4.6) }, { yaw: rand(0, TAU) });
@@ -6571,7 +6638,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyV') Melee.start();
     const dg = /^Digit([1-7])$/.exec(e.code); if (dg) switchWeapon(+dg[1] - 1);
     if (e.code === 'KeyF') Game.useAntidote();
-    if (e.code === 'KeyE' && lookMode !== 'drag') Ride.toggle();
+    if (e.code === 'KeyE' && lookMode !== 'drag' && !Ship.takeKey()) Ride.toggle();
     if (e.code === 'KeyG') Ride.toggle();
     if (e.code === 'KeyX' && Ride.m) Ride.off(false);
     if (e.code === 'KeyM') { openMap('play'); return; }
@@ -6605,7 +6672,7 @@ if (isTouch) {
   tbtn('t-reload', () => startReload());
   tbtn('t-swap', () => cycleWeapon(1));
   tbtn('t-anti', () => Game.useAntidote());
-  tbtn('t-car', () => (Lab.active ? Ride.toggle() : Car.toggle()));
+  tbtn('t-car', () => (Ship.takeKey() ? 0 : Lab.active ? Ride.toggle() : Car.toggle()));
   tbtn('t-off', () => Ride.off(false));
   tbtn('t-map', () => openMap('play'));
   tbtn('t-pause', () => { if (state === 'playing') pauseGame(); });
@@ -6902,13 +6969,14 @@ const HUD = (() => {
       if (el.vbarM.hidden === !!M) el.vbarM.hidden = !M;
       if (M) { const f = clamp(M.hp / M.maxHp, 0, 1); set('vnumM', Math.max(0, Math.ceil(M.hp)).toLocaleString('ko-KR')); set('vfillM', 'calc(' + (100 * f).toFixed(1) + '% - 6px)', 'height');
         set('vlblM', SEAT[M.type].name + (M.bleedT > 0 ? '\n출혈 ×' + M.bleedN : '')); const lowM = f < 0.25; if (cache.lowM !== lowM) { cache.lowM = lowM; el.vbarM.classList.toggle('low', lowM); } }
-      const act = tg ? SEAT[tg.type].name + (M ? euroK(SEAT[tg.type].name) + ' 옮겨 타기' : ' 타기') : M ? '내리기' : '';
+      const keyNear = Ship.active && Ship.keyNear(); // stage 4: the main hall's key in the bridge console
+      const act = keyNear ? '메인홀 열쇠 줍기' : tg ? SEAT[tg.type].name + (M ? euroK(SEAT[tg.type].name) + ' 옮겨 타기' : ' 타기') : M ? '내리기' : '';
       const showRide = isTouch && !!act;
       if (el['t-car'].hidden === showRide) el['t-car'].hidden = !showRide;
       if (showRide) set('t-car', act);
       const showOff = isTouch && !!(M && tg);
       if (el['t-off'].hidden === showOff) el['t-off'].hidden = !showOff;
-      if (!isTouch && hintT <= 0 && st.mag > 0 && (tg || M)) { el.hint.textContent = tg ? 'E 키로 ' + act + (M ? ' · X 키로 내리기' : '') : 'E 키로 내리기'; el.hint.style.opacity = 1; }
+      if (!isTouch && hintT <= 0 && (keyNear || (st.mag > 0 && (tg || M)))) { el.hint.textContent = keyNear ? 'E 키로 메인홀 열쇠 줍기' : tg ? 'E 키로 ' + act + (M ? ' · X 키로 내리기' : '') : 'E 키로 내리기'; el.hint.style.opacity = 1; }
       // the lab: the next cage and its countdown. the safari: the time to the stampede, then how many are left
       const nc = Lab.active && Lab.running ? Lab.next() : null, sf = Safari.active && !Game.ended;
       if (el.cagebar.hidden === !!(nc || sf)) el.cagebar.hidden = !(nc || sf);
@@ -6936,8 +7004,11 @@ const HUD = (() => {
       const showBoss = !!(B && B.alive && (B.alert || B.angry || B.hp < B.maxHp) && B.dist < 110);
       if (el.bossbar.hidden === showBoss) { el.bossbar.hidden = !showBoss; document.body.classList.toggle('bossbar-on', showBoss); }
       if (showBoss) { set('bossname', (mid ? '중간 보스 · ' : '보스 · ') + B.name + (B.k && B.k.phase !== undefined && B.type === 'bdrone' ? ' · ' + (B.k.phase + 1) + '페이즈' : '')); set('bossfill', Math.round(100 * clamp(B.hp / B.maxHp, 0, 1)) + '%', 'width'); }
-      const left = Game.goal - Game.kills - (Game.calm || 0);
-      if (left > 0 && left <= 10 && !Game.ended) {
+      const left = Game.goal - Game.kills - (Game.calm || 0), chest = Game.chestWait ? Loot.pending() : null;
+      if (chest) {
+        const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw), dx = chest.x - player.pos.x, dz = chest.z - player.pos.z;
+        tgts.forEach((t, i) => { if (i) { t.style.opacity = 0; return; } t.style.transform = 'rotate(' + Math.atan2(dx * cy - dz * sy, -dx * sy - dz * cy) + 'rad)'; t.style.opacity = 0.95; });
+      } else if (left > 0 && left <= 10 && !Game.ended) {
         const near = Enemies.list.filter((e) => e.alive && !e.tamed && !e.extra).sort((a, b) => a.dist - b.dist).slice(0, 3);
         const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
         tgts.forEach((t, i) => { const e = near[i]; if (!e) { t.style.opacity = 0; return; }
@@ -6999,7 +7070,7 @@ const Cut = (() => {
   fig.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   fig.visible = false; scene.add(fig);
 
-  const el = { bars: $('cutbars'), title: $('cuttitle'), sub: $('cutsub'), skip: $('cutskip'), fade: $('fade') };
+  const el = { bars: $('cutbars'), title: $('cuttitle'), sub: $('cutsub'), skip: $('cutskip'), fade: $('fade'), card: $('bosscard') };
   let C = null;
   const ease = (t) => t * t * (3 - 2 * t);
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _look = new THREE.Vector3(), _door = new THREE.Vector3();
@@ -7019,6 +7090,32 @@ const Cut = (() => {
     // the open door is on the right side (local -x), just behind the cockpit
     const s = Math.sin(heli.rotation.y), c = Math.cos(heli.rotation.y), k = reach || 1.05;
     return out.set(heli.position.x - c * k, heli.position.y + 1.6 - (down || 0), heli.position.z + s * k);
+  }
+  /* 5.13, the ship's boss doors: a second and a half just inside the door. the drone hangs in the middle of the frame doing what it does
+     (the bee beating its wings, the boss turning its shell), turns to look at you at the end, and its name stands big in the bottom right:
+     yellow for the bee, green for the boss. the camera drifts a little way in towards it */
+  function startBossIntro(D, e, onDone) {
+    const cz = (D.z0 + D.z1) / 2, cam0 = new THREE.Vector3(D.x + D.inward * 2, 2.6, cz), at = e.pos.clone();
+    C = { kind: 'boss', t: 0, dur: 1.5, onDone, D, e, cam0, cam1: cam0.clone().lerp(at, 0.4), base: at.clone(), yaw0: e.yaw };
+    heli.visible = rope.visible = fig.visible = beam.visible = pool.visible = false;
+    e.g.visible = true; e.bar.visible = false; if (e.isFar) setFar(e, false); // it may still be culled as far away
+    show('', '');
+    el.card.textContent = D.title; el.card.className = 'bosscard ' + D.tone; el.card.hidden = false;
+    Sound.alarm();
+  }
+  function bossIntro(dt, t) {
+    const e = C.e, k = ease(clamp(t / C.dur, 0, 1));
+    e.spin = (e.spin || 0) + dt;
+    // moving: a slow drift and bob over where it hangs, then it swings round to face the door
+    e.pos.set(C.base.x + Math.sin(t * 2.2) * 0.5, C.base.y + Math.sin(t * 3.4) * 0.3, C.base.z + Math.cos(t * 1.7) * 0.4);
+    const face = Math.atan2(camera.position.x - e.pos.x, camera.position.z - e.pos.z);
+    let dy = face - C.yaw0; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); e.yaw = C.yaw0 + dy * ease(clamp((t - 0.5) / 0.8, 0, 1)); e.g.rotation.y = e.yaw;
+    if (e.wings) { const f = Math.sin(e.spin * 48); for (const W of e.wings) W.g.rotation.z = W.sx * (0.18 + f * 0.42); e.g.rotation.z = Math.sin(t * 2.6) * 0.06; }
+    if (e.beeEye) e.beeEye.emissive.setRGB(0.25 + 0.9 * k, 0.05 + 0.15 * k, 0);
+    if (e.shells) e.g.rotation.z = Math.sin(t * 2) * 0.05;
+    camera.position.lerpVectors(C.cam0, C.cam1, k); camera.position.y += Math.sin(t * 9) * 0.01;
+    _look.copy(e.pos); camera.lookAt(_look);
+    if (t >= C.dur) finish();
   }
   /* the lab: no helicopter. a look over the cages, the monkey in his booth slams the red button, every cage starts counting, and you are on */
   function startLabIntro(stage, onDone) {
@@ -7146,7 +7243,7 @@ const Cut = (() => {
   }
   function finish() {
     const done = C && C.onDone; const kind = C && C.kind;
-    C = null; heli.visible = rope.visible = fig.visible = pool.visible = false; el.bars.hidden = true; Sound.rotor(0);
+    C = null; heli.visible = rope.visible = fig.visible = pool.visible = false; el.bars.hidden = true; el.card.hidden = true; Sound.rotor(0);
     cinema = false; onResize();
     if (kind === 'in' || kind === 'lab' || kind === 'ship') el.fade.style.opacity = '0';
     if (kind === 'ship') { Ship.doorOpen = Math.max(Ship.doorOpen, 1); Ship.closing = true; } // the airlock shuts behind you
@@ -7169,6 +7266,7 @@ const Cut = (() => {
   function update(dt) {
     if (!C) return;
     C.t += dt; const t = C.t;
+    if (C.kind === 'boss') { bossIntro(dt, t); return; }
     if (C.kind === 'lab') { labIntro(dt, t); if (C) updateEnemies(dt, time); return; }
     if (C.kind === 'labout') { labOutro(dt, t); return; }
     if (C.kind === 'ship') { shipIntro(dt, t); return; }
@@ -7229,7 +7327,7 @@ const Cut = (() => {
     if (pool.visible) { pool.position.set(heli.position.x + C.fx * 3, 0.04, heli.position.z + C.fz * 3); pool.material.opacity = clamp(1 - agl / 40, 0, 1); }
     Sound.rotor(clamp(1 - heli.position.distanceTo(camera.position) / 140, 0.05, 1));
   }
-  return { startIntro, startOutro, update, skip() { if (C) finish(); }, get active() { return !!C; } };
+  return { startIntro, startOutro, startBossIntro, update, skip() { if (C) finish(); }, get active() { return !!C; } };
 })();
 
 /* ============ tactical map: the stage from above, enemies, the drop point and where you face ============ */
@@ -7774,16 +7872,24 @@ const Codex = (() => {
       { st: LAB, boss: 1, name: B3.name, hp: n(B3.hp), speed: '달리기 ' + ms(KB.run) + ' · 돌진 ' + ms(KB.charge), arms: '없음', dmg: '주먹 ' + n(KB.punch) + ' · 돌진 ' + n(KB.chargeDmg) + ' + ' + KB.stun + '초 기절 · 내려찍기 즉사 · 출혈 없음', trait: '보스 · 방탄유리 우리 (3: 9번 우리가 열리고 15초 뒤 · 3-2: 마지막 차례)', skill: '번갈아 훅 · 잦은 돌진 · 내가 선 자리로 큰 점프 (빨간 원 ' + KONG.slamR + ' m 안이면 즉사) · 가슴 치기로 졸개 소환 (최대 ' + KONG.summonMax + '번)', pay: A.gorilla.money * 20 },
       // stage 4: the ship's crew
       bot('cctv', { speed: '고정 (천장)', arms: '볼트 포', dmg: shot(R.cctv.shot), trait: '통로와 복도 천장 모서리 · 시야 ' + R.cctv.sight + ' m', skill: '없음' }),
-      bot('patrol', { speed: ms(R.patrol.speed), arms: '전기 곤봉', dmg: '곤봉 ' + R.patrol.dmg + ' + 밀쳐냄', trait: '복도와 운전실을 왕복 순찰 · 머리가 약점', skill: '없음' }),
+      bot('patrol', { speed: ms(R.patrol.speed), arms: '전기 곤봉', dmg: '곤봉 ' + R.patrol.dmg + ' + 밀쳐냄', trait: '복도를 왕복 순찰 (20대) · 머리가 약점', skill: '없음' }),
       bot('droneA', { name: '드론 A', speed: ms(R.droneA.speed), arms: '볼트 포', dmg: shot(R.droneA.shot), trait: '복도에 많음 · 메인홀엔 없음 · 총 한 방에 터짐', skill: '없음' }),
       bot('mine', { speed: '튀어나오면 ' + ms(R.mine.speed), arms: '폭약', dmg: '폭발 ' + R.mine.dmg + ' (반경 3.5 m) · 옆 마인도 연쇄 폭발', trait: '복도와 메인홀 바닥에 묻혀 있음', skill: R.mine.sight + ' m 안에 오면 튀어나와 달려들어 터짐' }),
-      bot('gdrone', { boss: 2, name: R.gdrone.name, speed: ms(R.gdrone.speed) + ' · 돌진 22 m/s', arms: '쌍포', dmg: shot(R.gdrone.shot) + ' · 돌진 160 + 크게 밀쳐냄', trait: '중간보스 · 운전실 · 황금 꿀벌 모양 · 나를 보면 경보로 75 m 안의 로봇을 모두 깨움 · 체력 40% 이하에서 분노 (더 빠르고 자주)', skill: '드론 A 4~5대 소환 (동시에 최대 12대, 소환된 드론도 처치 수에 들어감) · 날갯짓 후 돌진', pay: R.gdrone.money * 10 }),
-      { st: ['4'], boss: 1, name: B4.name, hp: n(B4.hp) + ' (3페이즈)', speed: BPH.map((p) => p.sp).join(' → ') + ' m/s', arms: '레이저 · 유도 로켓 · 스파이더 마인', dmg: '레이저 닿으면 즉사 · 로켓 100 (반경 3 m) · 마인 ' + R.mine.dmg, trait: '보스 · 메인홀 · 체력 1/3마다 껍데기가 벗겨지며 작고 빨라짐', skill: '레이저 (조준 ' + BPH.map((p) => p.charge).join('/') + '초) · 로켓 ' + BPH.map((p) => p.rockets).join('/') + '발 · 마인 ' + BPH.map((p) => p.mines).join('/') + '개를 자기 아래로 떨굼 · 3페이즈에 해치 ' + HATCHES.length + '곳에서 드론 32대 출격 (처치 수와 돈에 안 들어가고 보스가 죽으면 사라짐)', pay: R.bdrone.money * 20 },
+      bot('gdrone', { boss: 2, name: R.gdrone.name, speed: ms(R.gdrone.speed) + ' · 돌진 22 m/s', arms: '쌍포', dmg: shot(R.gdrone.shot) + ' · 돌진 160 + 크게 밀쳐냄', trait: '중간보스 · 운전실에 혼자 · 황금 꿀벌 모양 · 운전실 문이 열린 뒤에야 나를 알아챔 (들어가면 문이 잠김) · 경보로 75 m 안의 로봇을 깨움 · 체력 40% 이하에서 분노 · 쓰러지면 문이 열리고 세이브 포인트', skill: '드론 A 4~5대 소환 (동시에 최대 12대, 소환된 드론도 처치 수에 들어감) · 날갯짓 후 돌진', pay: R.gdrone.money * 10 }),
+      { st: ['4'], boss: 1, name: B4.name, hp: n(B4.hp) + ' (3페이즈)', speed: BPH.map((p) => p.sp).join(' → ') + ' m/s', arms: '레이저 · 유도 로켓 · 스파이더 마인', dmg: '레이저 닿으면 즉사 · 로켓 100 (반경 3 m) · 마인 ' + R.mine.dmg, trait: '보스 · 메인홀 (운전실 조종석의 열쇠가 있어야 문이 열리고, 들어가면 잠김) · 문이 열린 뒤에야 나를 알아챔 · 체력 1/3마다 껍데기가 벗겨지며 작고 빨라짐', skill: '레이저 (조준 ' + BPH.map((p) => p.charge).join('/') + '초) · 로켓 ' + BPH.map((p) => p.rockets).join('/') + '발 · 마인 ' + BPH.map((p) => p.mines).join('/') + '개를 자기 아래로 떨굼 · 3페이즈에 해치 ' + HATCHES.length + '곳에서 드론 32대 출격 (처치 수와 돈에 안 들어가고 보스가 죽으면 사라짐)', pay: R.bdrone.money * 20 },
     ];
   }
 
+  const TAGNUM = {}; for (const k in STAGE_TAG) TAGNUM[STAGE_TAG[k]] = +k;
+  const seen = (tags) => !!settings.dev || tags.some((t) => save.cleared.includes(TAGNUM[t]));
   const CHIPS = [['all', '전체'], ['1', '1'], ['1-1', '1-1'], ['1-2', '1-2'], ['2', '2'], ['3', '3'], ['3-1', '3-1'], ['3-2', '3-2'], ['4', '4']];
   function card(c, stage) {
+    if (c.locked) {
+      const a = el('article', 'cxcard locked'), top = el('div', 'cxtop'); top.append(el('b', null, '???'));
+      const tags = el('span', 'cxtags'); for (const s of c.st) tags.append(el('span', 'cxst', s)); top.append(tags); a.append(top);
+      a.append(el('p', 'cxnote', '스테이지 ' + c.st.join(' · ') + (c.st.length > 1 ? ' 중 하나를' : eul(c.st[0])) + ' 깨면 열립니다'));
+      return a;
+    }
     const a = el('article', 'cxcard' + (c.cls ? ' ' + c.cls : '') + (c.boss === 1 ? ' boss' : c.boss === 2 ? ' mid' : ''));
     const top = el('div', 'cxtop'); top.append(el('b', null, c.name));
     const tags = el('span', 'cxtags');
@@ -7804,7 +7910,9 @@ const Codex = (() => {
   }
   const C = {
     from: 'menu', tab: 'gun', st: 'all',
-    open(from) { this.from = from; showOnly('codex'); this.render(); $('codex').scrollTop = 0; setTimeout(() => $(this.tab === 'gun' ? 'cxtabg' : 'cxtabe').focus({ preventScroll: true }), 0); },
+    /* the book opens with your first clear (always in developer mode) */
+    get ready() { return !!settings.dev || save.cleared.length > 0; },
+    open(from) { if (!this.ready) return; this.from = from; showOnly('codex'); this.render(); $('codex').scrollTop = 0; setTimeout(() => $(this.tab === 'gun' ? 'cxtabg' : 'cxtabe').focus({ preventScroll: true }), 0); },
     close() { $('codex').hidden = true; backTo(this.from); },
     show(tab) { this.tab = tab; this.render(); },
     render() {
@@ -7816,9 +7924,12 @@ const Codex = (() => {
         b.addEventListener('click', () => { this.st = k; this.render(); }); chips.append(b);
       }
       const list = $('cxlist'); list.textContent = '';
-      if (gun) { for (const g of guns()) list.append(card(g, false)); $('cxinfo').textContent = 'DPS는 탄창을 쏘는 동안의 초당 데미지, 재장전 포함은 탄창 하나를 쏘고 다시 넣기까지 평균입니다. 막대는 무기끼리 비교한 값입니다.'; return; }
-      const all = foes().filter((e) => this.st === 'all' || e.st.includes(this.st));
+      if (gun) { const every = foes(); $('cxtabe').textContent = '적 도감 ' + every.filter((e) => seen(e.st)).length + '/' + every.length; for (const g of guns()) list.append(card(g, false)); $('cxinfo').textContent = 'DPS는 탄창을 쏘는 동안의 초당 데미지, 재장전 포함은 탄창 하나를 쏘고 다시 넣기까지 평균입니다. 막대는 무기끼리 비교한 값입니다.'; return; }
+      const every = foes(), open = every.filter((e) => seen(e.st)).length;
+      $('cxtabe').textContent = '적 도감 ' + open + '/' + every.length;
+      const all = every.filter((e) => this.st === 'all' || e.st.includes(this.st));
       for (const e of all) {
+        if (!seen(e.st)) { list.append(card({ locked: true, st: e.st }, true)); continue; }
         const rows = [['체력', e.hp], ['이동속도', e.speed], ['무장', e.arms], ['데미지', e.dmg], ['특징', e.trait], ['스킬', e.skill]];
         if (e.pay) rows.push(['처치 보상', won(e.pay)]);
         list.append(card({ name: e.name, st: e.st, boss: e.boss, rows }, true));
@@ -7830,6 +7941,8 @@ const Codex = (() => {
 })();
 $('cxbtn').addEventListener('click', () => Codex.open('menu'));
 $('pcxbtn').addEventListener('click', () => Codex.open('pause'));
+/* the buttons say when the book is still shut */
+function codexButtons() { const r = Codex.ready; for (const id of ['cxbtn', 'pcxbtn']) { const b = $(id); b.disabled = !r; b.textContent = r ? '도감' : '도감 · 첫 클리어 후'; } }
 $('cxclose').addEventListener('click', () => Codex.close());
 $('cxtabg').addEventListener('click', () => Codex.show('gun'));
 $('cxtabe').addEventListener('click', () => Codex.show('foe'));
@@ -7850,7 +7963,7 @@ const BOSS = {
   1: { type: 'thug', name: '조직 두목', josa: '이', scale: 1.35, hp: 1600, dmgMul: 1.6 },
   6: { type: 'thug', name: '헬멧 두목', josa: '이', scale: 1.35, hp: 1600, dmgMul: 1.6, helmet: true },
   5: { type: 'thug', name: '무장 두목', josa: '이', scale: 1.4, hp: 2600, dmgMul: 1, kit: 'lmg' },
-  4: { type: 'bdrone', name: '보스 드론', josa: '이', scale: 1, hp: 9000, dmgMul: 1 },
+  4: { type: 'bdrone', name: '최첨단 감시 드론 B-3', josa: '이', scale: 1, hp: 9000, dmgMul: 1 },
   2: { type: 'zombie', name: '거대 좀비', josa: '가', scale: 1.7, hp: 2200, dmgMul: 1 },
   3: { type: 'gorilla', name: '거대 로랜드고릴라', josa: '가', scale: 3, hp: 5200, dmgMul: 1, kong: true },
   8: { type: 'gorilla', name: '거대 로랜드고릴라', josa: '가', scale: 3, hp: 5200, dmgMul: 1, kong: true },
@@ -7873,7 +7986,7 @@ const Game = {
     camera.fov = baseFov; camera.updateProjectionMatrix(); FX.resize();
     // 1-2 crowds the middle of the docks, so unless you pick somewhere else you come down at the south edge, facing in
     if (stage === 5) { const d = this.openSpot(0, 58); if (d) { this.info.start = d; player.pos.set(d.x, 0, d.z); player.yaw = d.yaw; } }
-    this.goal = S.goal; this.kills = 0; this.spawnT = 2; this.infected = false; this.infectT = 0; this.ended = false;
+    this.goal = S.goal; this.kills = 0; this.spawnT = 2; this.infected = false; this.infectT = 0; this.ended = false; this.chestWait = false; this.chestOk = false; this.chestT = 0; this.sp = null;
     this.antidotes = stage === 2 ? 1 : 0; this.poisonT = 0; this.poisonAcc = 0; player.stunT = 0; Inject.cancel(); jetEnd(); HUD.items();
     this.calm = 0; Bleed.stop(true); Fear.t = 0; Toss.on = false; Toss.v = 0; Ride.reset(); Beast.reset();
     document.body.classList.toggle('s2', stage === 2);
@@ -7920,7 +8033,7 @@ const Game = {
     };
     let n = 0;
     const cap = stage === 3 || stage === 8 ? 140 : 100;
-    const put = (type, p, opts) => { if (p && n < cap) { const e = Enemies.spawn(type, p.x, p.z, Object.assign({ yaw: rand(0, TAU), y: p.y || 0 }, opts)); n++; return e; } return null; };
+    const put = (type, p, opts) => { if (p && n < cap) { const e = Enemies.spawn(type, p.x, p.z, Object.assign({ yaw: rand(0, TAU), y: p.y || 0 }, opts)); if (e) e.sid = n; n++; return e; } return null; };
     if (B && stage !== 3 && stage !== 8 && stage !== 4 && stage !== 5) put(B.type, find(55, 8, 2.5) || find(30, 4, 1.5), Object.assign({ boss: true }, B));
     if (stage === 5) {
       // 1-2: 5 snipers up on container stacks, 9 gold desert eagles, 10 suicide bombers, 3 flamethrowers, 12 rifles, 20 knives, 10 blue lightsabers,
@@ -7977,12 +8090,13 @@ const Game = {
       }
     }
     if (stage !== 3 && stage !== 8 && stage !== 4 && stage !== 7) while (n < 100) { const p = find(18, 1.2, 0.6); if (!p) break; put(stage === 4 ? 'trooper' : S.enemy, p, { helmet: stage === 6, kit: stage === 5 ? 'rifle' : undefined }); }
-    this.goal = Enemies.list.length;
+    this.goal = Enemies.list.length; this.spawned = n;
     this.boss = Enemies.list.find((e) => e.boss) || null;
     this.mid = Enemies.list.find((e) => e.T && e.T.mid) || null; // the gold commander drone
   },
   update(dt) {
     if (this.ended) return;
+    if (this.chestWait && !Loot.pending() && (this.chestT += dt) > 2.4) { this.chestWait = false; this.chestOk = true; this.finish(); return; } // opened: give its banner a moment, then out
     Lab.update(dt); Safari.update(dt); Bleed.update(dt); Beast.roarCd -= dt;
     // the countdown holds while the needle is in
     if (this.infected && !Inject.active) { this.infectT -= dt; if (this.infectT <= 0) { this.infectT = 0; this.over('zombie'); } }
@@ -8059,11 +8173,21 @@ const Game = {
     Sound.kill(); if (pay) { Sound.coin(); if (!isTouch) HUD.moneyPop(pay); }
     if (e.boss) {
       if (!isTouch) HUD.feed('보스 ' + e.name + ' 처치', pay, 'hs'); HUD.banner('보스 처치' + (pay ? ' · +' + won(pay) : ''), '보물상자가 떨어졌습니다', 3);
-      Loot.chest(e.pos.x, e.pos.z, e.kong ? 0 : e.pos.y); this.boss = null; if (e.kong) Kong.unwarn();
+      // the chest comes down where the boss fell, unless that is up on something: then on the nearest open floor, where you can walk to it
+      let cx = e.pos.x, cz = e.pos.z, cy = e.kong ? 0 : e.pos.y; const gy = groundAt(cx, cy + 0.6, cz, 0.6);
+      if (gy > 1.0) { const d = this.openSpot(cx, cz); if (d) { cx = d.x; cz = d.z; cy = 0; } }
+      Loot.chest(cx, cz, cy); this.boss = null; if (e.kong) Kong.unwarn();
       if (Lab.active) Lab.monkeyMode('panic');
-      if (e.type === 'bdrone') { ShipFX.aimOff(); for (const m of Enemies.list.slice()) if (m.extra) Enemies.vanish(m); } // its leftover mines go dead with it
-    } else if (e.T && e.T.mid) { if (!isTouch) HUD.feed('중간 보스 ' + e.name + ' 처치', pay, 'hs'); HUD.banner('중간 보스 처치' + (pay ? ' · +' + won(pay) : ''), '운전실을 장악했습니다', 2.4); }
+      if (e.type === 'bdrone') { ShipFX.aimOff(); for (const m of Enemies.list.slice()) if (m.extra) Enemies.vanish(m); Ship.onDown(e); } // its leftover mines go dead with it; the hall door opens
+    } else if (e.T && e.T.mid) {
+      if (!isTouch) HUD.feed('중간 보스 ' + e.name + ' 처치', pay, 'hs'); HUD.banner('중간 보스 처치' + (pay ? ' · +' + won(pay) : ''), '운전실을 장악했습니다', 2.4);
+      // the drones it called fall with it (they count, but pay nothing), the bridge door opens, and this is the save point
+      let fell = 0; for (const m of Enemies.list.slice()) if (m.alive && m.fromBee) { m.noPay = true; m.beeFall = true; Enemies.damage(m, 1e6, m.pos, { x: 0, y: -1, z: 0 }, false, true); fell++; }
+      if (fell) HUD.feed('불러낸 드론 ' + fell + '대도 함께 떨어졌습니다', 0);
+      if (World.style.ship) { Ship.onDown(e); this.takeSave(); }
+    }
     else if (e.selfDet) HUD.feed(e.T && e.T.mode === 'mine' ? '스파이더 마인이 터졌습니다' : '자폭맨이 터졌습니다', 0, 'hs');
+    else if (e.beeFall) { /* counted in one line above */ }
     else if (e.noPay) HUD.feed('타고 있던 ' + e.T.name + (hasBatchim(e.T.name) ? '이' : '가') + ' 쓰러졌습니다', 0, 'hs');
     else if (!isTouch) HUD.feed((e.animal ? e.T.name : STAGES[this.stage].label) + (weak ? ' · 머리 명중' : ' 처치'), pay, weak ? 'hs' : '');
     // an elephant leaves its tusks: ivory, which the shop buys for a lot (not on a replay, like the money)
@@ -8109,13 +8233,23 @@ const Game = {
   },
   /* rented guns and the chest's gun go back when a stage you went into ends, however it ends */
   returnRentals() { if (!this.deployed) return; this.deployed = false; save.rented = []; this.bonusGuns = []; persist(); },
+  /* 5.13: the last one down while the boss's chest is still lying there (or the boss was the last): no pick-up until it is opened.
+     you can't be hurt any more, an arrow points at the chest, and the way out comes a moment after you open it */
+  waitChest() {
+    if (this.chestWait) return;
+    this.chestWait = true; this.chestT = 0; player.invuln = 1e9; Bleed.stop(true); Fear.t = 0; this.infected = false; this.infectT = 0; this.poisonT = 0;
+    const how = World.style.lab ? '출입문이 열립니다' : World.style.ship ? '에어록으로 빠져나갑니다' : '헬기가 옵니다';
+    HUD.banner('보물상자를 챙기세요', '화살표를 따라가 보물상자를 열면 ' + how, 3.4);
+    HUD.feed('모두 처치 · 보물상자를 열어야 탈출합니다', 0, 'hs');
+  },
   finish() {
+    if (!this.chestOk && Loot.pending()) { this.waitChest(); return; }
     this.ended = true; player.invuln = 1e9; moneyLock = null; ivoryLock = null; ownLock = null;
     if (Ride.m) Ride.off(true); Bleed.stop(true); Fear.t = 0;
     if (Toss.on) { Toss.on = false; player.pos.y = groundAt(player.pos.x, player.pos.y, player.pos.z, player.r); player.vel.y = 0; }
     // still in the air when the last one falls: come down for the pick-up
     if (Jet.on) { jetEnd(); player.pos.y = groundAt(player.pos.x, player.pos.y, player.pos.z, player.r); player.vel.y = 0; }
-    this.opened = settings.dev ? [] : (NEXT[this.stage] || []).filter((s) => !stageOpen(s));
+    this.opened = settings.dev ? [] : (NEXT[this.stage] || []).filter((s) => !stageOpen(s)); this.sp = null;
     if (!save.cleared.includes(this.stage)) save.cleared.push(this.stage);
     this.returnRentals();
     const key = 't' + this.stage, t = Math.floor(stats.time);
@@ -8127,6 +8261,34 @@ const Game = {
       else showResult('clear');
     }, 1700);
   },
+  /* stage 4's save point (5.13), taken the moment the gold bee falls: who is dead by then, the kills and the bag, your ammo, the crates
+     you have broken and whether you hold the key. dying after it, '다시 하기' puts you back on the bridge with all of that as it was */
+  takeSave() {
+    const alive = new Set(); for (const e of Enemies.list) if (e.alive && e.sid !== undefined) alive.add(e.sid);
+    const dead = []; for (let i = 0; i < this.spawned; i++) if (!alive.has(i)) dead.push(i);
+    this.sp = { stage: this.stage, dead, kills: this.kills, goal: this.goal, money: save.money, money0: moneyLock, stats: Object.assign({}, stats),
+      ammo: ORDER.map((id) => [id, wstate[id].mag, wstate[id].reserve]), cur: Gun.cur, key: Ship.key, crates: crates.filter((c) => c.dead).map((c) => c.idx) };
+  },
+  fromSave() {
+    const sp = this.sp; if (!sp) { startStage(this.stage); return; }
+    $('over').hidden = true;
+    this.begin(sp.stage); this.sp = sp; this.deployed = true; this.bossMsg = null;
+    const dead = new Set(sp.dead);
+    for (const e of Enemies.list.slice()) if (e.sid !== undefined && dead.has(e.sid)) { Enemies.vanish(e); }
+    Enemies.updateDying(10); // gone at once, no puffs hanging about
+    let broke = false; for (const c of crates) if (!c.dead && sp.crates.includes(c.idx)) { c.dead = true; _crateZero.makeScale(0, 0, 0); World.crateIM.setMatrixAt(c.idx, _crateZero); World.crateIM.instanceMatrix.needsUpdate = true; removeCollider(c.b); broke = true; }
+    if (broke) buildNav();
+    this.kills = sp.kills; this.goal = sp.goal; Object.assign(stats, sp.stats);
+    save.money = sp.money; moneyLock = sp.money0; persist();
+    for (const [id, m, r] of sp.ammo) { wstate[id].mag = m; wstate[id].reserve = r; }
+    if (Gun.slots.includes(sp.cur)) switchTo(sp.cur);
+    this.boss = Enemies.list.find((e) => e.boss) || null; this.mid = null;
+    Ship.restore(sp);
+    player.pos.set(SHIP_SAVE.x, 0, SHIP_SAVE.z); player.vel.set(0, 0, 0); player.yaw = SHIP_SAVE.yaw; player.pitch = 0; player.hp = player.maxHp;
+    updateFlow(player.pos.x, player.pos.z);
+    enterPlay(false);
+    HUD.banner('세이브 포인트', '운전실에서 다시 시작합니다 · 처치 ' + this.kills + ' / ' + this.goal + ' · 가방 ' + won(save.money), 2.8);
+  },
   /* not getting out means not keeping what you earned in there */
   forfeit() {
     if (ownLock !== null) { const keep = ownLock; save.owned = save.owned.filter((id) => keep.includes(id)); ownLock = null; persist(); } // a chest gun is only yours once you are out
@@ -8135,7 +8297,7 @@ const Game = {
   },
   over(reason) {
     if (this.ended) return;
-    this.ended = true; state = 'gameover'; Gun.trigger = false; Gun.adsHeld = false; this.forfeit(); this.returnRentals(); jetEnd(); Ride.reset(); Toss.on = false;
+    this.ended = true; state = 'gameover'; Gun.trigger = false; Gun.adsHeld = false; this.forfeit(); if (!this.sp) this.returnRentals(); jetEnd(); Ride.reset(); Toss.on = false;
     if (document.pointerLockElement) document.exitPointerLock();
     $('touch').hidden = true; player.shake = 0.4;
     setTimeout(() => showResult(reason), 1000);
@@ -8155,13 +8317,14 @@ function refreshMenu() {
     $('st' + s + 'note').textContent = open ? NOTE[s] + (done ? ' · 다시 하면 보상 없음' + (best ? ' · 최단 ' + fmtTime(best) : '') : '') : '스테이지 ' + pre + eul(pre) + ' 깨면 열립니다';
     $('st' + s + 'stat').textContent = !open ? '잠김' : done ? '클리어' + (best ? ' ' + fmtTime(best) : '') : '도전 가능';
   });
-  $('devbtn').textContent = dev ? '개발자 모드 켜짐' : '개발자 모드';
+  $('devbtn').textContent = dev ? '개발자 모드 켜짐' : '개발자 모드'; codexButtons();
   $('devbtn').classList.toggle('on', dev); document.body.classList.toggle('devmode', dev);
   $('lobtn').textContent = '무기 편성 · ' + save.loadout.filter((id) => id && gunAvailable(id)).length + '자루';
   $('shopbtn').textContent = save.rented.length ? '상점 · ' + save.rented.length + '자루 대여 중' : '상점';
   const bt = STAGE_ORDER.map((n) => save.best['t' + n] ? stageTag(n) + ' ' + fmtTime(save.best['t' + n]) : '').filter(Boolean);
   $('bestline').textContent = bt.length ? '최단 클리어 ' + bt.join(' · ') : '';
 }
+const CH_COLORS = { white: '#ece6d8', green: '#3dff6a', red: '#ff4b4b', yellow: '#ffe23a', cyan: '#3ad8ff', pink: '#ff5ad2', orange: '#ff9a2a' };
 function syncSettingsUI() {
   ['', '2'].forEach((sfx) => {
     $('sens' + sfx).value = settings.sens; $('sensout' + sfx).textContent = Number(settings.sens).toFixed(1);
@@ -8169,8 +8332,12 @@ function syncSettingsUI() {
     $('autofire' + sfx).checked = !!settings.autoFire;
     $('gfx' + sfx).value = settings.gfx; $('fps' + sfx).checked = !!settings.fps;
     $('chsel' + sfx).value = settings.cross || 'cross';
+    $('chcol' + sfx).value = CH_COLORS[settings.chcol] ? settings.chcol : 'white';
   });
   document.body.dataset.ch = settings.cross || 'cross';
+  // the crosshair colour: white is the old ink colour; any other colour also takes over the red aiming dot
+  const cc = CH_COLORS[settings.chcol] ? settings.chcol : 'white', bs = document.body.style;
+  if (cc === 'white') { bs.removeProperty('--ch'); bs.removeProperty('--chads'); } else { bs.setProperty('--ch', CH_COLORS[cc]); bs.setProperty('--chads', CH_COLORS[cc]); }
 }
 ['', '2'].forEach((sfx) => {
   $('sens' + sfx).addEventListener('input', (e) => { settings.sens = parseFloat(e.target.value); syncSettingsUI(); store('yard07.settings', settings); });
@@ -8179,6 +8346,7 @@ function syncSettingsUI() {
   $('gfx' + sfx).addEventListener('change', (e) => { settings.gfx = e.target.value; Gfx.mode(); syncSettingsUI(); store('yard07.settings', settings); });
   $('fps' + sfx).addEventListener('change', (e) => { settings.fps = e.target.checked; Perf.show(settings.fps); syncSettingsUI(); store('yard07.settings', settings); });
   $('chsel' + sfx).addEventListener('change', (e) => { settings.cross = e.target.value; syncSettingsUI(); store('yard07.settings', settings); });
+  $('chcol' + sfx).addEventListener('change', (e) => { settings.chcol = e.target.value; syncSettingsUI(); store('yard07.settings', settings); });
 });
 let wentFullscreen = false;
 function tryFullscreen() {
@@ -8203,6 +8371,12 @@ function enterPlay(intro) {
     HUD.hint(Lab.active ? '1번 우리가 10초 뒤에 열립니다 · 창살 사이로 쏠 수 있습니다' : lookMode === 'drag' ? '마우스 이동으로 조준 · Q/E로 회전 · M 키로 지도' : lookMode === 'touch' ? '오른쪽 위 지도 버튼으로 적 위치를 볼 수 있습니다' : 'M 키로 작전 지도를 볼 수 있습니다', 3.5);
   };
   if (intro) { state = 'cutscene'; Cut.startIntro(Game.stage, go); } else go();
+}
+/* back into play after the short look through a ship door; if the mouse lock went with it, the pause screen gets it back with a click */
+function backToPlay() {
+  $('hud').hidden = false; if (isTouch) $('touch').hidden = false;
+  state = 'playing'; player.invuln = Math.max(player.invuln, 1); keys.clear();
+  if (lookMode === 'lock' && !locked) pauseGame();
 }
 function startStage(n) { if (!n || !stageOpen(n)) return; Game.begin(n); showBrief(); }
 /* before the drop: the stage from above with every enemy, the boss, the drop point and the way you'll face */
@@ -8284,14 +8458,15 @@ function showResult(kind) {
   $('st-earn').classList.toggle('lost', !clear && stats.earned > 0); $('fade').style.opacity = '0';
   $('st-acc').textContent = (stats.shots ? Math.round(100 * stats.hits / stats.shots) : 0) + '%'; $('st-time').textContent = fmtTime(stats.time);
   $('overcode').textContent = '보고 번호 ' + isoCode('YRD', (Game.stage * 100000 + stats.kills * 997) % 1000000).text;
-  $('againbtn').textContent = clear ? '다시 하기' : '다시 도전';
+  const fromSP = !clear && !!Game.sp;
+  $('againbtn').textContent = clear ? '다시 하기' : fromSP ? '세이브 포인트에서 다시' : '다시 도전';
   // after a clear: buttons for what it opens (stage 1 opens both 2 and 1-1)
   const nx = clear ? nextStages(Game.stage) : [], all = STAGE_ORDER.every((s) => save.cleared.includes(s));
   $('againbtn').className = nx.length ? 'ghost' : 'btn';
   ['nextbtn', 'nextbtn2'].forEach((id, i) => { const b = $(id), st = nx[i]; b.hidden = !st; if (st) { b.dataset.st = st; b.textContent = '스테이지 ' + stageTag(st) + euro(stageTag(st)); } });
   const opened = clear && Game.opened && Game.opened.length ? '새로 열림 · 스테이지 ' + Game.opened.map(stageTag).join(', ') + ' · ' : '';
   $('bestline2').textContent = (clear ? opened + (all ? '모든 스테이지를 깼습니다 · ' : World.style.lab ? '연구소를 빠져나와 번 돈을 챙겼습니다 · ' : '헬기로 탈출해 번 돈을 챙겼습니다 · ')
-    : stats.earned > 0 ? '탈출하지 못해 이번에 번 ' + won(stats.earned) + '을 잃었습니다 · ' : '') + '가방 ' + won(save.money);
+    : fromSP ? '세이브 포인트에서 다시 하면 그때까지의 처치 수(' + Game.sp.kills + ')와 번 돈(' + won(Game.sp.stats.earned) + ')이 그대로입니다 · ' : stats.earned > 0 ? '탈출하지 못해 이번에 번 ' + won(stats.earned) + '을 잃었습니다 · ' : '') + '가방 ' + won(save.money);
   $('hud').hidden = true; $('touch').hidden = true; $('over').hidden = false;
   setTimeout(() => ($('nextbtn').hidden ? $('againbtn') : $('nextbtn')).focus(), 0);
 }
@@ -8299,7 +8474,7 @@ function pauseGame(msg) {
   if (state !== 'playing') return;
   state = 'paused'; Gun.trigger = false; keys.clear();
   $('pausecode').textContent = '스테이지 ' + stageTag(Game.stage) + ' · 처치 ' + Game.kills + ' / ' + Game.goal;
-  $('pausemsg').textContent = msg || '';
+  $('pausemsg').textContent = msg || ''; codexButtons();
   $('pause').hidden = false; $('touch').hidden = true;
   setTimeout(() => $('resumebtn').focus(), 0);
 }
@@ -8311,6 +8486,7 @@ function resumeGame() {
   state = 'playing'; requestLock();
 }
 function toMenu() {
+  Game.returnRentals(); Game.sp = null; // leaving for the menu ends the run, save point and rentals with it
   state = 'menu'; jetEnd(); Ride.reset(); Bleed.stop(true); Fear.t = 0; Toss.on = false; Enemies.clear(); Proj.clear(); Rockets.clear(); ShipFX.clear(); Loot.clear(); Car.reset(); Game.infected = false;
   camera.fov = baseFov; camera.updateProjectionMatrix(); FX.resize();
   ['hud', 'touch', 'mapscreen'].forEach((id) => { $(id).hidden = true; });
@@ -8321,7 +8497,7 @@ $('shopbtn').addEventListener('click', () => Shop.open('menu'));
 $('pshopbtn').addEventListener('click', () => Shop.open('pause'));
 $('oshopbtn').addEventListener('click', () => Shop.open('over'));
 $('shopclose').addEventListener('click', () => Shop.close());
-$('againbtn').addEventListener('click', () => startStage(Game.stage));
+$('againbtn').addEventListener('click', () => { if (Game.result !== 'clear' && Game.sp) Game.fromSave(); else startStage(Game.stage); });
 ['nextbtn', 'nextbtn2'].forEach((id) => $(id).addEventListener('click', () => startStage(+$(id).dataset.st)));
 $('resumebtn').addEventListener('click', resumeGame);
 $('quitbtn').addEventListener('click', () => { Game.forfeit(); Game.returnRentals(); toMenu(); });
@@ -8417,7 +8593,7 @@ function start(data) {
   }
   requestAnimationFrame(frame);
   window.__yard = { Game, player, Enemies, Gun, stats, save, Shop, Car, Loot, crates, wstate, TacMap, los: lineOfSight, stopDist, Proj, collideAt, Gfx, Post, Perf, renderer, scene, Inject, colliders, Lab, Kong, KONG, dbg, SaveCode, settings, refreshMenu, camera,
-    Bleed, Fear, Toss, Ride, Beast, SEAT, ANIMALS, WEAPONS, HUD, Sound, Rockets, ShipFX, Ship, BPH, bossDropMines, Safari, Tower, TOWER, rocketLock, Melee, groundAt, addCollider, removeCollider, persistNow: persist, get HALF() { return HALF; }, get NAV() { return NAV; }, get ivoryLock() { return ivoryLock; }, keyDown(c) { keys.add(c); }, keyUp(c) { keys.delete(c); }, damageCrate, startStage, get state() { return state; }, get calls() { return renderer.info.render.calls; },
+    Bleed, Fear, Toss, Ride, Beast, SEAT, ANIMALS, WEAPONS, HUD, Sound, Rockets, ShipFX, Ship, BPH, gdroneDrones, bossDropMines, Safari, Tower, TOWER, rocketLock, Melee, groundAt, addCollider, removeCollider, persistNow: persist, get HALF() { return HALF; }, get NAV() { return NAV; }, get ivoryLock() { return ivoryLock; }, keyDown(c) { keys.add(c); }, keyUp(c) { keys.delete(c); }, damageCrate, startStage, get state() { return state; }, get calls() { return renderer.info.render.calls; },
     sim(sec) { const n = Math.round(sec * 30); for (let i = 0; i < n && state === 'playing'; i++) tick(1 / 30); },
     cutStep(dt) { if (state === 'cutscene') { time += dt; Cut.update(dt); FX.update(dt); updateWorld(dt, time, camera.position.x, camera.position.z); } } };
 }
