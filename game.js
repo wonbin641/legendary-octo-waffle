@@ -299,6 +299,20 @@ const Sound = (() => {
       [523, 787, 1123, 1597].forEach((f, i) => tone('triangle', f, f * 0.97, 1.1 - i * 0.15, 0.09 * k, d, 0.01 * i)); noise(0.9, 'bandpass', 3000, 1800, 6, 0.18 * k, d, 0.05); },
     // the big red button, then the room's alarm siren
     press() { if (!ctx) return; const d = out(); tone('square', 180, 90, 0.08, 0.25, d); noise(0.06, 'lowpass', 900, 300, 1, 0.4, d); },
+    /* 5.14: the boss's laser lock: an emergency wail rising and falling under twice a second, loud, for as long as the red line hunts you */
+    hiss() { if (!ctx) return; const d = out(); noise(1.4, 'highpass', 2600, 5200, 0.7, 0.42, d); noise(0.5, 'bandpass', 900, 300, 1.2, 0.3, d); },
+    siren2(dur) {
+      if (!ctx) return; const d = out(), t = ctx.currentTime, end = t + Math.max(0.5, dur);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3400; lp.Q.value = 0.8;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.85, t + 0.05); g.gain.setValueAtTime(0.85, end - 0.12); g.gain.exponentialRampToValueAtTime(0.0008, end);
+      lp.connect(g); g.connect(d);
+      const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 1.8; lfo.start(t); lfo.stop(end + 0.05);
+      for (const [type, f, a] of [['sawtooth', 860, 0.5], ['square', 430, 0.22], ['sawtooth', 1290, 0.12]]) {
+        const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+        const dep = ctx.createGain(); dep.gain.value = f * 0.36; lfo.connect(dep); dep.connect(o.frequency);
+        const og = ctx.createGain(); og.gain.value = a; o.connect(og); og.connect(lp); o.start(t); o.stop(end + 0.05);
+      }
+    },
     siren() { if (!ctx) return; const d = out(); for (let i = 0; i < 3; i++) { tone('sawtooth', 520, 880, 0.5, 0.11, d, i * 0.6); tone('sawtooth', 880, 520, 0.1, 0.06, d, i * 0.6 + 0.5); } },
     // the monkey: a high chattering cackle
     cackle(pos) { if (!ctx) return; const s = spatial(pos); for (let i = 0; i < 7; i++) { tone('square', rand(900, 1300), rand(600, 800), 0.07, 0.07 * s.k, s.dest, i * 0.085); } noise(0.6, 'bandpass', 2600, 1900, 4, 0.08 * s.k, s.dest); },
@@ -1518,24 +1532,26 @@ const Ship = {
   lockIn(D) {
     const cz = (D.z0 + D.z1) / 2, e = this.drone(D);
     // nobody follows you in: anything standing in the doorway goes back out into the corridor
-    for (const o of Enemies.list) if (o.alive && o !== e && !o.fly && Math.abs(o.pos.z - cz) < 6) { const inside = (o.pos.x - D.x) * D.inward; if (inside > -0.6 && inside < 3.5) o.pos.x = D.x - D.inward * 2.5; }
+    for (const o of Enemies.list) if (o.alive && o !== e && !o.fly && Math.abs(o.pos.z - cz) < 6) { const inside = (o.pos.x - D.x) * D.inward; if (inside > -0.6 && inside < 0.6) o.pos.x = D.x - D.inward * 2.5; else if (inside >= 0.6 && inside < 4) o.pos.x = D.x + D.inward * 5; }
     player.pos.set(D.x + D.inward * 2.4, 0, cz); player.vel.set(0, 0, 0); player.yaw = D.inward < 0 ? Math.PI / 2 : -Math.PI / 2; player.pitch = 0;
     D.mode = 'locked';
     if (e) { e.sealed = false; Enemies.alarm(e); }
-    HUD.banner('문이 잠겼습니다', D.room === 'bridge' ? '황금꿀벌드론을 쓰러뜨려야 문이 열립니다' : '눈이 빨개지면 레이저 · 맞으면 즉사 · 벽 뒤로 숨으세요', 2.6);
+    for (const o of Enemies.list) if (o.alive && o.sealed && shipRoom(o.pos.x, o.pos.z) === shipRoom(player.pos.x, player.pos.z)) o.sealed = false; // the hall's patrols too
+    HUD.banner('문이 잠겼습니다', D.room === 'bridge' ? '황금꿀벌드론을 쓰러뜨려야 문이 열립니다' : '눈이 빨개지고 3초 뒤 빨간 조준선이 쫓아옵니다 · 레이저에 맞으면 즉사 · 벽 뒤로 숨으세요', 2.6);
     backToPlay();
   },
   /* the thing behind a door is dead: that door opens for good. the bee's also makes the save point (Game.takeSave) */
   onDown(e) {
     const D = this.doors.find((d) => d.who === e.type); if (!D) return;
     D.mode = 'open'; Sound.clank({ x: D.x, y: 2, z: (D.z0 + D.z1) / 2 });
-    if (D.room === 'bridge') this.saveT = 2.4; // the save point banner, once the kill banner has had its moment
+    if (D.room === 'bridge') this.saveT = 2.4; // the 'go and get the key' banner, once the kill banner has had its moment
   },
-  keyNear() { return !!this.keyObj && !this.key && Math.hypot(player.pos.x - SHIP_KEY.x, player.pos.z - SHIP_KEY.z) < 2.6 && player.pos.y < 2.5; },
+  keyNear() { return !!this.keyObj && !this.key && !Enemies.list.some((o) => o.alive && o.type === 'gdrone') && Math.hypot(player.pos.x - SHIP_KEY.x, player.pos.z - SHIP_KEY.z) < 2.6 && player.pos.y < 2.5; }, // only once the bee is down
   takeKey() {
     if (state !== 'playing' || !this.keyNear()) return false;
-    this.key = true; this.keyObj.visible = false; Sound.pickup('ammo'); Sound.buy();
-    HUD.banner('메인홀 열쇠 획득', '메인홀 문 앞에 바짝 다가가면 열립니다', 2.6); HUD.feed('메인홀 열쇠 획득', 0);
+    this.key = true; this.keyObj.visible = false; Sound.pickup('ammo'); Sound.buy(); Sound.pickup('hp');
+    Game.takeSave(); // the save point: from here on, with the key in your pocket
+    HUD.banner('세이브 포인트', '메인홀 열쇠 획득 · 이제 쓰러져도 열쇠를 가진 채 여기서 다시 시작합니다', 3.6); HUD.feed('메인홀 열쇠 획득 · 세이브 포인트', 0);
     return true;
   },
   /* back from the save point: the bridge door stands open and the key is where it was (or in your pocket) */
@@ -1582,7 +1598,7 @@ const Ship = {
     if (this.ring) this.ring.rotation.y += dt * 0.35;
     if (this.screens) this.screens.material.color.setScalar(0.85 + 0.15 * Math.sin(t * 4.3));
     if (this.keyObj && this.keyObj.visible) { this.keyObj.rotation.y += dt * 1.2; this.keyGlow.material.opacity = 0.55 + 0.3 * Math.sin(t * 4); }
-    if (this.saveT > 0 && (this.saveT -= dt) <= 0) { HUD.banner('세이브 포인트', '운전실 문이 열렸습니다 · 이제 쓰러져도 여기서 다시 시작합니다 · 조종석의 메인홀 열쇠를 챙기세요', 3.6); Sound.pickup('hp'); HUD.feed('세이브 포인트 · 운전실', 0); }
+    if (this.saveT > 0 && (this.saveT -= dt) <= 0 && !this.key) { HUD.banner('운전실 문이 열렸습니다', '조종석에 꽂힌 메인홀 열쇠를 뽑으세요 · 뽑으면 세이브 포인트', 3.4); }
   },
 };
 /* a box whose texture keeps its size in metres on every face (s metres per tile) */
@@ -1638,11 +1654,27 @@ function buildShip(G, S, R, r) {
     g.fillStyle = gr; g.fillRect(0, 0, w, h);
     g.strokeStyle = 'rgba(30,36,48,1)'; g.lineWidth = 10; for (let x = 0; x <= w; x += w / 5) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); } // the frame between the panes
   }));
-  const sign = (text, sub, col) => keep(canvasTex(512, 160, (g, w, h) => {
-    g.fillStyle = '#10141c'; g.fillRect(0, 0, w, h); g.strokeStyle = col; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
-    g.fillStyle = col; g.font = '64px "Black Han Sans", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h * 0.44);
-    g.font = '600 22px "IBM Plex Mono", monospace'; g.fillStyle = 'rgba(236,230,216,0.75)'; g.fillText(sub, w / 2, h * 0.8);
+  /* 5.14, after your drawing: a worn dark plate in a thick frame, the name in heavy old-style letters, and a big block arrow at the end it
+     points to (left or right at the corridor junction; up, 'straight on', on the signs hung before the doors). bridge orange, hall green */
+  const sign = (text, dir, col) => keep(canvasTex(1024, 320, (g, w, h) => {
+    g.fillStyle = '#0e1219'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 1400; i++) { g.fillStyle = 'rgba(255,255,255,' + (Math.random() * 0.035).toFixed(3) + ')'; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 3); }
+    g.strokeStyle = col; g.lineWidth = 16; g.strokeRect(16, 16, w - 32, h - 32);
+    const aw = 280, left = dir === 'left', ax = left ? 48 : w - 48 - aw, cy = h / 2;
+    g.fillStyle = col; g.beginPath();
+    if (dir === 'up') { // a tall arrow: head on top, shaft below
+      const cx = ax + aw / 2, top = 46, bot = h - 46, hw = 118, sw = 46, neck = top + 120;
+      g.moveTo(cx, top); g.lineTo(cx + hw, neck); g.lineTo(cx + sw, neck); g.lineTo(cx + sw, bot); g.lineTo(cx - sw, bot); g.lineTo(cx - sw, neck); g.lineTo(cx - hw, neck);
+    } else { // a long arrow: shaft, then a broad head; mirrored for the left
+      const s = left ? -1 : 1, x0 = left ? ax + aw : ax, tip = x0 + s * aw, neck = x0 + s * aw * 0.5, hh = 112, sh = 44;
+      g.moveTo(x0, cy - sh); g.lineTo(neck, cy - sh); g.lineTo(neck, cy - hh); g.lineTo(tip, cy); g.lineTo(neck, cy + hh); g.lineTo(neck, cy + sh); g.lineTo(x0, cy + sh);
+    }
+    g.closePath(); g.fill();
+    g.font = '900 176px "YardSign", "Black Han Sans", serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const tx = left ? (ax + aw + w - 48) / 2 + 10 : (48 + ax) / 2 - 10;
+    g.lineJoin = 'round'; g.lineWidth = 10; g.strokeStyle = '#0e1219'; g.strokeText(text, tx, cy + 10); g.fillText(text, tx, cy + 10);
   }));
+  const BRIDGE_C = '#f2a33a', HALL_C = '#5ed6b0';
   const wallMat = new THREE.MeshStandardMaterial({ map: panel, roughness: 0.8, metalness: 0.2 });
   const ceilMat = new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.8, metalness: 0.2 });
   const floorMat = { corr: new THREE.MeshStandardMaterial({ map: plate, roughness: 0.55, metalness: 0.45 }), hall: new THREE.MeshStandardMaterial({ map: hallTex, roughness: 0.5, metalness: 0.5 }),
@@ -1728,8 +1760,8 @@ function buildShip(G, S, R, r) {
   for (const x of [-80, -55, -40, -15, 8, 33, 52]) { solid.push(B(2.4, 3.2, 0.12, x, 1.6, -12.44, '#2c313c'), B(2.4, 3.2, 0.12, x + 6, 1.6, -2.56, '#2c313c')); glow.push(B(0.3, 0.12, 0.05, x + 1.5, 1.7, -12.36, '#ff3a2a'), B(0.3, 0.12, 0.05, x + 4.5, 1.7, -2.64, '#ff3a2a')); }
   // signs: the bridge to the west, the main hall to the east
   const signMesh = (tex, x, y, z, ry, w) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.3125), new THREE.MeshBasicMaterial({ map: tex })); m.position.set(x, y, z); m.rotation.y = ry; G.add(m); };
-  signMesh(sign('운전실', 'BRIDGE  ←', '#5ed6b0'), -24.25, 3.3, -12.43, 0, 3.6);
-  signMesh(sign('메인홀', 'MAIN HALL  →', '#f2a33a'), -18.6, 3.3, -12.43, 0, 3.6);
+  signMesh(sign('운전실', 'left', BRIDGE_C), -24.9, 3.3, -12.43, 0, 4.3);
+  signMesh(sign('메인홀', 'right', HALL_C), -18.1, 3.3, -12.43, 0, 4.3);
   for (let x = -86; x <= 64; x += 12) World.lamps.push({ x, y: 5.2, z: -7.5, d: 0 });
   World.lamps.push({ x: -41.75, y: 3.9, z: 18, d: 0 }, { x: -33, y: 3.9, z: 10, d: 0 }, { x: -24.25, y: 3.9, z: 2.5, d: 0 });
 
@@ -1744,7 +1776,10 @@ function buildShip(G, S, R, r) {
     const w = (D.z1 - D.z0) / 2, leaf = () => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, D.h, w), dMat); m.position.set(D.x, D.h / 2, 0); m.castShadow = true; G.add(m); return m; };
     const d = Object.assign({}, D, { open: 0, mode: 'shut', a: leaf(), b: leaf(), col: addCollider(D.x - 0.2, 0, D.z0, D.x + 0.2, D.h, D.z1, 'metal') });
     d.col.door = true; d.a.position.z = D.z0 + w / 2; d.b.position.z = D.z1 - w / 2; Ship.doors.push(d);
-    signMesh(sign(D.name, D.name === '운전실' ? 'BRIDGE' : 'MAIN HALL · REACTOR', D.name === '운전실' ? '#5ed6b0' : '#f2a33a'), D.x + (D.x < 0 ? 0.36 : -0.36), D.h + 1.4, -7.5, D.x < 0 ? Math.PI / 2 : -Math.PI / 2, 4.6);
+    // a sign hung from the ceiling a few metres before the door, facing you as you come down the corridor: the name and 'straight on'
+    const out = -D.inward, hx = D.x + out * 4.5, col = D.room === 'bridge' ? BRIDGE_C : HALL_C;
+    signMesh(sign(D.name, 'up', col), hx, 4.5, -7.5, out > 0 ? Math.PI / 2 : -Math.PI / 2, 4.4);
+    solid.push(B(0.04, 0.95, 0.04, hx, 5.52, -9.2, '#2a2f3a'), B(0.04, 0.95, 0.04, hx, 5.52, -5.8, '#2a2f3a'));
     glow.push(B(0.06, 0.1, D.z1 - D.z0 + 0.4, D.x + (D.x < 0 ? 0.32 : -0.32), D.h + 0.15, -7.5, '#e8b040'));
   }
 
@@ -2772,10 +2807,11 @@ const WEAPONS = {
     spread: 0.06, adsSpread: 0, moveSpread: 0.04, pellets: 1, recoil: 0.07, kick: 0.16, range: 320, adsFov: 16, scope: true, sound: 'sniper', flash: 3.2, head: 2.5, bloom: 0, ammoCost: 600, moveMul: 0.92 },
   gl: { name: '유탄발사기', model: 'G-40', short: '유탄', tab: '유탄', cls: '40mm 6연발 유탄발사기', price: 70000, real: 7000000, dmg: 170, splash: 5, grenade: true, rate: 0.85, auto: false, mag: 6, reserve: 42, reload: 3.6,
     spread: 0.01, adsSpread: 0.004, moveSpread: 0.01, pellets: 1, recoil: 0.05, kick: 0.12, range: 120, adsFov: 60, sound: 'gl', flash: 2.4, head: 1, bloom: 0, ammoCost: 18000, moveMul: 0.95 },
-  // 5.11: a 1,200-round belt and 1,200 rounds a minute, but it is heavy: 30% slower on your feet while it is in your hands
-  lmg: { name: '기관총', model: 'M-200', short: '기관총', tab: '기관총', cls: '5.56mm 분대지원 기관총', price: 110000, real: 11000000, dmg: 28, rate: 0.05, auto: true, mag: 1200, reserve: 1200, reload: 5.2,
-    spread: 0.03, adsSpread: 0.012, moveSpread: 0.03, pellets: 1, recoil: 0.009, kick: 0.03, range: 150, adsFov: 52, sound: 'lmg', flash: 3.2, head: 2, bloom: 0.0025, ammoCost: 2400, moveMul: 0.7, adsSpeed: 4.5,
-    note: '탄창 1,200발 · 무거워서 들고 있으면 이동속도 30% 감소' },
+  // 5.14: a 240-round box. it heats up as you fire (the gun goes red); empty a full box in one go and it overheats: smoke, glowing red,
+  // and no reloading until you have swapped to another gun. 10% slower on your feet while it is in your hands
+  lmg: { name: '기관총', model: 'M-200', short: '기관총', tab: '기관총', cls: '5.56mm 분대지원 기관총', price: 110000, real: 11000000, dmg: 28, rate: 0.05, auto: true, mag: 240, reserve: 1200, reload: 5.2,
+    spread: 0.03, adsSpread: 0.012, moveSpread: 0.03, pellets: 1, recoil: 0.009, kick: 0.03, range: 150, adsFov: 52, sound: 'lmg', flash: 3.2, head: 2, bloom: 0.0025, ammoCost: 2400, moveMul: 0.9, adsSpeed: 4.5,
+    heavy: true, heat: true, note: '탄창 240발 · 쏠수록 총이 빨갛게 달아오름 · 한 탄창을 쉬지 않고 다 쏘면 과열(연기) · 과열되면 다른 총으로 바꿔야 재장전 · 이동속도 10% 감소' },
   // 5.12: a guided rocket launcher. one rocket at a time (reload after every shot), twelve carried in all; 1,000 on a direct hit and a 6 m blast.
   // the rocket goes for the enemy nearest the crosshair when it is fired (a red diamond marks it) and steers after it. dear to rent, 10,000 a rocket
   rocket: { name: '유도로켓발사기', model: 'R-12', short: '유도로켓', tab: '로켓', cls: '유도 로켓발사기 · 한 발씩 장전', price: 300000, real: 30000000, dmg: 1000, splash: 6, splashDmg: 500, rocket: true,
@@ -2837,6 +2873,9 @@ const HIP = {}, ADSP = {};
   const sleeve = new THREE.MeshStandardMaterial({ color: 0x222a37, roughness: 0.95 });
   const lens = new THREE.MeshStandardMaterial({ color: 0x1b3550, roughness: 0.1, metalness: 0.6, emissive: 0x06121e });
   const sightMat = new THREE.MeshBasicMaterial({ color: 0xff5a3a });
+  for (const m of [metal, poly, olive, wood]) m.userData.paint = true;
+  for (const m of [metal, dark]) m.userData.hot = true;
+  sightMat.userData.iron = true; // the front sight posts: hidden when an optic goes on
   const box = (g, w, h, d, m, x, y, z, rx) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); if (rx) o.rotation.x = rx; g.add(o); return o; };
   const cyl = (g, r, l, m, x, y, z) => { const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, 12), m); o.rotation.x = Math.PI / 2; o.position.set(x, y, z); g.add(o); return o; };
   const flashTex = canvasTex(64, 64, (g) => { g.translate(32, 32); for (let i = 0; i < 6; i++) { g.rotate(Math.PI / 3);
@@ -2845,13 +2884,13 @@ const HIP = {}, ADSP = {};
     const r = g.createRadialGradient(0, 0, 0, 0, 0, 16); r.addColorStop(0, 'rgba(255,250,230,1)'); r.addColorStop(1, 'rgba(255,160,60,0)'); g.fillStyle = r; g.fillRect(-16, -16, 32, 32); });
   const flashMat = new THREE.MeshBasicMaterial({ map: flashTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   function hands(g, gx, gy, gz, fx, fy, fz) {
-    box(g, 0.05, 0.075, 0.06, glove, gx, gy, gz);
-    box(g, 0.075, 0.075, 0.32, sleeve, gx + 0.04, gy - 0.07, gz + 0.2, 0.35);
-    if (fx !== undefined) { box(g, 0.055, 0.04, 0.09, glove, fx, fy, fz); const b = box(g, 0.07, 0.07, 0.34, sleeve, fx - 0.07, fy - 0.08, fz + 0.18, 0.3); b.rotation.y = -0.45; }
+    const hs = [box(g, 0.05, 0.075, 0.06, glove, gx, gy, gz), box(g, 0.075, 0.075, 0.32, sleeve, gx + 0.04, gy - 0.07, gz + 0.2, 0.35)];
+    if (fx !== undefined) { hs.push(box(g, 0.055, 0.04, 0.09, glove, fx, fy, fz)); const b = box(g, 0.07, 0.07, 0.34, sleeve, fx - 0.07, fy - 0.08, fz + 0.18, 0.3); b.rotation.y = -0.45; hs.push(b); }
+    for (const h of hs) h.userData.hand = true;
   }
   function finish(id, g, muzzleZ, muzzleY, sightY, hip) {
     const fl = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), flashMat); fl.position.set(0, muzzleY, muzzleZ); fl.visible = false; g.add(fl);
-    g.userData.flash = fl;
+    g.userData.flash = fl; g.userData.sightY = sightY; g.userData.mz = { y: muzzleY, z: muzzleZ };
     g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     g.visible = false; viewRoot.add(g); gunModels[id] = g;
     HIP[id] = new THREE.Vector3(hip[0], hip[1], hip[2]); ADSP[id] = new THREE.Vector3(0, -sightY, hip[3]);
@@ -2905,6 +2944,22 @@ const HIP = {}, ADSP = {};
   hands(g, 0, -0.09, -0.08, 0, -0.09, -0.36); finish('rocket', g, -0.72, 0.02, 0.112, [0.22, -0.15, -0.6, -0.36]);
 })();
 gunModels.pistol.visible = true;
+/* 5.14: every gun gets its own copies of its materials, so one gun can be painted (or glow with heat) without the others.
+   body: where paint goes (receiver and furniture); hot: what glows when the machine gun overheats; the hands keep theirs */
+const GUN_MATS = {};
+(function ownMaterials() {
+  ORDER.forEach((id) => {
+    const g = gunModels[id], own = new Map();
+    g.traverse((o) => {
+      if (!o.isMesh || !o.material || o.userData.hand) return;
+      let m = own.get(o.material);
+      if (!m) { m = o.material.clone(); m.userData = Object.assign({}, o.material.userData, { color: o.material.color ? o.material.color.getHex() : 0, metal: o.material.metalness, rough: o.material.roughness }); own.set(o.material, m); }
+      o.material = m;
+    });
+    const all = [...own.values()];
+    GUN_MATS[id] = { all, body: all.filter((m) => m.userData.paint), hot: all.filter((m) => m.userData.hot) };
+  });
+})();
 
 /* ============ weapons: firing, reload, switching ============ */
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(), _dir = new THREE.Vector3(), _hitP = new THREE.Vector3(), _muz = new THREE.Vector3();
@@ -2983,13 +3038,58 @@ const Melee = {
     root.rotation.x += j * 0.15; root.rotation.y += j * 0.9; root.rotation.z += j * 0.35;
   },
 };
+/* 5.14: the machine gun's heat. every shot adds 1/240; once you stop for a moment it cools by a fifth a second. empty a full box in one
+   go and it overheats: it glows red, smokes off the barrel, and will not reload until you have swapped to another gun */
+const _hotRed = new THREE.Color(0x8a0d06);
+const Heat = (() => {
+  let smokeMat = null; const parts = []; let spawnT = 0; const _p = new THREE.Vector3();
+  function ensure() {
+    if (smokeMat) return;
+    const tex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(235,235,235,0.9)'); r.addColorStop(0.5, 'rgba(205,205,205,0.35)'); r.addColorStop(1, 'rgba(180,180,180,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
+    smokeMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 });
+    for (let i = 0; i < 20; i++) { const s = new THREE.Sprite(smokeMat.clone()); s.visible = false; viewScene.add(s); parts.push({ s, t: 1, life: 1, vx: 0, vy: 0 }); }
+  }
+  function overheat(st) {
+    st.hot = true; st.hotT = 0; Sound.hiss(); buzz(120);
+    HUD.banner('기관총 과열', '연기가 납니다 · 다른 총으로 바꾼 뒤에 재장전할 수 있습니다', 2.6);
+  }
+  function shot(w, st) { st.heat = Math.min(1, (st.heat || 0) + 1 / w.mag); st.coolT = 0.3; if (st.mag === 0 && st.heat >= 0.97) overheat(st); }
+  function update(dt) {
+    const st = wstate.lmg; if (!st) return;
+    st.heat = st.heat || 0;
+    if (st.hot) {
+      st.hotT = (st.hotT || 0) + dt;
+      // swapping away is what lets it be reloaded again; with nothing to swap to, it gives in by itself after a while
+      if ((Gun.cur !== 'lmg' && !Gun.pending) || (Gun.slots.length < 2 && st.hotT > 6)) st.hot = false;
+    } else if ((st.coolT = (st.coolT || 0) - dt) <= 0) st.heat = Math.max(0, st.heat - dt * 0.2);
+    const k = st.hot ? 0.9 + 0.1 * Math.sin(time * 18) : Math.pow(st.heat, 1.6);
+    if (Math.abs(k - (st.glowK === undefined ? -1 : st.glowK)) > 0.004) { st.glowK = k; for (const m of GUN_MATS.lmg.hot) { m.color.setHex(m.userData.paintColor !== undefined ? m.userData.paintColor : m.userData.color).lerp(_hotRed, k * 0.85); m.emissive.setRGB(0.42 * k, 0.012 * k, 0.004 * k); } }
+    // smoke off the barrel while it is overheated, and for a little while after
+    st.smokeT = st.hot ? 2.5 : Math.max(0, (st.smokeT || 0) - dt);
+    const g = gunModels.lmg;
+    if (st.smokeT > 0 && g.visible && (spawnT -= dt) <= 0) {
+      ensure(); spawnT = 0.06;
+      const P = parts.find((q) => q.t >= q.life);
+      if (P) { g.updateMatrixWorld(true); _p.set(rand(-0.012, 0.012), 0.03, rand(-0.58, -0.28)); g.localToWorld(_p); P.s.position.copy(_p); P.t = 0; P.life = rand(0.8, 1.2); P.vx = rand(-0.025, 0.025); P.vy = rand(0.05, 0.1); P.s.visible = true; }
+    }
+    for (const P of parts) {
+      if (P.t >= P.life) continue;
+      P.t += dt; const u = Math.min(1, P.t / P.life);
+      P.s.position.x += P.vx * dt; P.s.position.y += P.vy * dt; P.s.scale.setScalar(0.03 + u * 0.085); P.s.material.opacity = 0.55 * (1 - u) * Math.min(1, u * 6);
+      if (P.t >= P.life) P.s.visible = false;
+    }
+  }
+  function reset() { const st = wstate.lmg; if (st) { st.heat = 0; st.hot = false; st.smokeT = 0; st.coolT = 0; st.glowK = undefined; } for (const P of parts) { P.t = P.life = 1; P.s.visible = false; } }
+  return { shot, update, reset };
+})();
 function fireWeapon() {
   const w = curW(), st = wstate[Gun.cur];
   if (Gun.none || Gun.busy > 0 || Melee.on || player.stunT > 0 || Gun.switchT > 0 || Gun.reloadT > 0 || Gun.cooldown > 0) return;
   if (player.sprinting) player.sprintLock = 0.25;
   if (st.mag <= 0) { Sound.empty(); Gun.cooldown = 0.3; if (st.reserve > 0) startReload(); else HUD.hint('탄약 없음 · 상점에서 채우거나 다른 총으로', 2); return; }
   st.mag--; Gun.cooldown = w.rate; stats.shots++;
-  Enemies.noise(camera.position, Game.stage === 2 ? 30 : Game.stage === 3 || Game.stage === 8 ? 55 : Game.stage === 7 ? 45 : 42);
+  if (w.heat) Heat.shot(w, st);
+  Enemies.noise(camera.position, (Game.stage === 2 ? 30 : Game.stage === 3 || Game.stage === 8 ? 55 : Game.stage === 7 ? 45 : 42) * (w.noise || 1)); // a suppressor carries less far
   const spr = currentSpread();
   muzzleWorld(_muz);
   if (lookMode === 'touch' && !w.grenade && !w.rocket) {
@@ -3051,6 +3151,7 @@ function fireWeapon() {
 }
 function startReload() {
   const w = curW(), st = wstate[Gun.cur];
+  if (w.heat && st.hot) { HUD.hint('기관총이 과열됐습니다 · 다른 총으로 바꾼 뒤에 재장전하세요', 2); return; }
   if (Gun.none || Gun.busy > 0 || Melee.on || player.stunT > 0 || Gun.reloadT > 0 || Gun.switchT > 0 || st.mag >= w.mag || st.reserve <= 0) return;
   Gun.reloadT = w.reload; Gun.reloadHalf = false; Sound.reload(0);
 }
@@ -3072,7 +3173,7 @@ function cycleWeapon(step) {
 const scopeEl = $('scope');
 function updateGun(dt, mdx, mdy) {
   const w = curW();
-  Melee.update(dt);
+  Melee.update(dt); Heat.update(dt); if (typeof LaserDot !== 'undefined') LaserDot.update();
   Gun.cooldown = Math.max(0, Gun.cooldown - dt);
   Gun.bloom = Math.max(0, Gun.bloom - dt * (Gun.trigger && w.auto ? 0.02 : 0.09));
   if (lookMode === 'touch' && settings.autoFire && !w.grenade && !w.rocket && !Gun.trigger && Gun.cooldown <= 0 && Gun.reloadT <= 0 && Gun.switchT <= 0 && wstate[Gun.cur].mag > 0 && !player.sprinting) {
@@ -3145,7 +3246,7 @@ function applyLoadout() {
 function resetGuns() {
   ORDER.forEach((id) => { wstate[id].mag = WEAPONS[id].mag; wstate[id].reserve = WEAPONS[id].reserve; });
   Object.keys(gunModels).forEach((id) => { gunModels[id].visible = false; gunModels[id].userData.flash.visible = false; });
-  Object.assign(Gun, { cooldown: 0, reloadT: 0, switchT: 0, pending: null, ads: 0, adsHeld: false, bloom: 0, kickZ: 0, kickRot: 0, flashT: 0, trigger: false, triggerEdge: false }); Melee.reset();
+  Object.assign(Gun, { cooldown: 0, reloadT: 0, switchT: 0, pending: null, ads: 0, adsHeld: false, bloom: 0, kickZ: 0, kickRot: 0, flashT: 0, trigger: false, triggerEdge: false }); Melee.reset(); Heat.reset();
   Gun.loadout = save.loadout.map((id) => (id && gunAvailable(id) ? id : null));
   Gun.slots = Gun.loadout.filter(Boolean); Gun.none = Gun.slots.length === 0;
   Gun.cur = Gun.slots[0] || 'pistol';
@@ -3215,6 +3316,231 @@ const Inject = (() => {
       liquid.scale.y = Math.max(0.04, 1 - push); liquid.position.x = 0.002 - push * 0.058;
     },
   };
+})();
+/* ============ 5.14: gun customisation. three slots of parts (sight, muzzle, underbarrel), each a small trade rather than a plain upgrade,
+   and a paint colour, set gun by gun and kept on this device (settings.gunCustom). WEAPONS holds the base numbers times whatever the parts
+   do, so everything that reads a gun (firing, the shop, the codex) sees it as you have built it ============ */
+const PARTS = {
+  sight: { name: '조준기', list: [
+    { id: 'iron', name: '기본 가늠쇠', desc: '그대로' },
+    { id: 'dot', name: '레드닷', desc: '정조준 속도 +25% · 정조준 퍼짐 -15%', mod: { adsSpeed: 1.25, adsSpread: 0.85 } },
+    { id: 'holo', name: '홀로그램', desc: '정조준 퍼짐 -30% · 정조준 속도 +10%', mod: { adsSpread: 0.7, adsSpeed: 1.1 } },
+    { id: 'x2', name: '2배율 조준경', desc: '정조준하면 더 크게 확대 · 정조준 퍼짐 -40% · 정조준 속도 -20%', mod: { adsFov: 0.55, adsSpread: 0.6, adsSpeed: 0.8 } }] },
+  muzzle: { name: '총구', list: [
+    { id: 'none', name: '없음', desc: '그대로' },
+    { id: 'sup', name: '소음기', desc: '총소리가 들리는 거리 -60% · 섬광 작게 · 데미지 -8%', mod: { noise: 0.4, flash: 0.35, dmg: 0.92 } },
+    { id: 'comp', name: '보정기', desc: '반동 -25% · 총소리가 들리는 거리 +15%', mod: { recoil: 0.75, kick: 0.8, noise: 1.15 } },
+    { id: 'hider', name: '소염기', desc: '섬광 -70% · 반동 -10%', mod: { flash: 0.3, recoil: 0.9 } }] },
+  under: { name: '하부', list: [
+    { id: 'none', name: '없음', desc: '그대로' },
+    { id: 'vgrip', name: '수직 손잡이', desc: '반동 -20% · 연사할 때 퍼짐 -25%', mod: { recoil: 0.8, bloom: 0.75 } },
+    { id: 'agrip', name: '앵글 손잡이', desc: '정조준 속도 +20% · 움직이며 쏠 때 퍼짐 -20%', mod: { adsSpeed: 1.2, moveSpread: 0.8 } },
+    { id: 'laser', name: '레이저', desc: '정조준 없이 쏠 때 퍼짐 -25% · 조준한 곳에 빨간 점', mod: { spread: 0.75 } }] },
+};
+const PAINTS = [
+  { id: 'base', name: '기본' }, { id: 'black', name: '검정', c: 0x1b1c1f }, { id: 'gray', name: '회색', c: 0x7d838c }, { id: 'tan', name: '사막', c: 0xb39466 },
+  { id: 'olive', name: '올리브', c: 0x59633f }, { id: 'silver', name: '은색', c: 0xc9ced6, metal: 0.85, rough: 0.25 }, { id: 'gold', name: '금색', c: 0xd8a531, metal: 0.95, rough: 0.2 },
+  { id: 'red', name: '빨강', c: 0xa8231d }, { id: 'blue', name: '파랑', c: 0x2a58a8 }, { id: 'pink', name: '분홍', c: 0xe27aa8 },
+];
+/* where parts go on each gun, in the gun's own space: the rail top for a sight, the barrel's thickness for the muzzle, the spot under the
+   barrel. the sniper keeps its scope; the grenade and rocket launchers have no muzzle to fit; on a pistol or the grenade launcher only a laser */
+const MOUNTS = {
+  pistol: { sight: { y: 0.032, z: -0.035 }, muzzle: { r: 0.012, len: 0.08 }, under: { y: -0.031, z: -0.095, laserOnly: true } },
+  shotgun: { sight: { y: 0.0325, z: -0.02 }, muzzle: { r: 0.018, len: 0.12 }, under: { y: -0.047, z: -0.33 } },
+  rifle: { sight: { y: 0.048, z: -0.07 }, muzzle: { r: 0.012, len: 0.13 }, under: { y: -0.034, z: -0.29 } },
+  smg: { sight: { y: 0.031, z: -0.075 }, muzzle: { r: 0.011, len: 0.11 }, under: { y: -0.031, z: -0.12 } },
+  sniper: { sight: null, muzzle: { r: 0.012, len: 0.15 }, under: { y: -0.06, z: -0.3 } },
+  gl: { sight: { y: 0.0725, z: 0.04 }, muzzle: null, under: { y: -0.045, z: -0.1, laserOnly: true } },
+  lmg: { sight: { y: 0.085, z: 0.02 }, muzzle: { r: 0.014, len: 0.14 }, under: { y: -0.045, z: -0.3 } },
+  rocket: { sight: null, muzzle: null, under: null },
+};
+const SLOTS = ['sight', 'muzzle', 'under'];
+const WBASE = {}; ORDER.forEach((id) => { WBASE[id] = Object.assign({}, WEAPONS[id]); });
+const MOD_KEYS = ['dmg', 'spread', 'adsSpread', 'moveSpread', 'recoil', 'kick', 'bloom', 'adsFov', 'adsSpeed', 'flash'];
+const partOf = (slot, pid) => PARTS[slot].list.find((p) => p.id === pid) || PARTS[slot].list[0];
+/* what fits: a slot the gun does not have is empty, and where only a laser goes underneath anything else falls back to nothing */
+function fits(id, slot, pid) { const M = MOUNTS[id][slot]; if (!M) return pid === PARTS[slot].list[0].id; if (slot === 'under' && M.laserOnly) return pid === 'none' || pid === 'laser'; return true; }
+function gunSetup(id) {
+  const c = (settings.gunCustom && settings.gunCustom[id]) || {}, s = {};
+  for (const slot of SLOTS) { const pid = c[slot] || PARTS[slot].list[0].id; s[slot] = fits(id, slot, pid) ? pid : PARTS[slot].list[0].id; }
+  s.paint = PAINTS.some((p) => p.id === c.paint) ? c.paint : 'base';
+  return s;
+}
+/* the multipliers the chosen parts give, all three together */
+function gunMods(s) { const mul = {}; for (const slot of SLOTS) { const m = partOf(slot, s[slot]).mod || {}; for (const k in m) mul[k] = (mul[k] || 1) * m[k]; } return mul; }
+
+/* ---------- the parts, built once for every gun and shown or hidden as chosen ---------- */
+(function buildParts() {
+  const dk = new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.45, metalness: 0.55 });
+  const dk2 = new THREE.MeshStandardMaterial({ color: 0x2a2e35, roughness: 0.6, metalness: 0.35 });
+  const glass = new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
+  const redM = new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false });
+  const beamM = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const tubeM = new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.45, metalness: 0.55, side: THREE.DoubleSide });
+  const mesh = (grp, geo, m, x, y, z, rx) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); if (rx) o.rotation.x = rx; o.frustumCulled = false; grp.add(o); return o; };
+  const bx = (grp, w, h, d, m, x, y, z, rx) => mesh(grp, new THREE.BoxGeometry(w, h, d), m, x, y, z, rx);
+  const tube = (grp, r, len, m, y, z, open) => { const o = mesh(grp, new THREE.CylinderGeometry(r, r, len, 18, 1, !!open), m, 0, y, z); o.rotation.x = Math.PI / 2; return o; };
+  ORDER.forEach((id) => {
+    const g = gunModels[id], M = MOUNTS[id], ys = g.userData.sightY, mz = g.userData.mz, parts = { sight: {}, muzzle: {}, under: {} };
+    const iron = []; g.traverse((o) => { if (o.isMesh && o.material && o.material.userData && o.material.userData.iron) iron.push(o); }); g.userData.iron = iron;
+    const add = (slot, pid) => { const p = new THREE.Group(); p.visible = false; g.add(p); parts[slot][pid] = p; return p; };
+    if (M.sight) {
+      const y0 = M.sight.y, z0 = M.sight.z;
+      // red dot: a short open tube on a riser, a faint lens at the front and the dot itself on the eye line
+      let p = add('sight', 'dot'); bx(p, 0.022, Math.max(0.004, ys - y0 - 0.012), 0.03, dk, 0, (y0 + ys - 0.012) / 2, z0);
+      tube(p, 0.0135, 0.04, tubeM, ys, z0, true); mesh(p, new THREE.CircleGeometry(0.0128, 18), glass, 0, ys, z0 - 0.02);
+      mesh(p, new THREE.SphereGeometry(0.0011, 8, 6), redM, 0, ys, z0 - 0.019);
+      // holographic: a square window in a frame, a red ring and dot floating in it
+      p = add('sight', 'holo'); bx(p, 0.03, Math.max(0.004, ys - y0 - 0.017), 0.045, dk, 0, (y0 + ys - 0.017) / 2, z0);
+      bx(p, 0.042, 0.005, 0.016, dk, 0, ys + 0.017, z0 - 0.012); for (const sx of [-1, 1]) bx(p, 0.005, 0.036, 0.016, dk, sx * 0.0205, ys, z0 - 0.012);
+      mesh(p, new THREE.PlaneGeometry(0.036, 0.03), glass, 0, ys, z0 - 0.014);
+      const ring = mesh(p, new THREE.TorusGeometry(0.0042, 0.0005, 6, 24), redM, 0, ys, z0 - 0.0145); ring.rotation.set(0, 0, 0);
+      mesh(p, new THREE.SphereGeometry(0.0008, 8, 6), redM, 0, ys, z0 - 0.0145);
+      // 2x: a longer tube with flared ends on two rings, a dark crosshair on the front lens
+      p = add('sight', 'x2'); for (const dz of [0.02, -0.02]) bx(p, 0.012, Math.max(0.004, ys - y0 - 0.014), 0.012, dk, 0, (y0 + ys - 0.014) / 2, z0 + dz);
+      tube(p, 0.0155, 0.075, tubeM, ys, z0, true); tube(p, 0.0185, 0.014, tubeM, ys, z0 + 0.04, true); tube(p, 0.0185, 0.014, tubeM, ys, z0 - 0.04, true);
+      mesh(p, new THREE.CircleGeometry(0.015, 20), glass, 0, ys, z0 - 0.0375);
+      bx(p, 0.028, 0.0006, 0.0006, dk, 0, ys, z0 - 0.037); bx(p, 0.0006, 0.028, 0.0006, dk, 0, ys, z0 - 0.037); mesh(p, new THREE.SphereGeometry(0.0007, 8, 6), redM, 0, ys, z0 - 0.0368);
+    }
+    if (M.muzzle) {
+      const r = M.muzzle.r, L = M.muzzle.len;
+      let p = add('muzzle', 'sup'); tube(p, r * 1.5, L, dk, mz.y, mz.z - L / 2); tube(p, r * 1.55, 0.006, dk2, mz.y, mz.z - L + 0.004);
+      p = add('muzzle', 'comp'); tube(p, r * 1.35, 0.04, dk, mz.y, mz.z - 0.02); for (const dz of [-0.012, -0.026]) bx(p, r * 1.6, 0.004, 0.006, dk2, 0, mz.y + r * 1.3, mz.z + dz);
+      p = add('muzzle', 'hider'); tube(p, r * 1.2, 0.02, dk, mz.y, mz.z - 0.01);
+      for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2 + 0.5, pr = bx(p, 0.004, 0.004, 0.034, dk, Math.cos(a) * r * 1.05, mz.y + Math.sin(a) * r * 1.05, mz.z - 0.035); pr.rotation.z = a; }
+    }
+    if (M.under) {
+      const uy = M.under.y, uz = M.under.z;
+      if (!M.under.laserOnly) {
+        let p = add('under', 'vgrip'); bx(p, 0.024, 0.085, 0.028, dk2, 0, uy - 0.044, uz); bx(p, 0.028, 0.008, 0.032, dk, 0, uy - 0.003, uz); bx(p, 0.028, 0.006, 0.032, dk, 0, uy - 0.087, uz);
+        p = add('under', 'agrip'); bx(p, 0.026, 0.008, 0.06, dk, 0, uy - 0.003, uz); const w = bx(p, 0.024, 0.032, 0.07, dk2, 0, uy - 0.022, uz + 0.004); w.rotation.x = -0.55;
+      }
+      const p = add('under', 'laser'); bx(p, 0.02, 0.018, 0.05, dk, 0, uy - 0.012, uz); mesh(p, new THREE.SphereGeometry(0.0028, 8, 6), redM, 0, uy - 0.012, uz - 0.026);
+      bx(p, 0.0016, 0.0016, 0.9, beamM, 0, uy - 0.012, uz - 0.026 - 0.45); // a faint beam out ahead of the gun
+    }
+    g.userData.parts = parts;
+  });
+})();
+/* the gun's look: which parts show, the iron sights under an optic, the muzzle flash at the end of whatever is on the muzzle, and the paint
+   (the receiver takes the colour, the furniture a darker shade of it; silver and gold are shinier) */
+function applyLook(id, s) {
+  const g = gunModels[id], P = g.userData.parts; if (!P) return;
+  for (const slot of SLOTS) for (const k in P[slot]) P[slot][k].visible = s[slot] === k;
+  for (const m of g.userData.iron) m.visible = s.sight === 'iron';
+  const M = MOUNTS[id], ext = !M.muzzle ? 0 : s.muzzle === 'sup' ? M.muzzle.len : s.muzzle === 'comp' ? 0.04 : s.muzzle === 'hider' ? 0.05 : 0;
+  g.userData.flash.position.z = g.userData.mz.z - ext;
+  const p = PAINTS.find((q) => q.id === s.paint) || PAINTS[0], tint = new THREE.Color();
+  for (const m of GUN_MATS[id].body) {
+    const u = m.userData, recv = u.metal !== undefined && u.metal >= 0.3; // the receiver is the metallic one
+    if (p.c === undefined) { m.color.setHex(u.color); m.metalness = u.metal; m.roughness = u.rough; u.paintColor = undefined; continue; }
+    tint.setHex(p.c); if (!recv) tint.multiplyScalar(0.68);
+    m.color.copy(tint); u.paintColor = tint.getHex();
+    m.metalness = p.metal !== undefined ? (recv ? p.metal : p.metal * 0.6) : u.metal; m.roughness = p.rough !== undefined ? (recv ? p.rough : p.rough + 0.2) : u.rough;
+  }
+  if (id === 'lmg' && wstate.lmg) wstate.lmg.glowK = undefined; // the heat tint goes over the new colour
+}
+/* the numbers: base times the parts, and the look to match */
+function applyCustom(id) {
+  const s = gunSetup(id), W = WEAPONS[id], B = WBASE[id], mul = gunMods(s);
+  for (const k of MOD_KEYS) { const b = B[k] !== undefined ? B[k] : k === 'adsSpeed' ? 7 : undefined; if (b !== undefined) W[k] = b * (mul[k] || 1); }
+  W.noise = mul.noise || 1; W.parts = s;
+  applyLook(id, s);
+}
+ORDER.forEach(applyCustom);
+
+/* the laser's red dot, out in the world where the crosshair falls */
+const LaserDot = (() => {
+  let s = null; const _f = new THREE.Vector3();
+  function update() {
+    const W = WEAPONS[Gun.cur], on = state === 'playing' && !Gun.none && W.parts && W.parts.under === 'laser' && Gun.switchT <= 0 && Gun.reloadT <= 0;
+    if (!on) { if (s) s.visible = false; return; }
+    if (!s) { s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex('rgba(255,90,70,1)', 'rgba(255,20,10,0)'), color: 0xff3a2a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false })); s.renderOrder = 5; scene.add(s); }
+    camera.getWorldDirection(_f); const o = camera.position;
+    if (!raycastStatic(o.x, o.y, o.z, _f.x, _f.y, _f.z, 90)) { s.visible = false; return; }
+    const t = RH.t - 0.04; s.position.set(o.x + _f.x * t, o.y + _f.y * t, o.z + _f.z * t); s.scale.setScalar(0.035 + t * 0.0035); s.visible = true;
+  }
+  return { update };
+})();
+
+/* ---------- the customisation screen: the gun turning slowly on one side (drag to turn it yourself), the choices on the other ---------- */
+const Custom = (() => {
+  const C = { on: false, id: 'rifle', from: 'menu', ang: 0.6, drag: null, idleT: 0 };
+  const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 10), _sz = new THREE.Vector2(), _b = new THREE.Box3(), _c = new THREE.Vector3(), _s = new THREE.Vector3();
+  const LBL = { adsSpeed: '정조준 속도', adsSpread: '정조준 퍼짐', spread: '정조준 없이 퍼짐', moveSpread: '움직일 때 퍼짐', recoil: '반동', bloom: '연사 퍼짐', flash: '섬광', noise: '총소리 거리', dmg: '데미지' };
+  const el = (tag, cls, text) => { const d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; };
+  function frame(id) {
+    // the gun's size without the hands, to fit it in the view
+    const g = gunModels[id]; viewRoot.position.set(0, 0, 0); viewRoot.rotation.set(0, 0, 0); viewRoot.updateMatrixWorld(true); _b.makeEmpty();
+    g.traverse((o) => { if (o.isMesh && !o.userData.hand && o !== g.userData.flash && o.visible !== false && (!o.parent || o.parent.visible !== false)) { o.geometry.computeBoundingBox(); _b.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); } });
+    _b.getCenter(_c); _b.getSize(_s); C.c = _c.clone(); C.size = Math.max(_s.z, _s.y * 2.2, 0.25);
+  }
+  function show(id) {
+    for (const k of ORDER) { const g = gunModels[k]; g.visible = k === id; g.traverse((o) => { if (o.userData.hand) o.visible = !C.on; }); g.userData.flash.visible = false; }
+    frame(id);
+  }
+  function setPart(slot, pid) { const c = settings.gunCustom || (settings.gunCustom = {}); const cur = Object.assign({}, gunSetup(C.id)); cur[slot] = pid; c[C.id] = cur; store('yard07.settings', settings); applyCustom(C.id); show(C.id); render(); }
+  function render() {
+    const id = C.id, W = WEAPONS[id], s = gunSetup(id), M = MOUNTS[id];
+    const tabs = $('cutabs'); tabs.textContent = '';
+    for (const k of ORDER) { const b = el('button', k === id ? 'on' : '', WEAPONS[k].tab); b.type = 'button'; b.setAttribute('aria-pressed', k === id ? 'true' : 'false'); b.addEventListener('click', () => { C.id = k; show(k); render(); }); tabs.append(b); }
+    $('cuname').textContent = W.model + ' ' + W.name; $('cusub').textContent = W.cls + (gunAvailable(id) ? '' : ' · 지금은 가지고 있지 않은 총 (꾸민 대로 대여하면 씁니다)');
+    const box = $('cuslots'); box.textContent = '';
+    for (const slot of SLOTS) {
+      const row = el('div', 'curow'); row.append(el('h3', null, PARTS[slot].name));
+      if (!M[slot]) { row.append(el('p', 'note', id === 'sniper' && slot === 'sight' ? '저격총은 자기 조준경을 씁니다' : '이 총에는 달 수 없습니다')); box.append(row); continue; }
+      const chips = el('div', 'cuchips');
+      for (const p of PARTS[slot].list) {
+        if (!fits(id, slot, p.id)) continue;
+        const b = el('button', s[slot] === p.id ? 'on' : '', p.name); b.type = 'button'; b.setAttribute('aria-pressed', s[slot] === p.id ? 'true' : 'false');
+        b.addEventListener('click', () => setPart(slot, p.id)); chips.append(b);
+      }
+      row.append(chips, el('p', 'cudesc', partOf(slot, s[slot]).desc)); box.append(row);
+    }
+    const pb = $('cupaint'); pb.textContent = '';
+    for (const p of PAINTS) {
+      const b = el('button', 'swatch' + (s.paint === p.id ? ' on' : '')); b.type = 'button'; b.title = p.name; b.setAttribute('aria-label', p.name + ' 색'); b.setAttribute('aria-pressed', s.paint === p.id ? 'true' : 'false');
+      b.style.background = p.c === undefined ? 'linear-gradient(135deg, #3b4048 50%, #24272c 50%)' : '#' + p.c.toString(16).padStart(6, '0');
+      b.append(el('span', null, p.name)); b.addEventListener('click', () => setPart('paint', p.id)); pb.append(b);
+    }
+    // all three parts together, in plain numbers
+    const mul = gunMods(s), out = [];
+    for (const k in LBL) if (mul[k] && Math.abs(mul[k] - 1) > 0.001) out.push(LBL[k] + ' ' + (mul[k] > 1 ? '+' : '') + Math.round((mul[k] - 1) * 100) + '%');
+    if (mul.adsFov && mul.adsFov < 1) out.unshift('정조준 확대 ×' + (1 / mul.adsFov).toFixed(1));
+    $('cueffect').textContent = out.length ? '이 조합: ' + out.join(' · ') : '부속 효과 없음 · 기본 상태';
+  }
+  function open(from) {
+    C.from = from; C.on = true; C.idleT = 0; if (!ORDER.includes(C.id)) C.id = 'rifle';
+    showOnly('custom'); show(C.id); render(); $('custom').scrollTop = 0; setTimeout(() => $('cuclose').focus({ preventScroll: true }), 0);
+  }
+  function close() {
+    C.on = false; $('custom').hidden = true;
+    for (const k of ORDER) { const g = gunModels[k]; g.visible = false; g.traverse((o) => { if (o.userData.hand) o.visible = true; }); }
+    viewRoot.position.set(0, 0, 0); viewRoot.rotation.set(0, 0, 0);
+    backTo(C.from);
+  }
+  /* drawn over the menu scene, into the empty part of the screen beside the sheet */
+  function draw(dt) {
+    if (!C.on) return;
+    const r = $('cuview').getBoundingClientRect(), cr = renderer.domElement.getBoundingClientRect();
+    const x = r.left - cr.left, y = cr.bottom - r.bottom, w = Math.min(r.width, cr.width - x), h = Math.min(r.height, cr.bottom - r.top);
+    if (w < 40 || h < 40) return;
+    if (!C.drag) { C.idleT += dt; if (C.idleT > 1.5) C.ang += dt * 0.45; }
+    const a = C.ang, cx = C.c.x, cy = C.c.y, cz = C.c.z, co = Math.cos(a), si = Math.sin(a);
+    viewRoot.rotation.set(0, a, 0); viewRoot.position.set(-(cx * co + cz * si), -cy, -(-cx * si + cz * co));
+    cam.aspect = w / h; const fh = 2 * Math.tan((cam.fov * Math.PI) / 360), d = (C.size / Math.min(fh * cam.aspect, fh * 1.6)) * 1.25;
+    cam.position.set(d, d * 0.16, 0.0001); cam.lookAt(0, 0, 0); cam.updateProjectionMatrix();
+    renderer.getSize(_sz);
+    renderer.setRenderTarget(null); renderer.setScissorTest(true); renderer.setScissor(x, y, w, h); renderer.setViewport(x, y, w, h);
+    renderer.clearDepth(); renderer.render(viewScene, cam);
+    renderer.setScissorTest(false); renderer.setViewport(0, 0, _sz.x, _sz.y);
+  }
+  const view = $('cuview');
+  view.addEventListener('pointerdown', (e) => { C.drag = { x: e.clientX, a: C.ang }; C.idleT = 0; view.setPointerCapture(e.pointerId); });
+  view.addEventListener('pointermove', (e) => { if (C.drag) C.ang = C.drag.a + (e.clientX - C.drag.x) * 0.012; });
+  const up = () => { C.drag = null; C.idleT = 0; }; view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
+  $('cuclose').addEventListener('click', () => close());
+  $('cureset').addEventListener('click', () => { if (settings.gunCustom) delete settings.gunCustom[C.id]; store('yard07.settings', settings); applyCustom(C.id); show(C.id); render(); });
+  return Object.assign(C, { open, close, draw, render });
 })();
 
 /* ============ enemies: people with pistols (stage 1) and zombies (stage 2); animals live in 07c ============ */
@@ -5798,6 +6124,14 @@ function shellTex() {
   return bossShellTex;
 }
 const BLUE = 0x1478ff, RED = 0xff1a10;
+/* 5.14: the boss's iris: a grey radial drawing (the material tints it blue, or red when it is about to fire), rings and spokes like a lens */
+const BossIris = (() => { let t = null; return () => t || (t = canvasTex(256, 256, (g, w) => {
+  const c = w / 2, gr = g.createRadialGradient(c, c, 0, c, c, c);
+  gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.2, '#ffffff'); gr.addColorStop(0.36, '#d4e6ff'); gr.addColorStop(0.62, '#8fb4ec'); gr.addColorStop(0.86, '#5579bd'); gr.addColorStop(1, '#2a3f73');
+  g.fillStyle = gr; g.beginPath(); g.arc(c, c, c, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 4; for (const r of [0.44, 0.66, 0.84]) { g.beginPath(); g.arc(c, c, c * r, 0, TAU); g.stroke(); }
+  g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 3; for (let i = 0; i < 20; i++) { const a = (i / 20) * TAU; g.beginPath(); g.moveTo(c + Math.cos(a) * c * 0.5, c + Math.sin(a) * c * 0.5); g.lineTo(c + Math.cos(a) * c * 0.92, c + Math.sin(a) * c * 0.92); g.stroke(); }
+})); })();
 
 function buildShipBot(type, opts) {
   opts = opts || {};
@@ -5896,19 +6230,28 @@ function buildShipBot(type, opts) {
     const white = new THREE.MeshStandardMaterial({ color: 0xeef1f6, map: shellTex(), roughness: 0.22, metalness: 0.3, envMap: env, envMapIntensity: 1.2 });
     const armor = new THREE.MeshStandardMaterial({ color: 0x9aa4b6, roughness: 0.33, metalness: 0.65, envMap: env, envMapIntensity: 1.0 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f28, roughness: 0.4, metalness: 0.5 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: BLUE }), pupil = new THREE.MeshBasicMaterial({ color: 0x8fc8ff }), lights = new THREE.MeshBasicMaterial({ color: 0x3a9cff });
-    const glowS = new THREE.SpriteMaterial({ map: World.poolTex || null, color: 0x2f8cff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.4 });
-    e.mats.push(white, armor, dark, eyeMat, pupil, lights); e.eyeMat = eyeMat; e.eyeGlow = glowS; e.lightMat = lights;
+    const eyeMat = new THREE.MeshBasicMaterial({ color: BLUE, map: BossIris(), toneMapped: false }), pupil = new THREE.MeshBasicMaterial({ color: 0xd8ecff, toneMapped: false }), lights = new THREE.MeshBasicMaterial({ color: 0x3a9cff });
+    const glowS = new THREE.SpriteMaterial({ map: World.poolTex || null, color: 0x2f8cff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.34 });
+    const lensM = new THREE.MeshStandardMaterial({ color: 0x0a1428, roughness: 0.12, metalness: 0.7, envMap: env, envMapIntensity: 1.1 });
+    const sockM = new THREE.MeshStandardMaterial({ color: 0x10141c, roughness: 0.6, metalness: 0.4, side: THREE.DoubleSide });
+    e.mats.push(white, armor, dark, eyeMat, pupil, lights, lensM, sockM); e.eyeMat = eyeMat; e.eyeGlow = glowS; e.lightMat = lights;
     e.shells = [];
     [5, 3, 1.5].forEach((D, k) => {
       const s = new THREE.Group(), R = D / 2; g.add(s);
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(R, 44, 26), white); ball.castShadow = !isTouch; s.add(ball);
+      // the shell is a sphere with a round opening at the front (a sphere missing its top cap, turned to face forward)
+      const HOLE = Math.asin(0.46), sg = new THREE.SphereGeometry(R, 44, 26, 0, TAU, HOLE, Math.PI - HOLE); sg.rotateX(Math.PI / 2);
+      const ball = new THREE.Mesh(sg, white); ball.castShadow = !isTouch; s.add(ball);
+      // in the opening: a dark socket, a white rim, a dark lens ring, the iris (blue, open) and a bright core, all set back a little
       const eye = new THREE.Group(); eye.position.z = R * 0.9; s.add(eye);
-      add(eye, new THREE.CircleGeometry(R * 0.44, 36), dark, 0, 0, 0.005);
-      add(eye, new THREE.TorusGeometry(R * 0.42, R * 0.055, 10, 40), dark, 0, 0, 0.02);
-      add(eye, new THREE.CircleGeometry(R * 0.3, 36), eyeMat, 0, 0, 0.03);
-      add(eye, new THREE.CircleGeometry(R * 0.07, 24), pupil, 0, 0, 0.04);
-      const sp = new THREE.Sprite(glowS); sp.position.z = R * 0.25; sp.scale.setScalar(R * 1.3); eye.add(sp);
+      const rimZ = Math.cos(HOLE) * R - R * 0.9;
+      const sock = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.46, R * 0.46, R * 0.16, 40, 1, true), sockM); sock.rotation.x = Math.PI / 2; sock.position.z = rimZ - R * 0.08; eye.add(sock);
+      add(eye, new THREE.CircleGeometry(R * 0.46, 40), dark, 0, 0, rimZ - R * 0.16);
+      add(eye, new THREE.TorusGeometry(R * 0.455, R * 0.04, 10, 44), white, 0, 0, rimZ);
+      add(eye, new THREE.CircleGeometry(R * 0.4, 40), lensM, 0, 0, rimZ - R * 0.12);
+      add(eye, new THREE.TorusGeometry(R * 0.36, R * 0.028, 8, 40), dark, 0, 0, rimZ - R * 0.11);
+      add(eye, new THREE.CircleGeometry(R * 0.33, 40), eyeMat, 0, 0, rimZ - R * 0.1);
+      add(eye, new THREE.CircleGeometry(R * 0.085, 24), pupil, 0, 0, rimZ - R * 0.095);
+      const sp = new THREE.Sprite(glowS); sp.position.z = rimZ + R * 0.05; sp.scale.setScalar(R * 1.15); eye.add(sp);
       // light strips round the middle and under the belly
       for (const a of [-2.5, -1.8, -1.05, 1.05, 1.8, 2.5]) { const b = add(s, new THREE.BoxGeometry(R * 0.36, R * 0.05, R * 0.04), lights, Math.sin(a) * R * 1.0, 0, Math.cos(a) * R * 1.0); b.rotation.y = a + Math.PI / 2; }
       for (const a of [-0.6, 0, 0.6]) { const b = add(s, new THREE.BoxGeometry(R * 0.32, R * 0.04, R * 0.05), lights, Math.sin(a) * R * 0.62, -R * 0.78, Math.cos(a) * R * 0.62); b.rotation.set(0.9, a, 0); }
@@ -6150,6 +6493,7 @@ const BPH = [
   { sp: 12, y: [3.2, 7], dist: [8, 16], charge: 1, track: 12, rockets: 100, win: 2.5, mines: 20, gap: [2.4, 3.2] },
 ];
 const HALL = SHIP_ROOMS[2];
+const LASER_WARN = 3; // seconds of red eye before the aim starts: the shot comes 6, 5 and 4 s after the eye turns red
 function bossEye(e, out) { const s = e.shells[e.k ? e.k.phase : 0]; e.g.updateMatrixWorld(true); return out.setFromMatrixPosition(s.eye.matrixWorld); }
 /* closest distance between segment a-b and segment c-d */
 function segDist(a, b, c, d) {
@@ -6175,7 +6519,7 @@ function bossShed(e) {
   FX.chunks(e.pos, 26, 0.18 * old.R, 'metal'); Sound.boom(e.pos, true); player.shake = Math.max(player.shake, 0.5);
   old.g.visible = false; nw.g.visible = true;
   e.R = nw.R; e.H = nw.R * 2; e.barY = nw.R + 0.7; e.parts = shellParts(nw.R); e.eyeMat.color.setHex(BLUE); e.eyeGlow.color.setHex(0x2f8cff);
-  HUD.banner('보스 드론 ' + (k.phase + 1) + '페이즈', k.phase === 2 ? '껍데기가 모두 벗겨지고 핵이 드러났습니다 · 가장 작고 빠릅니다' : '바깥 껍데기가 부서졌습니다 · 더 작고 빨라졌습니다', 2.6);
+  HUD.banner('B-3 · ' + (k.phase + 1) + '페이즈', k.phase === 2 ? '껍데기가 모두 벗겨지고 핵이 드러났습니다 · 가장 작고 빠릅니다' : '바깥 껍데기가 부서졌습니다 · 더 작고 빨라졌습니다', 2.6);
   if (k.phase === 2) Ship.hatchWait = 2.6; // and, once the banner has gone, the floor opens: drones by the dozen
 }
 function bossDropMines(e, n) {
@@ -6242,6 +6586,10 @@ function bdroneAI(e, dt, dist, faceYaw) {
   if (k.mode === 'shed') { if (k.t >= 1.4) { k.mode = 'move'; k.cd = 1.2; } return; }
   // rockets already ordered keep leaving while it flies
   if (k.salvo > 0) { k.salvoT -= dt; while (k.salvo > 0 && k.salvoT <= 0) { k.salvo--; k.salvoT += k.gapT; bossLaunch(e); } }
+  if (k.mode === 'warn') { // the eye is red and it keeps moving; in three seconds the red line comes out, with the siren
+    if (k.t >= LASER_WARN) { k.mode = 'charge'; k.t = 0; k.aim.set(player.pos.x, player.pos.y + 1.1, player.pos.z); Sound.siren2(P.charge + 0.25); }
+    return;
+  }
   if (k.mode === 'charge') {
     // the eye is red; the aim drifts after you and holds still for the last quarter second
     const left = P.charge - k.t;
@@ -6257,10 +6605,10 @@ function bdroneAI(e, dt, dist, faceYaw) {
   if (k.cd <= 0) {
     const opts = ['laser', 'rockets', 'mines'].filter((s) => s !== k.last && (s === 'mines' || e.los));
     const s = opts.length ? pick(opts) : 'mines'; k.last = s;
-    if (s === 'laser') { k.mode = 'charge'; k.t = 0; k.aim.set(player.pos.x, player.pos.y + 1.1, player.pos.z); e.eyeMat.color.setHex(RED); e.eyeGlow.color.setHex(0xff3a2a); Sound.charge(e.pos, P.charge); }
+    if (s === 'laser') { k.mode = 'warn'; k.t = 0; e.eyeMat.color.setHex(RED); e.eyeGlow.color.setHex(0xff3a2a); } // red eye first: 3 s, then the aim
     else if (s === 'rockets') { k.salvo = P.rockets; k.gapT = P.rockets > 1 ? P.win / P.rockets : 0; k.salvoT = 0; Sound.rocket(e.pos); }
     else bossDropMines(e, P.mines);
-    k.cd = rand(P.gap[0], P.gap[1]) + (s === 'laser' ? P.charge : 0);
+    k.cd = rand(P.gap[0], P.gap[1]) + (s === 'laser' ? P.charge + LASER_WARN : 0);
   }
 }
 function updateShipBot(e, dt, dist, faceYaw) {
@@ -6371,10 +6719,25 @@ function populateShip(G, put, find, rand, randi, SR) {
   const cams = [[-43.4, 18, Math.PI / 2], [-39.9, 14.2, -Math.PI / 2], [-35, 7.45, 0], [-28, 12.55, Math.PI], [-26.1, 4, Math.PI / 2], [-22.4, 0, -Math.PI / 2]];
   for (const [x, z, yaw] of cams) put('cctv', { x, z, y: 4.05 }, { yaw });
   for (let i = 0; i < 12; i++) { const x = -86 + i * 13.3, north = i % 2 === 0; put('cctv', { x, z: north ? -12.05 : -2.95, y: 5.55 }, { yaw: north ? 0 : Math.PI }); }
-  // patrols: twenty walking beats along the corridor in two lanes (5.13: none on the bridge, where the bee is alone)
-  for (let i = 0; i < 20; i++) {
-    const z = i % 2 ? -5.2 : -9.8, x0 = -86 + i * 7.5, x1 = Math.min(64, x0 + rand(6, 9)), e = put('patrol', { x: x0 + rand(0.5, 2), z }, { yaw: Math.PI / 2 });
+  // patrols: twelve walking beats along the corridor in two lanes (none on the bridge, where the bee is alone)
+  for (let i = 0; i < 12; i++) {
+    const z = i % 2 ? -5.2 : -9.8, x0 = -86 + i * 12.5, x1 = Math.min(64, x0 + rand(7, 10)), e = put('patrol', { x: x0 + rand(0.5, 2), z }, { yaw: Math.PI / 2 });
     if (e) { e.wp = [{ x: x0, z }, { x: x1, z }]; e.wi = 1; e.waitT = rand(0, 2); }
+  }
+  // 5.14: and eight in the main hall, round the dais, sealed in with the boss: they walk their beats but notice nothing until its door opens
+  const onDais = (x, z) => x > DAIS[0][0] - 0.8 && x < DAIS[0][2] + 0.8 && z > DAIS[0][1] - 0.8 && z < DAIS[0][3] + 0.8;
+  const clearRun = (x0, z0, x1, z1) => { const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.5);
+    for (let i = 0; i <= n; i++) { const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t; if (onDais(x, z) || collideAt(x, 0.1, z, 0.6, 1.8)) return false; } return true; };
+  let hallPatrols = 0;
+  for (const [x0, z0, x1, z1] of [[78, -21.5, 104, -21.5], [78, 18, 104, 18], [77.5, -12, 77.5, 8], [110, -12, 110, 8], [84, -17.6, 104, -17.6], [84, 9.6, 104, 9.6], [79.5, -14, 79.5, 4], [108.2, -14, 108.2, 4],
+    [72, -6, 72, 4], [113, -6, 113, 4], [90, -23, 100, -23], [90, 20, 100, 20]]) {
+    if (hallPatrols >= 8) break;
+    // the beat as given, or shortened from either end until it is clear of cargo and pillars
+    let a = [x0, z0], b = [x1, z1], ok = clearRun(x0, z0, x1, z1);
+    for (let k = 0; !ok && k < 6; k++) { const f = 0.12 * (k + 1); a = [x0 + (x1 - x0) * f, z0 + (z1 - z0) * f]; b = [x1 - (x1 - x0) * f, z1 - (z1 - z0) * f]; ok = Math.hypot(b[0] - a[0], b[1] - a[1]) > 5 && clearRun(a[0], a[1], b[0], b[1]); }
+    if (!ok) continue;
+    const e = put('patrol', { x: a[0], z: a[1] }, { yaw: Math.atan2(b[0] - a[0], b[1] - a[1]) });
+    if (e) { e.wp = [{ x: a[0], z: a[1] }, { x: b[0], z: b[1] }]; e.wi = 1; e.waitT = rand(0, 2); e.sealed = true; hallPatrols++; }
   }
   // little drones: two dozen along the corridor (none in the hall until the boss calls them up through the floor)
   for (let i = 0; i < 24; i++) put('droneA', { x: -86 + i * 6.3 + rand(-1.5, 1.5), z: rand(-11, -4), y: rand(3, 4.6) }, { yaw: rand(0, TAU) });
@@ -6554,6 +6917,7 @@ const player = {
   recoilPitch: 0, shake: 0, landDip: 0, jumpBuf: 0, invuln: 0, sinceHurt: 0,
   /* zone: 'head' (shots to the head, overhead blows), 'body' (everything else that hits you), 'fire' (flames) */
   hurt(dmg, from, zone) {
+    if (godMode()) return; // developer mode's invincibility
     if (state !== 'playing' || this.invuln > 0) return;
     // the zombie village has no health at all: only bites (infection) and dashes (poison) can finish you, and only on a timer
     if (Game.stage === 2) { this.shake = Math.max(this.shake, 0.2); Sound.hurt(); HUD.hurt(20, from); return; }
@@ -6645,6 +7009,7 @@ window.addEventListener('keydown', (e) => {
     if ((e.code === 'Escape' || e.code === 'KeyP') && (lookMode !== 'lock' || !locked)) pauseGame();
     else if (e.code === 'KeyP' && locked) document.exitPointerLock && document.exitPointerLock();
   } else if (!$('codex').hidden && e.code === 'Escape') { Codex.close(); }
+  else if (!$('custom').hidden && e.code === 'Escape') { Custom.close(); }
   else if (state === 'paused' && !$('mapscreen').hidden && (e.code === 'KeyM' || e.code === 'Escape')) { closeMap(); }
   else if (state === 'paused' && !$('pause').hidden && e.code === 'KeyM') { openMap('pause'); }
   else if (state === 'brief' && e.code === 'Escape') { $('briefback').click(); }
@@ -6852,6 +7217,35 @@ function updatePlayer(dt) {
 
 /* ---------- HUD ---------- */
 const won = (n) => Math.round(n).toLocaleString('ko-KR') + '원';
+/* 5.14: running with the SMG (12% faster on your feet) shows as green wind: streaks rushing out past the edges of your view and a faint
+   green round the rim, stronger the faster you go. drawn on its own canvas in the game view; nothing is drawn while it is idle */
+const Wind = (() => {
+  let cv = null, g = null, k = 0, drawn = false, w = 0, h = 0;
+  const P = []; for (let i = 0; i < 40; i++) P.push({ a: Math.random() * Math.PI * 2, r: 0.5 + Math.random() * 0.6, v: 0.7 + Math.random() * 0.6, l: 0.08 + Math.random() * 0.14, wd: 1.6 + Math.random() * 2.2 });
+  function update(dt) {
+    if (!cv) { cv = document.getElementById('windfx'); if (!cv) return; g = cv.getContext('2d'); }
+    const sp = player.speedXZ || 0, want = state === 'playing' && Gun.cur === 'smg' && !Gun.none && sp > 0.8 ? Math.min(1, Math.max(0.3, (sp - 0.8) / 7)) : 0;
+    k += (want - k) * (1 - Math.exp(-dt * 6));
+    if (k < 0.012) { if (drawn) { g.clearRect(0, 0, w, h); drawn = false; } return; }
+    const cw = Math.round(cv.clientWidth), ch = Math.round(cv.clientHeight);
+    if (cw !== w || ch !== h) { w = cv.width = cw; h = cv.height = ch; }
+    if (!w || !h) return;
+    drawn = true; g.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2, R = Math.hypot(cx, cy);
+    const rim = g.createRadialGradient(cx, cy, R * 0.5, cx, cy, R); rim.addColorStop(0, 'rgba(70,255,150,0)'); rim.addColorStop(1, 'rgba(70,255,150,' + (0.24 * k).toFixed(3) + ')');
+    g.fillStyle = rim; g.fillRect(0, 0, w, h); g.lineCap = 'round';
+    for (const p of P) {
+      p.r += p.v * dt * (0.8 + k * 1.6);
+      if (p.r > 1.15) { p.r = 0.46 + Math.random() * 0.22; p.a = Math.random() * Math.PI * 2; p.v = 0.7 + Math.random() * 0.6; p.l = 0.08 + Math.random() * 0.14; }
+      const fade = Math.min(1, Math.max(0, (p.r - 0.44) / 0.18)) * Math.min(1, Math.max(0, (1.15 - p.r) / 0.25));
+      if (fade <= 0) continue;
+      const c = Math.cos(p.a), s = Math.sin(p.a), x0 = cx + c * p.r * R, y0 = cy + s * p.r * R, x1 = cx + c * (p.r + p.l) * R, y1 = cy + s * (p.r + p.l) * R;
+      const lg = g.createLinearGradient(x0, y0, x1, y1); lg.addColorStop(0, 'rgba(140,255,180,0)'); lg.addColorStop(1, 'rgba(140,255,180,' + (0.85 * k * fade).toFixed(3) + ')');
+      g.strokeStyle = lg; g.lineWidth = p.wd * (0.7 + k * 0.7); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    }
+  }
+  return { update };
+})();
 const HUD = (() => {
   const el = {};
   ['hpnum', 'hpfill', 'hpghost', 'mag', 'reserve', 'wname', 'stagenum', 'kills', 'killfill', 'money', 'moneypop', 'reload', 'reloadfill', 'hint', 'banner', 'bannerbig', 'bannersmall',
@@ -6903,13 +7297,14 @@ const HUD = (() => {
     },
     reset() { el.feed.textContent = ''; el.moneypop.textContent = ''; hitT = hurtT = hintT = bannerT = 0; arcs.forEach((A) => (A.life = 0)); for (const k in cache) delete cache[k]; },
     update(dt) {
+      Wind.update(dt);
       const hp = Math.ceil(player.hp), pct = Math.round(100 * player.hp / (player.maxHp || 100));
       set('hpnum', String(hp)); set('hpfill', pct + '%', 'width'); set('hpghost', pct + '%', 'width');
       const hc = pct > 50 ? '#5ed6b0' : pct > 25 ? '#f2a33a' : '#ff5260';
       if (cache.hc !== hc) { cache.hc = hc; el.hpfill.style.backgroundColor = hc; }
       set('anticount', String(Game.antidotes));
       const w = WEAPONS[Gun.cur], st = wstate[Gun.cur];
-      set('mag', String(st.mag)); set('reserve', '/ ' + (st.reserve === Infinity ? '∞' : st.reserve)); set('wname', w.model + ' ' + w.name + (w.moveMul < 0.8 ? ' · 이동 -' + Math.round((1 - w.moveMul) * 100) + '%' : ''));
+      set('mag', String(st.mag)); set('reserve', '/ ' + (st.reserve === Infinity ? '∞' : st.reserve)); set('wname', w.model + ' ' + w.name + (w.heavy ? ' · 이동 -' + Math.round((1 - w.moveMul) * 100) + '%' : '') + (w.heat && st.hot ? ' · 과열' : ''));
       el.mag.classList.toggle('low', st.mag <= Math.ceil(w.mag * 0.25));
       const sel = Gun.pending || Gun.cur;
       if (cache.slot !== sel) { cache.slot = sel; slotEls.forEach((s, i) => s.classList.toggle('on', Gun.slots[i] === sel)); }
@@ -7008,7 +7403,7 @@ const HUD = (() => {
       if (chest) {
         const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw), dx = chest.x - player.pos.x, dz = chest.z - player.pos.z;
         tgts.forEach((t, i) => { if (i) { t.style.opacity = 0; return; } t.style.transform = 'rotate(' + Math.atan2(dx * cy - dz * sy, -dx * sy - dz * cy) + 'rad)'; t.style.opacity = 0.95; });
-      } else if (left > 0 && left <= 10 && !Game.ended) {
+      } else if (left > 0 && left <= 10 && !Game.ended && Game.stage !== 4) {
         const near = Enemies.list.filter((e) => e.alive && !e.tamed && !e.extra).sort((a, b) => a.dist - b.dist).slice(0, 3);
         const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
         tgts.forEach((t, i) => { const e = near[i]; if (!e) { t.style.opacity = 0; return; }
@@ -7480,7 +7875,7 @@ const TacMap = (() => {
 /* money spent inside a stage also comes off what you would walk away with if you fall */
 function spend(c) { save.money -= c; if (moneyLock !== null) moneyLock -= c; persist(); }
 function refund(c) { save.money += c; if (moneyLock !== null) moneyLock += c; persist(); }
-const SIDE_SCREENS = ['menu', 'over', 'pause', 'shop', 'loadout', 'dlg', 'brief', 'codex'];
+const SIDE_SCREENS = ['menu', 'over', 'pause', 'shop', 'loadout', 'dlg', 'brief', 'codex', 'custom'];
 function showOnly(id) { SIDE_SCREENS.forEach((s) => { $(s).hidden = s !== id; }); }
 function backTo(from) { showOnly(from); if (from === 'menu') refreshMenu(); if (from === 'brief') briefGear(); if (from === 'loadout') Loadout.render(); }
 
@@ -7603,7 +7998,7 @@ const Shop = {
 /* ---------- weapon layout: which gun sits on keys 1-7, any slot can be left empty ---------- */
 const Loadout = {
   from: 'menu',
-  open(from) { this.from = from; showOnly('loadout'); this.msg(''); this.render(); setTimeout(() => $('loclose').focus(), 0); },
+  open(from) { this.from = from; $('locustom').hidden = state === 'paused' || state === 'playing'; showOnly('loadout'); this.msg(''); this.render(); setTimeout(() => $('loclose').focus(), 0); },
   close() {
     if (this.from === 'pause') { applyLoadout(); if (Gun.none) { this.msg('싸우는 중에는 무기를 하나 이상 넣어야 합니다'); return; } }
     $('loadout').hidden = true; backTo(this.from);
@@ -7768,10 +8163,19 @@ $('savebtn').addEventListener('click', () => Dialog.open('save'));
 $('loadbtn').addEventListener('click', () => Dialog.open('load'));
 $('resetbtn').addEventListener('click', () => Dialog.open('reset'));
 $('devbtn').addEventListener('click', () => (settings.dev ? setDev(false) : Dialog.open('dev')));
+/* 5.14: developer mode's invincibility: no damage and no deaths of any kind (laser, slam, infection, poison, bleeding) */
+const godMode = () => !!(settings.dev && settings.god);
+function godButtons() {
+  for (const id of ['godbtn', 'pgodbtn']) { const b = $(id); b.hidden = !settings.dev; b.textContent = settings.god ? '무적 켜짐' : '무적 꺼짐'; b.classList.toggle('on', !!settings.god); }
+  $('godtag').hidden = !godMode();
+}
+for (const id of ['godbtn', 'pgodbtn']) $(id).addEventListener('click', () => { settings.god = !settings.god; store('yard07.settings', settings); godButtons(); });
 $('dlgok').addEventListener('click', () => Dialog.ok());
 $('dlgcancel').addEventListener('click', () => Dialog.close());
 $('codein').addEventListener('keydown', (e) => { if (e.key === 'Enter') Dialog.ok(); });
 $('lobtn').addEventListener('click', () => Loadout.open('menu'));
+$('cubtn').addEventListener('click', () => Custom.open('menu'));
+$('locustom').addEventListener('click', () => { if (state === 'menu' || state === 'brief') { $('loadout').hidden = true; Custom.open('loadout'); } });
 $('loclose').addEventListener('click', () => Loadout.close());
 $('lorent').addEventListener('click', () => Shop.open('loadout'));
 /* ============ the encyclopaedias (5.12): the gun book (rate, damage, dps, magazine, range...) and the enemy book
@@ -7813,7 +8217,8 @@ const Codex = (() => {
           ['재장전', f1(w.reload) + '초'],
           ['사거리', w.range + ' m' + (w.falloff ? ' · ' + w.falloff[0] + '~' + w.falloff[1] + ' m에서 35%까지 약해짐' : ''), w.range / top.range],
           ['이동속도', move],
-        ],
+        ].concat(w.parts && (w.parts.sight !== 'iron' || w.parts.muzzle !== 'none' || w.parts.under !== 'none' || w.parts.paint !== 'base')
+          ? [['부속', SLOTS.map((k) => partOf(k, w.parts[k])).filter((p) => p.id !== 'iron' && p.id !== 'none').map((p) => p.name).concat(w.parts.paint !== 'base' ? [(PAINTS.find((q) => q.id === w.parts.paint) || {}).name + ' 도색'] : []).join(' · ') + ' (수치에 반영됨)']] : []),
         note: w.note || '',
       };
     }).concat([{
@@ -7872,7 +8277,7 @@ const Codex = (() => {
       { st: LAB, boss: 1, name: B3.name, hp: n(B3.hp), speed: '달리기 ' + ms(KB.run) + ' · 돌진 ' + ms(KB.charge), arms: '없음', dmg: '주먹 ' + n(KB.punch) + ' · 돌진 ' + n(KB.chargeDmg) + ' + ' + KB.stun + '초 기절 · 내려찍기 즉사 · 출혈 없음', trait: '보스 · 방탄유리 우리 (3: 9번 우리가 열리고 15초 뒤 · 3-2: 마지막 차례)', skill: '번갈아 훅 · 잦은 돌진 · 내가 선 자리로 큰 점프 (빨간 원 ' + KONG.slamR + ' m 안이면 즉사) · 가슴 치기로 졸개 소환 (최대 ' + KONG.summonMax + '번)', pay: A.gorilla.money * 20 },
       // stage 4: the ship's crew
       bot('cctv', { speed: '고정 (천장)', arms: '볼트 포', dmg: shot(R.cctv.shot), trait: '통로와 복도 천장 모서리 · 시야 ' + R.cctv.sight + ' m', skill: '없음' }),
-      bot('patrol', { speed: ms(R.patrol.speed), arms: '전기 곤봉', dmg: '곤봉 ' + R.patrol.dmg + ' + 밀쳐냄', trait: '복도를 왕복 순찰 (20대) · 머리가 약점', skill: '없음' }),
+      bot('patrol', { speed: ms(R.patrol.speed), arms: '전기 곤봉', dmg: '곤봉 ' + R.patrol.dmg + ' + 밀쳐냄', trait: '복도 12대, 메인홀 8대 (메인홀 문이 열려야 깨어남) · 정해진 길을 왕복 순찰 · 머리가 약점', skill: '없음' }),
       bot('droneA', { name: '드론 A', speed: ms(R.droneA.speed), arms: '볼트 포', dmg: shot(R.droneA.shot), trait: '복도에 많음 · 메인홀엔 없음 · 총 한 방에 터짐', skill: '없음' }),
       bot('mine', { speed: '튀어나오면 ' + ms(R.mine.speed), arms: '폭약', dmg: '폭발 ' + R.mine.dmg + ' (반경 3.5 m) · 옆 마인도 연쇄 폭발', trait: '복도와 메인홀 바닥에 묻혀 있음', skill: R.mine.sight + ' m 안에 오면 튀어나와 달려들어 터짐' }),
       bot('gdrone', { boss: 2, name: R.gdrone.name, speed: ms(R.gdrone.speed) + ' · 돌진 22 m/s', arms: '쌍포', dmg: shot(R.gdrone.shot) + ' · 돌진 160 + 크게 밀쳐냄', trait: '중간보스 · 운전실에 혼자 · 황금 꿀벌 모양 · 운전실 문이 열린 뒤에야 나를 알아챔 (들어가면 문이 잠김) · 경보로 75 m 안의 로봇을 깨움 · 체력 40% 이하에서 분노 · 쓰러지면 문이 열리고 세이브 포인트', skill: '드론 A 4~5대 소환 (동시에 최대 12대, 소환된 드론도 처치 수에 들어감) · 날갯짓 후 돌진', pay: R.gdrone.money * 10 }),
@@ -8105,7 +8510,7 @@ const Game = {
   },
   /* a charge that connects knocks you out: the enraged zombie boss for 2 s, the giant gorilla for 3 s (300 damage), its minions for 1 s */
   stun(e, dmg, secs) {
-    if (state !== 'playing' || this.ended || player.invuln > 0) return;
+    if (state !== 'playing' || this.ended || player.invuln > 0 || godMode()) return;
     secs = secs || 2;
     player.hurt(dmg === undefined ? 90 * (e.dmgMul || 1) : dmg, e.pos, 'body');
     if (this.ended) return;
@@ -8117,17 +8522,17 @@ const Game = {
   },
   /* the boss drone's laser: touching the beam is the end */
   laser(e) {
-    if (state !== 'playing' || this.ended || player.invuln > 0) return;
+    if (state !== 'playing' || this.ended || player.invuln > 0 || godMode()) return;
     player.hp = 0; Sound.hurt(); HUD.hurt(999, e.pos); this.over('laser');
   },
   /* the giant gorilla's leap: coming down on you is the end */
   slam(e) {
-    if (state !== 'playing' || this.ended || player.invuln > 0) return;
+    if (state !== 'playing' || this.ended || player.invuln > 0 || godMode()) return;
     player.hp = 0; Sound.hurt(); HUD.hurt(999, e.pos); this.over('slam');
   },
   /* stage 2 has no health: a zombie's dash poisons, and the poison kills in 8 seconds unless an antidote goes in, just like a bite */
   poison(e) {
-    if (state !== 'playing' || this.ended) return;
+    if (state !== 'playing' || this.ended || godMode()) return;
     Sound.bite(); buzz(120); HUD.hurt(30, e.pos); player.shake = Math.max(player.shake, 0.35);
     if (this.poisonT > 0) { this.poisonT = Math.max(0.6, this.poisonT - 1.5); HUD.feed('또 중독 · 남은 시간이 줄었습니다', 0, 'hs'); return; }
     this.poisonT = 8;
@@ -8184,7 +8589,7 @@ const Game = {
       // the drones it called fall with it (they count, but pay nothing), the bridge door opens, and this is the save point
       let fell = 0; for (const m of Enemies.list.slice()) if (m.alive && m.fromBee) { m.noPay = true; m.beeFall = true; Enemies.damage(m, 1e6, m.pos, { x: 0, y: -1, z: 0 }, false, true); fell++; }
       if (fell) HUD.feed('불러낸 드론 ' + fell + '대도 함께 떨어졌습니다', 0);
-      if (World.style.ship) { Ship.onDown(e); this.takeSave(); }
+      if (World.style.ship) Ship.onDown(e); // the save point comes when you pull the key out (Ship.takeKey)
     }
     else if (e.selfDet) HUD.feed(e.T && e.T.mode === 'mine' ? '스파이더 마인이 터졌습니다' : '자폭맨이 터졌습니다', 0, 'hs');
     else if (e.beeFall) { /* counted in one line above */ }
@@ -8193,7 +8598,7 @@ const Game = {
     // an elephant leaves its tusks: ivory, which the shop buys for a lot (not on a replay, like the money)
     if (e.type === 'elephant' && pay > 0) { save.items.ivory = Math.min(63, (save.items.ivory | 0) + 1); persist(); HUD.items(); HUD.banner('상아 획득', '상점에서 ' + won(IVORY_PRICE) + '에 팔 수 있습니다', 2.6); }
     const left = this.goal - this.kills - this.calm, S = STAGES[this.stage];
-    if (!e.boss && (left === 50 || left === 25 || left === 10)) HUD.banner(left + S.unit + ' 남음', left === 10 ? '화살표가 남은 적 쪽을 가리킵니다' : '가방 ' + won(save.money), 1.8);
+    if (!e.boss && (left === 50 || left === 25 || left === 10)) HUD.banner(left + S.unit + ' 남음', left === 10 && this.stage !== 4 ? '화살표가 남은 적 쪽을 가리킵니다' : '가방 ' + won(save.money), 1.8);
     if (this.kills + this.calm >= this.goal) this.finish();
   },
   /* a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead */
@@ -8211,7 +8616,7 @@ const Game = {
     wstate[id].reserve += ammoPack(id); Sound.pickup('ammo'); HUD.feed((WEAPONS[id].rocket ? '로켓 +1 · ' : '총알 +100 · ') + WEAPONS[id].name, 0); return true;
   },
   bitten(e) {
-    if (state !== 'playing' || this.ended) return;
+    if (state !== 'playing' || this.ended || godMode()) return;
     player.shake = Math.max(player.shake, 0.35); HUD.hurt(30, e.pos); buzz(90);
     const dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, d = Math.hypot(dx, dz) || 1;
     player.vel.x += dx / d * 6; player.vel.z += dz / d * 6;
@@ -8297,6 +8702,7 @@ const Game = {
   },
   over(reason) {
     if (this.ended) return;
+    if (godMode()) { this.infected = false; this.infectT = 0; this.poisonT = 0; player.hp = Math.max(player.hp, 1); return; } // invincible: whatever it was, you live
     this.ended = true; state = 'gameover'; Gun.trigger = false; Gun.adsHeld = false; this.forfeit(); if (!this.sp) this.returnRentals(); jetEnd(); Ride.reset(); Toss.on = false;
     if (document.pointerLockElement) document.exitPointerLock();
     $('touch').hidden = true; player.shake = 0.4;
@@ -8317,7 +8723,7 @@ function refreshMenu() {
     $('st' + s + 'note').textContent = open ? NOTE[s] + (done ? ' · 다시 하면 보상 없음' + (best ? ' · 최단 ' + fmtTime(best) : '') : '') : '스테이지 ' + pre + eul(pre) + ' 깨면 열립니다';
     $('st' + s + 'stat').textContent = !open ? '잠김' : done ? '클리어' + (best ? ' ' + fmtTime(best) : '') : '도전 가능';
   });
-  $('devbtn').textContent = dev ? '개발자 모드 켜짐' : '개발자 모드'; codexButtons();
+  $('devbtn').textContent = dev ? '개발자 모드 켜짐' : '개발자 모드'; codexButtons(); godButtons();
   $('devbtn').classList.toggle('on', dev); document.body.classList.toggle('devmode', dev);
   $('lobtn').textContent = '무기 편성 · ' + save.loadout.filter((id) => id && gunAvailable(id)).length + '자루';
   $('shopbtn').textContent = save.rented.length ? '상점 · ' + save.rented.length + '자루 대여 중' : '상점';
@@ -8474,7 +8880,7 @@ function pauseGame(msg) {
   if (state !== 'playing') return;
   state = 'paused'; Gun.trigger = false; keys.clear();
   $('pausecode').textContent = '스테이지 ' + stageTag(Game.stage) + ' · 처치 ' + Game.kills + ' / ' + Game.goal;
-  $('pausemsg').textContent = msg || ''; codexButtons();
+  $('pausemsg').textContent = msg || ''; codexButtons(); godButtons();
   $('pause').hidden = false; $('touch').hidden = true;
   setTimeout(() => $('resumebtn').focus(), 0);
 }
@@ -8508,6 +8914,7 @@ window.yardBack = () => {
   if (!$('mapscreen').hidden) { closeMap(); return true; }
   if (!$('dlg').hidden) { Dialog.close(); return true; }
   if (!$('codex').hidden) { Codex.close(); return true; }
+  if (!$('custom').hidden) { Custom.close(); return true; }
   if (!$('shop').hidden) { Shop.close(); return true; }
   if (!$('loadout').hidden) { Loadout.close(); return true; }
   if (state === 'brief') { Game.forfeit(); $('brief').hidden = true; toMenu(); return true; }
@@ -8568,6 +8975,7 @@ function frame(now) {
   if (post) Post.afterScene(Gfx.ao);
   if (state === 'playing' || state === 'paused') { renderer.clearDepth(); renderer.render(viewScene, viewCam); }
   if (post) Post.end();
+  if (Custom.on && (state === 'menu' || state === 'brief')) Custom.draw(rawDt);
   Perf.frame(rawDt, performance.now() - cpu0);
 }
 
@@ -8593,11 +9001,11 @@ function start(data) {
   }
   requestAnimationFrame(frame);
   window.__yard = { Game, player, Enemies, Gun, stats, save, Shop, Car, Loot, crates, wstate, TacMap, los: lineOfSight, stopDist, Proj, collideAt, Gfx, Post, Perf, renderer, scene, Inject, colliders, Lab, Kong, KONG, dbg, SaveCode, settings, refreshMenu, camera,
-    Bleed, Fear, Toss, Ride, Beast, SEAT, ANIMALS, WEAPONS, HUD, Sound, Rockets, ShipFX, Ship, BPH, gdroneDrones, bossDropMines, Safari, Tower, TOWER, rocketLock, Melee, groundAt, addCollider, removeCollider, persistNow: persist, get HALF() { return HALF; }, get NAV() { return NAV; }, get ivoryLock() { return ivoryLock; }, keyDown(c) { keys.add(c); }, keyUp(c) { keys.delete(c); }, damageCrate, startStage, get state() { return state; }, get calls() { return renderer.info.render.calls; },
+    Bleed, Fear, Toss, Ride, Beast, SEAT, ANIMALS, WEAPONS, HUD, Sound, Rockets, ShipFX, Ship, BPH, gdroneDrones, gunModels, GUN_MATS, Heat, bossDropMines, Safari, Tower, TOWER, rocketLock, Melee, groundAt, addCollider, removeCollider, persistNow: persist, get HALF() { return HALF; }, get NAV() { return NAV; }, get ivoryLock() { return ivoryLock; }, keyDown(c) { keys.add(c); }, keyUp(c) { keys.delete(c); }, damageCrate, startStage, get state() { return state; }, get calls() { return renderer.info.render.calls; },
     sim(sec) { const n = Math.round(sec * 30); for (let i = 0; i < n && state === 'playing'; i++) tick(1 / 30); },
     cutStep(dt) { if (state === 'cutscene') { time += dt; Cut.update(dt); FX.update(dt); updateWorld(dt, time, camera.position.x, camera.position.z); } } };
 }
-const canvasFonts = ['34px "Black Han Sans"', '600 14px "IBM Plex Mono"', '400 14px "IBM Plex Sans KR"'];
+const canvasFonts = ['34px "Black Han Sans"', '600 14px "IBM Plex Mono"', '400 14px "IBM Plex Sans KR"', '900 64px "YardSign"'];
 const fontsReady = document.fonts && document.fonts.load
   ? Promise.race([Promise.all(canvasFonts.map((f) => document.fonts.load(f).catch(() => null))).then(() => document.fonts.ready), new Promise((r) => setTimeout(r, 2500))])
   : Promise.resolve();
