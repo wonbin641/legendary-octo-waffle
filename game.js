@@ -8104,17 +8104,46 @@ const SaveCode = (() => {
 })();
 
 /* ---------- one small dialog for save, load and reset ---------- */
+/* 5.15: the save code by email. the mail is written for you (code, date, what it holds, how to load it); the address you send it to
+   is remembered on this device only. a mail app, Gmail on the web, or a plain copy for when neither opens */
+const SaveMail = {
+  text() {
+    const code = SaveCode.encode(), d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    const when = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    const done = STAGE_ORDER.filter((s) => save.cleared.includes(s)).map(stageTag);
+    const subject = '야르 07 저장 코드 · ' + when;
+    const body = ['야르 07 저장 코드', '', code, '', '저장한 때: ' + when, '깬 스테이지: ' + (done.length ? done.join(', ') : '없음'), '가방: ' + won(save.money), '',
+      "게임 처음 화면의 '불러오기'에 위 코드를 넣으면 이 진행 상황으로 돌아갑니다."].join('\r\n');
+    return { subject, body };
+  },
+  addr() { const a = ($('mailto').value || '').trim(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a) ? a : ''; },
+  refresh() {
+    const { subject, body } = this.text(), a = this.addr();
+    $('mailbtn').href = 'mailto:' + encodeURIComponent(a).replace(/%40/g, '@') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    $('gmailbtn').href = 'https://mail.google.com/mail/?view=cm&fs=1' + (a ? '&to=' + encodeURIComponent(a) : '') + '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  },
+  copy() {
+    const { subject, body } = this.text(), all = subject + '\n\n' + body.replace(/\r\n/g, '\n'), done = () => { $('dlgmsg').textContent = '메일 내용을 복사했습니다 · 메일에 붙여 넣어 보내세요'; };
+    const fallback = () => { const t = document.createElement('textarea'); t.value = all; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} t.remove(); if (ok) done(); else $('dlgmsg').textContent = '복사가 막혀 있습니다 · 위 코드를 길게 눌러 복사해 주세요'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(all).then(done, fallback); else fallback();
+  },
+};
+$('mailto').addEventListener('input', () => { settings.mailTo = ($('mailto').value || '').trim(); store('yard07.settings', settings); SaveMail.refresh(); });
+for (const id of ['mailbtn', 'gmailbtn']) $(id).addEventListener('click', () => { SaveMail.refresh(); $('dlgmsg').textContent = id === 'mailbtn' ? '메일 앱을 엽니다 · 열리지 않으면 Gmail이나 메일 내용 복사를 써 주세요' : 'Gmail 쓰기 창을 엽니다'; });
+$('mailcopy').addEventListener('click', () => SaveMail.copy());
 const Dialog = {
   mode: null,
   open(mode) {
     this.mode = mode; showOnly('dlg'); $('dlgmsg').textContent = '';
     const code = $('codebox'), inp = $('codein'), ok = $('dlgok');
     code.hidden = mode !== 'save'; inp.hidden = mode !== 'load' && mode !== 'dev'; ok.classList.toggle('danger', mode === 'reset');
+    $('mailrow').hidden = mode !== 'save'; if (mode === 'save') { $('mailto').value = settings.mailTo || ''; }
     inp.type = mode === 'dev' ? 'password' : 'text'; inp.inputMode = mode === 'dev' ? 'numeric' : 'text';
     if (mode === 'save') {
       $('dlghead').textContent = '진행 상황 저장'; $('dlgtitle').textContent = '저장 코드';
       $('dlgtext').textContent = '이 코드를 적어 두거나 복사해 두세요. 처음 화면의 불러오기에 넣으면 지금의 돈, 열린 스테이지, 깬 스테이지, 최단 기록, 무기 편성, 가진 총, 아이템과 상아로 돌아갑니다. 대여 중인 무기는 코드에 들어가지 않습니다.';
-      code.textContent = SaveCode.encode(); ok.textContent = '복사'; $('dlgcancel').textContent = '닫기';
+      code.textContent = SaveCode.encode(); ok.textContent = '코드 복사'; $('dlgcancel').textContent = '닫기'; SaveMail.refresh();
     } else if (mode === 'load') {
       $('dlghead').textContent = '진행 상황 불러오기'; $('dlgtitle').textContent = '불러오기';
       $('dlgtext').textContent = '저장할 때 받은 코드를 넣으세요. 지금 진행 상황은 코드의 내용으로 바뀌고, 대여 중인 무기는 반납됩니다(대여료는 돌려받지 않습니다).';
