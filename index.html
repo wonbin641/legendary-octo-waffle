@@ -390,6 +390,7 @@ body.devmode #menucode::after { content: ' · 개발자 모드'; color: var(--vi
 .swatch.on { border-color: var(--sodium); box-shadow: 0 0 0 2px var(--sodium); }
 .cupaint { padding-bottom: 14px; }
 .cueffect { color: var(--sodium); }
+.bugline a { color: var(--sodium); text-decoration: underline; user-select: all; -webkit-user-select: all; }
 /* the encyclopaedias */
 .cxsheet { width: min(1060px, 100%); }
 .cxsheet .sheet-body { gap: 14px; }
@@ -626,6 +627,7 @@ body.portrait #t-swap { display: none; }
       </div>
       <div class="bagline"><span class="best">가방 <b id="bagmoney">0원</b></span><button class="ghost" id="shopbtn">상점</button><button class="ghost" id="lobtn">무기 편성</button><button class="ghost" id="cubtn">총기 커스텀</button><button class="ghost" id="cxbtn">도감</button><span class="best" id="bestline"></span></div>
       <div class="metarow"><button class="ghost small" id="savebtn">저장</button><button class="ghost small" id="loadbtn">불러오기</button><button class="ghost small" id="resetbtn">초기화</button><button class="ghost small" id="devbtn">개발자 모드</button><button class="ghost small" id="godbtn" hidden>무적 꺼짐</button></div>
+      <p class="note bugline">버그 제보: <a href="mailto:ccoo112@naver.com">ccoo112@naver.com</a></p>
       <p class="lede">부두 7번 야드에서 시작합니다. 스테이지마다 적이 미리 자리를 잡고 있고 더는 나타나지 않습니다. 한 명을 잡을 때마다 돈이 가방에 들어오지만, 다 잡고 빠져나와야 그 돈을 가지고 나옵니다. 쓰러지면 이번에 번 돈은 잃습니다. 체력은 1000이고 저절로 차지 않습니다(스테이지 2는 체력 대신 감염과 중독뿐). 스테이지 1을 깨면 2와 1-1이, 1-1을 깨면 1-2가 열립니다.</p>
       <div class="cols">
         <section>
