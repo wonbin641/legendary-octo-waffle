@@ -857,6 +857,10 @@ function setWorldSize(half) {
   spatialCells = new Array(SPN * SPN); for (let i = 0; i < spatialCells.length; i++) spatialCells[i] = [];
 }
 let qstamp = 1;
+/* 5.16: ground below the ground. the ship's main hall has a stepped pit sunk in its floor: inside the pit's outline the base ground is
+   its bottom (the steps are boxes standing on it, flagged 'step'); everywhere else it is y = 0, as it always was */
+let PIT = null;
+function floorY(x, z) { return PIT !== null && x > PIT.x0 && x < PIT.x1 && z > PIT.z0 && z < PIT.z1 ? PIT.y : 0; }
 function addCollider(minx, miny, minz, maxx, maxy, maxz, kind, ref) {
   const b = { minx, miny, minz, maxx, maxy, maxz, kind: kind || 'concrete', ref: ref || null, _q: 0 };
   colliders.push(b);
@@ -917,7 +921,7 @@ function moveXZ(p, dx, dz, r, h, stepH) {
   return blocked;
 }
 function groundAt(x, y, z, r) {
-  let g = 0; const L = queryNear(x - r, z - r, x + r, z + r);
+  let g = floorY(x, z); const L = queryNear(x - r, z - r, x + r, z + r);
   for (let i = 0; i < L.length; i++) { const b = L[i];
     if (x + r <= b.minx || x - r >= b.maxx || z + r <= b.minz || z - r >= b.maxz) continue;
     if (b.maxy <= y + 0.06 && b.maxy > g) g = b.maxy; }
@@ -934,7 +938,11 @@ function ceilAt(x, y, z, r, h) {
 const RH = { t: 0, nx: 0, ny: 0, nz: 0, box: null };
 function raycastStatic(ox, oy, oz, dx, dy, dz, maxT) {
   let best = maxT, hit = false;
-  if (dy < -1e-6) { const tg = -oy / dy; if (tg >= 0 && tg < best) { best = tg; RH.nx = 0; RH.ny = 1; RH.nz = 0; RH.box = null; hit = true; } }
+  if (dy < -1e-6) {
+    // the ground plane, or the bottom of the pit for a ray that goes down into it (or starts in it)
+    let fy = 0; if (PIT !== null) { const t0 = -oy / dy, hx = ox + dx * t0, hz = oz + dz * t0; if (oy < 0 || (hx > PIT.x0 && hx < PIT.x1 && hz > PIT.z0 && hz < PIT.z1)) fy = PIT.y; }
+    const tg = (fy - oy) / dy; if (tg >= 0 && tg < best) { best = tg; RH.nx = 0; RH.ny = 1; RH.nz = 0; RH.box = null; hit = true; }
+  }
   const ex = ox + dx * best, ez = oz + dz * best;
   const L = queryNear(Math.min(ox, ex), Math.min(oz, ez), Math.max(ox, ex), Math.max(oz, ez));
   for (let i = 0; i < L.length; i++) {
@@ -969,7 +977,7 @@ function navCell(x, z) { return [clamp(Math.floor((x + NAV.off) / NAV.cs), 0, NA
 function buildNav() {
   const n = NAV.n; NAV.blocked = new Uint8Array(n * n); NAV.dist = new Int32Array(n * n).fill(-1);
   for (const b of colliders) {
-    if (b.miny >= 1.6 || b.door) continue; // a sliding door is a way through, open or not
+    if (b.miny >= 1.6 || b.door || b.step) continue; // a sliding door is a way through, open or not; so are the pit's steps
     const pad = 0.5, cs = NAV.cs;
     const x0 = Math.max(0, Math.floor((b.minx - pad + NAV.off) / cs)), x1 = Math.min(n - 1, Math.floor((b.maxx + pad + NAV.off) / cs));
     const z0 = Math.max(0, Math.floor((b.minz - pad + NAV.off) / cs)), z1 = Math.min(n - 1, Math.floor((b.maxz + pad + NAV.off) / cs));
@@ -1017,7 +1025,7 @@ function flowDir(x, z, out) {
 
 /* ============ stage layout: blocks of container stacks with lanes between them ============ */
 function buildStage(stage) {
-  World.dispose(); Lab.reset(); Ship.reset(); Tower.reset(); Safari.reset(); World.navMask = null; World.menuCam = null;
+  World.dispose(); Lab.reset(); Ship.reset(); Tower.reset(); Safari.reset(); World.navMask = null; World.menuCam = null; PIT = null;
   const S = STAGE_STYLE[stage]; World.style = S;
   const R = mulberry(S.seed), r = (a, b) => a + R() * (b - a);
   const G = new THREE.Group(); World.group = G; scene.add(G);
@@ -1036,7 +1044,7 @@ function buildStage(stage) {
   World.night.visible = !S.day && !S.indoor;
   if (!isYard(stage)) World.blink.length = 0;
   if (stage === 3 || stage === 8) { setWorldSize(LAB_HALF + 1); setNav(2 * LAB_HALF + 8, 1); return buildLab(G, S, R, r); }
-  if (stage === 4) { setWorldSize(125); setNav(254, 1); return buildShip(G, S, R, r); }
+  if (stage === 4) { setWorldSize(166); setNav(334, 1); return buildShip(G, S, R, r); } // 5.16: the bigger main hall reaches x = 162
   if (stage === 7) { setWorldSize(178); setNav(180, 2); return buildSavanna(G, S, R, r); }
   setWorldSize(66); setNav(140, 1);
   if (stage === 2) return buildVillage(G, S, R, r);
@@ -1486,12 +1494,13 @@ function buildFires(G, fires) {
 /* ============ stage 4: inside a spaceship, laid out after your drawing ============
    from the airlock (시작) a narrow dog-leg passage climbs north into a long corridor (복도, 160 m). the bridge (운전실) is at its west end:
    twice the floor of the old one and twice as tall, with an open gallery round three sides at 7 m and a wide stair up each side.
-   the main hall (메인홀) is at its east end, with a stepped dais round the reactor in the middle. both have sliding doors onto the corridor */
+   the main hall (메인홀) is at its east end: 94 x 93 m, an upside-down stepped pyramid sunk in its floor and a pyramid roof over it (5.16).
+   both have sliding doors onto the corridor */
 const SHIP_ROOMS = [
-  // x0, z0, x1, z1, ceiling height, kind
+  // x0, z0, x1, z1, ceiling height (the hall's: the top of its walls, where the roof starts), kind
   [-123, -28, -92, 13, 16, 'bridge'],
   [-92, -12.5, 68, -2.5, 6, 'corr'],
-  [68, -25, 115, 21.5, 16, 'hall'],
+  [68, -48.5, 162, 44.5, 20, 'hall'], // 5.16: twice as wide and twice as deep as the old 47 x 46.5 m
   [-26.5, -2.5, -22, 7, 4.5, 'pass'],
   [-44, 7, -22, 13, 4.5, 'pass'],
   [-44, 13, -39.5, 25, 4.5, 'pass'],
@@ -1499,9 +1508,30 @@ const SHIP_ROOMS = [
 ];
 const SHIP_START = { x: -41.75, z: 22.6, yaw: 0 };
 const SHIP_DOOR_Z = 25;
-const REACTOR = { x: 94, z: -4, r: 1.7, base: 1.35 };
-const DAIS = [[82, -15, 106, 7, 0.45], [86.5, -11, 101.5, 3, 0.9], [90, -8, 98, 0, 1.35]]; // x0, z0, x1, z1, top
-const HALL_PILLARS = [[74, -18], [74, 14], [111, -19], [111, 15]];
+/* 5.16, after your drawing: sunk in the middle of the main hall is an upside-down stepped pyramid. four flights of eight 37.5 cm steps
+   run down all four sides, with a landing after each of the first three, to a floor 12 m below with the reactor standing in it. square
+   pillars stand on the corners of the first and the third landing, 32 m tall (twice the old ones). over the hall a pyramid roof rises
+   from the top of the 20 m walls to a point 46 m up, so from the side the hall is a diamond: a pyramid on top, a pyramid upside down below */
+const PYR = (() => {
+  const R = SHIP_ROOMS[2], cx = (R[0] + R[2]) / 2, cz = (R[1] + R[3]) / 2, hx = (R[2] - R[0]) / 2, hz = (R[3] - R[1]) / 2;
+  const ox = 38.5, oz = 38, rise = 0.375, run = 0.55, per = 8, land = [4, 3, 3.5]; // the rim's half-size, each step, the three landings
+  const steps = []; let ax = ox, az = oz; // each step a ring: its outer half-size, its top, its width
+  for (let k = 1; k < 4 * per; k++) { const L = k % per ? 0 : land[k / per - 1], w = run + L; steps.push({ k, ax, az, y: -rise * k, w, land: L ? k / per : 0 }); ax -= w; az -= w; }
+  return { cx, cz, hx, hz, ox, oz, rise, run, per, steps, bottom: -rise * 4 * per, bx: ax, bz: az, wall: R[4], apex: 46 };
+})();
+/* the underside of the hall's roof over a point */
+function hallRoof(x, z) { const u = Math.min(1, Math.max(Math.abs(x - PYR.cx) / PYR.hx, Math.abs(z - PYR.cz) / PYR.hz)); return PYR.wall + (PYR.apex - PYR.wall) * (1 - u); }
+function inPit(x, z, m) { return Math.abs(x - PYR.cx) < PYR.ox + (m || 0) && Math.abs(z - PYR.cz) < PYR.oz + (m || 0); }
+const REACTOR = { x: PYR.cx, z: PYR.cz, r: 1.7, base: PYR.bottom + 0.35, dais: 3.5 };
+/* the pillars: x, z, half-width, foot, top, and whether it holds up the roof (the outer four) or ends in a light 32 m up (the inner four) */
+const HALL_PILLARS = [];
+for (const [L, half, roof] of [[PYR.steps[PYR.per - 1], 1.5, true], [PYR.steps[3 * PYR.per - 1], 1.25, false]]) {
+  const mx = L.ax - L.w / 2, mz = L.az - L.w / 2;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const x = PYR.cx + sx * mx, z = PYR.cz + sz * mz;
+    HALL_PILLARS.push([x, z, half, L.y, roof ? hallRoof(x - sx * half, z - sz * half) + 0.3 : L.y + 32, roof]);
+  }
+}
 /* the bridge's gallery: 7 m up, 5 m deep along the north, south and east walls; the north and south runs start as stairs */
 const BRIDGE = { gy: 7, x0: -123, x1: -92, z0: -28, z1: 13, stairX0: -117, stairX1: -107.4, eastX: -97, steps: 16 };
 /* the sliding doors where the corridor meets the bridge and the hall, and the hatches in the hall floor that open at the boss's third phase */
@@ -1511,14 +1541,17 @@ const SHIP_DOORS = [{ x: -91.7, z0: -12.5, z1: -2.5, h: 6, name: '운전실', in
 const SHIP_KEY = { x: -105, y: 1.6, z: -7.5 };
 /* where the save point puts you back: on the bridge, just inside its door, facing out */
 const SHIP_SAVE = { x: -98.5, z: -7.5, yaw: -Math.PI / 2 };
-const HATCHES = [[71.6, -9], [71.6, 10], [79, 19], [93, 19.4], [109, 9], [109, -15], [93, -22.4], [77, -20]];
+/* x, z and the floor they are in: four round the walkway, four round the reactor at the bottom of the pit */
+const HATCHES = (() => { const R = SHIP_ROOMS[2], P = PYR, d = 6.5;
+  return [[P.cx, (R[1] + P.cz - P.oz) / 2, 0], [P.cx, (P.cz + P.oz + R[3]) / 2, 0], [(P.cx + P.ox + R[2]) / 2, P.cz, 0], [(R[0] + P.cx - P.ox) / 2, 22, 0],
+    [P.cx - d, P.cz - d, P.bottom], [P.cx + d, P.cz - d, P.bottom], [P.cx - d, P.cz + d, P.bottom], [P.cx + d, P.cz + d, P.bottom]]; })();
 /* the room a point is in (the airlock does not count: you never get in there) */
 function shipRoom(x, z) { for (const R of SHIP_ROOMS) if (R[5] !== 'lock' && x >= R[0] && x <= R[2] && z >= R[1] && z <= R[3]) return R; return null; }
-function shipCeil(x, z) { const R = shipRoom(x, z); return R ? R[4] : 30; }
+function shipCeil(x, z) { const R = shipRoom(x, z); return R ? (R[5] === 'hall' ? hallRoof(x, z) - 1 : R[4]) : 30; } // under the hall's roof: a metre short of it
 const Ship = {
-  active: false, door: null, doorOpen: 0, closing: false, coreMat: null, ring: null, screens: null, doors: [], hatches: [], hatchQ: [], hatchWait: 0,
+  active: false, door: null, doorOpen: 0, closing: false, coreMat: null, ring: null, ring2: null, screens: null, doors: [], hatches: [], hatchQ: [], hatchWait: 0,
   key: false, keyObj: null, keyGlow: null, keyHintT: 0, saveT: 0,
-  reset() { this.active = false; this.door = null; this.doorOpen = 0; this.closing = false; this.coreMat = null; this.ring = null; this.screens = null; this.doors = []; this.hatches = []; this.hatchQ = []; this.hatchWait = 0;
+  reset() { this.active = false; this.door = null; this.doorOpen = 0; this.closing = false; this.coreMat = null; this.ring = null; this.ring2 = null; this.screens = null; this.doors = []; this.hatches = []; this.hatchQ = []; this.hatchWait = 0;
     this.key = false; this.keyObj = null; this.keyGlow = null; this.keyHintT = 0; this.saveT = 0; },
   /* the gold bee on the bridge and the boss in the hall (5.13): each sits behind its door and takes no notice of anything until you come through it */
   drone(D) { return Enemies.list.find((o) => o.alive && o.type === D.who) || null; },
@@ -1584,18 +1617,19 @@ const Ship = {
   openHatches() {
     if (this.hatchQ.length || !this.hatches.length || this.hatches[0].open) return;
     for (const H of this.hatches) H.open = true;
-    for (let i = 0; i < 32; i++) { const H = this.hatches[i % this.hatches.length]; this.hatchQ.push({ x: H.x, z: H.z, t: 1.2 + Math.floor(i / this.hatches.length) * 2.2 + rand(0, 0.8) }); }
+    for (let i = 0; i < 32; i++) { const H = this.hatches[i % this.hatches.length]; this.hatchQ.push({ x: H.x, z: H.z, y: H.y, t: 1.2 + Math.floor(i / this.hatches.length) * 2.2 + rand(0, 0.8) }); }
     Sound.alarm(); HUD.banner('해치 개방', '메인홀 바닥에서 드론 수십 대가 출격합니다', 2.6);
   },
   /* the airlock door, the reactor's pulse, the slow ring over it */
   anim(dt, t) {
     if (!this.active) return;
     this.doorTick(dt);
-    for (const H of this.hatches) { H.k = Math.min(1, H.k + (H.open ? dt * 1.5 : 0)); H.lidA.position.x = H.x - 0.6 - H.k * 1.15; H.lidB.position.x = H.x + 0.6 + H.k * 1.15; H.glow.visible = H.shaft.visible = H.k > 0.05; if (H.glow.visible) { H.glow.material.opacity = 0.75 + 0.2 * Math.sin(t * 8 + H.x); H.shaft.scale.y = H.k * (0.9 + 0.1 * Math.sin(t * 5 + H.z)); H.shaft.position.y = 1.7 * H.shaft.scale.y; } }
+    for (const H of this.hatches) { H.k = Math.min(1, H.k + (H.open ? dt * 1.5 : 0)); H.lidA.position.x = H.x - 0.6 - H.k * 1.15; H.lidB.position.x = H.x + 0.6 + H.k * 1.15; H.glow.visible = H.shaft.visible = H.k > 0.05; if (H.glow.visible) { H.glow.material.opacity = 0.75 + 0.2 * Math.sin(t * 8 + H.x); H.shaft.scale.y = H.k * (0.9 + 0.1 * Math.sin(t * 5 + H.z)); H.shaft.position.y = H.y + 1.7 * H.shaft.scale.y; } }
     if (this.closing) { this.doorOpen = Math.max(0, this.doorOpen - dt * 0.9); if (this.doorOpen === 0) this.closing = false; }
     if (this.door) this.door.position.y = 2.25 + this.doorOpen * 4.3;
     if (this.coreMat) { const k = 0.82 + 0.14 * Math.sin(t * 2.6) + 0.04 * Math.sin(t * 19); this.coreMat.color.setRGB(0.45 * k, 0.82 * k, 1.0 * k); }
-    if (this.ring) this.ring.rotation.y += dt * 0.35;
+    if (this.ring) this.ring.rotation.z += dt * 0.35;
+    if (this.ring2) this.ring2.rotation.z -= dt * 0.6;
     if (this.screens) this.screens.material.color.setScalar(0.85 + 0.15 * Math.sin(t * 4.3));
     if (this.keyObj && this.keyObj.visible) { this.keyObj.rotation.y += dt * 1.2; this.keyGlow.material.opacity = 0.55 + 0.3 * Math.sin(t * 4); }
     if (this.saveT > 0 && (this.saveT -= dt) <= 0 && !this.key) { HUD.banner('운전실 문이 열렸습니다', '조종석에 꽂힌 메인홀 열쇠를 뽑으세요 · 뽑으면 세이브 포인트', 3.4); }
@@ -1686,7 +1720,7 @@ function buildShip(G, S, R, r) {
   const box = (x0, y0, z0, x1, y1, z1, col, kind) => { addCollider(x0, y0, z0, x1, y1, z1, kind || 'metal'); solid.push(B(x1 - x0, y1 - y0, z1 - z0, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, col)); };
 
   /* ---- 1. the floor plan into a half-metre grid: every cell knows the ceiling over it (0 = outside the ship) ---- */
-  const CS = 0.5, GX = -126, GZ = -30, NX = 486, NZ = 122, hAt = new Float32Array(NX * NZ);
+  const CS = 0.5, GX = -126, GZ = -50, NX = 580, NZ = 192, hAt = new Float32Array(NX * NZ); // x -126..164, z -50..46
   for (const Rm of SHIP_ROOMS) {
     const i0 = Math.round((Rm[0] - GX) / CS), i1 = Math.round((Rm[2] - GX) / CS), j0 = Math.round((Rm[1] - GZ) / CS), j1 = Math.round((Rm[3] - GZ) / CS);
     for (let i = i0; i < i1; i++) for (let j = j0; j < j1; j++) hAt[j * NX + i] = Math.max(hAt[j * NX + i], Rm[4]);
@@ -1716,6 +1750,7 @@ function buildShip(G, S, R, r) {
   /* ---- 3. ceilings and floors ---- */
   const ceilGeos = [];
   for (const [x0, z0, x1, z1, h, kind] of SHIP_ROOMS) {
+    if (kind === 'hall') continue; // the hall has a pyramid roof and a floor with a pit in it (section 7)
     addCollider(x0, h, z0, x1, h + 0.4, z1, 'metal'); ceilGeos.push(uvBox(x0, h, z0, x1, h + 0.4, z1, 4));
     const fg = new THREE.PlaneGeometry(x1 - x0, z1 - z0), uv = fg.attributes.uv, s = kind === 'pass' || kind === 'lock' ? 1.5 : kind === 'bridge' ? 3 : 6;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (x1 - x0) / s, uv.getY(i) * (z1 - z0) / s);
@@ -1839,38 +1874,144 @@ function buildShip(G, S, R, r) {
   World.lamps.push({ x: -115, y: 13, z: -16, d: 0 }, { x: -115, y: 13, z: 1, d: 0 }, { x: -104, y: 13, z: -7.5, d: 0 }, { x: -100, y: 5.6, z: -25.5, d: 0 }, { x: -100, y: 5.6, z: 10.5, d: 0 },
     { x: -100, y: GY + 3.5, z: -25.5, d: 0 }, { x: -100, y: GY + 3.5, z: 10.5, d: 0 }, { x: -94.5, y: GY + 3.5, z: -7.5, d: 0 });
 
-  /* ---- 7. the main hall (메인홀): a stepped dais round the reactor, four pillars, tall cargo to hide behind, windows to the east ---- */
-  DAIS.forEach(([x0, z0, x1, z1, y], k) => { box(x0, 0, z0, x1, y, z1, k === 2 ? '#3d4454' : k === 1 ? '#353b48' : '#2f3542');
-    for (const [a, b, c, d] of [[x0, z0, x1, z0], [x0, z1, x1, z1], [x0, z0, x0, z1], [x1, z0, x1, z1]]) glow.push(B(Math.max(0.04, Math.abs(c - a)), 0.03, Math.max(0.04, Math.abs(d - b)), (a + c) / 2, y + 0.01, (b + d) / 2, '#4fb8ff')); });
-  addCollider(REACTOR.x - REACTOR.r, REACTOR.base, REACTOR.z - REACTOR.r, REACTOR.x + REACTOR.r, 16, REACTOR.z + REACTOR.r, 'metal');
-  const coreMat = new THREE.MeshBasicMaterial({ color: 0x8fd8ff }); Ship.coreMat = coreMat;
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 14.65, 24), coreMat); core.position.set(REACTOR.x, REACTOR.base + 7.32, REACTOR.z); G.add(core);
-  for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; solid.push(B(0.22, 14.65, 0.22, REACTOR.x + Math.cos(a) * 1.55, REACTOR.base + 7.32, REACTOR.z + Math.sin(a) * 1.55, '#3a4150')); }
-  for (const y of [2.4, 5.5, 9, 12.5]) { const g = new THREE.TorusGeometry(1.6, 0.12, 6, 28); g.rotateX(Math.PI / 2); g.translate(REACTOR.x, y, REACTOR.z); pipes.push(g); }
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(7, 0.18, 6, 48), new THREE.MeshBasicMaterial({ color: 0x4fb8ff })); ring.rotation.x = Math.PI / 2; ring.position.set(REACTOR.x, 15.6, REACTOR.z); G.add(ring); Ship.ring = ring;
-  for (const [x, z] of HALL_PILLARS) { box(x - 1.2, 0, z - 1.2, x + 1.2, 16, z + 1.2, '#353b48'); glow.push(B(2.44, 0.1, 0.04, x, 3, z - 1.22, '#3a9cff'), B(2.44, 0.1, 0.04, x, 3, z + 1.22, '#3a9cff')); }
-  const pickC = () => ['#4b5568', '#5a4a3a', '#3e5a52', '#5a3e44', '#41495c'][Math.floor(R() * 5)];
-  for (const [x, z, w, d] of [[73, 3.5, 2.6, 5.2], [84, 17.5, 5.2, 2.6], [101, 17.5, 5.2, 2.6], [112, -4, 2.6, 5.2], [82, -21.5, 5.2, 2.6], [100, -21.5, 5.2, 2.6]]) {
-    const h = r(5.0, 5.8), c = pickC(); box(x - w / 2, 0, z - d / 2, x + w / 2, h, z + d / 2, c);
-    solid.push(B(w + 0.06, 0.18, d + 0.06, x, h * 0.36, z, '#e8b040'), B(w + 0.06, 0.18, d + 0.06, x, h * 0.86, z, '#e8b040'), B(w + 0.04, 0.08, d + 0.04, x, h * 0.5, z, '#1c2028'));
-  }
-  const hw = new THREE.Mesh(new THREE.PlaneGeometry(30, 7), new THREE.MeshBasicMaterial({ map: space(0.4) })); hw.position.set(114.97, 9, -2); hw.rotation.y = -Math.PI / 2; G.add(hw);
-  for (let x = 74; x <= 110; x += 9) for (let z = -20; z <= 16; z += 9) if (Math.hypot(x - REACTOR.x, z - REACTOR.z) > 9) glow.push(B(3, 0.06, 1.2, x, 15.97, z, '#dfeeff'));
-  for (const y of [2.4, 9]) glow.push(B(0.04, 0.1, 46, 114.96, y, -1.75, '#3a9cff'), B(46.5, 0.1, 0.04, 91.5, y, -24.96, '#3a9cff'), B(46.5, 0.1, 0.04, 91.5, y, 21.46, '#3a9cff'));
-  [[76, 12, -18], [76, 12, 12], [110, 12, -16], [110, 12, 12], [94, 13, -4], [84, 6, -4], [104, 6, -4], [94, 6, 12]].forEach(([x, y, z]) => World.lamps.push({ x, y, z, d: 0 }));
-  // eight hatches in the floor, shut and dark until the boss's third phase (then two leaves slide apart over a red glow)
-  const hatchLid = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.45, metalness: 0.7 });
-  // a column of red light standing up out of each open hatch, bright at the floor and gone by head height
-  const shaftTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 64; const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 64);
-    gr.addColorStop(0, '#000'); gr.addColorStop(0.55, '#2a0800'); gr.addColorStop(1, '#ff5a22'); g.fillStyle = gr; g.fillRect(0, 0, 4, 64); return new THREE.CanvasTexture(c); })();
-  const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-  for (const [x, z] of HATCHES) {
-    glow.push(B(2.7, 0.01, 0.14, x, 0.011, z - 1.28, '#e8b040'), B(2.7, 0.01, 0.14, x, 0.011, z + 1.28, '#e8b040'), B(0.14, 0.01, 2.7, x - 1.28, 0.011, z, '#e8b040'), B(0.14, 0.01, 2.7, x + 1.28, 0.011, z, '#e8b040'));
-    const lidA = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, 2.4), hatchLid), lidB = lidA.clone(); lidA.position.set(x - 0.6, 0.035, z); lidB.position.set(x + 0.6, 0.035, z); G.add(lidA, lidB);
-    const gl = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.3), new THREE.MeshBasicMaterial({ color: 0xff4a1e, transparent: true, opacity: 0.9, toneMapped: false }));
-    gl.rotation.x = -Math.PI / 2; gl.position.set(x, 0.012, z); gl.visible = false; G.add(gl);
-    const sh = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.25, 3.4, 16, 1, true), shaftMat); sh.position.set(x, 1.7, z); sh.visible = false; G.add(sh);
-    Ship.hatches.push({ x, z, lidA, lidB, glow: gl, shaft: sh, open: false, k: 0 });
+  /* ---- 7. the main hall (메인홀), 5.16: 94 x 93 m. an upside-down stepped pyramid sunk in the middle of the floor with a line of light on
+     every step, eight tall pillars on its landings, the reactor's light column from the bottom of the pit to the top of a pyramid roof,
+     windows onto space on three sides, and cargo round the walkway to hide behind ---- */
+  {
+    const HR = SHIP_ROOMS[2], P = PYR, cx = P.cx, cz = P.cz, BOT = P.bottom, W = P.wall, A = P.apex, x0 = HR[0], x1 = HR[2], z0 = HR[1], z1 = HR[3];
+    PIT = { x0: cx - P.ox, x1: cx + P.ox, z0: cz - P.oz, z1: cz + P.oz, y: BOT };
+    const stepTex = keep(canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = '#262b34'; g.fillRect(0, 0, w, h); speckle(g, w, h, 2600, ['#2a3039', '#21252d', '#2e343f'], 1.4);
+      g.strokeStyle = 'rgba(8,10,14,0.9)'; g.lineWidth = 3; for (let k = 0; k <= 4; k++) { g.beginPath(); g.moveTo(k * w / 4, 0); g.lineTo(k * w / 4, h); g.stroke(); }
+      g.fillStyle = 'rgba(150,175,210,0.10)'; for (let y = 6; y < h; y += 14) g.fillRect(0, y, w, 2); // ribs against slipping
+    }, 1, 1));
+    const roofTex = keep(canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = '#343c4c'; g.fillRect(0, 0, w, h); speckle(g, w, h, 900, ['rgba(255,255,255,0.05)', 'rgba(0,0,0,0.25)'], 1.6);
+      g.fillStyle = '#2b3240'; g.fillRect(8, 8, w / 2 - 16, h / 2 - 16); g.fillRect(w / 2 + 8, h / 2 + 8, w / 2 - 16, h / 2 - 16);
+      g.strokeStyle = '#11141a'; g.lineWidth = 5; g.strokeRect(0, 0, w, h); g.lineWidth = 2; g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+      g.fillStyle = 'rgba(120,180,255,0.16)'; for (const [x, y] of [[12, 12], [w - 12, 12], [12, h - 12], [w - 12, h - 12]]) { g.beginPath(); g.arc(x, y, 3, 0, TAU); g.fill(); }
+    }, 1, 1));
+    // the walkway round the pit, in four strips (texture laid in world metres so the strips meet), and the floor at the bottom
+    const strip = (xa, za, xb, zb, y, s) => { const fg = new THREE.PlaneGeometry(xb - xa, zb - za), uv = fg.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (xa + uv.getX(i) * (xb - xa)) / s, (zb - uv.getY(i) * (zb - za)) / s);
+      const f = new THREE.Mesh(fg, floorMat.hall); f.rotation.x = -Math.PI / 2; f.position.set((xa + xb) / 2, y, (za + zb) / 2); f.receiveShadow = true; G.add(f); };
+    strip(x0, z0, x1, cz - P.oz, 0.002, 6); strip(x0, cz + P.oz, x1, z1, 0.002, 6); strip(x0, cz - P.oz, cx - P.ox, cz + P.oz, 0.002, 6); strip(cx + P.ox, cz - P.oz, x1, cz + P.oz, 0.002, 6);
+    strip(cx - P.bx, cz - P.bz, cx + P.bx, cz + P.bz, BOT + 0.002, 6);
+    /* the steps: each a ring of four boxes from the bottom of the pit up to its tread (the walls of the pit too); people and robots both
+       climb them (37.5 cm). flagged 'step' so the robots' way-finding walks over them */
+    const stepGeos = [], landGeos = [];
+    const band = (xa, za, xb, zb, top, list) => { const c = addCollider(xa, BOT, za, xb, top, zb, 'metal'); c.step = true; list.push(uvBox(xa, BOT, za, xb, top, zb, list === landGeos ? 6 : 2)); };
+    const T2 = 0.3; // the pit's own wall, just outside the rim, from the bottom up to the walkway
+    band(cx - P.ox - T2, cz - P.oz - T2, cx + P.ox + T2, cz - P.oz, 0, stepGeos); band(cx - P.ox - T2, cz + P.oz, cx + P.ox + T2, cz + P.oz + T2, 0, stepGeos);
+    band(cx - P.ox - T2, cz - P.oz, cx - P.ox, cz + P.oz, 0, stepGeos); band(cx + P.ox, cz - P.oz, cx + P.ox + T2, cz + P.oz, 0, stepGeos);
+    for (const st of P.steps) {
+      const ix = st.ax - st.w, iz = st.az - st.w, list = st.land ? landGeos : stepGeos;
+      band(cx - st.ax, cz - st.az, cx + st.ax, cz - iz, st.y, list); band(cx - st.ax, cz + iz, cx + st.ax, cz + st.az, st.y, list);
+      band(cx - st.ax, cz - iz, cx - ix, cz + iz, st.y, list); band(cx + ix, cz - iz, cx + st.ax, cz + iz, st.y, list);
+      // a line of light round the nose of every step, over the edge so it shows from above and from below; brighter at the edge of a
+      // landing and round the floor at the bottom
+      const col = st.land || st.k === P.steps.length ? '#6fd2ff' : '#3a8ee6', y = st.y - 0.035, e = 0.01, t = 0.09, hh = 0.1;
+      glow.push(B(2 * ix + 2 * t, hh, t, cx, y, cz - iz - e, col), B(2 * ix + 2 * t, hh, t, cx, y, cz + iz + e, col),
+        B(t, hh, 2 * iz + 2 * t, cx - ix - e, y, cz, col), B(t, hh, 2 * iz + 2 * t, cx + ix + e, y, cz, col));
+    }
+    const stepMesh = new THREE.Mesh(mergeGeos(stepGeos), new THREE.MeshStandardMaterial({ map: stepTex, roughness: 0.55, metalness: 0.5 })); stepMesh.castShadow = stepMesh.receiveShadow = true; G.add(stepMesh);
+    const landMesh = new THREE.Mesh(mergeGeos(landGeos), floorMat.hall); landMesh.castShadow = landMesh.receiveShadow = true; G.add(landMesh);
+    // round the rim: a hazard line on the walkway
+    const rw = 0.16;
+    glow.push(B(2 * P.ox + 2 * rw, 0.02, rw, cx, 0.012, cz - P.oz - rw / 2, '#e8b040'), B(2 * P.ox + 2 * rw, 0.02, rw, cx, 0.012, cz + P.oz + rw / 2, '#e8b040'),
+      B(rw, 0.02, 2 * P.oz, cx - P.ox - rw / 2, 0.012, cz, '#e8b040'), B(rw, 0.02, 2 * P.oz, cx + P.ox + rw / 2, 0.012, cz, '#e8b040'));
+    // the reactor: a low square dais at the bottom, a column of light from it to the top of the roof, rods and rings round it
+    const RD = REACTOR.dais; box(cx - RD, BOT, cz - RD, cx + RD, REACTOR.base, cz + RD, '#3d4454');
+    for (const [a1, b1, c1, d1] of [[-RD, -RD, RD, -RD], [-RD, RD, RD, RD], [-RD, -RD, -RD, RD], [RD, -RD, RD, RD]]) glow.push(B(Math.max(0.05, Math.abs(c1 - a1)), 0.03, Math.max(0.05, Math.abs(d1 - b1)), cx + (a1 + c1) / 2, REACTOR.base + 0.01, cz + (b1 + d1) / 2, '#5ec8ff'));
+    const coreTop = A - 1.6, coreH = coreTop - REACTOR.base;
+    addCollider(REACTOR.x - REACTOR.r, REACTOR.base, REACTOR.z - REACTOR.r, REACTOR.x + REACTOR.r, A, REACTOR.z + REACTOR.r, 'metal');
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0x8fd8ff }); Ship.coreMat = coreMat;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, coreH, 24), coreMat); core.position.set(cx, REACTOR.base + coreH / 2, cz); G.add(core);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; solid.push(B(0.22, coreH, 0.22, cx + Math.cos(a) * 1.55, REACTOR.base + coreH / 2, cz + Math.sin(a) * 1.55, '#3a4150')); }
+    for (let y = REACTOR.base + 2.5; y < coreTop - 1; y += 4.5) { const g = new THREE.TorusGeometry(1.62, 0.12, 6, 28); g.rotateX(Math.PI / 2); g.translate(cx, y, cz); pipes.push(g); }
+    box(cx - 2.1, REACTOR.base, cz - 2.1, cx + 2.1, REACTOR.base + 0.9, cz + 2.1, '#353b48'); solid.push(B(3.6, 1.6, 3.6, cx, coreTop + 0.8, cz, '#353b48')); // the housings at its foot and its head
+    for (const [a1, b1, c1, d1] of [[-2.1, -2.1, 2.1, -2.1], [-2.1, 2.1, 2.1, 2.1], [-2.1, -2.1, -2.1, 2.1], [2.1, -2.1, 2.1, 2.1]]) glow.push(B(Math.max(0.08, Math.abs(c1 - a1) + 0.08), 0.08, Math.max(0.08, Math.abs(d1 - b1) + 0.08), cx + (a1 + c1) / 2, REACTOR.base + 0.9, cz + (b1 + d1) / 2, '#8fe0ff'));
+    // two rings of light turning over it, the big one at the height of the roof's middle and a small one near the top; lamps on each so you see them turn
+    const ringAt = (R0, y, n) => { const m = new THREE.Mesh(new THREE.TorusGeometry(R0, 0.2, 6, 64), new THREE.MeshBasicMaterial({ color: 0x4fb8ff })); m.rotation.x = Math.PI / 2; m.position.set(cx, y, cz);
+      for (let i = 0; i < n; i++) { const a = (i / n) * TAU, l = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshBasicMaterial({ color: 0xe8f6ff })); l.position.set(Math.cos(a) * R0, Math.sin(a) * R0, 0); m.add(l); }
+      G.add(m); return m; };
+    Ship.ring = ringAt(9, W + (A - W) * 0.45, 12); Ship.ring2 = ringAt(3.6, A - 5, 6);
+    /* the pillars: square, dark, light up the corners, amber bands every 6 m, a plinth and a capital; the outer four meet the roof, the
+       inner four end in a lamp */
+    for (const [x, z, h, y0, y1, roof] of HALL_PILLARS) {
+      box(x - h, y0, z - h, x + h, y1, z + h, '#2f3542'); box(x - h - 0.35, y0, z - h - 0.35, x + h + 0.35, y0 + 0.9, z + h + 0.35, '#3d4454');
+      solid.push(B(2 * h + 0.6, 0.8, 2 * h + 0.6, x, roof ? y1 - 2.4 : y1 - 0.6, z, '#3d4454'));
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) glow.push(B(0.1, y1 - y0 - 3.2, 0.1, x + sx * (h + 0.02), (y0 + 0.9 + y1 - 2.3) / 2, z + sz * (h + 0.02), '#4fb8ff'));
+      for (let y = y0 + 6; y < y1 - 3.5; y += 6) glow.push(B(2 * h + 0.08, 0.14, 2 * h + 0.08, x, y, z, '#e8b040'));
+      if (!roof) { glow.push(B(2 * h - 0.2, 0.6, 2 * h - 0.2, x, y1 + 0.3, z, '#bfeaff')); solid.push(B(2 * h + 0.2, 0.15, 2 * h + 0.2, x, y1 + 0.68, z, '#3d4454')); }
+    }
+    /* the roof: four faces from the top of the walls to the point, panels in world metres, a light along each hip and in rings up it */
+    {
+      const C4 = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], pos = [], uvs = [];
+      for (let i = 0; i < 4; i++) {
+        const [ax, az] = C4[i], [bx, bz] = C4[(i + 1) % 4], L = Math.hypot(bx - ax, bz - az), ex = (bx - ax) / L, ez = (bz - az) / L;
+        const along = (cx - ax) * ex + (cz - az) * ez, up = Math.hypot(Math.hypot(cx - (ax + ex * along), cz - (az + ez * along)), A - W);
+        pos.push(ax, W, az, bx, W, bz, cx, A, cz); uvs.push(0, 0, L / 5, 0, along / 5, up / 5);
+      }
+      const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); rg.computeVertexNormals();
+      G.add(new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ map: roofTex, roughness: 0.75, metalness: 0.3, side: THREE.DoubleSide })));
+      // a light from foot to point: along each hip, and up each face from every pilaster, so the faces fan in to the top
+      const rib = (ax, az, wd, col) => { const dx = cx - ax, dy = A - W, dz = cz - az, L = Math.hypot(dx, dy, dz);
+        glow.push(B(wd, wd, L, (ax + cx) / 2, (W + A) / 2 - 0.35 - wd, (az + cz) / 2, col, [-Math.asin(dy / L), Math.atan2(dx, dz), 0])); };
+      for (const [ax, az] of C4) rib(ax, az, 0.32, '#5ec8ff');
+      for (let i = 1; i < 8; i++) { const fx = x0 + i * (x1 - x0) / 8, fz = z0 + i * (z1 - z0) / 8; rib(fx, z0, 0.18, '#2f86d8'); rib(fx, z1, 0.18, '#2f86d8'); rib(x0, fz, 0.18, '#2f86d8'); rib(x1, fz, 0.18, '#2f86d8'); }
+      for (const t of [0.2, 0.4, 0.6, 0.8]) { const y = W + (A - W) * t - 0.3, ax = P.hx * (1 - t), az = P.hz * (1 - t), o = 0.25;
+        glow.push(B(2 * ax, 0.1, 0.1, cx, y, cz - az + o, '#2f86d8'), B(2 * ax, 0.1, 0.1, cx, y, cz + az - o, '#2f86d8'), B(0.1, 0.1, 2 * az, cx - ax + o, y, cz, '#2f86d8'), B(0.1, 0.1, 2 * az, cx + ax - o, y, cz, '#2f86d8')); }
+      // what stops bullets and jetpacks: rings of boxes stepping up under the faces (each at most a metre below the real roof)
+      const n = 26;
+      for (let i = 0; i < n; i++) {
+        const t0 = i / n, t1 = (i + 1) / n, oxr = P.hx * (1 - t0), ozr = P.hz * (1 - t0), ixr = P.hx * (1 - t1), izr = P.hz * (1 - t1), ya = W + (A - W) * t0, yb = W + (A - W) * t1 + 0.3;
+        for (const [xa, za, xb, zb] of [[-oxr, -ozr, oxr, -izr], [-oxr, izr, oxr, ozr], [-oxr, -izr, -ixr, izr], [ixr, -izr, oxr, izr]]) addCollider(cx + xa, ya, cz + za, cx + xb, yb, cz + zb, 'metal');
+      }
+    }
+    /* the walls: pilasters every 11.75 m with a light down each, light lines low and high, and three windows onto space */
+    for (let i = 1; i < 8; i++) { const x = x0 + i * (x1 - x0) / 8;
+      for (const [z, s2] of [[z0, 1], [z1, -1]]) { box(x - 0.55, 0, z + (s2 > 0 ? 0 : -0.55), x + 0.55, W, z + (s2 > 0 ? 0.55 : 0), '#2a2f3a'); glow.push(B(0.08, W - 1, 0.04, x, W / 2, z + s2 * 0.57, '#3a9cff')); } }
+    for (let i = 1; i < 8; i++) { const z = z0 + i * (z1 - z0) / 8;
+      for (const [x, s2] of [[x0, 1], [x1, -1]]) { if (s2 > 0 && z > -15 && z < 0) continue; // clear of the door
+        box(x + (s2 > 0 ? 0 : -0.55), 0, z - 0.55, x + (s2 > 0 ? 0.55 : 0), W, z + 0.55, '#2a2f3a'); glow.push(B(0.04, W - 1, 0.08, x + s2 * 0.57, W / 2, z, '#3a9cff')); } }
+    for (const y of [2.4, W - 1.2]) {
+      glow.push(B(x1 - x0, 0.1, 0.04, cx, y, z0 + 0.04, '#3a9cff'), B(x1 - x0, 0.1, 0.04, cx, y, z1 - 0.04, '#3a9cff'), B(0.04, 0.1, z1 - z0, x1 - 0.04, y, cz, '#3a9cff'));
+      if (y > 7) glow.push(B(0.04, 0.1, z1 - z0, x0 + 0.04, y, cz, '#3a9cff')); else glow.push(B(0.04, 0.1, -12.5 - z0, x0 + 0.04, y, (z0 - 12.5) / 2, '#3a9cff'), B(0.04, 0.1, z1 + 2.5, x0 + 0.04, y, (z1 - 2.5) / 2, '#3a9cff'));
+    }
+    const view = (w, h, x, y, z, ry, planet) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: space(planet) })); m.position.set(x, y, z); m.rotation.y = ry; G.add(m); };
+    view(46, 10, x1 - 0.03, 11, cz, -Math.PI / 2, 0.4); view(40, 7, cx, 10.5, z0 + 0.03, 0, 0.75); view(40, 7, cx, 10.5, z1 - 0.03, Math.PI, 0.2);
+    solid.push(B(0.2, 0.4, 46.4, x1 - 0.1, 5.9, cz, '#2a2f3a'), B(0.2, 0.4, 46.4, x1 - 0.1, 16.1, cz, '#2a2f3a'));
+    for (const z of [z0, z1]) solid.push(B(40.4, 0.4, 0.2, cx, 6.9, z + (z < 0 ? 0.1 : -0.1), '#2a2f3a'), B(40.4, 0.4, 0.2, cx, 14.1, z + (z < 0 ? 0.1 : -0.1), '#2a2f3a'));
+    // cargo along the walkway, tall enough to hide behind from the boss's laser
+    const pickC = () => ['#4b5568', '#5a4a3a', '#3e5a52', '#5a3e44', '#41495c'][Math.floor(R() * 5)];
+    for (const [x, z, w, d] of [[86, -44.6, 5.2, 2.6], [101, -45.4, 5.2, 2.6], [129, -44.6, 5.2, 2.6], [144, -45.4, 5.2, 2.6], [86, 40.6, 5.2, 2.6], [101, 41.4, 5.2, 2.6],
+      [129, 40.6, 5.2, 2.6], [144, 41.4, 5.2, 2.6], [157.6, -24, 2.6, 5.2], [157.6, 20, 2.6, 5.2], [72.4, -32, 2.6, 5.2], [72.4, 34, 2.6, 5.2]]) {
+      const h = r(5.0, 5.8), c = pickC(); box(x - w / 2, 0, z - d / 2, x + w / 2, h, z + d / 2, c);
+      solid.push(B(w + 0.06, 0.18, d + 0.06, x, h * 0.36, z, '#e8b040'), B(w + 0.06, 0.18, d + 0.06, x, h * 0.86, z, '#e8b040'), B(w + 0.04, 0.08, d + 0.04, x, h * 0.5, z, '#1c2028'));
+    }
+    // lamps: round the walkway, over each landing, at the bottom, and on top of the inner pillars
+    const L1 = P.steps[P.per - 1], L2 = P.steps[2 * P.per - 1], L3 = P.steps[3 * P.per - 1], mid = (S2) => [S2.ax - S2.w / 2, S2.az - S2.w / 2];
+    const [m1x, m1z] = mid(L1), [m2x, m2z] = mid(L2), [m3x, m3z] = mid(L3);
+    [[80, 12, -44], [115, 12, -44], [150, 12, -44], [80, 12, 40], [115, 12, 40], [150, 12, 40], [158, 12, -2], [72, 12, 22],
+      [cx, L1.y + 4, cz - m1z], [cx, L1.y + 4, cz + m1z], [cx - m1x, L1.y + 4, cz], [cx + m1x, L1.y + 4, cz],
+      [cx - m2x * 0.7, L2.y + 4, cz - m2z * 0.7], [cx + m2x * 0.7, L2.y + 4, cz - m2z * 0.7], [cx - m2x * 0.7, L2.y + 4, cz + m2z * 0.7], [cx + m2x * 0.7, L2.y + 4, cz + m2z * 0.7],
+      [cx, L3.y + 4, cz - m3z], [cx, L3.y + 4, cz + m3z], [cx - m3x, L3.y + 4, cz], [cx + m3x, L3.y + 4, cz], [cx - 7, BOT + 4, cz - 7], [cx + 7, BOT + 4, cz + 7]].forEach(([x, y, z]) => World.lamps.push({ x, y, z, d: 0 }));
+    for (const [x, z, , , y1, roof] of HALL_PILLARS) if (!roof) World.lamps.push({ x, y: y1 + 1.4, z, d: 0 });
+    // eight hatches, shut and dark until the boss's third phase (then two leaves slide apart over a red glow): four round the walkway, four at the bottom
+    const hatchLid = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.45, metalness: 0.7 });
+    // a column of red light standing up out of each open hatch, bright at the floor and gone by head height
+    const shaftTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 64; const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 64);
+      gr.addColorStop(0, '#000'); gr.addColorStop(0.55, '#2a0800'); gr.addColorStop(1, '#ff5a22'); g.fillStyle = gr; g.fillRect(0, 0, 4, 64); return new THREE.CanvasTexture(c); })();
+    const shaftMat = new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    for (const [x, z, y] of HATCHES) {
+      glow.push(B(2.7, 0.01, 0.14, x, y + 0.011, z - 1.28, '#e8b040'), B(2.7, 0.01, 0.14, x, y + 0.011, z + 1.28, '#e8b040'), B(0.14, 0.01, 2.7, x - 1.28, y + 0.011, z, '#e8b040'), B(0.14, 0.01, 2.7, x + 1.28, y + 0.011, z, '#e8b040'));
+      const lidA = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, 2.4), hatchLid), lidB = lidA.clone(); lidA.position.set(x - 0.6, y + 0.035, z); lidB.position.set(x + 0.6, y + 0.035, z); G.add(lidA, lidB);
+      const gl = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.3), new THREE.MeshBasicMaterial({ color: 0xff4a1e, transparent: true, opacity: 0.9, toneMapped: false }));
+      gl.rotation.x = -Math.PI / 2; gl.position.set(x, y + 0.012, z); gl.visible = false; G.add(gl);
+      const sh = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.25, 3.4, 16, 1, true), shaftMat); sh.position.set(x, y + 1.7, z); sh.visible = false; G.add(sh);
+      Ship.hatches.push({ x, z, y, lidA, lidB, glow: gl, shaft: sh, open: false, k: 0 });
+    }
   }
 
   /* ---- light and draw ---- */
@@ -1882,12 +2023,12 @@ function buildShip(G, S, R, r) {
   World.navMask = (x, z) => !!shipRoom(x, z);
   /* supply crates along the corridor, in the bridge and round the hall */
   const fits = (x, z) => { const Rm = shipRoom(x, z); if (!Rm || Rm[5] === 'pass') return false;
-    if (Math.hypot(x - REACTOR.x, z - REACTOR.z) < 13 || boxAt(x, z, 1.3, 0.05, 1.25)) return false;
+    if (inPit(x, z, 1.4) || boxAt(x, z, 1.3, 0.05, 1.25)) return false; // in the hall: on the walkway only
     return x > Rm[0] + 1.2 && x < Rm[2] - 1.2 && z > Rm[1] + 1.2 && z < Rm[3] - 1.2; };
   const onGallery = (x, z) => x >= BRIDGE.stairX0 - 1 && x <= BRIDGE.x1 && (z <= BRIDGE.z0 + 6.2 || z >= BRIDGE.z1 - 6.2 || x >= BRIDGE.eastX - 1.2);
-  placeCrates(G, S.crates, () => { const k = R(); return k < 0.45 ? [r(-90, 66), r(-11.8, -3.2)] : k < 0.65 ? [r(-122, -98), r(-22, 7)] : [r(69, 114), r(-24, 20.5)]; },
+  placeCrates(G, S.crates, () => { const k = R(); return k < 0.45 ? [r(-90, 66), r(-11.8, -3.2)] : k < 0.65 ? [r(-122, -98), r(-22, 7)] : [r(69, 161), r(-47.5, 43.5)]; },
     (x, z) => fits(x, z) && !onGallery(x, z) && !HATCHES.some(([hx, hz]) => Math.hypot(hx - x, hz - z) < 2.6) && Math.abs(x - SHIP_DOORS[0].x) > 3 && Math.abs(x - SHIP_DOORS[1].x) > 3);
-  World.menuCam = { x: REACTOR.x, z: REACTOR.z, r: 15, h: 7, look: 5 };
+  World.menuCam = { x: REACTOR.x, z: REACTOR.z, r: 27, h: 7, look: -6 }; // round the pit, looking down into it
 
   indexColliders(); buildNav();
   return { start: { x: SHIP_START.x, z: SHIP_START.z, yaw: SHIP_START.yaw }, spawns: [], map: {} };
@@ -2678,7 +2819,7 @@ const FX = (() => {
           p.life -= dt; const k = 1 - p.life / p.max;
           p.vy -= p.grav * dt; const dr = Math.exp(-p.drag * dt); p.vx *= dr; p.vy *= dr; p.vz *= dr;
           p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-          if (p.y < 0.02) { p.y = 0.02; p.vy *= -0.35; p.vx *= 0.6; p.vz *= 0.6; }
+          const fy = PIT === null ? 0 : floorY(p.x, p.z); if (p.y < fy + 0.02) { p.y = fy + 0.02; p.vy *= -0.35; p.vx *= 0.6; p.vz *= 0.6; }
           pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
           col[i * 4] = p.r; col[i * 4 + 1] = p.g; col[i * 4 + 2] = p.b; col[i * 4 + 3] = p.a * (1 - k * k);
           size[i] = lerp(p.s0, p.s1, k);
@@ -3992,7 +4133,7 @@ const Proj = (() => {
         for (let s = 0; s < 3 && !dead; s++) {
           p.pos.addScaledVector(p.vel, dt / 3);
           const near = Math.hypot(p.pos.x - hx, p.pos.y - (hy0 + 0.8), p.pos.z - hz) < 0.7;
-          const hit = p.pos.y <= 0.06 || !!collideAt(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.06, 0.1) || near;
+          const hit = p.pos.y <= floorY(p.pos.x, p.pos.z) + 0.06 || !!collideAt(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.06, 0.1) || near;
           if (hit && p.mode === 'gl') { blast(p.pos, 5.5, 120, false); dead = true; }
           else if (hit) { // a thrown grenade bounces and rolls
             const g = groundAt(p.pos.x, p.pos.y + 0.3, p.pos.z, 0.05); p.pos.y = Math.max(p.pos.y, g + 0.06);
@@ -4030,7 +4171,7 @@ const Proj = (() => {
             if (p.pos.y < e.pos.y - 0.1 || p.pos.y > e.pos.y + e.H + 0.2) continue;
             if (Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) < e.R * 0.95 + 0.25) { hitE = e; break; }
           }
-          if (hitE || p.pos.y <= 0.05 || collideAt(p.pos.x, p.pos.y - 0.06, p.pos.z, 0.06, 0.12)) { rocketHit(p, hitE); dead = true; }
+          if (hitE || p.pos.y <= floorY(p.pos.x, p.pos.z) + 0.05 || collideAt(p.pos.x, p.pos.y - 0.06, p.pos.z, 0.06, 0.12)) { rocketHit(p, hitE); dead = true; }
         }
         if (!dead) { FX.puff(p.pos, 1, 0.75, 0.32); FX.glow.emit({ x: p.pos.x - _rd.x * 0.3, y: p.pos.y - _rd.y * 0.3, z: p.pos.z - _rd.z * 0.3, vx: 0, vy: 0, vz: 0, max: 0.07, s0: 0.35, s1: 0.1, r: 1, g: 0.6, b: 0.25, a: 0.9, grav: 0, drag: 0 }); }
         if (!dead && p.life <= 0) { rocketHit(p, null); dead = true; }
@@ -4041,7 +4182,7 @@ const Proj = (() => {
         for (let s = 0; s < steps && !dead; s++) {
           p.pos.addScaledVector(p.vel, dt / steps);
           const armed = p.pos.distanceTo(p.src) > 8;
-          let impact = p.pos.y <= 0.05 || !!collideAt(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1);
+          let impact = p.pos.y <= floorY(p.pos.x, p.pos.z) + 0.05 || !!collideAt(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1);
           if (!impact) for (const e of Enemies.list) { _t.set(e.pos.x, e.pos.y + 1.1, e.pos.z); if (_t.distanceTo(p.pos) < 0.55) { impact = true; break; } }
           if (impact) {
             if (armed) { explode(p); dead = true; }
@@ -4059,7 +4200,7 @@ const Proj = (() => {
           // where it struck you: above the shoulders is the head
           if (dd < 0.4 && state === 'playing') { player.hurt(p.dmg, p.src, py - player.pos.y > 1.42 ? 'head' : 'body'); dead = true; break; }
           if (!p.whiz && dd < 1.5) { p.whiz = true; Sound.whiz(p.pos); }
-          if (p.pos.y <= 0.02 || collideAt(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1)) { FX.sparks(p.pos, 3, [1, 0.8, 0.5], 2); dead = true; }
+          if (p.pos.y <= floorY(p.pos.x, p.pos.z) + 0.02 || collideAt(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1)) { FX.sparks(p.pos, 3, [1, 0.8, 0.5], 2); dead = true; }
         }
       }
       if (dead || p.life <= 0) { scene.remove(p.m); list.splice(i, 1); pool.push(p); }
@@ -6356,13 +6497,15 @@ function droneAAI(e, dt, dist, faceYaw) {
         e.goal = { x: rand(Rm[0] + 3, Rm[2] - 3), z: rand(Rm[1] + 3, Rm[3] - 3), y: rand(3.5, Math.min(10, Rm[4] - 1.5)) };
       }
       const dx = e.goal.x - e.pos.x, dz = e.goal.z - e.pos.z, l = Math.hypot(dx, dz) || 1;
-      if (moveXZ(e.pos, dx / l * 2.2 * dt, dz / l * 2.2 * dt, e.R, e.H, 0)) e.goalT = 0;
+      if (moveXZ(e.pos, dx / l * 2.2 * dt, dz / l * 2.2 * dt, e.R, e.H, 0.8)) e.goalT = 0;
       e.pos.y += (Math.min(e.goal.y, ceil) - e.pos.y) * (1 - Math.exp(-dt));
       turnToward(e, Math.atan2(dx, dz), 2, dt); e.g.rotation.x = 0.08;
       return;
     }
   }
-  const ty = Math.min(clamp(player.pos.y + 4 + Math.sin(e.spin * 1.3 + e.seed) * 1.2, 2.4, 22), ceil);
+  // 5.16: no lower than 1.8 m over the floor under it (down in the hall's pit too), no higher than 22 m
+  const lo = PIT === null ? 2.4 : groundAt(e.pos.x, e.pos.y + 0.3, e.pos.z, e.R) + 1.8;
+  const ty = Math.min(clamp(player.pos.y + 4 + Math.sin(e.spin * 1.3 + e.seed) * 1.2, lo, 22), ceil);
   e.pos.y += (ty - e.pos.y) * (1 - Math.exp(-dt * 1.4));
   e.strafeT -= dt; if (e.strafeT <= 0) { e.strafe *= -1; e.strafeT = rand(1.4, 3); }
   let fx = _to.x / dist, fz = _to.z / dist;
@@ -6370,7 +6513,7 @@ function droneAAI(e, dt, dist, faceYaw) {
   const fwd = !e.los || dist > 15 ? 1 : dist < 8 ? -0.7 : 0, side = e.los ? 0.8 : 0;
   const mvx = (fx * fwd - fz * e.strafe * side) * T.speed, mvz = (fz * fwd + fx * e.strafe * side) * T.speed;
   e.vel.multiplyScalar(Math.exp(-dt * 3));
-  if (moveXZ(e.pos, (mvx + e.vel.x) * dt, (mvz + e.vel.z) * dt, e.R, e.H, 0)) e.strafe *= -1;
+  if (moveXZ(e.pos, (mvx + e.vel.x) * dt, (mvz + e.vel.z) * dt, e.R, e.H, PIT === null ? 0 : 0.8)) e.strafe *= -1;
   turnToward(e, faceYaw, 4, dt); e.g.rotation.x = clamp(fwd * 0.18, -0.2, 0.2);
   e.react -= dt; if (e.los && dist < T.range && e.react <= 0) robotFire(e, dt, dist);
 }
@@ -6527,10 +6670,11 @@ function bossDropMines(e, n) {
   for (let i = 0; i < n; i++) {
     let tx = 0, tz = 0;
     // straight down out of its belly, spreading a little round the spot under it
-    for (let tries = 0; tries < 8; tries++) { const a = rand(0, TAU), rr = rand(0.2, 1.2 + n * 0.12); tx = e.pos.x + Math.cos(a) * rr; tz = e.pos.z + Math.sin(a) * rr; if (shipRoom(tx, tz) && !collideAt(tx, 0.05, tz, 0.4, 0.5)) break; }
+    let ty = 0;
+    for (let tries = 0; tries < 8; tries++) { const a = rand(0, TAU), rr = rand(0.2, 1.2 + n * 0.12); tx = e.pos.x + Math.cos(a) * rr; tz = e.pos.z + Math.sin(a) * rr; ty = groundAt(tx, e.pos.y, tz, 0.2); if (shipRoom(tx, tz) && !collideAt(tx, ty + 0.05, tz, 0.4, 0.5)) break; }
     const m = Enemies.spawn('mine', e.pos.x, e.pos.z, { y: e.pos.y - e.R * 0.5, yaw: rand(0, TAU) });
     if (!m) continue;
-    const T = rand(0.45, 0.75); m.extra = true; m.bs = 'fall'; m.vel.set((tx - e.pos.x) / T, 0, (tz - e.pos.z) / T); m.vy = (-(m.pos.y) + 0.5 * 18 * T * T) / T; m.baseY = 0; m.alert = true; m.awake = true; m.lod = 0;
+    const T = rand(0.45, 0.75); m.extra = true; m.bs = 'fall'; m.vel.set((tx - e.pos.x) / T, 0, (tz - e.pos.z) / T); m.vy = (ty - m.pos.y + 0.5 * 18 * T * T) / T; m.baseY = ty; m.alert = true; m.awake = true; m.lod = 0;
   }
   Sound.clank(e.pos);
 }
@@ -6566,8 +6710,12 @@ function bdroneAI(e, dt, dist, faceYaw) {
   if (k.mode !== 'shed') {
     k.goalT -= dt;
     if (!k.goal || k.goalT <= 0) {
-      const a = rand(0, TAU), rr = rand(P.dist[0], P.dist[1]);
-      k.goal = { x: player.pos.x + Math.cos(a) * rr, y: rand(P.y[0], P.y[1]), z: player.pos.z + Math.sin(a) * rr }; k.goalT = rand(1.6, 3);
+      // 5.16: a spot at its distance from you that is inside the hall (with you by a wall, a random one is often outside it, and clamped
+      // back it would sit right over you); a few tries, then the last one, clamped
+      let gx = 0, gz = 0;
+      for (let t = 0; t < 10; t++) { const a = rand(0, TAU), rr = rand(P.dist[0], P.dist[1]); gx = player.pos.x + Math.cos(a) * rr; gz = player.pos.z + Math.sin(a) * rr;
+        if (gx > HALL[0] + e.R + 2 && gx < HALL[2] - e.R - 2 && gz > HALL[1] + e.R + 2 && gz < HALL[3] - e.R - 2) break; }
+      k.goal = { x: gx, y: Math.min(player.pos.y, 6) + rand(P.y[0], P.y[1]), z: gz }; k.goalT = rand(1.6, 3);
     }
     const dx = k.goal.x - e.pos.x, dy = k.goal.y - e.pos.y, dz = k.goal.z - e.pos.z, l = Math.hypot(dx, dy, dz), sp = P.sp * (k.mode === 'charge' ? 0.4 : 1);
     _sv.set(l > 0.4 ? dx / l * sp : 0, l > 0.4 ? dy / l * sp : 0, l > 0.4 ? dz / l * sp : 0);
@@ -6575,10 +6723,11 @@ function bdroneAI(e, dt, dist, faceYaw) {
   } else { e.pos.y += Math.sin(k.t * 9) * dt * 0.6; }
   const R = e.R;
   e.pos.x = clamp(e.pos.x, HALL[0] + R + 0.6, HALL[2] - R - 0.6); e.pos.z = clamp(e.pos.z, HALL[1] + R + 0.6, HALL[3] - R - 0.6);
-  e.pos.y = clamp(e.pos.y, groundAt(e.pos.x, e.pos.y, e.pos.z, R * 0.5) + R + 0.4, HALL[4] - R - 0.4);
+  e.pos.y = clamp(e.pos.y, groundAt(e.pos.x, e.pos.y, e.pos.z, R * 0.5) + R + 0.4, shipCeil(e.pos.x, e.pos.z) - R);
   const rx = e.pos.x - REACTOR.x, rz = e.pos.z - REACTOR.z, rd = Math.hypot(rx, rz), need = REACTOR.r + R + 0.8;
   if (rd < need) { e.pos.x = REACTOR.x + rx / (rd || 1) * need; e.pos.z = REACTOR.z + rz / (rd || 1) * need; }
-  for (const [px, pz] of HALL_PILLARS) { const qx = e.pos.x - px, qz = e.pos.z - pz, q = Math.hypot(qx, qz), nd = 1.7 + R + 0.3; if (q < nd) { e.pos.x = px + qx / (q || 1) * nd; e.pos.z = pz + qz / (q || 1) * nd; } }
+  for (const [px, pz, ph, , ptop] of HALL_PILLARS) { if (e.pos.y - R > ptop + 0.5) continue; // over the top of an inner pillar is open
+    const qx = e.pos.x - px, qz = e.pos.z - pz, q = Math.hypot(qx, qz), nd = ph * 1.42 + R + 0.3; if (q < nd) { e.pos.x = px + qx / (q || 1) * nd; e.pos.z = pz + qz / (q || 1) * nd; } }
   // face you, eye first
   turnToward(e, faceYaw, k.phase === 2 ? 6 : 3, dt);
   e.g.rotation.x = lerp(e.g.rotation.x, clamp(Math.atan2(e.pos.y - (player.pos.y + 1.2), dist), -0.6, 1.1), 1 - Math.exp(-dt * 4));
@@ -6654,7 +6803,7 @@ const Rockets = (() => {
       const sp = R.v.length(); _v.copy(R.v).divideScalar(sp); if (R.sees) _v.lerp(_d, Math.min(1, 1.5 * dt)).normalize(); R.v.copy(_v).multiplyScalar(sp);
       const step = sp * dt, hit = raycastStatic(R.p.x, R.p.y, R.p.z, _v.x, _v.y, _v.z, step);
       R.p.addScaledVector(_v, hit ? RH.t : step);
-      if (hit || dl < 1.0 || R.life <= 0 || R.p.y < 0.05) { blast(R.p, R.dmg, loud++ < 4); list.splice(i, 1); continue; }
+      if (hit || dl < 1.0 || R.life <= 0 || R.p.y < floorY(R.p.x, R.p.z) + 0.05) { blast(R.p, R.dmg, loud++ < 4); list.splice(i, 1); continue; }
       R.trail -= dt; if (R.trail <= 0) { R.trail = list.length > 40 ? 0.1 : 0.04; FX.glow.emit({ x: R.p.x, y: R.p.y, z: R.p.z, vx: 0, vy: 0, vz: 0, max: 0.35, s0: 0.28, s1: 0.06, r: 1, g: 0.55, b: 0.25, a: 0.8, grav: 0, drag: 0 }); }
     }
     let n = 0;
@@ -6700,8 +6849,8 @@ const ShipFX = (() => {
     const hq = Ship.hatchQ;
     for (let i = hq.length - 1; i >= 0; i--) { const q = hq[i]; q.t -= dt; if (q.t > 0) continue; hq.splice(i, 1);
       if (!Game.boss || !Game.boss.alive) continue;
-      const m = Enemies.spawn('droneA', q.x + rand(-0.4, 0.4), q.z + rand(-0.4, 0.4), { y: 0.3, yaw: rand(0, TAU) });
-      if (m) { m.extra = true; m.alert = true; m.awake = true; m.lod = 0; FX.puff({ x: q.x, y: 0.4, z: q.z }, 2, 0.4, 0.5); Sound.zap(m.pos, 'drone'); } }
+      const m = Enemies.spawn('droneA', q.x + rand(-0.4, 0.4), q.z + rand(-0.4, 0.4), { y: (q.y || 0) + 0.3, yaw: rand(0, TAU) });
+      if (m) { m.extra = true; m.alert = true; m.awake = true; m.lod = 0; FX.puff({ x: q.x, y: (q.y || 0) + 0.4, z: q.z }, 2, 0.4, 0.5); Sound.zap(m.pos, 'drone'); } }
     for (let i = queue.length - 1; i >= 0; i--) { const q = queue[i]; q.t -= dt; if (q.t <= 0) { queue.splice(i, 1); blast(q); } }
     if (beamT > 0) { beamT -= dt; const k = clamp(beamT / 0.4, 0, 1); beamMat.opacity = 0.85 * k; coreMat.opacity = k; if (beamT <= 0) beam.visible = core.visible = false; }
   }
@@ -6713,7 +6862,7 @@ const ShipFX = (() => {
    patrols and little drones along the corridor, and mines in the floor of the corridor and the hall ---------- */
 function populateShip(G, put, find, rand, randi, SR) {
   // the boss over the hall and the bee on the bridge, each sealed behind its door until you come through it (5.13)
-  const boss = put('bdrone', { x: 87, z: 10, y: 9.5 }, Object.assign({ boss: true, yaw: -Math.PI / 2 }, BOSS[4])); if (boss) boss.sealed = true;
+  const boss = put('bdrone', { x: 96, z: -7.5, y: 9.5 }, Object.assign({ boss: true, yaw: -Math.PI / 2 }, BOSS[4])); if (boss) boss.sealed = true; // over the near side of the pit
   const bee = put('gdrone', { x: -108, z: -7.5, y: 9.5 }, { scale: 1.25, yaw: Math.PI / 2 }); if (bee) bee.sealed = true;
   // cameras: two in the last leg from the airlock, two along the jog, two up into the corridor, twelve along the corridor's ceiling corners
   const cams = [[-43.4, 18, Math.PI / 2], [-39.9, 14.2, -Math.PI / 2], [-35, 7.45, 0], [-28, 12.55, Math.PI], [-26.1, 4, Math.PI / 2], [-22.4, 0, -Math.PI / 2]];
@@ -6724,32 +6873,28 @@ function populateShip(G, put, find, rand, randi, SR) {
     const z = i % 2 ? -5.2 : -9.8, x0 = -86 + i * 12.5, x1 = Math.min(64, x0 + rand(7, 10)), e = put('patrol', { x: x0 + rand(0.5, 2), z }, { yaw: Math.PI / 2 });
     if (e) { e.wp = [{ x: x0, z }, { x: x1, z }]; e.wi = 1; e.waitT = rand(0, 2); }
   }
-  // 5.14: and eight in the main hall, round the dais, sealed in with the boss: they walk their beats but notice nothing until its door opens
-  const onDais = (x, z) => x > DAIS[0][0] - 0.8 && x < DAIS[0][2] + 0.8 && z > DAIS[0][1] - 0.8 && z < DAIS[0][3] + 0.8;
-  const clearRun = (x0, z0, x1, z1) => { const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.5);
-    for (let i = 0; i <= n; i++) { const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t; if (onDais(x, z) || collideAt(x, 0.1, z, 0.6, 1.8)) return false; } return true; };
-  let hallPatrols = 0;
-  for (const [x0, z0, x1, z1] of [[78, -21.5, 104, -21.5], [78, 18, 104, 18], [77.5, -12, 77.5, 8], [110, -12, 110, 8], [84, -17.6, 104, -17.6], [84, 9.6, 104, 9.6], [79.5, -14, 79.5, 4], [108.2, -14, 108.2, 4],
-    [72, -6, 72, 4], [113, -6, 113, 4], [90, -23, 100, -23], [90, 20, 100, 20]]) {
-    if (hallPatrols >= 8) break;
-    // the beat as given, or shortened from either end until it is clear of cargo and pillars
-    let a = [x0, z0], b = [x1, z1], ok = clearRun(x0, z0, x1, z1);
-    for (let k = 0; !ok && k < 6; k++) { const f = 0.12 * (k + 1); a = [x0 + (x1 - x0) * f, z0 + (z1 - z0) * f]; b = [x1 - (x1 - x0) * f, z1 - (z1 - z0) * f]; ok = Math.hypot(b[0] - a[0], b[1] - a[1]) > 5 && clearRun(a[0], a[1], b[0], b[1]); }
-    if (!ok) continue;
-    const e = put('patrol', { x: a[0], z: a[1] }, { yaw: Math.atan2(b[0] - a[0], b[1] - a[1]) });
-    if (e) { e.wp = [{ x: a[0], z: a[1] }, { x: b[0], z: b[1] }]; e.wi = 1; e.waitT = rand(0, 2); e.sealed = true; hallPatrols++; }
+  // 5.14: and eight in the main hall, sealed in with the boss: they walk their beats but notice nothing until its door opens.
+  // 5.16: three round the walkway, three on the first landing, one on the second, one at the bottom of the pit by the reactor
+  const P = PYR, mid = (st) => [st.ax - st.w / 2, st.az - st.w / 2], L1 = P.steps[P.per - 1], L2 = P.steps[2 * P.per - 1], [m1x, m1z] = mid(L1), [m2x] = mid(L2);
+  for (const [x0, z0, x1, z1, y] of [[84, P.cz - P.oz - 1.5, 146, P.cz - P.oz - 1.5, 0], [84, P.cz + P.oz + 1.5, 146, P.cz + P.oz + 1.5, 0], [P.cx + P.ox + 1.5, -28, P.cx + P.ox + 1.5, 24, 0],
+    [P.cx - 24, P.cz - m1z, P.cx + 24, P.cz - m1z, L1.y], [P.cx - 24, P.cz + m1z, P.cx + 24, P.cz + m1z, L1.y], [P.cx + m1x, P.cz - 22, P.cx + m1x, P.cz + 18, L1.y],
+    [P.cx - m2x, P.cz - 16, P.cx - m2x, P.cz + 12, L2.y], [P.cx - 9, P.cz + P.bz - 1.3, P.cx + 9, P.cz + P.bz - 1.3, P.bottom]]) {
+    const e = put('patrol', { x: x0, z: z0, y }, { yaw: Math.atan2(x1 - x0, z1 - z0) });
+    if (e) { e.wp = [{ x: x0, z: z0 }, { x: x1, z: z1 }]; e.wi = 1; e.waitT = rand(0, 2); e.sealed = true; }
   }
   // little drones: two dozen along the corridor (none in the hall until the boss calls them up through the floor)
   for (let i = 0; i < 24; i++) put('droneA', { x: -86 + i * 6.3 + rand(-1.5, 1.5), z: rand(-11, -4), y: rand(3, 4.6) }, { yaw: rand(0, TAU) });
-  // spider mines, buried: sixteen in the corridor, twenty in the hall, a few metres apart, off the dais and the hatches
+  // spider mines, buried: sixteen in the corridor, twenty in the hall, a few metres apart, off the reactor's dais and the hatches.
+  // 5.16: in the hall only on flat floor (the walkway, a landing, the bottom of the pit), never on a flight of steps
   const mines = [];
+  const flat = (x, z) => { const y = groundAt(x, 1, z, 0.05); for (const [dx, dz] of [[0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]]) if (Math.abs(groundAt(x + dx, 1, z + dz, 0.05) - y) > 0.01) return null; return y; };
   const lay = (n, x0, x1, z0, z1) => {
-    for (let i = 0, tries = 0; i < n && tries < 600; tries++) {
-      const x = rand(x0, x1), z = rand(z0, z1);
-      if (collideAt(x, 0.05, z, 0.5, 0.6) || Math.hypot(x + 24.25, z + 2.5) < 6 || mines.some((m) => Math.hypot(m.x - x, m.z - z) < 3)) continue;
-      if (x > DAIS[0][0] - 0.8 && x < DAIS[0][2] + 0.8 && z > DAIS[0][1] - 0.8 && z < DAIS[0][3] + 0.8) continue;
+    for (let i = 0, tries = 0; i < n && tries < 900; tries++) {
+      const x = rand(x0, x1), z = rand(z0, z1), y = flat(x, z);
+      if (y === null || collideAt(x, y + 0.05, z, 0.5, 0.6) || Math.hypot(x + 24.25, z + 2.5) < 6 || mines.some((m) => Math.hypot(m.x - x, m.z - z) < 3)) continue;
+      if (Math.abs(x - REACTOR.x) < REACTOR.dais + 0.8 && Math.abs(z - REACTOR.z) < REACTOR.dais + 0.8) continue;
       if (HATCHES.some(([hx, hz]) => Math.hypot(hx - x, hz - z) < 2.2) || SHIP_DOORS.some((D) => Math.abs(D.x - x) < 4)) continue;
-      const e = put('mine', { x, z, y: -0.16 }, { yaw: rand(0, TAU) }); if (e) { e.bs = 'hidden'; e.baseY = 0; mines.push({ x, z }); i++; }
+      const e = put('mine', { x, z, y: y - 0.16 }, { yaw: rand(0, TAU) }); if (e) { e.bs = 'hidden'; e.baseY = y; mines.push({ x, z }); i++; }
     }
   };
   lay(16, -88, 64, -11.6, -3.4);
@@ -7491,7 +7636,7 @@ const Cut = (() => {
      yellow for the bee, green for the boss. the camera drifts a little way in towards it */
   function startBossIntro(D, e, onDone) {
     const cz = (D.z0 + D.z1) / 2, cam0 = new THREE.Vector3(D.x + D.inward * 2, 2.6, cz), at = e.pos.clone();
-    C = { kind: 'boss', t: 0, dur: 1.5, onDone, D, e, cam0, cam1: cam0.clone().lerp(at, 0.4), base: at.clone(), yaw0: e.yaw };
+    C = { kind: 'boss', t: 0, dur: 1.5, onDone, D, e, cam0, cam1: cam0.clone().lerp(at, Math.min(0.4, 9 / Math.max(1, cam0.distanceTo(at)))), base: at.clone(), yaw0: e.yaw }; // 5.16: at most 9 m in, the hall is big now
     heli.visible = rope.visible = fig.visible = beam.visible = pool.visible = false;
     e.g.visible = true; e.bar.visible = false; if (e.isFar) setFar(e, false); // it may still be culled as far away
     show('', '');
@@ -7727,7 +7872,7 @@ const Cut = (() => {
 
 /* ============ tactical map: the stage from above, enemies, the drop point and where you face ============ */
 const TacMap = (() => {
-  let base = null, H = 68, stage = 1;
+  let base = null, H = 68, stage = 1, CX = 0, CZ = 0; // the half-size of the square shown, and its middle (the ship's runs east of 0)
   const PAD = 4;
   const THEME = {
     1: { bg: '#1d2230', grid: 'rgba(236,230,216,0.06)', block: '#59606e', blockHi: '#7a8292', wall: '#8a8f99', label: '컨테이너 부두' },
@@ -7741,9 +7886,9 @@ const TacMap = (() => {
   };
   /* the parts that never move are drawn once per stage into an offscreen canvas */
   function build(st, info) {
-    stage = st; H = st === 3 || st === 8 ? LAB_HALF + 2 : st === 4 ? 126 : st === 7 ? 180 : 68;
+    stage = st; H = st === 3 || st === 8 ? LAB_HALF + 2 : st === 4 ? 146 : st === 7 ? 180 : 68; CX = st === 4 ? 19 : 0; CZ = 0; // 5.16: the ship, -127..165 east to west
     const T = THEME[st], N = 1024, k = N / (2 * (H + PAD)), c = document.createElement('canvas'); c.width = c.height = N;
-    const g = c.getContext('2d'), X = (x) => (x + H + PAD) * k, Z = (z) => (z + H + PAD) * k;
+    const g = c.getContext('2d'), X = (x) => (x - CX + H + PAD) * k, Z = (z) => (z - CZ + H + PAD) * k;
     g.fillStyle = T.bg; g.fillRect(0, 0, N, N);
     const m = info.map || {};
     if (m.water) { g.fillStyle = '#4a6a7a'; g.beginPath(); g.arc(X(m.water.x), Z(m.water.z), m.water.r * k, 0, TAU); g.fill(); g.strokeStyle = '#6a4a30'; g.lineWidth = 6 * k; g.stroke(); }
@@ -7752,10 +7897,23 @@ const TacMap = (() => {
     if (isYard(st)) { g.fillStyle = 'rgba(201,150,44,0.25)'; for (const z of [-33, -11, 11, 33]) g.fillRect(X(-64), Z(z) - 1, 128 * k, 2); for (const x of [-36, -12, 12, 36]) g.fillRect(X(x) - 1, Z(-64), 2, 128 * k); }
     g.strokeStyle = T.grid; g.lineWidth = 1;
     const step = st === 3 || st === 8 ? 10 : st === 7 ? 40 : 20;
-    for (let v = -Math.floor(H / step) * step; v <= H; v += step) { g.beginPath(); g.moveTo(X(v), Z(-H)); g.lineTo(X(v), Z(H)); g.stroke(); g.beginPath(); g.moveTo(X(-H), Z(v)); g.lineTo(X(H), Z(v)); g.stroke(); }
+    for (let v = Math.ceil((CX - H) / step) * step; v <= CX + H; v += step) { g.beginPath(); g.moveTo(X(v), Z(CZ - H)); g.lineTo(X(v), Z(CZ + H)); g.stroke(); }
+    for (let v = Math.ceil((CZ - H) / step) * step; v <= CZ + H; v += step) { g.beginPath(); g.moveTo(X(CX - H), Z(v)); g.lineTo(X(CX + H), Z(v)); g.stroke(); }
+    // 5.16: the main hall's sunken pyramid: each flight a band a shade darker than the one above, the landings picked out, the depth on each
+    if (st === 4 && PIT !== null) {
+      const P = PYR, rect = (ax, az) => [X(P.cx - ax), Z(P.cz - az), 2 * ax * k, 2 * az * k];
+      g.fillStyle = '#1b2232'; g.fillRect(...rect(P.ox, P.oz));
+      for (const s2 of P.steps) { const f = -s2.y / -P.bottom; g.fillStyle = s2.land ? 'rgba(94,200,255,' + (0.16 - f * 0.06).toFixed(3) + ')' : 'rgba(8,12,22,' + (0.05 + f * 0.04).toFixed(3) + ')'; g.fillRect(...rect(s2.ax, s2.az)); }
+      g.fillStyle = '#0c111c'; g.fillRect(...rect(P.bx, P.bz));
+      g.lineWidth = 1.5; for (const s2 of P.steps) if (s2.land || s2.k === P.steps.length) { g.strokeStyle = 'rgba(94,200,255,0.55)'; g.strokeRect(...rect(s2.ax - s2.w, s2.az - s2.w)); }
+      g.strokeStyle = '#e8b040'; g.lineWidth = 2; g.strokeRect(...rect(P.ox, P.oz));
+      g.font = '700 ' + Math.round(9 * N / 1024 * 1.4) + 'px "IBM Plex Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(160,210,255,0.8)';
+      for (const s2 of P.steps) if (s2.land) g.fillText(Math.round(s2.y) + 'm', X(P.cx), Z(P.cz - s2.az + s2.w / 2));
+      g.fillText(Math.round(P.bottom) + 'm', X(P.cx), Z(P.cz - P.bz + 3));
+    }
     for (const b of colliders) {
       if (b.kind === 'wood' && b.ref) continue; // crates are drawn live so broken ones disappear
-      if (b.grate || b.tower || b.door) continue; // cage walls and the watchtower are drawn live too: walls fall, the tower can come down
+      if (b.grate || b.tower || b.door || b.step) continue; // cage walls and the watchtower are drawn live too: walls fall, the tower can come down; the pit is drawn above
       if (b.miny > 3) continue; // ceilings and lintels: overhead, not in the way
       const w = b.maxx - b.minx, d = b.maxz - b.minz;
       if (w * d < 0.5) continue;
@@ -7766,7 +7924,7 @@ const TacMap = (() => {
     if (m.trees) { g.fillStyle = 'rgba(58,74,34,0.85)'; for (const [x, z, , cr] of m.trees) { g.beginPath(); g.arc(X(x), Z(z), cr * k, 0, TAU); g.fill(); } }
     if (m.fires) for (const [x, z, p] of m.fires) { const gr = g.createRadialGradient(X(x), Z(z), 0, X(x), Z(z), (2 + p * 2.5) * k);
       gr.addColorStop(0, 'rgba(255,170,60,0.95)'); gr.addColorStop(0.4, 'rgba(255,90,20,0.6)'); gr.addColorStop(1, 'rgba(255,60,10,0)'); g.fillStyle = gr; g.beginPath(); g.arc(X(x), Z(z), (2 + p * 2.5) * k, 0, TAU); g.fill(); }
-    g.strokeStyle = 'rgba(236,230,216,0.5)'; g.lineWidth = 2; g.strokeRect(X(-H), Z(-H), 2 * H * k, 2 * H * k);
+    g.strokeStyle = 'rgba(236,230,216,0.5)'; g.lineWidth = 2; g.strokeRect(X(CX - H), Z(CZ - H), 2 * H * k, 2 * H * k);
     base = c;
   }
   /* what each dot colour means, per stage; the legend under the map is built from the same table */
@@ -7795,7 +7953,7 @@ const TacMap = (() => {
     if (!base) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1), size = cv.clientWidth;
     if (cv.width !== Math.round(size * dpr)) { cv.width = cv.height = Math.round(size * dpr); }
-    const g = cv.getContext('2d'), N = cv.width, k = N / (2 * (H + PAD)), X = (x) => (x + H + PAD) * k, Z = (z) => (z + H + PAD) * k;
+    const g = cv.getContext('2d'), N = cv.width, k = N / (2 * (H + PAD)), X = (x) => (x - CX + H + PAD) * k, Z = (z) => (z - CZ + H + PAD) * k;
     g.drawImage(base, 0, 0, N, N);
     const u = N / 600; // marker size unit
     // north and scale first, on small dark chips inside the border, so every marker draws over them
@@ -7866,7 +8024,7 @@ const TacMap = (() => {
   /* a point on a drawn map back to the ground it shows */
   function toWorld(cv, cx, cy) {
     const r = cv.getBoundingClientRect(), N = cv.width, k = N / (2 * (H + PAD));
-    return { x: ((cx - r.left) * (N / r.width)) / k - H - PAD, z: ((cy - r.top) * (N / r.height)) / k - H - PAD };
+    return { x: ((cx - r.left) * (N / r.width)) / k - H - PAD + CX, z: ((cy - r.top) * (N / r.height)) / k - H - PAD + CZ };
   }
   return { build, draw, legend, toWorld, get title() { return THEME[stage].label; } };
 })();
@@ -8386,7 +8544,7 @@ const STAGES = {
   1: { name: '컨테이너 부두', enemy: 'thug', goal: 100, unit: '명', label: '조직원', intro: '밀수 조직원 100명 · 총소리를 들으면 몰려옵니다' },
   6: { name: '헬멧 부두', enemy: 'thug', goal: 100, unit: '명', label: '조직원', intro: '오토바이 헬멧 쓴 조직원 100명 · 헬멧은 머리를 한 번 맞히면 벗겨집니다' },
   5: { name: '무장 부두', enemy: 'thug', goal: 100, unit: '명', label: '조직원', intro: '단검 20 · 파란 광선검 10 · 쌍광선검 5 · 야구방망이 15 · 자폭맨 10 · 저격 5 · 보스는 기관총' },
-  4: { name: '우주선', enemy: 'robot', goal: 100, unit: '대', label: '로봇', intro: '에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 메인홀에 3페이즈 보스 드론 · 바닥의 스파이더 마인 조심' },
+  4: { name: '우주선', enemy: 'robot', goal: 100, unit: '대', label: '로봇', intro: '에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 거대한 메인홀(가운데 12 m 역피라미드 계단)에 3페이즈 보스 드론 · 바닥의 스파이더 마인 조심' },
   2: { name: '불타는 마을', enemy: 'zombie', goal: 100, unit: '마리', label: '좀비', intro: '좀비 100마리 · 체력은 없고 감염과 중독뿐 · 해독약은 나무 상자에서' },
   7: { name: '사파리 감시탑', enemy: 'animal', goal: 100, unit: '마리', label: '동물', intro: '넓은 사파리의 동물 100마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다' },
   8: { name: '차례 연구소', enemy: 'animal', goal: 90, unit: '마리', label: '동물', intro: '우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라' },
