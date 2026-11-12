@@ -177,6 +177,17 @@ kbd { font-family: var(--font-mono); font-size: 11px; color: var(--ink); border:
 #t-jump { width: 54px; height: 54px; right: calc(env(safe-area-inset-right, 0px) + 128px); bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); }
 #t-reload { width: 54px; height: 54px; right: calc(env(safe-area-inset-right, 0px) + 52px); bottom: calc(env(safe-area-inset-bottom, 0px) + 220px); }
 #t-swap { width: 54px; height: 54px; right: calc(env(safe-area-inset-right, 0px) + 116px); bottom: calc(env(safe-area-inset-bottom, 0px) + 240px); }
+/* 5.17: melee, under jump (the ammo count is under the fire button) */
+#t-melee { width: 54px; height: 54px; right: calc(env(safe-area-inset-right, 0px) + 128px); bottom: calc(env(safe-area-inset-bottom, 0px) + 30px); }
+/* very short landscape screens: the right-hand buttons a little smaller and closer, clear of the map button */
+@media (orientation: landscape) and (max-height: 340px) {
+  #t-fire { width: 78px; height: 78px; right: calc(env(safe-area-inset-right, 0px) + 26px); bottom: calc(env(safe-area-inset-bottom, 0px) + 104px); }
+  #t-ads { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 116px); bottom: calc(env(safe-area-inset-bottom, 0px) + 152px); }
+  #t-jump { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 116px); bottom: calc(env(safe-area-inset-bottom, 0px) + 90px); }
+  #t-melee { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 116px); bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); }
+  #t-reload { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 50px); bottom: calc(env(safe-area-inset-bottom, 0px) + 196px); }
+  #t-swap { width: 50px; height: 50px; right: calc(env(safe-area-inset-right, 0px) + 112px); bottom: calc(env(safe-area-inset-bottom, 0px) + 214px); }
+}
 #t-pause { width: 42px; height: 42px; left: calc(env(safe-area-inset-left, 0px) + 16px); top: calc(env(safe-area-inset-top, 0px) + 14px); border-radius: 4px; }
 /* D-pad: fixed at the left middle of the screen; the pressed arrows light up, ▲ turns solid while running */
 #t-dpad { position: absolute; pointer-events: auto; width: 156px; height: 156px; left: calc(env(safe-area-inset-left, 0px) + 10px); top: 50%; margin-top: -78px; }
@@ -373,6 +384,11 @@ body.devmode #menucode::after { content: ' · 개발자 모드'; color: var(--vi
   #custom { grid-template-columns: 1fr; grid-template-rows: 36vh minmax(0, 1fr); overflow: hidden; background: linear-gradient(180deg, rgba(13,18,32,.1), rgba(13,18,32,.6) 34vh, rgba(13,18,32,.94) 40vh); }
   #custom .cusheet { margin: 0 max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); max-height: none; height: 100%; overflow-y: auto; align-self: stretch; }
 }
+/* 5.17: a phone on its side (the app is landscape-only now): the gun on the left, the choices beside it */
+@media (orientation: landscape) and (max-height: 600px) {
+  #custom { grid-template-columns: minmax(0, 1fr) min(470px, 60vw); grid-template-rows: none; background: linear-gradient(90deg, rgba(13,18,32,.08), rgba(13,18,32,.5) 40%, rgba(13,18,32,.94) 60%); }
+  #custom .cusheet { margin: 8px max(10px, env(safe-area-inset-right, 0px)) 8px 0; max-height: calc(100vh - 16px); height: auto; align-self: center; }
+}
 .cutabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .cutabs button, .cuchips button { font: 600 12px var(--font-body); color: var(--steel); background: transparent; border: 1px solid var(--panel-line); padding: 7px 10px; cursor: pointer; }
 .cutabs button.on, .cuchips button.on { color: var(--night); background: var(--sodium); border-color: var(--sodium); }
@@ -530,6 +546,7 @@ body.portrait #t-ads { width: 60px; height: 60px; right: calc(env(safe-area-inse
 body.portrait #t-jump { width: 60px; height: 60px; right: calc(env(safe-area-inset-right, 0px) + 132px); bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); }
 body.portrait #t-reload { width: 60px; height: 60px; right: calc(env(safe-area-inset-right, 0px) + 38px); bottom: calc(env(safe-area-inset-bottom, 0px) + 136px); }
 body.portrait #t-swap { display: none; }
+body.portrait #t-melee { width: 60px; height: 60px; right: calc(env(safe-area-inset-right, 0px) + 206px); bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 
 @media (prefers-reduced-motion: reduce) {
   #banner, #feed div, #hpfill, #hpghost { transition: none; }
@@ -604,6 +621,7 @@ body.portrait #t-swap { display: none; }
   <div class="tbtn" id="t-jump">점프</div>
   <div class="tbtn" id="t-down" hidden>내려<br>가기</div>
   <div class="tbtn" id="t-reload">장전</div>
+  <div class="tbtn" id="t-melee">근접</div>
   <div class="tbtn" id="t-swap">교체</div>
   <div class="tbtn" id="t-pause">II</div>
   <div class="tbtn" id="t-anti" hidden>해독약 사용</div>
@@ -645,7 +663,7 @@ body.portrait #t-swap { display: none; }
             <kbd>좌클릭</kbd><span>사격</span>
             <kbd>우클릭</kbd><span>정조준 · 저격총은 조준경</span>
             <kbd>R</kbd><span>재장전</span>
-            <kbd>V · 마우스 뒤로</kbd><span>근접 공격 (소리가 나지 않음)</span>
+            <kbd>V · 마우스 뒤로</kbd><span>근접 공격 (소리가 나지 않음) · 나무 상자는 다가가면 저절로 부숩니다</span>
             <kbd>1~7 · 휠</kbd><span>무기 교체</span>
             <kbd>F</kbd><span>해독약 사용</span>
             <kbd>E · G</kbd><span>동물 타기 · 옮겨 타기 (스테이지 3, 3-1, 3-2) · E는 열쇠 줍기 (스테이지 4)</span>

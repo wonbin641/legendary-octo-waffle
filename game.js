@@ -3131,18 +3131,32 @@ function rocketLock() {
   }
   return best;
 }
-/* ---------- melee: V or the mouse's back button. a quick jab with the gun at whatever is within arm's reach ---------- */
+/* ---------- melee: V or the mouse's back button (on a touch screen the 근접 button). a quick jab with the gun at whatever is within
+   arm's reach. 5.17: walk up to a wooden crate and the jab goes at it by itself ---------- */
 // 120 to the body, twice that to the head; it makes no noise, cuts a reload short, and breaks crates too
 const MELEE_DMG = 120, MELEE_REACH = 2.3, MELEE_T = 0.42;
 const Melee = {
-  t: 0, cd: 0, on: false, hit: false,
-  start() {
+  t: 0, cd: 0, on: false, hit: false, target: null,
+  start(target) {
     if (state !== 'playing' || this.cd > 0 || Gun.none || Gun.busy > 0 || player.stunT > 0 || Gun.switchT > 0) return;
-    this.on = true; this.t = 0; this.cd = 0.62; this.hit = false;
+    this.on = true; this.t = 0; this.cd = 0.62; this.hit = false; this.target = target || null;
     Gun.reloadT = 0; Gun.trigger = false; Gun.adsHeld = false;
     Sound.swing();
   },
-  reset() { this.on = false; this.t = 0; this.cd = 0; },
+  reset() { this.on = false; this.t = 0; this.cd = 0; this.target = null; },
+  /* a crate within reach in front of you, on your level, and you are not busy with anything else (shooting, aiming, reloading,
+     switching, injecting, riding, in the air): the jab goes at it. one jab breaks a crate */
+  autoCrate() {
+    if (this.on || this.cd > 0 || state !== 'playing' || Gun.none || Gun.busy > 0 || Gun.reloadT > 0 || Gun.switchT > 0 || Gun.trigger || Gun.adsHeld || Gun.ads > 0.05) return;
+    if (player.stunT > 0 || !player.grounded || Car.riding || Ride.m || Toss.on || Jet.on) return;
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw); let best = null, bd = 1.7;
+    for (const c of crates) {
+      if (c.dead || Math.abs((c.y || 0) - player.pos.y) > 1.1) continue;
+      const dx = c.x - player.pos.x, dz = c.z - player.pos.z, d = Math.hypot(dx, dz);
+      if (d < bd && (dx * fx + dz * fz) / (d || 1) > 0.4) { best = c; bd = d; } // within about 65 degrees of straight ahead
+    }
+    if (best) this.start(best);
+  },
   update(dt) {
     this.cd = Math.max(0, this.cd - dt);
     if (!this.on) return;
@@ -3152,6 +3166,8 @@ const Melee = {
   },
   /* a fan of short rays: the nearest body in reach wins (a head over a body at the same distance), else a crate */
   strike() {
+    if (this.target) { const c = this.target; this.target = null; if (c.dead) return; // sent at a crate: it is hit, whatever the rays say
+      _hitP.set(c.x, (c.y || 0) + 0.6, c.z); damageCrate(c, 60, _hitP); Sound.melee(_hitP, false); buzz(20); return; }
     camera.getWorldDirection(_fwd); _right.set(1, 0, 0).applyQuaternion(camera.quaternion); _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
     const o = camera.position; let best = null;
     for (const [a, b] of [[0, 0], [0.16, 0], [-0.16, 0], [0, -0.15], [0, 0.12], [0.3, -0.12], [-0.3, -0.12], [0, -0.32]]) {
@@ -3314,7 +3330,7 @@ function cycleWeapon(step) {
 const scopeEl = $('scope');
 function updateGun(dt, mdx, mdy) {
   const w = curW();
-  Melee.update(dt); Heat.update(dt); if (typeof LaserDot !== 'undefined') LaserDot.update();
+  Melee.autoCrate(); Melee.update(dt); Heat.update(dt); if (typeof LaserDot !== 'undefined') LaserDot.update();
   Gun.cooldown = Math.max(0, Gun.cooldown - dt);
   Gun.bloom = Math.max(0, Gun.bloom - dt * (Gun.trigger && w.auto ? 0.02 : 0.09));
   if (lookMode === 'touch' && settings.autoFire && !w.grenade && !w.rocket && !Gun.trigger && Gun.cooldown <= 0 && Gun.reloadT <= 0 && Gun.switchT <= 0 && wstate[Gun.cur].mag > 0 && !player.sprinting) {
@@ -3607,6 +3623,10 @@ const LaserDot = (() => {
 const Custom = (() => {
   const C = { on: false, id: 'rifle', from: 'menu', ang: 0.6, drag: null, idleT: 0 };
   const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 10), _sz = new THREE.Vector2(), _b = new THREE.Box3(), _c = new THREE.Vector3(), _s = new THREE.Vector3();
+  // 5.17: on a touch screen a dark veil behind the gun so it stands out from the busy scene behind it (the gun itself stays bright);
+  // it is in the first-person scene, so it is only switched on for the moment the preview is drawn
+  const veil = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x0d1220, transparent: true, opacity: 0.72, depthWrite: false }));
+  veil.visible = false; veil.scale.setScalar(40); viewScene.add(veil);
   const LBL = { adsSpeed: '정조준 속도', adsSpread: '정조준 퍼짐', spread: '정조준 없이 퍼짐', moveSpread: '움직일 때 퍼짐', recoil: '반동', bloom: '연사 퍼짐', flash: '섬광', noise: '총소리 거리', dmg: '데미지' };
   const el = (tag, cls, text) => { const d = document.createElement(tag); if (cls) d.className = cls; if (text !== undefined) d.textContent = text; return d; };
   function frame(id) {
@@ -3672,7 +3692,8 @@ const Custom = (() => {
     cam.position.set(d, d * 0.16, 0.0001); cam.lookAt(0, 0, 0); cam.updateProjectionMatrix();
     renderer.getSize(_sz);
     renderer.setRenderTarget(null); renderer.setScissorTest(true); renderer.setScissor(x, y, w, h); renderer.setViewport(x, y, w, h);
-    renderer.clearDepth(); renderer.render(viewScene, cam);
+    if (isTouch) { veil.position.copy(cam.position).multiplyScalar(-1.1); veil.lookAt(cam.position); veil.visible = true; }
+    renderer.clearDepth(); renderer.render(viewScene, cam); veil.visible = false;
     renderer.setScissorTest(false); renderer.setViewport(0, 0, _sz.x, _sz.y);
   }
   const view = $('cuview');
@@ -7180,6 +7201,7 @@ if (isTouch) {
   tbtn('t-jump', (e) => { player.jumpBuf = 0.15; jetTap(e.timeStamp); Jet.upT = true; }, () => { Jet.upT = false; });
   tbtn('t-down', () => { Jet.downT = true; }, () => { Jet.downT = false; });
   tbtn('t-reload', () => startReload());
+  tbtn('t-melee', () => Melee.start());
   tbtn('t-swap', () => cycleWeapon(1));
   tbtn('t-anti', () => Game.useAntidote());
   tbtn('t-car', () => (Ship.takeKey() ? 0 : Lab.active ? Ride.toggle() : Car.toggle()));
@@ -9181,7 +9203,7 @@ function start(data) {
   if (isTouch) {
     document.querySelectorAll('.senslbl').forEach((el) => { el.textContent = '조준 감도'; });
     const rows = [['이동 버튼', '왼쪽 가운데 ▲▼◀▶ · 두 버튼 사이로 밀면 대각선 · ▲를 두 번 눌러 누르고 있으면 달리기'], ['오른쪽 엄지', '화면을 끌어서 조준'], ['사격', '누른 채 끌면 조준도 됩니다'],
-      ['자동 사격', '조준선이 적에 닿으면 저절로 쏩니다'], ['조준 · 점프', '정조준 전환, 점프'], ['장전 · 무기 칸', '재장전, 무기 교체'],
+      ['자동 사격', '조준선이 적에 닿으면 저절로 쏩니다'], ['조준 · 점프', '정조준 전환, 점프'], ['장전 · 무기 칸', '재장전, 무기 교체'], ['근접', '총으로 가까운 적을 칩니다 (소리 없음) · 나무 상자는 다가가면 저절로 부숩니다'],
       ['해독약', '감염되면 화면 가운데 버튼'], [isApp ? 'II · 뒤로 가기' : 'II', '일시정지 · 상점']];
     const k = $('keys'); k.textContent = '';
     rows.forEach(([a, b]) => { const kb = document.createElement('kbd'); kb.textContent = a; const sp = document.createElement('span'); sp.textContent = b; k.append(kb, sp); });
