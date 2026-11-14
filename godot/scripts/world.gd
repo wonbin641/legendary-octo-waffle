@@ -34,6 +34,8 @@ var sky_mat: ShaderMaterial
 var start := {"x": 0.0, "z": 6.0, "yaw": 0.0}
 var spawns: Array = []
 var _lamp_t := 0.0
+var on_crate: Callable = Callable()   # called with the crate when one breaks
+var fx: Fx = null
 var _backdrop_blink: Array = []
 var _tex := {}
 
@@ -306,6 +308,18 @@ func _place_crates(G: Node3D, count: int, cand: Callable, fits: Callable) -> voi
 		cr.b = Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood", cr); crates.push_back(cr); i += 1
 	var bm := BoxMesh.new(); bm.size = Vector3(1.2, 1.2, 1.2)
 	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, _tex.crate); G.add_child(mmi); crate_mm = mmi.multimesh
+
+func damage_crate(c: Dictionary, dmg: float, _at: Vector3) -> void:
+	if c.dead: return
+	c.hp -= dmg
+	if c.hp > 0.0: return
+	c.dead = true
+	if crate_mm: crate_mm.set_instance_transform(c.idx, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z)))
+	Phys.remove_collider(c.b); Phys.nav_patch(c.b.minx, c.b.minz, c.b.maxx, c.b.maxz)  # just round it, not the whole grid
+	var at := Vector3(c.x, c.y + 0.6, c.z)
+	if fx: fx.chips(at)
+	Snd.play("crack", 1.0, at)
+	if on_crate.is_valid(): on_crate.call(c)
 
 func update_world(dt: float, t: float, px: float, pz: float) -> void:
 	_lamp_t -= dt

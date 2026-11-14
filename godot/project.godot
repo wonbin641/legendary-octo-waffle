@@ -11,6 +11,7 @@ boot_splash/show_image=false
 
 [autoload]
 Phys="*res://scripts/phys.gd"
+Snd="*res://scripts/snd.gd"
 
 [display]
 window/size/viewport_width=1280

@@ -32,13 +32,30 @@ var look_dx := 0.0     # mouse or finger movement since the last frame, in pixel
 var look_dy := 0.0
 var sens := 1.0
 var move_mul := 1.0    # the weapon in hand (WEAPONS[..].moveMul)
+var ads := 0.0         # 0 at the hip .. 1 aiming down the sights
+var ads_slow := 1.0    # walking speed while aiming (0.6, or 0.4 through a scope)
+var sens_mul := 1.0    # the mouse is slower while aiming
+var no_sprint := false # aiming, shooting or reloading: no running
+var hp := 1000.0
+const MAX_HP := 1000.0
+var invuln := 0.0
+var since_hurt := 0.0
+var on_hurt: Callable = Callable()
+var on_step: Callable = Callable()
+
+## dmg from a point; the zone ('head', 'body', 'fire') matters once helmets and vests are in
+func hurt(dmg: float, from: Vector3, _zone := "body") -> void:
+	if invuln > 0.0 or hp <= 0.0: return
+	dmg = maxf(1.0, roundf(dmg)); hp = maxf(0.0, hp - dmg); since_hurt = 0.0; shake = maxf(shake, 0.1 + dmg * 0.008)
+	if on_hurt.is_valid(): on_hurt.call(dmg, from)
 
 func reset(x: float, z: float, yaw_: float) -> void:
 	pos = Vector3(x, 0, z); vel = Vector3.ZERO; yaw = yaw_; pitch = 0.0; grounded = true
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
+	hp = MAX_HP; invuln = 0.0; ads = 0.0
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
-	var s := sens * 0.0021
+	var s := sens * 0.0021 * sens_mul
 	yaw += in_turn * 2.4 * dt - look_dx * s
 	pitch -= look_dy * s
 	look_dx = 0.0; look_dy = 0.0
@@ -48,8 +65,8 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	var m := sqrt(f * f + sd * sd)
 	if m > 1.0: f /= m; sd /= m
 	sprint_lock = maxf(0.0, sprint_lock - dt)
-	sprinting = in_run and f > 0.3 and sprint_lock <= 0.0
-	var speed := (8.2 if sprinting else 5.4) * move_mul
+	sprinting = in_run and f > 0.3 and sprint_lock <= 0.0 and not no_sprint
+	var speed := (8.2 if sprinting else 5.4) * move_mul * ads_slow
 	var sy := sin(yaw); var cy := cos(yaw)
 	var tx := (-sy * f + cy * sd) * speed; var tz := (-cy * f - sy * sd) * speed
 	var acc := 1.0 - exp(-dt * (11.0 if grounded else 2.2))
@@ -71,11 +88,14 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	speed_xz = sqrt(vel.x * vel.x + vel.z * vel.z)
 	if grounded and speed_xz > 0.5:
 		step_phase += speed_xz * dt * 1.7; step_dist += speed_xz * dt
-		if step_dist > (2.6 if sprinting else 2.1): step_dist = 0.0
+		if step_dist > (2.6 if sprinting else 2.1):
+			step_dist = 0.0
+			if on_step.is_valid(): on_step.call()
 	sprint_blend = lerpf(sprint_blend, 1.0 if sprinting else 0.0, 1.0 - exp(-dt * 8))
 	land_dip *= exp(-dt * 8)
+	invuln = maxf(0.0, invuln - dt); since_hurt += dt
 	if cam == null: return
-	var bob := absf(sin(step_phase)) * 0.045 * clampf(speed_xz / 6.0, 0.0, 1.3) if grounded else 0.0
+	var bob := absf(sin(step_phase)) * 0.045 * clampf(speed_xz / 6.0, 0.0, 1.3) * (1.0 - ads * 0.7) if grounded else 0.0
 	var sh := shake; shake *= exp(-dt * 7)
 	cam.position = Vector3(pos.x, pos.y + EYE - bob - land_dip, pos.z)
 	cam.rotation = Vector3(pitch + recoil_pitch * 0.5 + randf_range(-1, 1) * sh * 0.05, yaw + randf_range(-1, 1) * sh * 0.05, sin(step_phase * 0.5) * 0.004 * clampf(speed_xz / 6.0, 0.0, 1.0))

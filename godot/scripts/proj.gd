@@ -1,0 +1,99 @@
+class_name Proj
+extends Node3D
+## Things that fly: the player's 40 mm grenades and guided rockets (ported from src/07b_ai.js; the enemies' rounds join in stage 4).
+
+var player: Player
+var world: World
+var enemies: Enemies
+var fx: Fx
+var stage := 1
+var hitmark: Callable = Callable()
+var list: Array = []
+
+func _mesh(scale_: Vector3, color: String) -> MeshInstance3D:
+	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 1.0; s.height = 2.0; s.radial_segments = 8; s.rings = 6; m.mesh = s
+	m.material_override = Gfx.std(World.lin(color), 0.6, 0.3); m.scale = scale_; add_child(m)
+	return m
+
+## the 40 mm grenade: arcs, arms after 8 m, explodes on impact
+func grenade(from: Vector3, dir: Vector3, W: Dictionary) -> void:
+	list.push_back({"kind": "grenade", "pos": from, "src": from, "vel": dir * 40.0, "dmg": float(W.dmg), "radius": float(W.splash), "life": 6.0, "bounced": false, "m": _mesh(Vector3.ONE * 0.05, "3d4430")})
+
+## the guided rocket: a short straight boost, then it steers after the enemy it locked when fired (at most 3 rad a second)
+func rocket(from: Vector3, dir: Vector3, W: Dictionary, target) -> void:
+	list.push_back({"kind": "rocket", "pos": from, "src": from, "speed": 24.0, "vel": dir * 24.0, "dmg": float(W.dmg), "radius": float(W.splash), "splash_dmg": float(W.get("splashDmg", W.dmg * 0.5)),
+		"life": 7.0, "age": 0.0, "target": target, "m": _mesh(Vector3(0.055, 0.055, 0.32), "59603f")})
+
+func rocket_centre(e) -> Vector3:
+	return Vector3(e.pos.x, e.pos.y + (0.0 if e.get("fly", false) else e.H * 0.55), e.pos.z)
+
+func _crates_near(c: Vector3, radius: float) -> void:
+	for cr in world.crates.duplicate():
+		if not cr.dead and Vector3(cr.x, cr.y + 0.6, cr.z).distance_to(c) < radius: world.damage_crate(cr, 100, Vector3(cr.x, cr.y + 0.6, cr.z))
+
+func _rocket_hit(p: Dictionary, e) -> void:
+	var c: Vector3 = p.pos
+	if fx: fx.explode(c, true)
+	Snd.play("boom", 1.0, c); enemies.noise(c, 70)
+	player.shake = maxf(player.shake, clampf(0.7 - c.distance_to(player.pos) * 0.02, 0.0, 0.7))
+	if e != null and e.alive and hitmark.is_valid(): hitmark.call(enemies.damage(e, p.dmg, c, (p.vel as Vector3).normalized(), false), false)
+	enemies.splash(c, p.radius, p.splash_dmg, e)
+	_crates_near(c, p.radius)
+	# the blast does not spare you either: 35-100% of 500 inside 6 m, nothing through a wall
+	var body := Vector3(player.pos.x, player.pos.y + 0.9, player.pos.z); var pd := c.distance_to(body); var pr: float = p.radius + Player.R
+	if pd < pr and Phys.line_of_sight(c, body): player.hurt(roundf(p.splash_dmg * (0.35 + 0.65 * (1.0 - pd / pr))), c, "body")
+
+func _explode(p: Dictionary) -> void:
+	var c: Vector3 = p.pos
+	if fx: fx.explode(c, true)
+	Snd.play("boom", 1.0, c); enemies.noise(c, 60)
+	player.shake = maxf(player.shake, clampf(0.5 - c.distance_to(player.pos) * 0.02, 0.0, 0.5))
+	enemies.splash(c, p.radius, p.dmg)
+	_crates_near(c, p.radius)
+	var d := c.distance_to(Vector3(player.pos.x, player.pos.y + 0.9, player.pos.z))
+	if d < p.radius and stage == 1: player.hurt(p.dmg * 0.35 * (1.0 - d / p.radius), c, "body")
+
+func update(dt: float) -> void:
+	for i in range(list.size() - 1, -1, -1):
+		var p: Dictionary = list[i]; p.life -= dt; var dead := false
+		if p.kind == "rocket":
+			p.age += dt; p.speed = minf(58.0, p.speed + 70.0 * dt)
+			var rd: Vector3 = (p.vel as Vector3).normalized(); var t = p.target
+			if t != null and t.alive and p.age > 0.1:
+				var want: Vector3 = (rocket_centre(t) - p.pos).normalized(); var ang := rd.angle_to(want); var max_a := 3.0 * dt
+				if ang > 1e-4: rd = rd.lerp(want, minf(1.0, max_a / ang)).normalized()
+			p.vel = rd * p.speed
+			var steps := maxi(2, ceili(p.speed * dt / 0.35))
+			for s in steps:
+				if dead: break
+				p.pos += p.vel * (dt / steps); var hit_e = null
+				for e in enemies.list:
+					if not e.alive: continue
+					if e.get("fly", false):
+						if (e.pos as Vector3).distance_to(p.pos) < e.R + 0.3: hit_e = e; break
+						continue
+					if p.pos.y < e.pos.y - 0.1 or p.pos.y > e.pos.y + e.H + 0.2: continue
+					if Vector2(e.pos.x - p.pos.x, e.pos.z - p.pos.z).length() < e.R * 0.95 + 0.25: hit_e = e; break
+				if hit_e != null or p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.06, p.pos.z, 0.06, 0.12) != null: _rocket_hit(p, hit_e); dead = true
+			if not dead and p.life <= 0.0: _rocket_hit(p, null); dead = true
+			if not dead: (p.m as MeshInstance3D).look_at_from_position(p.pos, p.pos + rd, Vector3.UP if absf(rd.y) < 0.99 else Vector3.RIGHT)
+		else:
+			p.vel.y -= 9.8 * dt
+			for s in 3:
+				if dead: break
+				p.pos += p.vel * (dt / 3.0)
+				var armed: bool = (p.pos as Vector3).distance_to(p.src) > 8.0
+				var impact: bool = p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1) != null
+				if not impact:
+					for e in enemies.list:
+						if Vector3(e.pos.x, e.pos.y + 1.1, e.pos.z).distance_to(p.pos) < 0.55: impact = true; break
+				if impact:
+					if armed: _explode(p); dead = true
+					elif not p.bounced: p.bounced = true; p.vel *= -0.25; p.vel.y = absf(p.vel.y) + 1.0; p.pos.y = maxf(p.pos.y, 0.06); Snd.play("metal", 1.0, p.pos)
+					else: dead = true
+			if not dead: (p.m as MeshInstance3D).position = p.pos
+		if dead or p.life <= 0.0: (p.m as MeshInstance3D).queue_free(); list.remove_at(i)
+
+func clear() -> void:
+	for p in list: (p.m as MeshInstance3D).queue_free()
+	list.clear()

@@ -26,10 +26,22 @@ const { chromium, ARGS, ROOT, open, play } = require('./lib');
       y.sim(r.sec); r.keys.forEach((k) => y.keyUp(k));
       return Object.assign(r, { end: [r6(y.player.pos.x), r6(y.player.pos.y), r6(y.player.pos.z)], grounded: y.player.grounded });
     });
+    // weapons: the whole table, and what each gun's magazine and reserve read after the trigger is held (aimed at the sky)
+    out.weapons = {}; for (const id of Object.keys(y.WEAPONS)) { const w = Object.assign({}, y.WEAPONS[id]); if (w.reserve === Infinity) w.reserve = 'inf'; out.weapons[id] = w; }
+    out.fire = Object.keys(y.WEAPONS).map((id) => {
+      const W = y.WEAPONS[id], G = y.Gun, sec = id === 'lmg' ? 17 : 3;
+      y.player.pos.set(0, 0, 6); y.player.vel.set(0, 0, 0); y.player.yaw = 0; y.player.pitch = 1.2; y.player.hp = y.player.maxHp; y.player.invuln = 999; y.player.stunT = 0;
+      y.gunModels[G.cur].visible = false; G.cur = id; G.pending = null; G.cooldown = 0; G.reloadT = 0; G.switchT = 0; G.ads = 0; G.bloom = 0;
+      const st = y.wstate[id]; st.mag = W.mag; st.reserve = W.reserve; st.heat = 0; st.hot = false;
+      G.trigger = true; G.triggerEdge = true; y.sim(sec); G.trigger = false;
+      const r = { id, sec, mag: st.mag, reserve: st.reserve === Infinity ? 'inf' : st.reserve, reloading: G.reloadT > 0, hot: !!st.hot };
+      y.sim(0.5); return r;
+    });
     return out;
   });
   fs.writeFileSync(path.join(ROOT, 'godot', 'tests', 'reference_stage1.json'), JSON.stringify(ref));
   console.log('colliders', ref.colliders.length, 'crates', ref.crates.length, 'nav blocked', ref.navBlocked, ref.navHash);
+  ref.fire.forEach((f) => console.log(JSON.stringify(f)));
   ref.runs.forEach((r) => console.log(r.name, r.end, r.grounded)); console.log('errors', page.errs);
   await browser.close();
 })();
