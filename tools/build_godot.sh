@@ -42,8 +42,9 @@ window.fetch = async (u, o) => {
 <script>
 $CFG
 const st = document.getElementById('st');
-new Engine(GODOT_CONFIG).startGame({ onProgress: (c, t) => { st.textContent = '불러오는 중 ' + (t ? Math.round(c / t * 100) + '%' : ''); } })
-  .then(() => { st.textContent = ''; }, (e) => { st.textContent = '시작하지 못했습니다: ' + e; });
+let started = false;
+new Engine(GODOT_CONFIG).startGame({ onProgress: (c, t) => { if (!started) st.textContent = '불러오는 중 ' + (t ? Math.round(c / t * 100) + '%' : ''); } })
+  .then(() => { started = true; st.remove(); }, (e) => { st.textContent = '시작하지 못했습니다: ' + e; });
 </script>
 HTML
 ls -la "$ART" | awk '{print $5, $9}'

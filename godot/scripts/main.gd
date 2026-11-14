@@ -105,6 +105,7 @@ func _build_ui() -> void:
 	pause_note = _label("", f_body, 13, STEEL); pause_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; pause_note.custom_minimum_size = Vector2(300, 0); pv.add_child(pause_note)
 	var row := HBoxContainer.new(); row.add_theme_constant_override("separation", 10); pv.add_child(row)
 	var res := _button("계속하기", true); row.add_child(res); res.pressed.connect(func() -> void: resume_game())
+	var fpsb := _button("FPS 표시", false); row.add_child(fpsb); fpsb.pressed.connect(func() -> void: show_fps = not show_fps)
 	var quit := _button("작전 포기", false); row.add_child(quit); quit.pressed.connect(func() -> void: _set_state("menu"))
 
 func _touch_rects() -> Dictionary:
@@ -155,7 +156,7 @@ func request_lock() -> void:
 # ---------------- input ----------------
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventKey and e.pressed and not e.echo:
-		if e.physical_keycode == KEY_F3: show_fps = not show_fps
+		if e.physical_keycode == KEY_F3 or e.physical_keycode == KEY_QUOTELEFT: show_fps = not show_fps  # some browsers keep F3 for themselves: the ` key does the same
 		elif state == "playing":
 			if e.physical_keycode == KEY_SPACE: player.jump_buf = 0.15
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
@@ -237,7 +238,7 @@ func _bridge() -> void:
 	if not OS.has_feature("web"): return
 	_js_cb = JavaScriptBridge.create_callback(_on_js)
 	JavaScriptBridge.get_interface("window").__yarrCall = _js_cb
-	JavaScriptBridge.eval("window.__yarr = (c) => { window.__yarrOut = 'null'; window.__yarrCall(c); return JSON.parse(window.__yarrOut); }; window.__godotReady = true;")
+	JavaScriptBridge.eval("window.__yarr = (c) => { window.__yarrOut = 'null'; window.__yarrCall(c); return JSON.parse(window.__yarrOut); }; window.__godotReady = true; var st = document.getElementById('st'); if (st) st.remove();")
 
 func _on_js(args: Array) -> void:
 	JavaScriptBridge.eval("window.__yarrOut = %s" % JSON.stringify(JSON.stringify(command(str(args[0])))))
