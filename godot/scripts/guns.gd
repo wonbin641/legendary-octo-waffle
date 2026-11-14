@@ -36,6 +36,7 @@ var trigger := false
 var trigger_edge := false
 var wstate := {}
 var shots := 0
+var hits := 0
 var _pump_t := -1.0
 var _auto_reload_t := -1.0
 var _auto_reload_for = null
@@ -50,7 +51,7 @@ var _melee_target = null
 func _init() -> void:
 	for id in Weapons.ORDER: wstate[id] = {"mag": Weapons.LIST[id].mag, "reserve": Weapons.LIST[id].reserve, "heat": 0.0, "hot": false, "hot_t": 0.0, "cool_t": 0.0, "smoke_t": 0.0}
 
-func w() -> Dictionary: return Weapons.LIST[cur]
+func w() -> Dictionary: return Custom.weapon(cur)   # the gun as you have built it (parts change its numbers)
 func st() -> Dictionary: return wstate[cur]
 func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
@@ -135,6 +136,7 @@ func _melee_strike() -> void:
 	var e = best.e; var killed := false
 	if best.bomb and e.alive: enemies.blow_vest(e, best.d); killed = true
 	else: killed = enemies.damage(e, Weapons.MELEE_DMG * (2.0 if best.weak else float(best.mult)), hit, best.d, best.weak)
+	if e.alive and not e.boss: e.vel.x += best.d.x * 4.0; e.vel.z += best.d.z * 4.0   # and a shove
 	_say(hitmark, [killed, best.weak]); Snd.play("melee", 1.0, hit); player.shake = maxf(player.shake, 0.12)
 
 # ---------- the machine gun's heat: every shot adds 1/240; empty a full box in one go and it overheats ----------
@@ -167,7 +169,7 @@ func fire() -> void:
 		return
 	s.mag -= 1; cooldown = W.rate; shots += 1
 	if W.get("heat", false): _heat_shot(W, s)
-	enemies.noise(cam.global_position, 42.0)
+	enemies.noise(cam.global_position, 42.0 * float(W.get("noise", 1.0)))   # a suppressor carries less far
 	var spr := current_spread(); var muz := muzzle()
 	var b := cam.global_basis; var f := -b.z; var right := b.x; var up := b.y; var o := cam.global_position
 	if look_mode == "touch" and not W.get("grenade", false) and not W.get("rocket", false):
@@ -189,7 +191,7 @@ func fire() -> void:
 			var eh = enemies.raycast(o, d, s_t)
 			if eh != null:
 				var at: Vector3 = o + d * eh.t
-				var dmg: float = W.dmg * (float(eh.enemy.get("head_x", W.head)) if eh.weak else float(eh.mult))
+				var dmg: float = W.dmg * ((eh.enemy.head_x if eh.enemy.head_x > 0.0 else float(W.head)) if eh.weak else float(eh.mult))
 				if W.has("falloff"): dmg *= lerpf(1.0, 0.35, clampf((eh.t - W.falloff[0]) / (W.falloff[1] - W.falloff[0]), 0.0, 1.0))
 				if eh.get("bomb", false) and eh.enemy.alive: enemies.blow_vest(eh.enemy, d); killed = true
 				elif enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
@@ -201,7 +203,7 @@ func fire() -> void:
 				if s_hit and s_box != null and s_box.kind == "wood" and s_box.ref != null: world.damage_crate(s_box.ref, W.dmg, at)
 				if s_hit and k < 4 and s_box != null and s_box.kind == "metal" and randf() < 0.5: Snd.play("metal", 1.0, at)
 				if k < 3 and fx: fx.tracer(muz, at)
-	if hit_any: _say(hitmark, [killed, head])
+	if hit_any: hits += 1; _say(hitmark, [killed, head])
 	var rk: float = W.recoil * (1.0 - ads * 0.35)
 	player.recoil_pitch += rk; player.pitch += rk * 0.55; player.yaw += randf_range(-1, 1) * rk * 0.35
 	kick_z += W.kick; kick_rot += W.kick * 1.6; bloom = minf(bloom + W.bloom, 0.05); flash_t = 0.045

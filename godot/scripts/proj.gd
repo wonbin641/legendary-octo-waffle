@@ -24,8 +24,20 @@ func rocket(from: Vector3, dir: Vector3, W: Dictionary, target) -> void:
 	list.push_back({"kind": "rocket", "pos": from, "src": from, "speed": 24.0, "vel": dir * 24.0, "dmg": float(W.dmg), "radius": float(W.splash), "splash_dmg": float(W.get("splashDmg", W.dmg * 0.5)),
 		"life": 7.0, "age": 0.0, "target": target, "m": _mesh(Vector3(0.055, 0.055, 0.32), "59603f")})
 
+## an enemy's pistol round: fast, a visible tracer; it hurts you where it strikes (above the shoulders is the head)
+func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: float) -> void:
+	var v := Vector3(target.x + randf_range(-1, 1) * spread_r - from.x, target.y + randf_range(-0.7, 0.7) * spread_r - from.y, target.z + randf_range(-1, 1) * spread_r - from.z).normalized() * speed
+	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(0.03, 0.03, 0.55); m.mesh = b; m.material_override = _bullet_mat(); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
+	m.look_at_from_position(from, from + v, Vector3.UP if absf(v.normalized().y) < 0.99 else Vector3.RIGHT)
+	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m})
+
+var _bmat: StandardMaterial3D
+func _bullet_mat() -> StandardMaterial3D:
+	if _bmat == null: _bmat = Gfx.unlit(Color(1.0, 0.85, 0.63), false); _bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	return _bmat
+
 func rocket_centre(e) -> Vector3:
-	return Vector3(e.pos.x, e.pos.y + (0.0 if e.get("fly", false) else e.H * 0.55), e.pos.z)
+	return Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.55), e.pos.z)
 
 func _crates_near(c: Vector3, radius: float) -> void:
 	for cr in world.crates.duplicate():
@@ -69,7 +81,7 @@ func update(dt: float) -> void:
 				p.pos += p.vel * (dt / steps); var hit_e = null
 				for e in enemies.list:
 					if not e.alive: continue
-					if e.get("fly", false):
+					if e.fly:
 						if (e.pos as Vector3).distance_to(p.pos) < e.R + 0.3: hit_e = e; break
 						continue
 					if p.pos.y < e.pos.y - 0.1 or p.pos.y > e.pos.y + e.H + 0.2: continue
@@ -77,6 +89,17 @@ func update(dt: float) -> void:
 				if hit_e != null or p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.06, p.pos.z, 0.06, 0.12) != null: _rocket_hit(p, hit_e); dead = true
 			if not dead and p.life <= 0.0: _rocket_hit(p, null); dead = true
 			if not dead: (p.m as MeshInstance3D).look_at_from_position(p.pos, p.pos + rd, Vector3.UP if absf(rd.y) < 0.99 else Vector3.RIGHT)
+		elif p.kind == "bullet":
+			# small steps so fast rounds cannot skip past you between checks
+			var hy0 := player.pos.y + 0.1; var hy1 := player.pos.y + Player.HEIGHT
+			var steps := maxi(3, ceili((p.vel as Vector3).length() * dt / 0.3))
+			for s in steps:
+				p.pos += p.vel * (dt / steps)
+				var py := clampf(p.pos.y, hy0, hy1); var dd := Vector3(p.pos.x - player.pos.x, p.pos.y - py, p.pos.z - player.pos.z).length()
+				if dd < 0.4: player.hurt(p.dmg, p.src, "head" if py - player.pos.y > 1.42 else "body"); dead = true; break
+				if not p.whiz and dd < 1.5: p.whiz = true; Snd.play("whiz", 1.0, p.pos)
+				if p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.02 or Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1) != null: dead = true; break
+			if not dead: (p.m as MeshInstance3D).position = p.pos
 		else:
 			p.vel.y -= 9.8 * dt
 			for s in 3:

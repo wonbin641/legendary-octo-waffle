@@ -120,13 +120,19 @@ static func door_tex(color: Color) -> ImageTexture:
 	speckle(img, 220, [Color(0, 0, 0, 0.2), Color(0.31, 0.157, 0.078, 0.3)], 2)
 	return tex(img)
 
-## one mesh from many boxes, each [sx, sy, sz, x, y, z]
+## one mesh from many boxes, each [sx, sy, sz, x, y, z] and, if wanted, a colour (hex) as a seventh item (used with vertex colours)
 static func merge_boxes(parts: Array) -> ArrayMesh:
-	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var cols := PackedColorArray(); var idx := PackedInt32Array()
 	for p in parts:
-		var b := BoxMesh.new(); b.size = Vector3(p[0], p[1], p[2])
-		st.append_from(b, 0, Transform3D(Basis.IDENTITY, Vector3(p[3], p[4], p[5])))
-	return st.commit()
+		var b := BoxMesh.new(); b.size = Vector3(p[0], p[1], p[2]); var a := b.get_mesh_arrays(); var off := vs.size()
+		var col := World.lin(str(p[6])) if p.size() > 6 else Color.WHITE
+		for v: Vector3 in a[Mesh.ARRAY_VERTEX]: vs.push_back(v + Vector3(p[3], p[4], p[5])); cols.push_back(col)
+		ns.append_array(a[Mesh.ARRAY_NORMAL]); uvs.append_array(a[Mesh.ARRAY_TEX_UV])
+		for i: int in a[Mesh.ARRAY_INDEX]: idx.push_back(i + off)
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_NORMAL] = ns; arr[Mesh.ARRAY_TEX_UV] = uvs; arr[Mesh.ARRAY_COLOR] = cols; arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
 
 ## a box with three surfaces, as the containers need: 0 = the two ends (x), 1 = top and bottom, 2 = the two long sides (z)
 static func box3(sx: float, sy: float, sz: float) -> ArrayMesh:

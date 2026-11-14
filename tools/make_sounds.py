@@ -60,6 +60,16 @@ SOUNDS = {
     'step': [N(0.07, 'lowpass', 600, 150, 0.8, 0.18)],
     'land': [N(0.12, 'lowpass', 500, 90, 0.7, 0.45)],
     'crack': [N(0.18, 'bandpass', 1100, 500, 1.4, 0.9), N(0.3, 'lowpass', 700, 150, 0.6, 0.4, 0.03), T('triangle', 240, 90, 0.12, 0.3)],
+    'thud': [N(0.2, 'lowpass', 420, 90, 0.7, 0.45)],
+    'shot_far': [N(0.14, 'bandpass', 2200, 600, 1, 0.75), T('triangle', 170, 60, 0.1, 0.35)],
+    'whiz': [N(0.15, 'bandpass', 3000, 1200, 4, 0.25)],
+    'kill': [T('triangle', 900, 1400, 0.09, 0.25), T('triangle', 1400, 1900, 0.12, 0.2, 0.06)],
+    'headshot': [T('sine', 2400, 1800, 0.07, 0.32), N(0.05, 'bandpass', 3200, 1800, 1.5, 0.4)],
+    'coin': [T('triangle', 1760, 1760, 0.07, 0.18), T('triangle', 2350, 2350, 0.16, 0.16, 0.06)],
+    'pickup_hp': [T('triangle', 520, 520, 0.08, 0.25), T('triangle', 650, 650, 0.08, 0.25, 0.07), T('triangle', 780, 780, 0.14, 0.25, 0.14)],
+    'pickup_ammo': [T('triangle', 400, 400, 0.08, 0.25), T('triangle', 500, 500, 0.08, 0.25, 0.07), T('triangle', 600, 600, 0.14, 0.25, 0.14)],
+    'buy': [T('triangle', 880, 880, 0.14, 0.18), T('triangle', 1175, 1175, 0.14, 0.18, 0.07), T('triangle', 1568, 1568, 0.14, 0.18, 0.14), N(0.06, 'highpass', 3000, 2000, 1, 0.15)],
+    'clear': [T('triangle', 523, 523, 0.3, 0.2), T('triangle', 659, 659, 0.3, 0.2, 0.1), T('triangle', 784, 784, 0.3, 0.2, 0.2), T('triangle', 1046, 1046, 0.3, 0.2, 0.3)],
     'hiss': [N(1.4, 'highpass', 2600, 5200, 0.7, 0.42), N(0.5, 'bandpass', 900, 300, 1.2, 0.3)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)

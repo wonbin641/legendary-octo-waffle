@@ -4,6 +4,18 @@ const fs = require('fs'), path = require('path');
 const { chromium, ARGS, ROOT, open, play } = require('./lib');
 (async () => {
   const browser = await chromium.launch({ args: ARGS }); const page = await open(browser, 'pc');
+  // save codes are taken at the menu: inside a stage the code only holds what you came in with
+  const codes = await page.evaluate(() => { const y = window.__yard;
+    // save codes: what the browser game writes for a few saves (the Godot port must write the same and read them back)
+    const keep = JSON.stringify(y.save);
+    const list = [
+      { v: 4, money: 0, cleared: [], best: {}, loadout: ['pistol', null, null, null, null, null, null], rented: [], owned: [], items: { helmet: 0, vest: 0, jet: 0, ivory: 0 } },
+      { v: 4, money: 238500, cleared: [1, 6], best: { t1: 252, t6: 363 }, loadout: ['pistol', 'rifle', 'gl', null, null, null, null], rented: ['gl'], owned: ['rifle'], items: { helmet: 1, vest: 7, jet: 0, ivory: 3 } },
+      { v: 4, money: 99999999, cleared: [1, 2, 3, 4, 5, 6, 7, 8], best: { t1: 100, t2: 200, t3: 300, t4: 400, t5: 500, t6: 600, t7: 700, t8: 8000 }, loadout: ['rocket', 'lmg', 'gl', 'sniper', 'smg', 'rifle', 'shotgun'], rented: [], owned: ['shotgun', 'rifle', 'smg', 'sniper', 'gl', 'lmg', 'rocket'], items: { helmet: 1, vest: 10, jet: 1, ivory: 63 } },
+    ].map((sv) => { Object.keys(y.save).forEach((k) => delete y.save[k]); Object.assign(y.save, JSON.parse(JSON.stringify(sv))); return { save: sv, code: y.SaveCode.encode() }; });
+    Object.keys(y.save).forEach((k) => delete y.save[k]); Object.assign(y.save, JSON.parse(keep)); y.persistNow(); return list;
+
+  });
   await play(page, 1);
   const ref = await page.evaluate(() => {
     const y = window.__yard, r6 = (v) => Math.round(v * 1e6) / 1e6;
@@ -12,6 +24,10 @@ const { chromium, ARGS, ROOT, open, play } = require('./lib');
     out.crates = y.crates.map((c) => [r6(c.x), r6(c.z)]);
     let h = 0, blocked = 0; for (let i = 0; i < y.NAV.blocked.length; i++) { if (y.NAV.blocked[i]) { blocked++; h = (h * 31 + i) % 1000000007; } }
     out.navBlocked = blocked; out.navHash = h;
+    // the hundred enemies as the stage places them (before anything has moved), and a person's footprint
+    out.enemies = y.Enemies.list.map((e) => [r6(e.pos.x), r6(e.pos.z), e.boss ? 1 : 0, e.maxHp, r6(e.scale)]);
+    const f0 = y.Enemies.list.find((e) => !e.boss), fb = y.Enemies.list.find((e) => e.boss);
+    out.foot = { thug: Object.assign({ R: f0.footR, mass: f0.mass }, f0.foot), boss: Object.assign({ R: fb.footR, mass: fb.mass }, fb.foot) }; out.goal = y.Game.goal;
     const runs = [
       { name: 'walk forward 2 s', at: [0, 0, 6], yaw: 0, keys: ['KeyW'], sec: 2 },
       { name: 'sprint forward 2 s', at: [0, 0, 6], yaw: 0, keys: ['KeyW', 'ShiftLeft'], sec: 2 },
@@ -39,7 +55,10 @@ const { chromium, ARGS, ROOT, open, play } = require('./lib');
     });
     return out;
   });
+  ref.codes = codes;
   fs.writeFileSync(path.join(ROOT, 'godot', 'tests', 'reference_stage1.json'), JSON.stringify(ref));
+  ref.codes.forEach((c) => console.log(c.code));
+  console.log('enemies', ref.enemies.length, 'goal', ref.goal, JSON.stringify(ref.foot));
   console.log('colliders', ref.colliders.length, 'crates', ref.crates.length, 'nav blocked', ref.navBlocked, ref.navHash);
   ref.fire.forEach((f) => console.log(JSON.stringify(f)));
   ref.runs.forEach((r) => console.log(r.name, r.end, r.grounded)); console.log('errors', page.errs);
