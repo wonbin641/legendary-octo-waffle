@@ -974,21 +974,35 @@ let bfsQ = new Int32Array(140 * 140);
 function setNav(n, cs) { NAV.n = n; NAV.cs = cs; NAV.off = (n * cs) / 2; bfsQ = new Int32Array(n * n); }
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 function navCell(x, z) { return [clamp(Math.floor((x + NAV.off) / NAV.cs), 0, NAV.n - 1), clamp(Math.floor((z + NAV.off) / NAV.cs), 0, NAV.n - 1)]; }
+/* mark the cells a box stands in (with half a metre round it), within cells i0..i1, j0..j1 */
+function navMark(b, i0, j0, i1, j1) {
+  if (b.miny >= 1.6 || b.door || b.step) return; // a sliding door is a way through, open or not; so are the pit's steps
+  const n = NAV.n, pad = 0.5, cs = NAV.cs;
+  const x0 = Math.max(i0, Math.floor((b.minx - pad + NAV.off) / cs)), x1 = Math.min(i1, Math.floor((b.maxx + pad + NAV.off) / cs));
+  const z0 = Math.max(j0, Math.floor((b.minz - pad + NAV.off) / cs)), z1 = Math.min(j1, Math.floor((b.maxz + pad + NAV.off) / cs));
+  for (let i = x0; i <= x1; i++) for (let j = z0; j <= z1; j++) {
+    const cx = (i + 0.5) * cs - NAV.off, cz = (j + 0.5) * cs - NAV.off;
+    const ex = Math.max(b.minx - cx, 0, cx - b.maxx), ez = Math.max(b.minz - cz, 0, cz - b.maxz);
+    if (Math.hypot(ex, ez) < pad + 0.15 * cs) NAV.blocked[j * n + i] = 1;
+  }
+}
 function buildNav() {
   const n = NAV.n; NAV.blocked = new Uint8Array(n * n); NAV.dist = new Int32Array(n * n).fill(-1);
-  for (const b of colliders) {
-    if (b.miny >= 1.6 || b.door || b.step) continue; // a sliding door is a way through, open or not; so are the pit's steps
-    const pad = 0.5, cs = NAV.cs;
-    const x0 = Math.max(0, Math.floor((b.minx - pad + NAV.off) / cs)), x1 = Math.min(n - 1, Math.floor((b.maxx + pad + NAV.off) / cs));
-    const z0 = Math.max(0, Math.floor((b.minz - pad + NAV.off) / cs)), z1 = Math.min(n - 1, Math.floor((b.maxz + pad + NAV.off) / cs));
-    for (let i = x0; i <= x1; i++) for (let j = z0; j <= z1; j++) {
-      const cx = (i + 0.5) * cs - NAV.off, cz = (j + 0.5) * cs - NAV.off;
-      const ex = Math.max(b.minx - cx, 0, cx - b.maxx), ez = Math.max(b.minz - cz, 0, cz - b.maxz);
-      if (Math.hypot(ex, ez) < pad + 0.15 * cs) NAV.blocked[j * n + i] = 1;
-    }
-  }
+  for (const b of colliders) navMark(b, 0, 0, n - 1, n - 1);
   // a level made of rooms (the ship) also shuts off everything outside them, so the flow field does not flood the void
   if (World.navMask) for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (!World.navMask((i + 0.5) * NAV.cs - NAV.off, (j + 0.5) * NAV.cs - NAV.off)) NAV.blocked[j * n + i] = 1;
+}
+/* 5.20: something small went (a crate broke): redo only the cells round where it stood, from the boxes still near them, instead of
+   the whole grid (334 x 334 cells on the ship; doing it all made the game hitch on a phone every time a crate broke) */
+function navPatch(minx, minz, maxx, maxz) {
+  if (!NAV.blocked) return;
+  const n = NAV.n, cs = NAV.cs, m = 1.5;
+  const i0 = clamp(Math.floor((minx - m + NAV.off) / cs), 0, n - 1), i1 = clamp(Math.floor((maxx + m + NAV.off) / cs), 0, n - 1);
+  const j0 = clamp(Math.floor((minz - m + NAV.off) / cs), 0, n - 1), j1 = clamp(Math.floor((maxz + m + NAV.off) / cs), 0, n - 1);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) NAV.blocked[j * n + i] = 0;
+  const L = queryNear((i0 * cs) - NAV.off - 1, (j0 * cs) - NAV.off - 1, ((i1 + 1) * cs) - NAV.off + 1, ((j1 + 1) * cs) - NAV.off + 1);
+  for (let k = 0; k < L.length; k++) navMark(L[k], i0, j0, i1, j1);
+  if (World.navMask) for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (!World.navMask((i + 0.5) * cs - NAV.off, (j + 0.5) * cs - NAV.off)) NAV.blocked[j * n + i] = 1;
 }
 function updateFlow(px, pz) {
   const n = NAV.n, dist = NAV.dist, blk = NAV.blocked; dist.fill(-1);
@@ -1228,7 +1242,7 @@ function damageCrate(c, dmg, p) {
   if (c.hp > 0) return;
   c.dead = true;
   const im = World.crateIM; _crateZero.makeScale(0, 0, 0); im.setMatrixAt(c.idx, _crateZero); im.instanceMatrix.needsUpdate = true;
-  removeCollider(c.b); buildNav();
+  removeCollider(c.b); navPatch(c.b.minx, c.b.minz, c.b.maxx, c.b.maxz); // 5.20: just round it, not the whole grid
   const at = { x: c.x, y: (c.y || 0) + 0.6, z: c.z };
   FX.chunks(at, 9, 0.28, 'wood'); FX.puff(at, 4, 0.35, 0.6); Sound.crack(at);
   Game.onCrate(c);
@@ -1535,9 +1549,9 @@ const HATCHES = [[75.2, -16], [75.2, 22], [90, 40], [118, 40.8], [150, 20], [150
 function shipRoom(x, z) { for (const R of SHIP_ROOMS) if (R[5] !== 'lock' && x >= R[0] && x <= R[2] && z >= R[1] && z <= R[3]) return R; return null; }
 function shipCeil(x, z) { const R = shipRoom(x, z); return R ? R[4] : 30; }
 const Ship = {
-  active: false, door: null, doorOpen: 0, closing: false, coreMat: null, ring: null, ring2: null, screens: null, doors: [], hatches: [], hatchQ: [], hatchWait: 0,
+  active: false, door: null, doorOpen: 0, closing: false, coreMat: null, ring: null, screens: null, doors: [], hatches: [], hatchQ: [], hatchWait: 0,
   key: false, keyObj: null, keyGlow: null, keyHintT: 0, saveT: 0, pit: null, broken: false, breakT: 0,
-  reset() { this.active = false; this.door = null; this.doorOpen = 0; this.closing = false; this.coreMat = null; this.ring = null; this.ring2 = null; this.screens = null; this.doors = []; this.hatches = []; this.hatchQ = []; this.hatchWait = 0;
+  reset() { this.active = false; this.door = null; this.doorOpen = 0; this.closing = false; this.coreMat = null; this.ring = null; this.screens = null; this.doors = []; this.hatches = []; this.hatchQ = []; this.hatchWait = 0;
     this.key = false; this.keyObj = null; this.keyGlow = null; this.keyHintT = 0; this.saveT = 0; this.pit = null; this.broken = false; this.breakT = 0; },
   /* 5.19, the boss's second phase: the floor round the reactor breaks up and falls into the stepped pit under it. the dais goes with it;
      whatever stood there drops onto the steps (buried mines too, which land and arm again) */
@@ -1634,7 +1648,6 @@ const Ship = {
     if (this.door) this.door.position.y = 2.25 + this.doorOpen * 4.3;
     if (this.coreMat) { const k = 0.82 + 0.14 * Math.sin(t * 2.6) + 0.04 * Math.sin(t * 19); this.coreMat.color.setRGB(0.45 * k, 0.82 * k, 1.0 * k); }
     if (this.ring) this.ring.rotation.z += dt * 0.35;
-    if (this.ring2) this.ring2.rotation.z -= dt * 0.6;
     if (this.screens) this.screens.material.color.setScalar(0.85 + 0.15 * Math.sin(t * 4.3));
     if (this.keyObj && this.keyObj.visible) { this.keyObj.rotation.y += dt * 1.2; this.keyGlow.material.opacity = 0.55 + 0.3 * Math.sin(t * 4); }
     if (this.saveT > 0 && (this.saveT -= dt) <= 0 && !this.key) { HUD.banner('운전실 문이 열렸습니다', '조종석에 꽂힌 메인홀 열쇠를 뽑으세요 · 뽑으면 세이브 포인트', 3.4); }
@@ -3071,9 +3084,9 @@ function rocketLock() {
   return best;
 }
 /* ---------- melee: V or the mouse's back button (on a touch screen the 근접 button). a quick jab with the gun at whatever is within
-   arm's reach ---------- */
+   arm's reach. 5.20: in the Android app a wooden crate that comes within that reach in front of you is jabbed by itself ---------- */
 // 120 to the body, twice that to the head; it makes no noise, cuts a reload short, and breaks crates too
-const MELEE_DMG = 120, MELEE_REACH = 2.3, MELEE_T = 0.42;
+const MELEE_DMG = 120, MELEE_REACH = 2.3, MELEE_T = 0.42, CRATE_AUTO_RANGE = 12;
 const Melee = {
   t: 0, cd: 0, on: false, hit: false, target: null,
   start(target) {
@@ -3083,16 +3096,18 @@ const Melee = {
     Sound.swing();
   },
   reset() { this.on = false; this.t = 0; this.cd = 0; this.target = null; },
-  /* a crate within reach in front of you, on your level, and you are not busy with anything else (shooting, aiming, reloading,
-     switching, injecting, riding, in the air): the jab goes at it. one jab breaks a crate */
+  /* the app only: a crate within the jab's reach (2.3 m from your eyes to the nearest point of the crate) and not behind you, and you
+     are not busy with anything else (shooting, aiming, reloading, switching, injecting, riding, in the air): the jab goes at it.
+     one jab breaks a crate */
   autoCrate() {
-    if (this.on || this.cd > 0 || state !== 'playing' || Gun.none || Gun.busy > 0 || Gun.reloadT > 0 || Gun.switchT > 0 || Gun.trigger || Gun.adsHeld || Gun.ads > 0.05) return;
+    if (!isApp || this.on || this.cd > 0 || state !== 'playing' || Gun.none || Gun.busy > 0 || Gun.reloadT > 0 || Gun.switchT > 0 || Gun.trigger || Gun.adsHeld || Gun.ads > 0.05) return;
     if (player.stunT > 0 || !player.grounded || Car.riding || Ride.m || Toss.on || Jet.on) return;
-    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw); let best = null, bd = 1.7;
+    const o = camera.position, fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw); let best = null, bd = MELEE_REACH;
     for (const c of crates) {
-      if (c.dead || Math.abs((c.y || 0) - player.pos.y) > 1.1) continue;
-      const dx = c.x - player.pos.x, dz = c.z - player.pos.z, d = Math.hypot(dx, dz);
-      if (d < bd && (dx * fx + dz * fz) / (d || 1) > 0.4) { best = c; bd = d; } // within about 65 degrees of straight ahead
+      if (c.dead) continue;
+      const b = c.b, qx = clamp(o.x, b.minx, b.maxx), qy = clamp(o.y, b.miny, b.maxy), qz = clamp(o.z, b.minz, b.maxz), d = Math.hypot(qx - o.x, qy - o.y, qz - o.z);
+      const dx = c.x - player.pos.x, dz = c.z - player.pos.z, h = Math.hypot(dx, dz) || 1;
+      if (d < bd && (dx * fx + dz * fz) / h > 0.35) { best = c; bd = d; } // within about 70 degrees of straight ahead
     }
     if (best) this.start(best);
   },
@@ -3269,13 +3284,14 @@ function cycleWeapon(step) {
 const scopeEl = $('scope');
 function updateGun(dt, mdx, mdy) {
   const w = curW();
-  Melee.update(dt); Heat.update(dt); if (typeof LaserDot !== 'undefined') LaserDot.update();
+  Melee.autoCrate(); Melee.update(dt); Heat.update(dt); if (typeof LaserDot !== 'undefined') LaserDot.update();
   Gun.cooldown = Math.max(0, Gun.cooldown - dt);
   Gun.bloom = Math.max(0, Gun.bloom - dt * (Gun.trigger && w.auto ? 0.02 : 0.09));
   if (lookMode === 'touch' && settings.autoFire && !w.grenade && !w.rocket && !Gun.trigger && Gun.cooldown <= 0 && Gun.reloadT <= 0 && Gun.switchT <= 0 && wstate[Gun.cur].mag > 0 && !player.sprinting) {
     camera.getWorldDirection(_fwd);
     const o = camera.position, reach = w.falloff ? w.falloff[1] : Math.min(w.range, 70);
-    const wall = raycastStatic(o.x, o.y, o.z, _fwd.x, _fwd.y, _fwd.z, reach), crate = wall && RH.box && RH.box.kind === 'wood' && RH.box.ref && !RH.box.ref.dead; // 5.18: a wooden crate under the crosshair too
+    // 5.18: a wooden crate under the crosshair too; 5.20: only within 12 m (farther off, the shots woke the area and used rented ammo)
+    const wall = raycastStatic(o.x, o.y, o.z, _fwd.x, _fwd.y, _fwd.z, reach), crate = wall && RH.box && RH.box.kind === 'wood' && RH.box.ref && !RH.box.ref.dead && RH.t <= CRATE_AUTO_RANGE;
     // auto-fire leaves alone what never fights you: the lab's zebras and animals you have tamed (you can still shoot them yourself)
     Enemies.skipCalm = true; const sees = Enemies.raycast(o, _fwd, RH.t) || Enemies.assist(o, _fwd, 0.035, reach); Enemies.skipCalm = false;
     if (sees || crate) fireWeapon();
@@ -9138,14 +9154,14 @@ function start(data) {
   if (isTouch) {
     document.querySelectorAll('.senslbl').forEach((el) => { el.textContent = '조준 감도'; });
     const rows = [['이동 버튼', '왼쪽 가운데 ▲▼◀▶ · 두 버튼 사이로 밀면 대각선 · ▲를 두 번 눌러 누르고 있으면 달리기'], ['오른쪽 엄지', '화면을 끌어서 조준'], ['사격', '누른 채 끌면 조준도 됩니다'],
-      ['자동 사격', '조준선이 적이나 나무 상자에 닿으면 저절로 쏩니다'], ['조준 · 점프', '정조준 전환, 점프'], ['장전 · 무기 칸', '재장전, 무기 교체'], ['근접', '총으로 가까운 적이나 상자를 칩니다 (소리 없음)'],
+      ['자동 사격', '조준선이 적이나 12 m 안의 나무 상자에 닿으면 저절로 쏩니다'], ['조준 · 점프', '정조준 전환, 점프'], ['장전 · 무기 칸', '재장전, 무기 교체'], ['근접', isApp ? '총으로 가까운 적이나 상자를 칩니다 (소리 없음) · 나무 상자는 닿는 거리에 들어오면 저절로 칩니다' : '총으로 가까운 적이나 상자를 칩니다 (소리 없음)'],
       ['해독약', '감염되면 화면 가운데 버튼'], [isApp ? 'II · 뒤로 가기' : 'II', '일시정지 · 상점']];
     const k = $('keys'); k.textContent = '';
     rows.forEach(([a, b]) => { const kb = document.createElement('kbd'); kb.textContent = a; const sp = document.createElement('span'); sp.textContent = b; k.append(kb, sp); });
   }
   requestAnimationFrame(frame);
   window.__yard = { Game, player, Enemies, Gun, stats, save, Shop, Car, Loot, crates, wstate, TacMap, los: lineOfSight, stopDist, Proj, collideAt, Gfx, Post, Perf, renderer, scene, Inject, colliders, Lab, Kong, KONG, dbg, SaveCode, settings, refreshMenu, camera,
-    Bleed, Fear, Toss, Ride, Beast, SEAT, ANIMALS, WEAPONS, HUD, Sound, Rockets, ShipFX, Ship, BPH, gdroneDrones, gunModels, GUN_MATS, Heat, bossDropMines, Safari, Tower, TOWER, rocketLock, Melee, groundAt, addCollider, removeCollider, persistNow: persist, get HALF() { return HALF; }, get NAV() { return NAV; }, get ivoryLock() { return ivoryLock; }, keyDown(c) { keys.add(c); }, keyUp(c) { keys.delete(c); }, damageCrate, startStage, get state() { return state; }, get calls() { return renderer.info.render.calls; },
+    Bleed, Fear, Toss, Ride, Beast, SEAT, ANIMALS, WEAPONS, HUD, Sound, Rockets, ShipFX, Ship, BPH, gdroneDrones, gunModels, GUN_MATS, Heat, bossDropMines, Safari, Tower, TOWER, rocketLock, Melee, groundAt, addCollider, removeCollider, buildNav, navPatch, damageCrate, persistNow: persist, get HALF() { return HALF; }, get NAV() { return NAV; }, get ivoryLock() { return ivoryLock; }, keyDown(c) { keys.add(c); }, keyUp(c) { keys.delete(c); }, damageCrate, startStage, get state() { return state; }, get calls() { return renderer.info.render.calls; },
     sim(sec) { const n = Math.round(sec * 30); for (let i = 0; i < n && state === 'playing'; i++) tick(1 / 30); },
     cutStep(dt) { if (state === 'cutscene') { time += dt; Cut.update(dt); FX.update(dt); updateWorld(dt, time, camera.position.x, camera.position.z); } } };
 }

@@ -1,0 +1,18 @@
+# build output (tools/build.sh); the site files at the top (index.html, game.js) are built too, but they are what GitHub Pages serves
+build/
+tests/shots/
+node_modules/
+# the Android app: build folders, the machine's SDK path, the generated assets
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/
+# the signing key: keep it, but never publish it
+android/app/keystore.properties
+android/app/*.jks
+*.jks
+*.keystore
+# stray screenshots at the top
+/*.png
+/shots/

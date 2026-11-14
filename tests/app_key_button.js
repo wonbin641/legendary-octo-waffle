@@ -1,0 +1,35 @@
+const __EXPECT = [["tapped \\{\"key\":true\\}", "key button takes the key"], ["ERRORS: none", "no page errors"]];
+// pass or fail: the lines this test prints are checked against what they should say when it runs to the end
+const __lines = [], __log = console.log; console.log = (...a) => { __lines.push(a.join(' ')); __log(...a); };
+process.on('exit', () => { const t = '\n' + __lines.join('\n'); const bad = __EXPECT.filter(([re]) => !new RegExp(re).test(t)).map(([, n]) => n);
+  __log(bad.length ? 'FAILED: ' + bad.join(', ') : 'ALL OK'); if (bad.length) process.exitCode = 1; });
+const { chromium, devices } = require('playwright');
+(async () => {
+  const S = require('path').resolve(__dirname, '..'); require('fs').mkdirSync(S + '/tests/shots', { recursive: true });
+  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const dev = Object.assign({}, devices['Pixel 7'], { viewport: { width: 915, height: 412 } });
+  const ctx = await browser.newContext({ ...dev, userAgent: dev.userAgent + ' Yard07App/1.0' });
+  await ctx.addInitScript(() => { localStorage.setItem('yard07.settings', JSON.stringify({ dev: true })); });
+  const page = await ctx.newPage(); const errs = [];
+  page.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
+  await page.goto('http://127.0.0.1:8765/index.html'); await page.waitForTimeout(3500);
+  await page.evaluate(() => { const y = window.__yard; y.dbg.freeze = true; y.startStage(4); document.getElementById('deploybtn').click(); for (let i = 0; i < 900 && y.state === 'cutscene'; i++) y.cutStep(1 / 30); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const y = window.__yard, p = y.player; p.invuln = 1e9; p.pos.set(-90.7, 0, -7.5); p.vel.set(0, 0, 0); y.sim(0.1); for (let i = 0; i < 27; i++) y.cutStep(1 / 30); });
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: S + '/tests/shots/a9_cut_bee.png' });
+  await page.evaluate(() => { const y = window.__yard; for (let i = 0; i < 40 && y.state === 'cutscene'; i++) y.cutStep(1 / 30); });
+  console.log('after cut', JSON.stringify(await page.evaluate(() => ({ state: window.__yard.state, touch: !document.getElementById('touch').hidden }))));
+  await page.evaluate(() => { const y = window.__yard, bee = y.Enemies.list.find((e) => e.type === 'gdrone'); y.Enemies.damage(bee, 1e6, bee.pos, { x: 0, y: 0, z: 1 }, false); y.sim(3);
+    const p = y.player; p.pos.set(-103.2, 0.45, -7.5); p.vel.set(0, 0, 0); p.yaw = Math.PI / 2; y.sim(0.4); });
+  console.log('button', JSON.stringify(await page.evaluate(() => { const b = document.getElementById('t-car'); return { hidden: b.hidden, text: b.textContent }; })));
+  await page.tap('#t-car'); await page.waitForTimeout(150);
+  console.log('tapped', JSON.stringify(await page.evaluate(() => ({ key: window.__yard.Ship.key }))));
+  await page.screenshot({ path: S + '/tests/shots/a9_key.png' });
+  await page.evaluate(() => { const y = window.__yard, p = y.player; p.pos.set(66.6, 0, -7.5); p.vel.set(0, 0, 0); y.sim(0.6); p.pos.set(66.6, 0, -7.5); y.sim(0.1); for (let i = 0; i < 27; i++) y.cutStep(1 / 30); });
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: S + '/tests/shots/a9_cut_boss.png' });
+  console.log('bossCard', JSON.stringify(await page.evaluate(() => { const r = document.getElementById('bosscard').getBoundingClientRect(); return { state: window.__yard.state, l: Math.round(r.left), r: Math.round(r.right), w: innerWidth }; })));
+  console.log('ERRORS:', errs.join('\n') || 'none');
+  await browser.close();
+})();

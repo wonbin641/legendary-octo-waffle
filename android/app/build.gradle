@@ -1,0 +1,56 @@
+plugins {
+    id "com.android.application"
+}
+
+// Release signing: keystore.properties next to this file (see README.md).
+def keystoreProps = new Properties()
+def keystoreFile = file("keystore.properties")
+if (keystoreFile.exists()) {
+    keystoreFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+    namespace "app.yard07.game"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "app.yard07.game"
+        minSdk 24
+        targetSdk 34
+        versionCode 29
+        versionName "5.20"
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile file(keystoreProps["storeFile"])
+                storePassword keystoreProps["storePassword"]
+                keyAlias keystoreProps["keyAlias"]
+                keyPassword keystoreProps["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    androidResources {
+        // keep the game files uncompressed so the WebView can stream them quickly
+        noCompress += ["html", "js", "woff2"]
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
