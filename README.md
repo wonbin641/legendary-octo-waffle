@@ -1,10 +1,12 @@
-# 야르 07
+# 야르 07 (Yarr! 07)
 
-브라우저에서 하는 1인칭 슈팅 게임입니다. 같은 게임이 세 곳에서 돌아갑니다.
+브라우저에서 하는 1인칭 슈팅 게임입니다. 한국어 이름은 야르 07, 영어 이름은 Yarr! 07입니다. 같은 게임이 세 곳에서 돌아갑니다.
 
 - 웹: 이 저장소의 GitHub Pages (`index.html`, `game.js`)
 - claude.ai 아티팩트: 한 파일짜리 페이지 (`tools/build.sh`가 만드는 `build/yard07.html`)
 - 안드로이드 앱: `android/` (인터넷 없이 돌아가는 가로 전용 앱, 설명은 [android/README.md](android/README.md))
+
+Godot 4로 옮긴 판이 따로 있습니다: [godot/](godot/README.md) (소스), `godot-web/` (웹 내보내기, GitHub Pages의 `/godot-web/`). 브라우저판과 같은 스테이지 8개, 같은 수치, 같은 저장 코드를 씁니다.
 
 ## 폴더
 

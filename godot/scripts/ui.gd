@@ -11,7 +11,7 @@ const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵�
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 · 숨은 스파이더 마인"}
 const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82]}
 const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8]]
-const BUILT := [1, 6, 5, 2, 3, 7, 4, 9]   # stages the Godot version can play so far
+const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # stages the Godot version can play so far
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var game: Game; var guns: Guns
@@ -202,6 +202,7 @@ func _layout_menu() -> void:
 	(detail.get_meta("row") as Control).visible = m != "phone"
 	d_spec_list.add_theme_font_size_override("font_size", 12 if m == "pc" else 10)
 	d_go.custom_minimum_size.y = 52.0 if m == "pc" else 44.0
+	d_go.get_parent().move_child(d_go, 4 if m == "phone" else 5)   # on a low screen the button comes before the list of gear, so it is never off the bottom
 	var pad := 8 if small else 14; (detail.get_theme_stylebox("panel") as StyleBoxFlat).set_content_margin_all(pad)
 	_place_nodes(); board.queue_redraw(); brand.queue_redraw()
 

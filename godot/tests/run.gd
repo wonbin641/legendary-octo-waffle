@@ -267,7 +267,7 @@ func _ready() -> void:
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
 	# ---------------- stages 1-1 and 1-2 ----------------
-	for stn in [6, 5, 2, 3, 7, 4]:
+	for stn in [6, 5, 2, 3, 7, 4, 8]:
 		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.drop_pick = null; gm.begin(stn)
 		var cb := 0
 		for i in mini(60, Phys.colliders.size()):
@@ -280,8 +280,8 @@ func _ready() -> void:
 		var eb := 0; var efirst := ""
 		for i in mini(en.list.size(), R9.enemies.size()):
 			var e9 = en.list[i]; var q9: Array = R9.enemies[i]
-			var moved9: bool = stn == 3 and (absf(e9.pos.x - q9[0]) > 11.0 or absf(e9.pos.z - q9[1]) > 11.0)   # the lab's animals had paced about their cages by the time they were written down
-			var still9: bool = stn != 3 and (stn != 4 or e9.type in ["cctv", "mine", "gdrone", "bdrone"])   # the ship's patrols and drones had moved off by the time they were written down
+			var moved9: bool = (stn == 3 or stn == 8) and (absf(e9.pos.x - q9[0]) > 11.0 or absf(e9.pos.z - q9[1]) > 11.0)   # the lab's animals had paced about their cages by the time they were written down
+			var still9: bool = stn != 3 and stn != 8 and (stn != 4 or e9.type in ["cctv", "mine", "gdrone", "bdrone"])   # the ship's patrols and drones had moved off by the time they were written down
 			if (still9 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or moved9 or e9.type != q9[7] or (absf(e9.pos.y - q9[2]) > 1e-3 and (stn != 4 or e9.type == "mine")) or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
 				eb += 1
 				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
@@ -432,6 +432,22 @@ func _ready() -> void:
 	check("stage 3: its chest-beating calls seven gorillas down, a quarter of its health each", an.minions() == 7 and gm.goal == g3 + 7 and en.list[en.list.size() - 1].max_hp == 1300.0, an.minions())
 	pl.invuln = 0.0; pl.hp = Player.MAX_HP; gm.slam(kg)
 	check("stage 3: under its leap you are done for", gm.ended and gm.result == "slam")
+	# ---------------- stage 3-2: the lab, one cage at a time ----------------
+	gm.begin(8); var lb8: Lab = w.lab; pl.invuln = 1e9
+	check("stage 3-2: every cage is glass, and only the first is on a clock (5 s)", lb8.seq and lb8.cages[0].open_at == 5.0 and lb8.cages[1].held and lb8.cages[0].animals[0].glassed and lb8.cages[0].panels[0].col.glass)
+	var z8 = lb8.cages[0].animals[0]; en.damage(z8, 999, z8.pos, Vector3(0, 0, 1), false)
+	check("stage 3-2: nothing behind the glass can be hurt", z8.alive and z8.hp == 150.0)
+	for i in 260: lb8.update(0.02)
+	check("stage 3-2: the first cage opens at 5 s; the second waits for it to be emptied", lb8.cages[0].open and not lb8.cages[1].open and lb8.wait_left(lb8.cages[1]) == 12 and lb8.next_cage().n == 2)
+	for e in lb8.cages[0].animals.slice(1): en.damage(e, 999, e.pos, Vector3(0, 0, 1), false)
+	for i in 100: lb8.update(0.02)
+	check("stage 3-2: one zebra left: the second cage stays shut", not lb8.cages[1].open and lb8.wait_left(lb8.cages[1]) == 1)
+	en.animals.ride_on(z8)
+	for i in 30: lb8.update(0.02)
+	check("stage 3-2: taming the last one counts too: the monkey reaches for his button", lb8.wait_left(lb8.cages[1]) == 0 and (lb8.reach != null or lb8.cages[1].open_at < INF))
+	for i in 60: lb8.update(0.02)
+	check("stage 3-2: and half a second after the push the second cage opens", lb8.cages[1].open and not lb8.cages[2].open)
+	en.animals.ride_off(true)
 	# ---------------- stage 3-1: the safari ----------------
 	gm.begin(7); var sf: Safari = w.safari; pl.invuln = 0.0
 	check("stage 3-1: 100 animals living wild, a tower of 10,000, three crates up on it", en.list.size() == 100 and en.list.all(func(e): return e.wild) and sf.hp == 10000.0 and sf.slots.size() == 16 and w.crates[0].y == 3.84, sf.slots.size())
