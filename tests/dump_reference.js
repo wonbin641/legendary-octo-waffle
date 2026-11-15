@@ -58,14 +58,14 @@ const { chromium, ARGS, ROOT, open, play } = require('./lib');
   ref.codes = codes;
   // stages 1-1 (6) and 1-2 (5): the same docks laid out differently, and who stands where with what
   ref.stages = {};
-  for (const st of [6, 5, 2, 3, 7, 8]) {
+  for (const st of [6, 5, 2, 3, 7, 8, 4]) {
     const pg = await open(browser, 'pc'); await play(pg, st);
     ref.stages[st] = await pg.evaluate(() => { const y = window.__yard, r6 = (v) => Math.round(v * 1e6) / 1e6;
       let h = 0, blocked = 0; for (let i = 0; i < y.NAV.blocked.length; i++) { if (y.NAV.blocked[i]) { blocked++; h = (h * 31 + i) % 1000000007; } }
       return { colliders: y.colliders.length, first: y.colliders.slice(0, 60).map((b) => [b.minx, b.minz, b.maxy].map(r6)), crates: y.crates.map((c) => [r6(c.x), r6(c.z)]), navBlocked: blocked, navHash: h,
         start: [r6(y.Game.info.start.x), r6(y.Game.info.start.z), r6(y.Game.info.start.yaw)], goal: y.Game.goal,
         enemies: y.Enemies.list.map((e) => [r6(e.pos.x), r6(e.pos.z), r6(e.pos.y), e.kit || 'pistol', e.boss ? 1 : 0, e.maxHp, e.helmet ? 1 : 0, e.type]), huts: (y.Game.info.huts || []).length, crateY: y.crates.map((c) => r6(c.y || 0)),
-        feet: (() => { const f = {}; for (const e of y.Enemies.list) { const k = e.type + (e.kong ? (e.boss ? '_boss' : '_kong') : ''); if (!f[k] && e.foot) { const sc = e.scale || 1; f[k] = { foot: [e.foot.x0, e.foot.x1, e.foot.z0, e.foot.z1].map((v) => r6(v / sc)), mass: r6(e.mass), R: r6(e.R), H: r6(e.H), scale: sc }; } } return f; })() }; });
+        feet: (() => { const f = {}; for (const e of y.Enemies.list) { const k = e.type + (e.kong ? (e.boss ? '_boss' : '_kong') : ''); if (!f[k] && e.foot) { const sc = e.scale || 1; f[k] = { speed: r6(e.speed), foot: [e.foot.x0, e.foot.x1, e.foot.z0, e.foot.z1].map((v) => r6(v / sc)), mass: r6(e.mass), R: r6(e.R), H: r6(e.H), scale: sc }; } } return f; })() }; });
     console.log('stage', st, 'colliders', ref.stages[st].colliders, 'enemies', ref.stages[st].enemies.length, 'start', ref.stages[st].start, 'errors', pg.errs); await pg.close();
   }
   fs.writeFileSync(path.join(ROOT, 'godot', 'tests', 'reference_stage1.json'), JSON.stringify(ref));

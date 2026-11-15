@@ -15,6 +15,9 @@ const STAGE_STYLE := {
 	# the village: deep blue night, a big moon, fires flickering orange
 	2: {"fog": [0.018, 0.024, 0.04], "density": 0.019, "zenith": [0.004, 0.007, 0.02], "glow": [0.07, 0.03, 0.008], "hemi": ["4c5c86", "1a1914", 0.42], "moon": ["c4d6ff", 0.62], "lamp": ["ff7a30", 2.6],
 		"seed": 23, "crates": 46, "fire": true, "sunOff": [-40, 49, -49]},
+	# inside the spaceship: dark plating, cold blue-white light
+	4: {"indoor": true, "ship": true, "fog": [0.012, 0.016, 0.026], "density": 0.011, "zenith": [0.004, 0.006, 0.012], "glow": [0.02, 0.03, 0.05], "hemi": ["8aa0d0", "34363e", 0.85], "moon": ["e2ecff", 0.75], "lamp": ["9fd4ff", 1.5],
+		"seed": 61, "crates": 24, "sunOff": [-18, 70, 22], "exposure": 1.1, "lampMul": 1.0},
 	# the sealed lab: cold fluorescent light from above, a pale tiled floor
 	3: {"indoor": true, "lab": true, "ride": true, "fog": [0.02, 0.026, 0.032], "density": 0.008, "zenith": [0.004, 0.006, 0.01], "glow": [0.02, 0.03, 0.04], "hemi": ["dfe8f0", "5a6066", 0.95], "moon": ["f4f8ff", 0.95], "lamp": ["e6f2ff", 2.2],
 		"seed": 41, "crates": 40, "sunOff": [-12, 70, 18], "exposure": 0.8, "lampMul": 0.4},
@@ -57,6 +60,7 @@ var fx: Fx = null
 var toy: ToyRoom = null
 var village: Village = null
 var lab: Lab = null
+var ship: Ship = null
 var safari: Safari = null
 var flames: Array = []   # stage 5's room and its gimmicks
 var _backdrop_blink: Array = []
@@ -140,7 +144,7 @@ func _build_backdrop() -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null; village = null; lab = null; safari = null; flames.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null; village = null; lab = null; safari = null; ship = null; flames.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -165,6 +169,7 @@ func build_stage(stage: int) -> void:
 		env.ambient_light_color = Color(S.hemi[0]).lerp(Color(S.hemi[1]), 0.35); env.ambient_light_energy = S.hemi[2]; env.fog_depth_end = 400.0; moon.light_color = Color(S.moon[0])
 		toy = ToyRoom.new(); toy.build(self, G); return
 	(get_node("Night") as Node3D).visible = not S.get("day", false) and not S.get("indoor", false)
+	if S.get("ship", false): Phys.set_world_size(166.0); Phys.set_nav(334, 1.0); ship = Ship.new(); ship.build(self, G, S, R); return
 	if S.get("lab", false): Phys.set_world_size(Lab.HALF + 1); Phys.set_nav(int(2 * Lab.HALF + 8), 1.0); lab = Lab.new(); lab.build(self, G, S, R); return
 	if S.get("savanna", false): Phys.set_world_size(178.0); Phys.set_nav(180, 2.0); safari = Safari.new(); safari.build(self, G, S, R); return
 	Phys.set_world_size(66.0); Phys.set_nav(140, 1.0)

@@ -60,7 +60,10 @@ func _ready() -> void:
 	_build_guns(); _build_hud()
 	ui = Ui.new(); ui.f_title = f_title; ui.f_body = f_body; ui.f_bold = f_bold; ui.f_mono = f_mono; ui.game = game; ui.guns = guns; ui.is_touch = is_touch
 	ui.do_deploy = enter_play; ui.do_resume = resume_game; ui.do_quit = func() -> void: game.forfeit(); game.return_rentals(); to_menu()
-	ui.do_menu = to_menu; ui.do_again = func(stage: int) -> void: state = "brief"; ui.in_stage = false; ui.open_brief(stage)
+	ui.do_menu = to_menu; ui.do_again = func(stage: int) -> void:
+		if game.sp != null and game.result != "clear" and stage == game.stage:   # back to the save point, as things were when you took it
+			game.from_save(); ui.show_screen(""); enter_play(); banner("세이브 포인트에서 다시", "처치 %d · 열쇠를 가진 채 운전실에서 시작합니다" % game.kills, 3.0); return
+		state = "brief"; ui.in_stage = false; ui.open_brief(stage)
 	ui.on_settings = apply_settings
 	hud.get_parent().add_child(ui); ui.build()
 	get_viewport().size_changed.connect(_on_resize); _on_resize()
@@ -248,9 +251,12 @@ func _draw_hud() -> void:
 		var t := "%d %s" % [i + 1, Custom.weapon(id).short]; var wd := f_mono.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 		x -= wd; hud.draw_string(f_mono, Vector2(x, sy), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, SODIUM if id == guns.cur else Color(STEEL, 0.8)); x -= 12
 	# the boss, once it is hurt: its name and health across the top
-	if game.boss != null and game.boss.hp < game.boss.max_hp:
-		var bw := minf(360.0, s.x * 0.4); hud.draw_string(f_bold, Vector2(c.x - bw / 2, 26), game.boss.name, HORIZONTAL_ALIGNMENT_CENTER, bw, 13, INK)
-		hud.draw_rect(Rect2(c.x - bw / 2, 32, bw, 6), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(c.x - bw / 2, 32, bw * game.boss.hp / game.boss.max_hp, 6), Color("ff5260"))
+	if world.ship != null and world.ship.key_near() and look_mode != "touch": hud.draw_string(f_bold, Vector2(c.x - 200, s.y - 96), "E 키로 메인홀 열쇠 줍기", HORIZONTAL_ALIGNMENT_CENTER, 400, 14, INK)
+	var bb: Enemies.Foe = game.boss; var bmid := false   # on the ship, the gold commander instead while it is the fight at hand
+	if game.mid != null and game.mid.alive and game.mid.alert and (bb == null or not bb.alert): bb = game.mid; bmid = true
+	if bb != null and bb.hp < bb.max_hp:
+		var bw := minf(360.0, s.x * 0.4); hud.draw_string(f_bold, Vector2(c.x - bw / 2, 26), ("중간 보스 · " if bmid else "보스 · ") + bb.name + (" · %d페이즈" % (int(bb.k.phase) + 1) if bb.k.has("phase") else ""), HORIZONTAL_ALIGNMENT_CENTER, bw, 13, INK)
+		hud.draw_rect(Rect2(c.x - bw / 2, 32, bw, 6), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(c.x - bw / 2, 32, bw * bb.hp / bb.max_hp, 6), Color("ff5260"))
 
 ## stages 3 and 3-1: the next cage or the time to the stampede, bleeding, what you are riding, the tower
 func _draw_beasts(s: Vector2, c: Vector2) -> void:
@@ -313,6 +319,7 @@ func _touch_buttons() -> Dictionary:
 	var b := {"fire": [Vector2(s.x - 92, s.y - 150), 42.0, "발사"], "jump": [Vector2(s.x - 62, s.y - 56), 32.0, "점프"], "ads": [Vector2(s.x - 176, s.y - 92), 30.0, "조준"],
 		"reload": [Vector2(s.x - 186, s.y - 166), 26.0, "장전"], "melee": [Vector2(s.x - 156, s.y - 232), 26.0, "근접"], "swap": [Vector2(s.x - 82, s.y - 244), 26.0, "무기"]}
 	if game.stage == 2: b["anti"] = [Vector2(s.x - 262, s.y - 62), 30.0, "해독약 %d" % game.antidotes if game.antidotes > 0 else "해독약 없음"]
+	if world.ship != null and world.ship.key_near(): b["key"] = [Vector2(s.x - 262, s.y - 62), 30.0, "열쇠 줍기"]
 	var ract := _ride_act()
 	if ract != "": b["ride"] = [Vector2(s.x - 262, s.y - 62), 30.0, ract]
 	if enemies.animals.m != null and enemies.animals.target != null: b["off"] = [Vector2(s.x - 262, s.y - 132), 26.0, "내리기"]
@@ -343,6 +350,7 @@ func _set_state(s: String) -> void:
 	if view: view.visible = s == "playing" or s == "paused"
 
 func to_menu() -> void:
+	game.sp = null   # leaving for the menu ends the run, save point and all
 	if not game.ended and game.stats.time > 0.0: game.forfeit()
 	game.return_rentals(); Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear(); player.jet_end()
@@ -379,7 +387,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_R: guns.start_reload()
 			if e.physical_keycode == KEY_V: guns.melee_start()
 			if e.physical_keycode == KEY_F: game.use_antidote()
-			if (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G: enemies.animals.ride_toggle()
+			if (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G:
+				if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
 			if e.physical_keycode == KEY_X and enemies.animals.m != null: enemies.animals.ride_off(false)
 			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_9: guns.switch_slot(e.physical_keycode - KEY_1)
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
@@ -419,6 +428,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				"melee": guns.melee_start()
 				"anti": game.use_antidote()
 				"ride": enemies.animals.ride_toggle()
+				"key": world.ship.take_key()
 				"off": enemies.animals.ride_off(false)
 				"swap": guns.cycle(1)
 			if hit != "": touch_ui.queue_redraw(); return
@@ -539,6 +549,9 @@ func command(line: String) -> Dictionary:
 				if not e.boss or (a.size() > 1 and a[1] == "boss"): enemies.damage(e, 1e6, e.pos, Vector3(0, 0, -1), false)
 		"inspect": inspect = a[1] == "1"
 		"bite": game.bitten(enemies.list[0])
+		"takekey": world.ship.take_key()
+		"hurt": player.invuln = 0.0; player.hurt(float(a[1]), Vector3.ZERO)
+		"again": ui.do_again.call(game.stage)
 		"ride": enemies.animals.ride_toggle()
 		"stampede": world.safari.t = Safari.T_STAMPEDE - 0.5
 		"labt": world.lab.t = float(a[1])
@@ -556,4 +569,4 @@ func command(line: String) -> Dictionary:
 	return {"state": state, "screen": ui.cur, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
 		"colliders": Phys.colliders.size(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
 		"gun": guns.cur, "slots": guns.slots, "mag": guns.st().mag, "hp": player.hp, "ads": guns.ads, "fov": cam.fov, "money": Store.save.money, "cleared": Store.save.cleared, "owned": Store.save.owned,
-		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}
+		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "key": world.ship.key if world.ship != null else false, "doors": world.ship.doors.map(func(d): return d.mode) if world.ship != null else [], "phase": int(game.boss.k.get("phase", -1)) if game.boss != null else -1, "pit": Phys.PIT != null, "sp": game.sp != null, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}

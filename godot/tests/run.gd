@@ -267,7 +267,7 @@ func _ready() -> void:
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
 	# ---------------- stages 1-1 and 1-2 ----------------
-	for stn in [6, 5, 2, 3, 7]:
+	for stn in [6, 5, 2, 3, 7, 4]:
 		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.drop_pick = null; gm.begin(stn)
 		var cb := 0
 		for i in mini(60, Phys.colliders.size()):
@@ -281,7 +281,8 @@ func _ready() -> void:
 		for i in mini(en.list.size(), R9.enemies.size()):
 			var e9 = en.list[i]; var q9: Array = R9.enemies[i]
 			var moved9: bool = stn == 3 and (absf(e9.pos.x - q9[0]) > 11.0 or absf(e9.pos.z - q9[1]) > 11.0)   # the lab's animals had paced about their cages by the time they were written down
-			if (stn != 3 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or moved9 or e9.type != q9[7] or absf(e9.pos.y - q9[2]) > 1e-3 or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
+			var still9: bool = stn != 3 and (stn != 4 or e9.type in ["cctv", "mine", "gdrone", "bdrone"])   # the ship's patrols and drones had moved off by the time they were written down
+			if (still9 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or moved9 or e9.type != q9[7] or (absf(e9.pos.y - q9[2]) > 1e-3 and (stn != 4 or e9.type == "mine")) or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
 				eb += 1
 				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
 		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == R9.enemies.size() and eb == 0 and gm.goal == int(R9.goal), efirst)
@@ -449,6 +450,69 @@ func _ready() -> void:
 	check("stage 3-1: with you on the tower a buffalo rams the tower: 20 a blow", sf.hp == 9980.0, sf.hp)
 	var col7: int = Phys.colliders.size(); sf.hurt(9990.0, Vector3.ZERO)
 	check("stage 3-1: at zero the tower comes down and you fall with it", not sf.standing and Phys.colliders.size() == col7 - 16 and pl.stun_t >= 1.0 and not sf.holds())
+	# ---------------- stage 4: the spaceship ----------------
+	gm.begin(4); var s4_sh: Ship = w.ship; var s4_rb: Robots = en.robots; pl.invuln = 0.0
+	var bee4 = gm.mid; var boss4 = gm.boss
+	check("stage 4: the boss drone (9,000) sealed in the hall, the gold bee (5,000) on the bridge", boss4 != null and boss4.max_hp == 9000.0 and boss4.sealed and bee4 != null and bee4.max_hp == 5000.0 and bee4.sealed and bee4.scale == 1.25)
+	check("stage 4: both doors are shut and stop bullets", Phys.raycast_static(Vector3(-85, 1.5, -7.5), Vector3(-1, 0, 0), 20.0) and absf(Phys.rh_t - 6.5) < 0.01, Phys.rh_t)
+	en.damage(bee4, 100, bee4.pos, Vector3(0, 0, 1), false)
+	# the hall's door wants the key
+	pl.pos = Vector3(67.0, 0, -7.5); s4_sh.update(0.02, 0.0)
+	check("stage 4: without the key the hall's door stays shut", s4_sh.doors[1].mode == "shut")
+	# the bridge: step up to the door and you are put inside, locked in with the bee
+	pl.pos = Vector3(-91.0, 0, -7.5); s4_sh.update(0.02, 0.0)
+	check("stage 4: at the bridge door you are let in and locked in with the bee, which wakes", s4_sh.doors[0].mode == "locked" and pl.pos.x < -93.0 and not bee4.sealed and bee4.alert)
+	check("stage 4: the key cannot be pulled while the bee lives", not s4_sh.take_key())
+	var s4_m4: int = Store.save.money; pl.invuln = 1e9
+	en.damage(bee4, 1e6, bee4.pos, Vector3(0, 0, 1), false)
+	check("stage 4: the bee pays ten times its price and its door opens for good", Store.save.money == s4_m4 + 15000 and s4_sh.doors[0].mode == "open" and gm.mid == null, Store.save.money - s4_m4)
+	pl.pos = Vector3(Ship.KEY.x + 1.0, 0.45, Ship.KEY.z)
+	check("stage 4: pulling the key out is the save point", s4_sh.take_key() and s4_sh.key and gm.sp != null and gm.sp.kills == 1 and gm.sp.key)
+	# dying after it: back on the bridge with the key, the kills and the bag as they were
+	var s4_k4: int = gm.kills; var s4_bag4: int = Store.save.money
+	en.damage(en.list[5], 1e6, en.list[5].pos, Vector3(0, 0, 1), false); pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); gm.update(0.02)
+	check("stage 4: you fall after the save point", gm.ended and gm.result == "dead" and gm.sp != null)
+	gm.from_save()
+	check("stage 4: back at the save point: on the bridge, the key in your pocket, the bee still dead, kills and bag as they were", not gm.ended and gm.kills == s4_k4 and Store.save.money == s4_bag4 and w.ship.key and w.ship.doors[0].mode == "open"
+		and absf(pl.pos.x - Ship.SAVE.x) < 1e-4 and en.list.filter(func(e): return e.type == "gdrone").is_empty() and en.list.size() == 99 and pl.hp == Player.MAX_HP, en.list.size())
+	s4_sh = w.ship; boss4 = gm.boss
+	# with the key the hall's door lets you in
+	for i in 30: s4_sh.update(0.02, 0.0)
+	pl.pos = Vector3(67.0, 0, -7.5); s4_sh.update(0.02, 0.0)
+	check("stage 4: with the key the hall's door lets you in and locks; the boss and its patrols wake", s4_sh.doors[1].mode == "locked" and pl.pos.x > 69.0 and not boss4.sealed and en.list.filter(func(e): return e.sealed).is_empty())
+	# the boss: three shells, a third of its health each
+	pl.invuln = 1e9; boss4.lod = 0.0; en.update(0.02, 0.0)
+	en.damage(boss4, 5000, boss4.pos, Vector3(0, 0, 1), false)
+	check("stage 4: no blow takes the boss past a third of its health: the outer shell bursts and phase 2 begins", boss4.hp == 6000.0 and boss4.k.phase == 1 and boss4.R == 1.5 and s4_sh.break_t > 0.0, boss4.hp)
+	en.damage(boss4, 500, boss4.pos, Vector3(0, 0, 1), false)
+	check("stage 4: while the shell comes apart nothing gets through", boss4.hp == 6000.0)
+	var s4_col4: int = Phys.colliders.size()
+	for i in 100: s4_sh.update(0.02, 0.0)
+	check("stage 4: 1.8 s later the hall's floor falls into the stepped pit, 9 m down", s4_sh.broken and Phys.PIT != null and Phys.PIT.y == -9.0 and Phys.colliders.size() == s4_col4 - 3 and Phys.ground_at(100.0, 1.0, -6.0, 0.3) < -0.3, Phys.ground_at(100.0, 1.0, -6.0, 0.3))
+	for i in 80: en.update(0.02, 0.0)
+	en.damage(boss4, 5000, boss4.pos, Vector3(0, 0, 1), false)
+	check("stage 4: at a third left the second shell goes: phase 3, and the hatches are about to open", boss4.hp == 3000.0 and boss4.k.phase == 2 and boss4.R == 0.75 and s4_sh.hatch_wait > 0.0)
+	for i in 140: en.update(0.02, 0.0)
+	check("stage 4: the hatches open and drones start coming up", s4_sh.hatches[0].open and s4_sh.hatch_q.size() > 0)
+	# the laser: touching the beam is the end
+	check("stage 4: the beam's reach is measured along its whole length", absf(Robots.seg_dist(Vector3(0, 1, 0), Vector3(10, 1, 0), Vector3(5, 0, 0.4), Vector3(5, 1.7, 0.4)) - 0.4) < 1e-5)
+	# a mine: buried, wakes when you come close, and goes off for 100
+	gm.begin(4); pl.invuln = 0.0; pl.hp = Player.MAX_HP
+	var mn4 = null
+	for e in en.list:
+		if e.type == "mine": mn4 = e; break
+	pl.pos = Vector3(mn4.pos.x + 2.0, 0, mn4.pos.z); mn4.lod = 0.0; Phys.update_flow(pl.pos.x, pl.pos.z); var s4_went := false
+	for i in 150:
+		en.update(0.02, 0.0); pl.pos = Vector3(pl.pos.x, 0, pl.pos.z)
+		if not mn4.alive and pl.hp < Player.MAX_HP: s4_went = true; break
+	check("stage 4: a buried mine springs up, runs at you and goes off: 100, and no money for it", s4_went and pl.hp == Player.MAX_HP - 100.0 and gm.kills == 1 and gm.stats.earned == 0, "%s %s %s d=%.2f bt=%.2f kills=%d blasts=%d" % [pl.hp, mn4.bs, mn4.alive, Vector2(pl.pos.x - mn4.pos.x, pl.pos.z - mn4.pos.z).length(), mn4.bt, gm.kills, en.robots.blasts.size()])
+	# rockets home on you and burst
+	pl.hp = Player.MAX_HP; pl.pos = Vector3(0, 0, -7.5); s4_rb.rocket(Vector3(-10, 3, -7.5), Vector3(1, 0, 0), 100.0, 15.0)
+	for i in 100:
+		s4_rb.tick(0.02)
+		if s4_rb.rockets.is_empty(): break
+	check("stage 4: a homing rocket finds you: 100 at the centre of the blast", s4_rb.rockets.is_empty() and pl.hp <= Player.MAX_HP - 50.0, pl.hp)
+	gm.sp = null
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var k9 := en.damage(hm, 85, hd9, Vector3(0, 0, -1), true)

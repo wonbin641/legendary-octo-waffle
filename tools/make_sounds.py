@@ -81,6 +81,7 @@ SOUNDS = {
     'cackle': [T('square', 900 + (i * 137) % 400, 700, 0.07, 0.07, i * 0.085) for i in range(7)] + [N(0.6, 'bandpass', 2600, 1900, 4, 0.08)],
     'quake': [N(1.4, 'lowpass', 900, 40, 0.6, 1.8), T('sine', 60, 25, 1.2, 1.0), N(0.5, 'bandpass', 1500, 400, 1, 0.6, 0.03)],
     'siren': [T('sawtooth', 520, 880, 0.5, 0.11, i * 0.6) for i in range(3)] + [T('sawtooth', 880, 520, 0.1, 0.06, i * 0.6 + 0.5) for i in range(3)],
+    'zap': [T('square', 1300, 300, 0.12, 0.16), T('sawtooth', 650, 150, 0.12, 0.1), N(0.05, 'highpass', 4000, 3000, 1, 0.12)],
     'thud': [N(0.2, 'lowpass', 420, 90, 0.7, 0.45)],
     'shot_far': [N(0.14, 'bandpass', 2200, 600, 1, 0.75), T('triangle', 170, 60, 0.1, 0.35)],
     'whiz': [N(0.15, 'bandpass', 3000, 1200, 4, 0.25)],

@@ -11,7 +11,7 @@ const STAGES := {
 	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": "넓은 사파리의 동물 100마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다"},
 	8: {"name": "차례 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
 	9: {"name": "장난감 방", "enemy": "toy", "goal": 0, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 지금은 맵과 장난감 무기만 둘러볼 수 있습니다"},
-	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": ""},
+	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 바닥의 스파이더 마인 조심"},
 }
 const BOSS := {
 	1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6},
@@ -19,6 +19,7 @@ const BOSS := {
 	2: {"type": "zombie", "name": "거대 좀비", "josa": "가", "scale": 1.7, "hp": 2200, "dmgMul": 1.0},
 	3: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
 	8: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
+	4: {"type": "bdrone", "name": "최첨단 감시 드론 B-3", "josa": "이", "scale": 1.0, "hp": 9000, "dmgMul": 1.0},
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
 }
 var drop_pick = null   # 1-2: where you chose to be put down (kept for another go)
@@ -40,6 +41,10 @@ var _result_t := -1.0
 var _result_kind := ""
 var _chest_wait := false
 var flow_t := 0.0
+var mid: Enemies.Foe = null   # the gold commander drone
+var sp = null                 # stage 4's save point
+var spawned := 0
+var clock := 0.0
 var calm := 0   # animals you have ridden: tamed, and counted as dealt with
 # stage 2: a bite infects (5 s), a dash poisons (8 s); an antidote, a moment to inject, clears both
 var infected := false
@@ -68,8 +73,10 @@ func layout() -> Array:
 func begin(stage_: int) -> void:
 	stage = stage_
 	var an := enemies.animals; an.player = player; an.game = self; an.world = world; an.fx = fx; player.rider = an; player.on_toss_land = an.toss_land
+	var rb := enemies.robots; rb.player = player; rb.game = self; rb.world = world; rb.fx = fx; rb.proj = proj
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
-	world.build_stage(stage); calm = 0
+	world.build_stage(stage); calm = 0; sp = null; mid = null
+	if world.ship != null: world.ship.player = player; world.ship.game = self; world.ship.enemies = enemies; world.ship.fx = fx
 	player.toss_ceil = Lab.CEIL if world.lab != null else INF
 	if world.lab != null: world.lab.player = player; world.lab.game = self
 	if world.safari != null: world.safari.player = player; world.safari.game = self; world.safari.enemies = enemies; world.safari.fx = fx
@@ -130,19 +137,21 @@ func populate() -> void:
 	var n := [0]; var cap := 140 if world.lab != null else 100
 	var put := func(type: String, p, opts: Dictionary):
 		if p != null and n[0] < cap:
-			var o := {"yaw": SR.rng(0, TAU)}; o.merge(opts, true)
+			var o := {"yaw": SR.rng(0, TAU), "y": p.get("y", 0.0)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
-	if world.lab != null or world.safari != null:
+	if world.lab != null or world.safari != null or world.ship != null:
 		if world.lab != null: world.lab.populate(put, SR, BOSS[stage])
+		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
 		else:
 			world.safari.populate(put, find, SR)
 			for e in enemies.list:
 				e.wild = true
 				if e.type == "zebra": e.fury = true; enemies.animals.wake(e); e.bs = "graze"; e.bt = SR.rng(0.5, 4)   # zebras just live their quiet life, and never bolt here
-		goal = enemies.list.size(); boss = null
+		goal = enemies.list.size(); boss = null; spawned = n[0]
 		for e in enemies.list:
 			if e.boss: boss = e
+			if e.T.get("mid", false): mid = e
 		return
 	var B: Dictionary = BOSS.get(stage, {})
 	if stage == 5: _populate_armed(SR, ok, find, put, placed, n)
@@ -232,7 +241,9 @@ func update(dt: float) -> void:
 		_result_t -= dt
 		if _result_t <= 0.0: _say(on_result, [_result_kind])
 	if not ended and player.hp <= 0.0: over("dead")
+	clock += dt
 	if world.lab != null: world.lab.update(dt)
+	if world.ship != null: world.ship.update(dt, clock)
 	if world.safari != null: world.safari.update(dt)
 	enemies.animals.bleed_update(dt); enemies.animals.roar_cd -= dt
 	# the needle: lower the gun, in it goes, and at 0.82 s the antidote takes
@@ -276,6 +287,50 @@ func tame(e: Enemies.Foe) -> void:
 	calm += 1; say_feed(e.T.name + " 길들임 · 처치한 것으로 칩니다")
 	if kills + calm >= goal: finish()
 
+## the boss drone's laser: touching the beam is the end
+func laser(_e: Enemies.Foe) -> void:
+	if ended or player.invuln > 0.0 or _god(): return
+	player.hp = 0.0; Snd.play("hurt"); over("laser")
+
+## stage 4's save point, taken when you pull the key out: who is dead by then, the kills and the bag, your ammo, the crates you have
+## broken. dying after it, '다시 도전' puts you back on the bridge with all of that as it was
+func take_save() -> void:
+	var alive := {}
+	for e in enemies.list:
+		if e.alive and e.sid >= 0: alive[e.sid] = true
+	var dead := []
+	for i in spawned:
+		if not alive.has(i): dead.push_back(i)
+	var ammo := []
+	for id in Weapons.ORDER: ammo.push_back([id, guns.wstate[id].mag, guns.wstate[id].reserve])
+	sp = {"stage": stage, "dead": dead, "kills": kills, "goal": goal, "money": Store.save.money, "money0": Store.money_lock, "stats": stats.duplicate(), "ammo": ammo, "cur": guns.cur, "key": world.ship.key,
+		"crates": world.crates.filter(func(c): return c.dead).map(func(c): return c.idx)}
+
+func from_save() -> void:
+	var s = sp
+	if s == null: begin(stage); return
+	begin(s.stage); sp = s; boss_msg = ""
+	for e in enemies.list.duplicate():
+		if e.sid >= 0 and (s.dead as Array).has(e.sid): enemies.vanish(e)
+	for e in enemies.dying: e.g.queue_free(); e.bar.queue_free()
+	enemies.dying.clear()
+	var broke := false
+	for c in world.crates:
+		if not c.dead and (s.crates as Array).has(c.idx):
+			c.dead = true; broke = true; Phys.remove_collider(c.b)
+			if world.crate_mm: world.crate_mm.set_instance_transform(c.idx, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z)))
+	if broke: Phys.build_nav()
+	kills = s.kills; goal = s.goal; stats = (s.stats as Dictionary).duplicate()
+	Store.save.money = s.money; Store.money_lock = s.money0; Store.persist()
+	for a in s.ammo: guns.wstate[a[0]].mag = a[1]; guns.wstate[a[0]].reserve = a[2]
+	if guns.slots.has(s.cur): guns.switch_to(s.cur)
+	boss = null; mid = null
+	for e in enemies.list:
+		if e.boss: boss = e
+	world.ship.restore(s)
+	player.reset(Ship.SAVE.x, Ship.SAVE.z, Ship.SAVE.yaw); player.invuln = 1.5
+	Phys.update_flow(player.pos.x, player.pos.z)
+
 ## the giant gorilla's leap: coming down on you is the end
 func slam(_e: Enemies.Foe) -> void:
 	if ended or player.invuln > 0.0 or _god(): return
@@ -314,12 +369,12 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if ended or e.extra: return
 	kills += 1; stats.kills += 1
 	if e.tamed: calm = maxi(0, calm - 1)   # it was already counted
-	var base := int(e.T.get("money", 1000)) if (e.animal and not e.minion) else 1000
+	var base := int(e.T.get("money", 1000)) if ((e.animal and not e.minion) or e.robot) else 1000
 	if weak: stats.heads += 1
 	# a kill with a shot to the head pays 1.5 times; a boss twenty times; a stage you have already cleared pays nothing
 	# so does a zombie finished off before it ever got back up (the two multiply)
 	var fresh := e.type == "zombie" and not e.revived
-	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((base * 20 if e.boss else base) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
+	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((base * 20 if e.boss else (base * 10 if e.T.get("mid", false) else base)) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
 	Store.save.money += pay; stats.earned += pay; Store.persist()
 	Snd.play("kill")
 	if pay > 0: Snd.play("coin")
@@ -328,7 +383,21 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 		loot.chest(e.pos.x, e.pos.z, 0.0 if e.kong else e.pos.y); boss = null
 		if e.kong: enemies.animals.unwarn()
 		if world.lab != null: world.lab.monkey_mode = "panic"
-	elif e.self_det: _say(feed, ["자폭맨이 터졌습니다", 0])
+		if e.type == "bdrone":   # its leftover mines and drones go dead with it; the hall door opens
+			enemies.robots.aim_off()
+			for o in enemies.list.duplicate():
+				if o.extra: enemies.vanish(o)
+			world.ship.on_down(e)
+	elif e.T.get("mid", false):
+		_say(banner, ["중간 보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "운전실을 장악했습니다", 2.4]); mid = null
+		# the drones it called fall with it (they count, but pay nothing), the bridge door opens
+		var fell := 0
+		for o in enemies.list.duplicate():
+			if o.alive and o.from_bee: o.no_pay = true; o.bee_fall = true; enemies.damage(o, 1e6, o.pos, Vector3(0, -1, 0), false, true); fell += 1
+		if fell > 0: say_feed("불러낸 드론 %d대도 함께 떨어졌습니다" % fell)
+		if world.ship != null: world.ship.on_down(e)
+	elif e.bee_fall: pass   # counted in one line above
+	elif e.self_det: _say(feed, ["스파이더 마인이 터졌습니다" if e.type == "mine" else "자폭맨이 터졌습니다", 0])
 	else: _say(feed, [STAGES[stage].label + (" · 머리 명중" if weak else " 처치"), pay])
 	var left := goal - kills - calm; var S: Dictionary = STAGES[stage]
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "가방 " + Store.won(Store.save.money), 1.8])
@@ -402,5 +471,6 @@ func forfeit() -> void:
 func over(reason: String) -> void:
 	if ended: return
 	if Store.settings.dev and Store.settings.god: infected = false; infect_t = 0.0; poison_t = 0.0; player.hp = maxf(player.hp, 1.0); return   # developer mode's invincibility
-	ended = true; forfeit(); return_rentals(); _leave_animals()
+	ended = true; forfeit(); _leave_animals()
+	if sp == null: return_rentals()
 	result = reason; _result_kind = reason; _result_t = 1.0
