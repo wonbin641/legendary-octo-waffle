@@ -31,6 +31,14 @@ const LIST := {
 		"flash": 3.4, "head": 1, "bloom": 0, "ammoCost": 0, "moveMul": 0.88, "adsSpeed": 5, "note": "쏠 때 조준선에 가장 가까운 적을 쫓아감 · 직격 1,000 · 폭발 반경 6 m (나도 맞음) · 한 발마다 재장전 · 최대 12발"},
 }
 
+# guns only the toy room has
+const EXTRA := {
+	"flame": {"name": "스프레이 화염방사기", "model": "TOY", "short": "화염방사기", "tab": "화염", "cls": "스프레이 + 라이터", "price": 0, "real": 0, "dmg": 1.25, "rate": 0.05, "auto": true, "mag": 120, "reserve": 480, "reload": 2.4,
+		"spread": 0.12, "adsSpread": 0.1, "moveSpread": 0.0, "pellets": 3, "recoil": 0.0, "kick": 0.004, "range": 9.5, "adsFov": 66, "sound": "flame", "flash": 0, "head": 1, "bloom": 0, "ammoCost": 0, "moveMul": 0.95, "flame": true},
+}
+static func all_ids() -> Array:
+	return ORDER + EXTRA.keys()
+
 ## a stage's rent: 30% of the price, rounded to 100 won; the pistol is free
 static func rent(id: String) -> int:
 	return 0 if id == "pistol" else int(round(LIST[id].price * 0.3 / 100.0)) * 100

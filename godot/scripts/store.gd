@@ -2,10 +2,10 @@ extends Node
 ## What is kept between sessions: the save (money, cleared stages, guns, items) and the settings. In the browser it lives in
 ## localStorage; elsewhere in a file. The Godot trial keeps its own keys, apart from the browser game's (a save code carries progress over).
 
-const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4]
-const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4"}
-const PREREQ := {1: 0, 6: 1, 5: 6, 2: 1, 3: 2, 7: 3, 8: 7, 4: 3}
-const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: []}
+const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # 9 is stage 5, the toy room
+const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4", 9: "5"}
+const PREREQ := {1: 0, 6: 1, 5: 6, 2: 1, 3: 2, 7: 3, 8: 7, 4: 3, 9: 4}
+const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [9], 9: []}
 
 var save := {}
 var settings := {}
@@ -81,6 +81,7 @@ func persist_settings() -> void:
 	_write("settings", settings)
 
 func stage_open(n: int) -> bool:
+	if n == 9: return true   # for now a preview of the map and the toy guns: open to look round
 	return STAGE_TAG.has(n) and (settings.dev or PREREQ[n] == 0 or save.cleared.has(PREREQ[n]) or save.cleared.has(n))
 
 func next_stages(n: int) -> Array:

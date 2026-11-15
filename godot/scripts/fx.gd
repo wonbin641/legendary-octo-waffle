@@ -4,6 +4,7 @@ extends Node3D
 
 var _tracers: Array = []
 var _booms: Array = []
+var _flames: Array = []
 var _tmat: StandardMaterial3D
 var _bmat: StandardMaterial3D
 
@@ -25,6 +26,12 @@ func explode(at: Vector3, big := true) -> void:
 	var l := OmniLight3D.new(); l.light_color = Color(1, 0.7, 0.4); l.light_energy = 8.0; l.omni_range = 16.0; m.add_child(l)
 	_booms.push_back([m, 0.0, 0.4, 3.2 if big else 1.2, l])
 
+## a lick of flame from a spray can: a small bright ball that runs out along the jet and fades
+func flame(from: Vector3, dir: Vector3) -> void:
+	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 1.0; s.height = 2.0; s.radial_segments = 8; s.rings = 5; m.mesh = s
+	var mat: StandardMaterial3D = _bmat.duplicate(); mat.albedo_color = Color(1.0, randf_range(0.45, 0.8), 0.15); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = from; add_child(m)
+	_flames.push_back([m, 0.0, dir * randf_range(18.0, 24.0) + Vector3(randf_range(-1, 1), randf_range(-0.5, 1.5), randf_range(-1, 1))])
+
 func chips(at: Vector3) -> void:
 	explode(at, false)
 
@@ -32,6 +39,11 @@ func update(dt: float) -> void:
 	for i in range(_tracers.size() - 1, -1, -1):
 		_tracers[i][1] -= dt
 		if _tracers[i][1] <= 0.0: _tracers[i][0].queue_free(); _tracers.remove_at(i)
+	for i in range(_flames.size() - 1, -1, -1):
+		var f: Array = _flames[i]; f[1] += dt; var u: float = f[1] / 0.38
+		if u >= 1.0: f[0].queue_free(); _flames.remove_at(i); continue
+		(f[0] as MeshInstance3D).position += (f[2] as Vector3) * dt * (1.0 - u * 0.6); (f[0] as MeshInstance3D).scale = Vector3.ONE * lerpf(0.06, 0.55, u)
+		((f[0] as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.a = 1.0 - u
 	for i in range(_booms.size() - 1, -1, -1):
 		var b: Array = _booms[i]; b[1] += dt; var u: float = b[1] / b[2]
 		if u >= 1.0: b[0].queue_free(); _booms.remove_at(i); continue
@@ -42,4 +54,5 @@ func update(dt: float) -> void:
 func clear() -> void:
 	for t in _tracers: t[0].queue_free()
 	for b in _booms: b[0].queue_free()
-	_tracers.clear(); _booms.clear()
+	for f in _flames: f[0].queue_free()
+	_tracers.clear(); _booms.clear(); _flames.clear()

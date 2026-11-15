@@ -80,6 +80,7 @@ static func mods(s: Dictionary) -> Dictionary:
 
 ## the weapon's numbers with its parts applied: what firing, the shop and the codex read
 static func weapon(id: String) -> Dictionary:
+	if Weapons.EXTRA.has(id): return Weapons.EXTRA[id]
 	var base: Dictionary = Weapons.LIST[id]; var mul := mods(setup(id))
 	if mul.is_empty(): return base
 	var w := base.duplicate()

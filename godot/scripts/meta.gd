@@ -23,6 +23,7 @@ static func spec(stage: int) -> Dictionary:
 		3: return {"all": _all_but(["jet", "shotgun", "pistol"]), "any": []}
 		7, 8: return {"all": _all_but(["pistol"]), "any": []}
 		4: return {"all": _all_but(["pistol", "jet", "shotgun"]), "any": []}
+		9: return {"all": [], "any": []}
 	return {"all": [], "any": []}
 
 ## a gun counts when it is in the layout and yours to carry (owned, rented, the pistol); an item when you have it

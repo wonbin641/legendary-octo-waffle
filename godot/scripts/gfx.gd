@@ -121,11 +121,11 @@ static func door_tex(color: Color) -> ImageTexture:
 	return tex(img)
 
 ## one mesh from many boxes, each [sx, sy, sz, x, y, z] and, if wanted, a colour (hex) as a seventh item (used with vertex colours)
-static func merge_boxes(parts: Array) -> ArrayMesh:
+static func merge_boxes(parts: Array, _srgb := false) -> ArrayMesh:
 	var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var cols := PackedColorArray(); var idx := PackedInt32Array()
 	for p in parts:
 		var b := BoxMesh.new(); b.size = Vector3(p[0], p[1], p[2]); var a := b.get_mesh_arrays(); var off := vs.size()
-		var col := World.lin(str(p[6])) if p.size() > 6 else Color.WHITE
+		var col := Color(str(p[6])) if p.size() > 6 else Color.WHITE   # (the renderer reads vertex colours as screen colours already)
 		for v: Vector3 in a[Mesh.ARRAY_VERTEX]: vs.push_back(v + Vector3(p[3], p[4], p[5])); cols.push_back(col)
 		ns.append_array(a[Mesh.ARRAY_NORMAL]); uvs.append_array(a[Mesh.ARRAY_TEX_UV])
 		for i: int in a[Mesh.ARRAY_INDEX]: idx.push_back(i + off)

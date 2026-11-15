@@ -10,6 +10,7 @@ const STAGES := {
 	3: {"name": "동물 연구소", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": ""},
 	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": ""},
 	8: {"name": "차례 연구소", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": ""},
+	9: {"name": "장난감 방", "enemy": "toy", "goal": 0, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 지금은 맵과 장난감 무기만 둘러볼 수 있습니다"},
 	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": ""},
 }
 const BOSS := {1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6}}
@@ -36,6 +37,7 @@ func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
 
 func layout() -> Array:
+	if stage == 9: return Toys.ORDER.duplicate()   # the preview hands you every toy gun (keys 1-9)
 	return (Store.save.loadout as Array).map(func(id): return id if (id != null and Store.gun_available(id, bonus_guns)) else null)
 
 func begin(stage_: int) -> void:
@@ -47,6 +49,7 @@ func begin(stage_: int) -> void:
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
+	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; opened = []
 	populate()
 	var B: Dictionary = BOSS.get(stage, {})
@@ -55,6 +58,7 @@ func begin(stage_: int) -> void:
 
 ## the same stage always puts the same enemies in the same places
 func populate() -> void:
+	if stage == 9: goal = 0; boss = null; return   # nobody in the toy room yet
 	var SR := World.Rng.new(5150 + stage * 101); var st := world.start; var placed: Array = []; var half := Phys.HALF
 	var ok := func(x: float, z: float, min_start: float, gap: float, rad: float) -> bool:
 		if absf(x) > half - 4 or absf(z) > half - 4 or Vector2(x - st.x, z - st.z).length() < min_start or Phys.collide_at(x, 0, z, rad, 2) != null: return false
@@ -114,7 +118,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	else: _say(feed, [STAGES[stage].label + (" · 머리 명중" if weak else " 처치"), pay])
 	var left := goal - kills; var S: Dictionary = STAGES[stage]
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "가방 " + Store.won(Store.save.money), 1.8])
-	if kills >= goal: finish()
+	if kills >= goal and goal > 0: finish()
 
 ## a broken crate: a health potion (10% of max health)
 func on_crate(c: Dictionary) -> void:

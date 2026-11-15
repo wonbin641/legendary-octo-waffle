@@ -7,10 +7,11 @@ const NIGHT := Color("0d1220"); const INK := Color("ece6d8"); const STEEL := Col
 const ALARM := Color("ff5260"); const VITAL := Color("5ed6b0"); const LINE := Color(0.56, 0.61, 0.69, 0.35)
 const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 내릴 곳을 고름",
 	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만", 7: "넓은 사파리 · 5분 뒤 동물 100마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
+	9: "아이 방 전체가 싸움터 · 지금은 맵과 장난감 무기만 둘러볼 수 있습니다 · 적은 아직 없습니다",
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 · 숨은 스파이더 마인"}
-const NODE_AT := {1: [0.10, 0.17], 2: [0.37, 0.17], 3: [0.64, 0.17], 4: [0.91, 0.17], 6: [0.10, 0.50], 5: [0.10, 0.82], 7: [0.64, 0.50], 8: [0.64, 0.82]}
-const TRACKS := [[1, 2], [2, 3], [3, 4], [1, 6], [6, 5], [3, 7], [7, 8]]
-const BUILT := [1]   # stages the Godot version can play so far
+const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82]}
+const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8]]
+const BUILT := [1, 9]   # stages the Godot version can play so far
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var game: Game; var guns: Guns
@@ -210,7 +211,7 @@ func _node_pos(s: int) -> Vector2:
 	return Vector2(12.0 + a[0] * inner.x, top + a[1] * inner.y)
 
 func _place_nodes() -> void:
-	var m := _mode(); var w := 150.0 if m == "pc" else minf(96.0, board.size.x * 0.24); var h := 46.0 + (58.0 if m == "pc" else 46.0)   # the dot, then the label box
+	var m := _mode(); var w := 124.0 if m == "pc" else minf(80.0, board.size.x * 0.195); var h := 46.0 + (58.0 if m == "pc" else 46.0)   # the dot, then the label box
 	for s in stage_btns:
 		var p := _node_pos(s); (stage_btns[s] as Button).position = Vector2(clampf(p.x - w / 2, 2, board.size.x - w - 2), p.y - 22.0); (stage_btns[s] as Button).size = Vector2(w, h)
 
@@ -245,7 +246,7 @@ func _draw_board() -> void:
 		# the label under the dot
 		var b: Button = stage_btns[s]; var box := Rect2(b.position + Vector2(0, 22.0 + r + 4), Vector2(b.size.x, 58.0 if pc else 46.0))
 		board.draw_rect(box, Color(0.055, 0.075, 0.13, 0.9) if picked else Color(NIGHT, 0.7)); board.draw_rect(box, SODIUM if picked else LINE, false, 1.0)
-		var fs := 15 if pc else 11; var y := box.position.y + (14 if pc else 11)
+		var fs := 14 if pc else 10; var y := box.position.y + (14 if pc else 11)
 		board.draw_string(f_mono, Vector2(box.position.x, y), Store.STAGE_TAG[s], HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, STEEL)
 		board.draw_string(f_title, Vector2(box.position.x, y + fs + 3), Game.STAGES[s].name, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, fs, STEEL if st[0] == "locked" else INK)
 		board.draw_string(f_mono, Vector2(box.position.x, y + fs + (18 if pc else 14)), st[1], HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, VITAL if st[0] == "done" else (SODIUM if st[0] == "open" else STEEL))
@@ -268,8 +269,9 @@ func refresh_menu() -> void:
 	d_note.text = (NOTE[sel] + (" · 다시 하면 보상 없음" if done else "")) if open else "스테이지 %s%s 깨면 열립니다" % [Store.STAGE_TAG[pre], _eul(Store.STAGE_TAG[pre])]
 	d_best.text = Store.fmt_time(best) if best > 0 else "—"
 	var fit := Meta.fits(sel); var miss := Meta.missing(sel)
-	d_spec.text = "적합" if fit else "부적합"; d_spec.add_theme_color_override("font_color", VITAL if fit else ALARM)
-	d_spec_list.text = "추천 스펙 · " + Meta.spec_text(sel) + ("" if fit else "\n없는 것 · " + ", ".join(miss.map(func(id): return Meta.name_of(id))))
+	var no_spec: bool = Meta.spec(sel).all.is_empty() and Meta.spec(sel).any.is_empty()
+	d_spec.text = "—" if no_spec else ("적합" if fit else "부적합"); d_spec.add_theme_color_override("font_color", INK if no_spec else (VITAL if fit else ALARM))
+	d_spec_list.text = "" if no_spec else "추천 스펙 · " + Meta.spec_text(sel) + ("" if fit else "\n없는 것 · " + ", ".join(miss.map(func(id): return Meta.name_of(id))))
 	var built := BUILT.has(sel)
 	d_go.disabled = not open or not built
 	d_msg.text = "" if (built or not open) else "이 스테이지는 아직 Godot판에 옮기지 않았습니다"
@@ -568,13 +570,14 @@ func _build_brief() -> void:
 func open_brief(stage: int) -> void:
 	sel = stage; game.begin(stage); back_stack.clear(); show_screen("brief"); _brief_gear()
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name
-	br_note.text = Game.STAGES[stage].intro + "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1); br_map.queue_redraw()
+	br_note.text = Game.STAGES[stage].intro + ("\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1) if game.goal > 0 else ""); br_map.queue_redraw()
 
 func _brief_gear() -> void:
 	var ready := []; var lo := game.layout()
 	for i in 7:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
+	if sel == 9: br_gear.text = "장난감 무기 9종 · 1-9번 키"; br_go.disabled = false; return
 	br_gear.text = ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n추천 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
@@ -589,7 +592,8 @@ func _draw_map() -> void:
 	br_map.draw_rect(Rect2(o, Vector2(s, s)), Color(0.04, 0.055, 0.1, 0.9)); br_map.draw_rect(Rect2(o, Vector2(s, s)), LINE, false, 1.0)
 	var at := func(x: float, z: float) -> Vector2: return o + Vector2((x + half) * k, (z + half) * k)
 	for b in Phys.colliders:
-		if b.kind == "wood": continue
+		if b.kind == "wood" and game.stage != 9: continue
+		if game.stage == 9 and b.maxy - b.miny > 30.0: continue   # the room's walls
 		br_map.draw_rect(Rect2(at.call(b.minx, b.minz), Vector2(maxf(1.0, (b.maxx - b.minx) * k), maxf(1.0, (b.maxz - b.minz) * k))), Color(STEEL, 0.75) if b.kind == "metal" else Color(STEEL, 0.4))
 	for c in game.world.crates: br_map.draw_rect(Rect2(at.call(c.x - 0.6, c.z - 0.6), Vector2(2, 2)), Color("b98a55"))
 	for e in game.enemies.list: br_map.draw_circle(at.call(e.pos.x, e.pos.z), 3.5 if e.boss else 1.6, ALARM)

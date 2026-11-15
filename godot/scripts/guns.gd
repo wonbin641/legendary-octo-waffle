@@ -49,7 +49,7 @@ var _melee_hit := false
 var _melee_target = null
 
 func _init() -> void:
-	for id in Weapons.ORDER: wstate[id] = {"mag": Weapons.LIST[id].mag, "reserve": Weapons.LIST[id].reserve, "heat": 0.0, "hot": false, "hot_t": 0.0, "cool_t": 0.0, "smoke_t": 0.0}
+	for id in Weapons.all_ids(): wstate[id] = {"mag": Custom.weapon(id).mag, "reserve": Custom.weapon(id).reserve, "heat": 0.0, "hot": false, "hot_t": 0.0, "cool_t": 0.0, "smoke_t": 0.0}
 
 func w() -> Dictionary: return Custom.weapon(cur)   # the gun as you have built it (parts change its numbers)
 func st() -> Dictionary: return wstate[cur]
@@ -58,8 +58,8 @@ func _say(c: Callable, a: Array) -> void:
 
 ## refill every gun and take the first one in the layout, at the start of a stage
 func reset(layout: Array) -> void:
-	for id in Weapons.ORDER:
-		wstate[id].mag = Weapons.LIST[id].mag; wstate[id].reserve = Weapons.LIST[id].reserve
+	for id in Weapons.all_ids():
+		wstate[id].mag = Custom.weapon(id).mag; wstate[id].reserve = Custom.weapon(id).reserve
 		wstate[id].heat = 0.0; wstate[id].hot = false; wstate[id].smoke_t = 0.0; wstate[id].cool_t = 0.0
 	cooldown = 0.0; reload_t = 0.0; switch_t = 0.0; pending = null; ads = 0.0; ads_held = false; bloom = 0.0; kick_z = 0.0; kick_rot = 0.0; flash_t = 0.0
 	trigger = false; trigger_edge = false; melee_on = false; melee_t = 0.0; melee_cd = 0.0; _melee_target = null; _pump_t = -1.0; _auto_reload_t = -1.0
@@ -197,12 +197,13 @@ func fire() -> void:
 				elif enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
 				hit_any = true
 				if eh.weak: head = true
-				if k < 3 and fx: fx.tracer(muz, at)
+				if k < 3 and fx and not W.get("flame", false): fx.tracer(muz, at)
 			else:
 				var at := o + d * s_t
 				if s_hit and s_box != null and s_box.kind == "wood" and s_box.ref != null: world.damage_crate(s_box.ref, W.dmg, at)
 				if s_hit and k < 4 and s_box != null and s_box.kind == "metal" and randf() < 0.5: Snd.play("metal", 1.0, at)
-				if k < 3 and fx: fx.tracer(muz, at)
+				if k < 3 and fx and not W.get("flame", false): fx.tracer(muz, at)
+				if k == 0 and fx and W.get("flame", false): fx.flame(muz, d)
 	if hit_any: hits += 1; _say(hitmark, [killed, head])
 	var rk: float = W.recoil * (1.0 - ads * 0.35)
 	player.recoil_pitch += rk; player.pitch += rk * 0.55; player.yaw += randf_range(-1, 1) * rk * 0.35

@@ -17,6 +17,7 @@ var ever_locked := false
 var lock_wait := -1.0
 var dpr := 1.0
 var base_fov := BASE_FOV
+var toy_models := {}; var ruler: Node3D; var inspect := false
 var view: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var hint_label: Label; var fps_label: Label; var banner_label: Label; var banner_sub: Label
 var hint_t := 0.0; var banner_t := 0.0; var hit_t := 0.0; var hit_kill := false; var hit_head := false; var hurt_t := 0.0
@@ -88,6 +89,8 @@ func _build_guns() -> void:
 		var parts := [[d[2], d[1], d[0], 0, 0, -d[0] / 2], [d[2] * 0.8, 0.11, 0.045, 0, -0.07, -0.03]]   # barrel and body, grip
 		if d[0] > 0.3: parts.push_back([d[2] * 0.7, 0.1, 0.05, 0, -0.07, -d[0] * 0.45])                      # magazine or fore grip
 		var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; g.add_child(m)
+	for id in Toys.ORDER: var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
+	ruler = Toys.build("ruler"); view.add_child(ruler); ruler.visible = false
 	flash = MeshInstance3D.new(); var q := QuadMesh.new(); q.size = Vector2(0.16, 0.16); flash.mesh = q
 	var fm := StandardMaterial3D.new(); fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; fm.albedo_texture = Gfx.glow_tex(Color(1, 0.95, 0.8, 1), Color(1, 0.7, 0.3, 0.6))
 	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; fm.disable_fog = true
@@ -96,7 +99,11 @@ func _build_guns() -> void:
 
 func _pose_gun(dt: float) -> void:
 	var W := guns.w(); var a := guns.ads * guns.ads * (3.0 - 2.0 * guns.ads); var d: Array = GUN_SHAPE[guns.cur]
-	for id in gun_models: (gun_models[id] as Node3D).visible = id == guns.cur and not guns.scoped() and not guns.none
+	var toy := game.stage == 9; var shown: bool = not guns.scoped() and not guns.none
+	for id in gun_models: (gun_models[id] as Node3D).visible = not toy and id == guns.cur and shown
+	for id in toy_models: (toy_models[id] as Node3D).visible = toy and id == guns.cur and shown and not guns.melee_on
+	ruler.visible = toy and guns.melee_on   # the jab swings a ruler
+	if toy: d = [Toys.LENGTH[guns.cur], 0.07, 0.05]
 	var hip_scale := clampf((hud.size.x / maxf(1.0, hud.size.y)) / 1.5, 0.55, 1.0)
 	var pos := Vector3(0.17 * lerpf(hip_scale, 1.0, a), -0.16, -0.3).lerp(Vector3(0.0, -d[1] / 2 - 0.012, -0.24), a)
 	var bob := clampf(player.speed_xz / 6.0, 0.0, 1.4) * (1.0 if player.grounded else 0.2) * (1.0 - a * 0.85); var ph := player.step_phase; var sprint := player.sprint_blend
@@ -107,6 +114,7 @@ func _pose_gun(dt: float) -> void:
 	if guns.melee_on:  # the jab: the gun thrusts forward and turns on its side, then comes back
 		var u := guns.melee_t / Weapons.MELEE_T; var k := u / 0.28 if u < 0.28 else maxf(0.0, 1.0 - (u - 0.28) / 0.72); var j := k * k * (3.0 - 2.0 * k)
 		pos += Vector3(-j * 0.12, j * 0.03, -j * 0.3); rot += Vector3(j * 0.15, j * 0.9, j * 0.35)
+	if inspect: pos = Vector3(0.02, -0.03, -0.62 - d[0] * 0.25); rot = Vector3(0.18, 1.15, 0.0)   # held out to look at
 	view.position = pos; view.rotation = rot
 	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5; flash.position = Vector3(0, 0, -d[0] - 0.05)
 	flash_light.light_energy = 3.0 if guns.flash_t > 0.0 else flash_light.light_energy * exp(-dt * 30)
@@ -169,7 +177,7 @@ func _draw_hud() -> void:
 	var res: String = "∞" if st.reserve == INF else str(int(st.reserve))
 	hud.draw_string(f_title, Vector2(ax - 220, ay), str(int(st.mag)), HORIZONTAL_ALIGNMENT_RIGHT, 150, 40, Color("ff5260") if st.mag == 0 else INK)
 	hud.draw_string(f_mono, Vector2(ax - 64, ay), "/ " + res, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, STEEL)
-	hud.draw_string(f_bold, Vector2(ax - 220, ay - 44), "%s · %s" % [W.name, W.model], HORIZONTAL_ALIGNMENT_RIGHT, 220, 13, SODIUM)
+	hud.draw_string(f_bold, Vector2(ax - 220, ay - 44), Toys.NAMES[guns.cur] if game.stage == 9 else "%s · %s" % [W.name, W.model], HORIZONTAL_ALIGNMENT_RIGHT, 220, 13, SODIUM)
 	if guns.reload_t > 0.0:
 		hud.draw_string(f_bold, Vector2(c.x - 60, c.y + 56), "재장전", HORIZONTAL_ALIGNMENT_CENTER, 120, 13, INK)
 		hud.draw_rect(Rect2(c.x - 60, c.y + 62, 120, 4), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(c.x - 60, c.y + 62, 120 * (1.0 - guns.reload_t / W.reload), 4), SODIUM)
@@ -179,7 +187,7 @@ func _draw_hud() -> void:
 	for i in range(guns.loadout.size() - 1, -1, -1):
 		var id = guns.loadout[i]
 		if id == null: continue
-		var t := "%d %s" % [i + 1, Weapons.LIST[id].short]; var wd := f_mono.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		var t := "%d %s" % [i + 1, Custom.weapon(id).short]; var wd := f_mono.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 		x -= wd; hud.draw_string(f_mono, Vector2(x, sy), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, SODIUM if id == guns.cur else Color(STEEL, 0.8)); x -= 12
 	# the boss, once it is hurt: its name and health across the top
 	if game.boss != null and game.boss.hp < game.boss.max_hp:
@@ -266,7 +274,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_SPACE: player.jump_buf = 0.15; player.jet_tap(Time.get_ticks_msec() / 1000.0)
 			if e.physical_keycode == KEY_R: guns.start_reload()
 			if e.physical_keycode == KEY_V: guns.melee_start()
-			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_7: guns.switch_slot(e.physical_keycode - KEY_1)
+			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_9: guns.switch_slot(e.physical_keycode - KEY_1)
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
 		elif state == "paused" and ui.cur == "pause" and (e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P): resume_game()
 		elif e.physical_keycode == KEY_ESCAPE and not ui.back_stack.is_empty(): ui.close_sub()
@@ -340,7 +348,9 @@ func _read_keys() -> void:
 # ---------------- the frame ----------------
 func tick(dt: float) -> void:
 	time += dt
-	_read_keys(); player.update(dt, cam, time); guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
+	_read_keys(); player.update(dt, cam, time)
+	if world.toy: world.toy.update(dt, player)
+	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 
 func _process(delta: float) -> void:
@@ -366,10 +376,13 @@ func _process(delta: float) -> void:
 				if feed_lines[i][1] <= 0.0: feed_lines.remove_at(i)
 	elif state == "gameover" and game.result != "clear":
 		pass
+	elif state == "shot":
+		world.update_world(dt, time, cam.position.x, cam.position.z)
 	elif state != "paused":
 		time += dt; menu_t += dt * 0.04
 		# behind the menu the camera circles the yard
-		cam.fov = base_fov; cam.position = Vector3(cos(menu_t) * 42.0, 16.0 + sin(menu_t * 2.0) * 2.0, sin(menu_t) * 42.0); cam.look_at(Vector3(0, 3, 0), Vector3.UP)
+		var orbit := 58.0 if world.toy else 42.0; var oh := 34.0 if world.toy else 16.0   # the toy room is seen from higher up
+		cam.fov = base_fov; cam.position = Vector3(cos(menu_t) * orbit, oh + sin(menu_t * 2.0) * 2.0, sin(menu_t) * orbit); cam.look_at(Vector3(0, 6 if world.toy else 3, 0), Vector3.UP)
 		world.update_world(dt, time, cam.position.x * 0.5, cam.position.z * 0.5)
 	if hint_t > 0.0:
 		hint_t -= dt
@@ -413,6 +426,9 @@ func command(line: String) -> Dictionary:
 		"killall":   # every enemy but the boss (or the boss too with 'boss')
 			for e in enemies.list.duplicate():
 				if not e.boss or (a.size() > 1 and a[1] == "boss"): enemies.damage(e, 1e6, e.pos, Vector3(0, 0, -1), false)
+		"inspect": inspect = a[1] == "1"
+		"cam":   # a free camera for pictures: x y z yaw pitch
+			_set_state("shot"); ui.show_screen(""); cam.fov = base_fov; cam.position = Vector3(float(a[1]), float(a[2]), float(a[3])); cam.rotation = Vector3(float(a[5]), float(a[4]), 0)
 		"gun": guns.cur = a[1]; guns.pending = null; guns.switch_t = 0.0; guns.cooldown = 0.0
 		"trigger": guns.trigger = a[1] == "1"; guns.trigger_edge = guns.trigger
 		"ads": guns.ads_held = a[1] == "1"

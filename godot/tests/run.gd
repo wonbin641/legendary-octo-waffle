@@ -265,5 +265,56 @@ func _ready() -> void:
 	check("a rented gun is in your hands for the stage", g.slots == ["pistol", "gl"])
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
+	# ---------------- stage 5: the toy room ----------------
+	Store.save = Store.save0(); gm.begin(9); var toy: ToyRoom = w.toy
+	check("the toy room: no enemies yet, every toy gun in hand", toy != null and en.list.is_empty() and g.loadout == Toys.ORDER and Store.stage_open(9))
+	var simt := func(sec: float) -> void:
+		for i in roundi(sec * 30): pl.update(1.0 / 30.0, cam, 0.0); toy.update(1.0 / 30.0, pl); g.update(1.0 / 30.0)
+	pl.in_f = 0.0; pl.in_s = 0.0; pl.in_run = false; simt.call(4.0)
+	check("you come down under a parachute", pl.pos.y > 8.0 and pl.pos.y < 20.0 and not pl.grounded, pl.pos.y)
+	simt.call(4.0); check("and land on the carpet", pl.grounded and pl.pos.y < 0.2, pl.pos)
+	var walk := func(x: float, y: float, z: float, yaw: float, sec: float, run := false) -> Vector3:
+		pl.reset(x, z, yaw); pl.pos.y = y; pl.in_f = 1.0; pl.in_run = run; simt.call(sec); pl.in_f = 0.0; pl.in_run = false; return pl.pos
+	var q1: Vector3 = walk.call(-2.0, 0.0, 20.0, -PI / 2, 4.0)
+	check("up the hanging blanket onto the mattress", absf(q1.y - ToyRoom.BED_Y) < 0.05 and q1.x > 10.0, q1)
+	q1 = walk.call(-22.0, 0.0, 24.0, PI / 2, 3.2)
+	check("up the stacked books beside the desk", q1.y > 8.5 and q1.x < -36.0, q1)
+	q1 = walk.call(-26.0, ToyRoom.DESK_Y, 0.0, -PI / 2, 9.0)
+	check("across the block bridge from the desk to the bed", absf(q1.y - ToyRoom.BED_Y) < 0.05 and q1.x > 12.0, q1)
+	q1 = walk.call(-34.0, ToyRoom.DESK_Y + 1.01, -22.5, 0.0, 7.0)
+	check("up the lamp's neck to the top of the bookshelf", absf(q1.y - ToyRoom.SHELF_Y) < 0.05 and q1.z < -56.0, q1)
+	q1 = walk.call(-5.0, ToyRoom.SHELF_Y, -61.5, -PI / 2, 3.0)
+	check("from the bookshelf up the books to the wardrobe's top", absf(q1.y - ToyRoom.WARD_Y) < 0.05 and q1.x > 8.0, q1)
+	q1 = walk.call(60.5, ToyRoom.BED_Y, 31.7, PI / 2, 3.45); q1 = walk.call(q1.x, q1.y, 31.7, 0.0, 0.8)
+	check("up the ladder to the upper bunk", absf(q1.y - ToyRoom.BUNK_Y) < 0.05, q1)
+	# springs
+	pl.reset(6.0, -22.0, -PI / 2); pl.pos.y = 0.45; simt.call(0.1); var up0 := pl.vel.y; pl.in_f = 1.0; simt.call(2.2); pl.in_f = 0.0
+	check("the spring by the bed throws you onto the mattress", up0 > 15.0 and absf(pl.pos.y - ToyRoom.BED_Y) < 0.05, "%s %s" % [str(up0), str(pl.pos)])
+	pl.reset(9.0, -32.5, 0.0); pl.pos.y = ToyRoom.BED_Y + 0.45; simt.call(0.1); var peak := 0.0
+	for i in 40: simt.call(0.05); peak = maxf(peak, pl.pos.y)
+	check("the spring on the mattress reaches the upper bunk's height", peak > ToyRoom.BUNK_Y + 0.5, peak)
+	# catapults
+	pl.reset(-14.0, 30.0, 0.0); pl.pos.y = 0.45; simt.call(4.0)
+	check("the catapult lands you on top of the bookshelf", absf(pl.pos.y - ToyRoom.SHELF_Y) < 0.6 and pl.pos.z < -56.0 and pl.grounded, pl.pos)
+	pl.reset(52.0, 41.0, 0.0); pl.pos.y = 0.45; simt.call(4.0)
+	check("the other catapult lands you on the upper bunk", absf(pl.pos.y - ToyRoom.BUNK_Y) < 0.6 and pl.grounded, pl.pos)
+	# the tape measure
+	pl.reset(42.0, -57.0, PI); pl.pos.y = ToyRoom.WARD_Y; pl.in_f = 1.0; simt.call(0.6); pl.in_f = 0.0; var onzip: bool = toy.riding != null; simt.call(5.0)
+	check("the tape measure carries you from the wardrobe down to the upper bunk", onzip and toy.riding == null and absf(pl.pos.y - ToyRoom.BUNK_Y) < 0.6 and pl.pos.z > -10.0, pl.pos)
+	# mattress, tacks, train
+	pl.reset(30.0, 0.0, 0.0); pl.pos.y = ToyRoom.BED_Y; simt.call(0.1); var jm := pl.jump_mul; pl.reset(0.0, 56.0, 0.0); simt.call(0.1)
+	check("a springier jump on the mattress, an ordinary one on the floor", jm > 1.1 and pl.jump_mul == 1.0)
+	pl.reset(-4.0, 46.0, 0.0); pl.hp = 1000.0; simt.call(2.0)
+	check("thumbtacks slow you and prick", pl.slow_mul < 0.6 and pl.hp < 1000.0 and pl.hp > 800.0, pl.hp)
+	var car: Dictionary = toy.train.cars[1]; pl.reset(car.pos.x, car.pos.z, 0.0); pl.pos.y = 0.45; var p0 := pl.pos; simt.call(3.0)
+	check("a wagon of the toy train carries you along", pl.pos.distance_to(p0) > 20.0 and absf(pl.pos.y - 0.45) < 0.05 and Vector2(pl.pos.x - car.pos.x, pl.pos.z - car.pos.z).length() < 1.0, pl.pos)
+	# the toy guns
+	var okm := true
+	for id in Toys.ORDER + ["ruler"]:
+		var n := Toys.build(id); okm = okm and n.get_child_count() >= 5 and Toys.NAMES.has(id) and Toys.LENGTH.has(id); n.free()
+	check("nine toy guns and the ruler are modelled", okm and Toys.ORDER.size() == 9)
+	g.reset(Toys.ORDER.duplicate()); g.cur = "flame"; g.cooldown = 0.0; pl.reset(0.0, 56.0, 0.0); pl.update(0.0, cam, 0.0); g.trigger = true; simt.call(1.0); g.trigger = false
+	check("the spray-can flamethrower sprays (20 a second)", g.wstate.flame.mag < 120 and g.wstate.flame.mag >= 104, g.wstate.flame.mag)
+	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

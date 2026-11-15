@@ -6,6 +6,8 @@ extends Node3D
 const CONT_COLORS := ["8c3a2b", "2c4f7c", "356b45", "c4682a", "7b8288", "2f7a7a", "6a2a35", "b8ab8a"]
 const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
+	# stage 5, the toy room: a sunny bedroom, bright and warm
+	9: {"toy": true, "fog": [0.55, 0.62, 0.68], "density": 0.004, "zenith": [0.55, 0.62, 0.68], "glow": [0.0, 0.0, 0.0], "hemi": ["ffffff", "cdb99a", 0.5], "moon": ["fff1d6", 0.62], "lamp": ["ffffff", 0.0], "seed": 77, "crates": 0, "sunOff": [30, 60, 34], "exposure": 0.95},
 	1: {"fog": [0.026, 0.033, 0.052], "density": 0.016, "zenith": [0.006, 0.008, 0.017], "glow": [0.06, 0.036, 0.022], "hemi": ["5d6f96", "2b2420", 0.62],
 		"moon": ["a8bcff", 0.42], "lamp": ["ffa548", 1.8], "seed": 7, "crates": 40, "singles": 12, "empty": 0.1},
 }
@@ -36,6 +38,7 @@ var spawns: Array = []
 var _lamp_t := 0.0
 var on_crate: Callable = Callable()   # called with the crate when one breaks
 var fx: Fx = null
+var toy: ToyRoom = null   # stage 5's room and its gimmicks
 var _backdrop_blink: Array = []
 var _tex := {}
 
@@ -117,7 +120,7 @@ func _build_backdrop() -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -136,6 +139,11 @@ func build_stage(stage: int) -> void:
 	moon.look_at_from_position(Vector3(off[0], off[1], off[2]), Vector3.ZERO, Vector3.UP)
 	for l in lights: l.light_color = lin(S.lamp[0]); l.light_energy = 0.0
 	_lamp_t = 0.0
+	env.tonemap_exposure = S.get("exposure", 1.15); env.glow_enabled = not S.get("toy", false)
+	(get_node("Night") as Node3D).visible = not S.get("toy", false)
+	if S.get("toy", false):
+		env.ambient_light_color = Color(S.hemi[0]).lerp(Color(S.hemi[1]), 0.35); env.ambient_light_energy = S.hemi[2]; env.fog_depth_end = 400.0; moon.light_color = Color(S.moon[0])
+		toy = ToyRoom.new(); toy.build(self, G); return
 	Phys.set_world_size(66.0); Phys.set_nav(140, 1.0)
 
 	var gm := PlaneMesh.new(); gm.size = Vector2(240, 240)

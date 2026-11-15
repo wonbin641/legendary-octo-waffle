@@ -43,6 +43,11 @@ var since_hurt := 0.0
 var on_hurt: Callable = Callable()
 var on_step: Callable = Callable()
 
+var jump_mul := 1.0     # a mattress gives a little more
+var slow_mul := 1.0     # thumbtacks underfoot
+var launched := false   # thrown by a catapult: no steering until you land
+var since_zip := 9.0
+var chute := false      # coming down under a parachute at the start
 var say: Callable = Callable()       # a line for the feed (helmet broken, vest worn out, jetpack)
 # the jetpack: double-tap jump to lift off; jump goes up, Ctrl or C down; 10 seconds, one use
 var jet_on := false
@@ -69,6 +74,10 @@ func hurt(dmg: float, from: Vector3, zone := "body") -> void:
 	dmg = maxf(1.0, roundf(dmg)); hp = maxf(0.0, hp - dmg); since_hurt = 0.0; shake = maxf(shake, 0.1 + dmg * 0.008)
 	if on_hurt.is_valid(): on_hurt.call(dmg, from)
 
+## thrown through the air: the given velocity, and no steering until you come down
+func launch(v: Vector3) -> void:
+	vel = v; grounded = false; launched = true; jump_buf = 0.0
+
 ## a press of jump at time now (seconds): the second within 0.35 s lights the jetpack, if you have one
 func jet_tap(now: float) -> void:
 	var dbl := now - jet_last_tap < 0.35; jet_last_tap = now
@@ -85,6 +94,7 @@ func jet_end(msg := "") -> void:
 func reset(x: float, z: float, yaw_: float) -> void:
 	pos = Vector3(x, 0, z); vel = Vector3.ZERO; yaw = yaw_; pitch = 0.0; grounded = true
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
+	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
 	hp = MAX_HP; invuln = 0.0; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
@@ -99,11 +109,11 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if m > 1.0: f /= m; sd /= m
 	sprint_lock = maxf(0.0, sprint_lock - dt)
 	sprinting = in_run and f > 0.3 and sprint_lock <= 0.0 and not no_sprint
-	var speed := (8.2 if sprinting else 5.4) * move_mul * ads_slow
+	var speed := (8.2 if sprinting else 5.4) * move_mul * ads_slow * slow_mul
 	var sy := sin(yaw); var cy := cos(yaw)
 	var tx := (-sy * f + cy * sd) * speed; var tz := (-cy * f - sy * sd) * speed
 	var acc := 1.0 - exp(-dt * (11.0 if grounded else 2.2))
-	vel.x += (tx - vel.x) * acc; vel.z += (tz - vel.z) * acc
+	if not launched: vel.x += (tx - vel.x) * acc; vel.z += (tz - vel.z) * acc
 	jump_buf -= dt
 	if jet_on:
 		# flying: no gravity; hold jump to rise, Ctrl or C to sink, nothing to hover. it sputters out after 10 seconds
@@ -113,8 +123,9 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 		if pos.y > 30.0 and vel.y > 0.0: vel.y = 0.0
 		if jet_t <= 0.0: jet_end("제트백팩 연료가 다 떨어졌습니다")
 	else:
-		if jump_buf > 0.0 and grounded: vel.y = 6.6; grounded = false; jump_buf = 0.0
+		if jump_buf > 0.0 and grounded: vel.y = 6.6 * jump_mul; grounded = false; jump_buf = 0.0
 		vel.y -= 19.0 * dt
+		if chute and vel.y < -7.0: vel.y = -7.0   # the parachute holds the fall
 	pos = Phys.move_xz(pos, vel.x * dt, vel.z * dt, R, HEIGHT, 0.5 if grounded else 0.2)[0]
 	pos.x = clampf(pos.x, -Phys.HALF + R, Phys.HALF - R); pos.z = clampf(pos.z, -Phys.HALF + R, Phys.HALF - R)
 	var gy := Phys.ground_at(pos.x, pos.y, pos.z, R)
@@ -125,7 +136,7 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if pos.y <= gy:
 		if not grounded and vel.y < -5.0: land_dip = clampf(-vel.y * 0.012, 0.0, 0.12)
 		if jet_on and jet_t < 9.6 and vel.y <= 0.05: jet_end("제트백팩 착지")   # sinking onto the ground ends the flight
-		pos.y = gy; vel.y = 0.0; grounded = true
+		pos.y = gy; vel.y = 0.0; grounded = true; launched = false; chute = false
 	elif pos.y > gy + 0.05: grounded = false
 	speed_xz = sqrt(vel.x * vel.x + vel.z * vel.z)
 	if grounded and speed_xz > 0.5:
