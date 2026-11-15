@@ -7,9 +7,9 @@ const STAGES := {
 	6: {"name": "헬멧 부두", "enemy": "thug", "goal": 100, "unit": "명", "label": "조직원", "intro": "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 머리를 한 번 맞히면 벗겨집니다"},
 	5: {"name": "무장 부두", "enemy": "thug", "goal": 100, "unit": "명", "label": "조직원", "intro": "단검 20 · 파란 광선검 10 · 쌍광선검 5 · 야구방망이 15 · 자폭맨 10 · 저격 5 · 보스는 기관총"},
 	2: {"name": "불타는 마을", "enemy": "zombie", "goal": 100, "unit": "마리", "label": "좀비", "intro": "좀비 100마리 · 체력은 없고 감염과 중독뿐 · 해독약은 나무 상자에서"},
-	3: {"name": "동물 연구소", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": ""},
-	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": ""},
-	8: {"name": "차례 연구소", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": ""},
+	3: {"name": "동물 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개 · 10초 뒤 첫 우리가 열리고 15초마다 하나씩 · 얼룩말 → 기린 → 코끼리 순서로 올라탈 수 있음 · 보스 고릴라는 방탄유리 우리에"},
+	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": "넓은 사파리의 동물 100마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다"},
+	8: {"name": "차례 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
 	9: {"name": "장난감 방", "enemy": "toy", "goal": 0, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 지금은 맵과 장난감 무기만 둘러볼 수 있습니다"},
 	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": ""},
 }
@@ -17,6 +17,8 @@ const BOSS := {
 	1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6},
 	6: {"type": "thug", "name": "헬멧 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6, "helmet": true},
 	2: {"type": "zombie", "name": "거대 좀비", "josa": "가", "scale": 1.7, "hp": 2200, "dmgMul": 1.0},
+	3: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
+	8: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
 }
 var drop_pick = null   # 1-2: where you chose to be put down (kept for another go)
@@ -38,6 +40,7 @@ var _result_t := -1.0
 var _result_kind := ""
 var _chest_wait := false
 var flow_t := 0.0
+var calm := 0   # animals you have ridden: tamed, and counted as dealt with
 # stage 2: a bite infects (5 s), a dash poisons (8 s); an antidote, a moment to inject, clears both
 var infected := false
 var infect_t := 0.0
@@ -54,6 +57,9 @@ var on_flash: Callable = Callable()   # (amount, from): the red flash and the di
 
 func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
+func say_banner(title: String, sub: String, sec: float) -> void: _say(banner, [title, sub, sec])
+func say_feed(text: String) -> void: _say(feed, [text, 0])
+func say_hint(text: String, sec: float) -> void: _say(hint, [text, sec])
 
 func layout() -> Array:
 	if stage == 9: return Toys.ORDER.duplicate()   # the preview hands you every toy gun (keys 1-9)
@@ -61,8 +67,12 @@ func layout() -> Array:
 
 func begin(stage_: int) -> void:
 	stage = stage_
+	var an := enemies.animals; an.player = player; an.game = self; an.world = world; an.fx = fx; player.rider = an; player.on_toss_land = an.toss_land
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
-	world.build_stage(stage)
+	world.build_stage(stage); calm = 0
+	player.toss_ceil = Lab.CEIL if world.lab != null else INF
+	if world.lab != null: world.lab.player = player; world.lab.game = self
+	if world.safari != null: world.safari.player = player; world.safari.game = self; world.safari.enemies = enemies; world.safari.fx = fx
 	bonus_guns = []; replay = Store.save.cleared.has(stage)
 	guns.reset(layout()); guns.stage = stage; enemies.stage = stage; enemies.down_hint = false; proj.stage = stage; guns.toy = stage == 9
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
@@ -78,7 +88,7 @@ func begin(stage_: int) -> void:
 	populate()
 	if stage == 5 and drop_pick != null: set_drop(drop_pick)
 	var B: Dictionary = BOSS.get(stage, {})
-	boss_msg = ("보스 " + B.name + B.josa + " 어딘가에 있습니다" + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(20000))) if not B.is_empty() else ""
+	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(20000))) if not B.is_empty() else ""
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
 
 ## the nearest open ground to a point on the map: room to land, not on a container, inside the fence; you face the middle of the docks
@@ -117,11 +127,23 @@ func populate() -> void:
 			var z: float = near.z + SR.rng(-spread, spread) if near != null else SR.rng(-half + 6, half - 6)
 			if ok.call(x, z, min_start, gap, rad): var p := {"x": x, "z": z}; placed.push_back(p); return p
 		return null
-	var n := [0]
-	var put := func(type: String, p, opts: Dictionary) -> void:
-		if p != null and n[0] < 100:
+	var n := [0]; var cap := 140 if world.lab != null else 100
+	var put := func(type: String, p, opts: Dictionary):
+		if p != null and n[0] < cap:
 			var o := {"yaw": SR.rng(0, TAU)}; o.merge(opts, true)
-			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1
+			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
+		return null
+	if world.lab != null or world.safari != null:
+		if world.lab != null: world.lab.populate(put, SR, BOSS[stage])
+		else:
+			world.safari.populate(put, find, SR)
+			for e in enemies.list:
+				e.wild = true
+				if e.type == "zebra": e.fury = true; enemies.animals.wake(e); e.bs = "graze"; e.bt = SR.rng(0.5, 4)   # zebras just live their quiet life, and never bolt here
+		goal = enemies.list.size(); boss = null
+		for e in enemies.list:
+			if e.boss: boss = e
+		return
 	var B: Dictionary = BOSS.get(stage, {})
 	if stage == 5: _populate_armed(SR, ok, find, put, placed, n)
 	elif not B.is_empty():
@@ -210,6 +232,9 @@ func update(dt: float) -> void:
 		_result_t -= dt
 		if _result_t <= 0.0: _say(on_result, [_result_kind])
 	if not ended and player.hp <= 0.0: over("dead")
+	if world.lab != null: world.lab.update(dt)
+	if world.safari != null: world.safari.update(dt)
+	enemies.animals.bleed_update(dt); enemies.animals.roar_cd -= dt
 	# the needle: lower the gun, in it goes, and at 0.82 s the antidote takes
 	if inject_on:
 		inject_t += dt; guns.busy = maxf(0.0, INJECT_DUR - inject_t)
@@ -246,9 +271,19 @@ func poison(e: Enemies.Foe) -> void:
 	_say(feed, ["중독 · 8초 안에 해독약을 주사하세요", 0])
 
 ## a charge that connects knocks you out: the enraged zombie boss for 2 s
-func stun(e: Enemies.Foe, secs := 2.0) -> void:
+## an animal you have ridden is tamed: it never fights you again and counts as dealt with, like a kill (but pays nothing)
+func tame(e: Enemies.Foe) -> void:
+	calm += 1; say_feed(e.T.name + " 길들임 · 처치한 것으로 칩니다")
+	if kills + calm >= goal: finish()
+
+## the giant gorilla's leap: coming down on you is the end
+func slam(_e: Enemies.Foe) -> void:
 	if ended or player.invuln > 0.0 or _god(): return
-	player.hurt(90.0 * e.dmg_mul, e.pos, "body")
+	player.hp = 0.0; Snd.play("hurt"); over("slam")
+
+func stun(e: Enemies.Foe, secs := 2.0, dmg := -1.0) -> void:
+	if ended or player.invuln > 0.0 or _god(): return
+	player.hurt(90.0 * e.dmg_mul if dmg < 0.0 else dmg, e.pos, "body")
 	if ended or player.hp <= 0.0: return
 	player.stun_t = maxf(player.stun_t, secs); guns.trigger = false; guns.ads_held = false; guns.reload_t = 0.0
 	var d := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var l := maxf(d.length(), 0.001)
@@ -278,22 +313,26 @@ func take_antidote() -> bool:
 func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if ended or e.extra: return
 	kills += 1; stats.kills += 1
+	if e.tamed: calm = maxi(0, calm - 1)   # it was already counted
+	var base := int(e.T.get("money", 1000)) if (e.animal and not e.minion) else 1000
 	if weak: stats.heads += 1
 	# a kill with a shot to the head pays 1.5 times; a boss twenty times; a stage you have already cleared pays nothing
 	# so does a zombie finished off before it ever got back up (the two multiply)
 	var fresh := e.type == "zombie" and not e.revived
-	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((1000 * 20 if e.boss else 1000) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
+	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((base * 20 if e.boss else base) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
 	Store.save.money += pay; stats.earned += pay; Store.persist()
 	Snd.play("kill")
 	if pay > 0: Snd.play("coin")
 	if e.boss:
 		_say(banner, ["보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "보물상자가 떨어졌습니다", 3.0])
-		loot.chest(e.pos.x, e.pos.z, e.pos.y); boss = null
+		loot.chest(e.pos.x, e.pos.z, 0.0 if e.kong else e.pos.y); boss = null
+		if e.kong: enemies.animals.unwarn()
+		if world.lab != null: world.lab.monkey_mode = "panic"
 	elif e.self_det: _say(feed, ["자폭맨이 터졌습니다", 0])
 	else: _say(feed, [STAGES[stage].label + (" · 머리 명중" if weak else " 처치"), pay])
-	var left := goal - kills; var S: Dictionary = STAGES[stage]
+	var left := goal - kills - calm; var S: Dictionary = STAGES[stage]
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "가방 " + Store.won(Store.save.money), 1.8])
-	if kills >= goal and goal > 0: finish()
+	if kills + calm >= goal and goal > 0: finish()
 
 ## a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead
 func on_crate(c: Dictionary) -> void:
@@ -302,9 +341,11 @@ func on_crate(c: Dictionary) -> void:
 func take_loot(kind: String) -> bool:
 	if kind == "anti": return take_antidote()
 	if kind == "hp":
-		if player.hp >= Player.MAX_HP: return false
+		var an := enemies.animals
+		if player.hp >= Player.MAX_HP and an.bleed_n == 0: return false
 		var heal := minf(roundf(Player.MAX_HP * 0.1), Player.MAX_HP - player.hp); player.hp += heal
-		Snd.play("pickup_hp"); _say(feed, ["회복 물약 · 체력 +%d (최대 체력의 10%%)" % int(heal), 0]); return true
+		var stopped := an.bleed_n > 0; an.bleed_stop()   # the potion also stops bleeding
+		Snd.play("pickup_hp"); _say(feed, ["회복 물약 · 체력 +%d (최대 체력의 10%%)" % int(heal) + (" · 출혈 멎음" if stopped else ""), 0]); return true
 	return false
 
 ## the boss's chest: a gun you do not own yet, yours for good (once you are out alive), and every gun's ammo filled
@@ -327,8 +368,9 @@ func open_chest() -> void:
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
-		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열어야 헬기가 옵니다", 3.0])
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열어야 헬기가 옵니다", 3.0])
 		return
+	_leave_animals()
 	ended = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
 	opened = [] if Store.settings.dev else (Store.NEXT.get(stage, []) as Array).filter(func(s): return not Store.stage_open(s))
 	if not Store.save.cleared.has(stage): Store.save.cleared.push_back(stage); Store.save.cleared.sort()
@@ -338,6 +380,12 @@ func finish() -> void:
 	Store.persist(); Snd.play("clear")
 	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", "헬기가 데리러 옵니다 · " + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
 	result = "clear"; _result_kind = "clear"; _result_t = 1.7
+
+func _leave_animals() -> void:
+	var an := enemies.animals
+	if an.m != null: an.ride_off(true)
+	an.bleed_stop(true); player.fear_t = 0.0
+	if player.toss_on: player.toss_on = false; player.pos.y = Phys.ground_at(player.pos.x, player.pos.y, player.pos.z, Player.R); player.vel.y = 0.0
 
 ## rented guns go back when the stage ends, however it ends
 func return_rentals() -> void:
@@ -354,5 +402,5 @@ func forfeit() -> void:
 func over(reason: String) -> void:
 	if ended: return
 	if Store.settings.dev and Store.settings.god: infected = false; infect_t = 0.0; poison_t = 0.0; player.hp = maxf(player.hp, 1.0); return   # developer mode's invincibility
-	ended = true; forfeit(); return_rentals()
+	ended = true; forfeit(); return_rentals(); _leave_animals()
 	result = reason; _result_kind = reason; _result_t = 1.0

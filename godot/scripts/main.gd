@@ -203,7 +203,7 @@ func _draw_hud() -> void:
 		for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]: hud.draw_line(c + d * 6, c + d * 13, col, 2.0)
 	if hurt_t > 0.0: hud.draw_rect(Rect2(Vector2.ZERO, s), Color(1, 0.2, 0.25, 0.28 * hurt_t / 0.35))
 	# the count and the bag, top left; what you carry under it
-	hud.draw_string(f_title, Vector2(16, 30), "처치 %d / %d" % [game.kills, game.goal], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, INK)
+	hud.draw_string(f_title, Vector2(16, 30), "처치 %d / %d" % [game.kills + game.calm, game.goal], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, INK)
 	hud.draw_string(f_mono, Vector2(16, 50), "가방 " + Store.won(Store.save.money), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, SODIUM)
 	var it: Dictionary = Store.save.items; var carry := []
 	if int(it.helmet) > 0: carry.push_back("헬멧")
@@ -226,6 +226,7 @@ func _draw_hud() -> void:
 	else:
 		hud.draw_rect(Rect2(22, hy, 180, 8), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(22, hy, 180 * player.hp / Player.MAX_HP, 8), Color("5ed6b0"))
 		hud.draw_string(f_mono, Vector2(22, hy - 6), "HP %d" % int(player.hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, INK)
+	_draw_beasts(s, c)
 	if player.stun_t > 0.0:
 		hud.draw_rect(Rect2(Vector2.ZERO, s), Color(1, 1, 1, 0.16 * clampf(player.stun_t, 0.0, 1.0)))
 		hud.draw_string(f_title, Vector2(c.x - 100, c.y + 96), "기절 %.1f" % player.stun_t, HORIZONTAL_ALIGNMENT_CENTER, 200, 22, SODIUM)
@@ -251,6 +252,42 @@ func _draw_hud() -> void:
 		var bw := minf(360.0, s.x * 0.4); hud.draw_string(f_bold, Vector2(c.x - bw / 2, 26), game.boss.name, HORIZONTAL_ALIGNMENT_CENTER, bw, 13, INK)
 		hud.draw_rect(Rect2(c.x - bw / 2, 32, bw, 6), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(c.x - bw / 2, 32, bw * game.boss.hp / game.boss.max_hp, 6), Color("ff5260"))
 
+## stages 3 and 3-1: the next cage or the time to the stampede, bleeding, what you are riding, the tower
+func _draw_beasts(s: Vector2, c: Vector2) -> void:
+	var an := enemies.animals; var lab := world.lab; var sf := world.safari
+	an.find_t -= get_process_delta_time()
+	if an.find_t <= 0.0: an.find_t = 0.15; an.target = an.ride_find() if world.style.get("ride", false) else null
+	var top := ""; var soon := false
+	if sf != null and not game.ended:
+		var L := sf.left(); var sec := ceili(L)
+		top = "습격 중 · 남은 동물 %d마리" % (game.goal - game.kills - game.calm) if sf.stampede else "습격까지 %d:%02d · 동물 100마리가 감시탑으로" % [sec / 60, sec % 60]; soon = not sf.stampede and L <= 30.0
+	elif lab != null and lab.running:
+		var nc = lab.next_cage()
+		if nc != null:
+			var alive := 0
+			for e in nc.animals:
+				if e.alive: alive += 1
+			var what: String = ("보스 " + Game.BOSS[3].name) if nc.boss else "%s %d마리" % [Animals.ANIMALS[nc.type].name, alive]
+			var when: String = ("버튼을 누르는 중" if lab.reach == nc else "앞 우리 %d마리 남음" % mini(99, lab.wait_left(nc))) if nc.held else "%d초" % ceili(maxf(0.0, nc.open_at - lab.t))
+			top = "다음 우리 · %d번 · %s · %s" % [nc.n, what, when]; soon = not nc.held and nc.open_at - lab.t <= 3.0
+	if top != "": hud.draw_string(f_bold, Vector2(c.x - 260, 58), top, HORIZONTAL_ALIGNMENT_CENTER, 520, 14, Color("ff5260") if soon else SODIUM)
+	var hy := s.y - (196.0 if look_mode == "touch" else 34.0)
+	if an.bleed_t > 0.0: hud.draw_string(f_bold, Vector2(22, hy - 24), "출혈 ×%d  %d초 · 초당 %d" % [an.bleed_n, ceili(an.bleed_t), int(Animals.BLEED_DPS * an.bleed_n)], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("ff5260"))
+	var st := "공포 %.1f" % player.fear_t if player.fear_t > 0.0 else ("공중으로 날아가는 중" if player.toss_on else "")
+	if st != "": hud.draw_string(f_title, Vector2(c.x - 140, c.y + 96), st, HORIZONTAL_ALIGNMENT_CENTER, 280, 20, SODIUM)
+	# the animal under you, and the watchtower: a tall red bar on the right
+	var bars := []
+	if an.m != null: bars.push_back([Animals.SEAT[an.m.type].name + (" · 출혈 ×%d" % an.m.bleed_n if an.m.bleed_t > 0.0 else ""), an.m.hp, an.m.max_hp])
+	if sf != null and sf.standing and not game.ended: bars.push_back(["감시탑 · 탑 위" if sf.on else "감시탑", sf.hp, Safari.TOWER.hp])
+	for i in bars.size():
+		var bx := s.x - 34.0 - i * 64.0; var by := s.y * 0.26; var bh := s.y * 0.34; var f: float = clampf(float(bars[i][1]) / float(bars[i][2]), 0.0, 1.0)
+		hud.draw_rect(Rect2(bx, by, 14, bh), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(bx + 2, by + bh * (1.0 - f) + 2, 10, maxf(0.0, bh * f - 4)), Color("ff5260"))
+		hud.draw_string(f_mono, Vector2(bx - 46, by - 8), str(maxi(0, ceili(bars[i][1]))), HORIZONTAL_ALIGNMENT_RIGHT, 64, 13, INK)
+		hud.draw_string(f_bold, Vector2(bx - 86, by + bh + 16), bars[i][0], HORIZONTAL_ALIGNMENT_RIGHT, 104, 11, STEEL)
+	if look_mode != "touch" and hint_t <= 0.0 and world.style.get("ride", false):
+		var act := _ride_act()
+		if act != "": hud.draw_string(f_bold, Vector2(c.x - 200, s.y - 96), "E 키로 " + act + (" · X 키로 내리기" if (an.m != null and act != "내리기") else ""), HORIZONTAL_ALIGNMENT_CENTER, 400, 14, INK)
+
 func banner(title: String, sub: String, sec: float) -> void:
 	banner_label.text = title; banner_sub.text = sub; banner_t = sec
 func hint(text: String, sec: float) -> void:
@@ -259,6 +296,12 @@ func feed(text: String, pay := 0) -> void:
 	if is_touch and pay > 0: return   # on a phone the kill lines are left out: the bag at the top still counts up
 	feed_lines.push_back([text + (" · +" + Store.won(pay) if pay > 0 else ""), 3.5])
 	if feed_lines.size() > 5: feed_lines.pop_front()
+
+## what E (or the button) would do now: get on, change over, or get off
+func _ride_act() -> String:
+	var an := enemies.animals; var tg := an.target if (an.target != null and an.target.alive) else null
+	if tg != null: var nm: String = Animals.SEAT[tg.type].name; return nm + (Animals.euro(nm) + " 옮겨 타기" if an.m != null else " 타기")
+	return "내리기" if an.m != null else ""
 
 func _touch_rects() -> Dictionary:
 	var s := hud.size; var pad := 150.0
@@ -270,6 +313,9 @@ func _touch_buttons() -> Dictionary:
 	var b := {"fire": [Vector2(s.x - 92, s.y - 150), 42.0, "발사"], "jump": [Vector2(s.x - 62, s.y - 56), 32.0, "점프"], "ads": [Vector2(s.x - 176, s.y - 92), 30.0, "조준"],
 		"reload": [Vector2(s.x - 186, s.y - 166), 26.0, "장전"], "melee": [Vector2(s.x - 156, s.y - 232), 26.0, "근접"], "swap": [Vector2(s.x - 82, s.y - 244), 26.0, "무기"]}
 	if game.stage == 2: b["anti"] = [Vector2(s.x - 262, s.y - 62), 30.0, "해독약 %d" % game.antidotes if game.antidotes > 0 else "해독약 없음"]
+	var ract := _ride_act()
+	if ract != "": b["ride"] = [Vector2(s.x - 262, s.y - 62), 30.0, ract]
+	if enemies.animals.m != null and enemies.animals.target != null: b["off"] = [Vector2(s.x - 262, s.y - 132), 26.0, "내리기"]
 	if player.jet_on: b["down"] = [Vector2(s.x - 140, s.y - 40), 26.0, "내려가기"]
 	return b
 
@@ -303,7 +349,7 @@ func to_menu() -> void:
 	cam.fov = base_fov; ui.in_stage = false; ui.back_stack.clear(); _set_state("menu"); ui.show_screen("menu")
 
 func enter_play() -> void:
-	guns.look_mode = look_mode; apply_settings(); feed_lines.clear(); ui.in_stage = true
+	guns.look_mode = look_mode; apply_settings(); feed_lines.clear(); banner_label.text = ""; banner_sub.text = ""; banner_t = 0.0; ui.in_stage = true
 	_set_state("playing"); request_lock()
 	if game.boss_msg != "": banner("스테이지 " + Store.STAGE_TAG[game.stage], game.boss_msg, 3.5)
 	hint("WASD 이동 · 좌클릭 발사 · 우클릭 조준 · R 재장전 · V 근접" if look_mode != "touch" else "왼쪽 방향 패드로 이동 · 화면을 밀어 조준 · 적이나 상자를 조준하면 저절로 쏩니다", 5.0)
@@ -333,6 +379,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_R: guns.start_reload()
 			if e.physical_keycode == KEY_V: guns.melee_start()
 			if e.physical_keycode == KEY_F: game.use_antidote()
+			if (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G: enemies.animals.ride_toggle()
+			if e.physical_keycode == KEY_X and enemies.animals.m != null: enemies.animals.ride_off(false)
 			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_9: guns.switch_slot(e.physical_keycode - KEY_1)
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
 		elif state == "paused" and ui.cur == "pause" and (e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P): resume_game()
@@ -370,6 +418,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				"reload": guns.start_reload()
 				"melee": guns.melee_start()
 				"anti": game.use_antidote()
+				"ride": enemies.animals.ride_toggle()
+				"off": enemies.animals.ride_off(false)
 				"swap": guns.cycle(1)
 			if hit != "": touch_ui.queue_redraw(); return
 			if joy_id < 0 and (r.pad as Rect2).grow(12).has_point(p):
@@ -412,6 +462,7 @@ func tick(dt: float) -> void:
 	if world.toy: world.toy.update(dt, player)
 	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
+	if world.lab != null: world.lab.anim(dt, time)
 
 func _process(delta: float) -> void:
 	var dt := minf(delta, 0.05)
@@ -488,6 +539,10 @@ func command(line: String) -> Dictionary:
 				if not e.boss or (a.size() > 1 and a[1] == "boss"): enemies.damage(e, 1e6, e.pos, Vector3(0, 0, -1), false)
 		"inspect": inspect = a[1] == "1"
 		"bite": game.bitten(enemies.list[0])
+		"ride": enemies.animals.ride_toggle()
+		"stampede": world.safari.t = Safari.T_STAMPEDE - 0.5
+		"labt": world.lab.t = float(a[1])
+		"key": player.in_f = float(a[1])
 		"poison": game.poison(enemies.list[0])
 		"anti": game.use_antidote()
 		"take": game.take_loot(a[1])
@@ -501,4 +556,4 @@ func command(line: String) -> Dictionary:
 	return {"state": state, "screen": ui.cur, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
 		"colliders": Phys.colliders.size(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
 		"gun": guns.cur, "slots": guns.slots, "mag": guns.st().mag, "hp": player.hp, "ads": guns.ads, "fov": cam.fov, "money": Store.save.money, "cleared": Store.save.cleared, "owned": Store.save.owned,
-		"infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}
+		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}

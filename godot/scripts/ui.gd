@@ -11,7 +11,7 @@ const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵�
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 · 숨은 스파이더 마인"}
 const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82]}
 const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8]]
-const BUILT := [1, 6, 5, 2, 9]   # stages the Godot version can play so far
+const BUILT := [1, 6, 5, 2, 3, 7, 9]   # stages the Godot version can play so far
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var game: Game; var guns: Guns
@@ -575,7 +575,7 @@ func _build_brief() -> void:
 func open_brief(stage: int) -> void:
 	sel = stage; game.begin(stage); back_stack.clear(); br_gear_note = ""; show_screen("brief"); _brief_gear()
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name
-	br_note.text = Game.STAGES[stage].intro + ("\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1) if game.goal > 0 else ""); br_map.queue_redraw()
+	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1)) if game.goal > 0 else ""); br_map.queue_redraw()
 
 func _brief_gear() -> void:
 	var ready := []; var lo := game.layout()
@@ -635,9 +635,9 @@ func _build_over() -> void:
 
 func show_result(kind: String) -> void:
 	var clear_ := kind == "clear"; var st: Dictionary = game.stats; var tag: String = Store.STAGE_TAG[game.stage]
-	(ov.stamp as Label).text = "임무 완료" if clear_ else ("감염" if kind == "zombie" else ("중독" if kind == "poison" else "작전 실패")); (ov.stamp as Label).add_theme_color_override("font_color", VITAL if clear_ else ALARM)
-	(ov.title as Label).text = "스테이지 %s 클리어" % tag if clear_ else ("좀비가 되었습니다" if kind == "zombie" else ("독이 퍼져 쓰러졌습니다" if kind == "poison" else "스테이지 %s · 쓰러짐" % tag))
-	(ov.kills as Label).text = "%d / %d" % [st.kills, game.goal]; (ov.earn as Label).text = Store.won(st.earned); (ov.hs as Label).text = str(st.heads)
+	(ov.stamp as Label).text = "임무 완료" if clear_ else ("감염" if kind == "zombie" else ("중독" if kind == "poison" else ("출혈" if kind == "bleed" else "작전 실패"))); (ov.stamp as Label).add_theme_color_override("font_color", VITAL if clear_ else ALARM)
+	(ov.title as Label).text = "스테이지 %s 클리어" % tag if clear_ else ("좀비가 되었습니다" if kind == "zombie" else ("독이 퍼져 쓰러졌습니다" if kind == "poison" else ("고릴라에게 짓눌렸습니다" if kind == "slam" else ("피를 너무 많이 흘렸습니다" if kind == "bleed" else "스테이지 %s · 쓰러짐" % tag))))
+	(ov.kills as Label).text = "%d%s / %d" % [st.kills, " + 길들임 %d" % game.calm if game.calm > 0 else "", game.goal]; (ov.earn as Label).text = Store.won(st.earned); (ov.hs as Label).text = str(st.heads)
 	(ov.earn as Label).add_theme_color_override("font_color", ALARM if (not clear_ and st.earned > 0) else INK)
 	(ov.acc as Label).text = "%d%%" % (roundi(100.0 * st.hits / st.shots) if st.shots > 0 else 0); (ov.time as Label).text = Store.fmt_time(st.time)
 	(ov.code as Label).text = "보고 번호 " + Store.iso_code("YRD", (game.stage * 100000 + st.kills * 997) % 1000000)

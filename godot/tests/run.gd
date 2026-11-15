@@ -267,7 +267,7 @@ func _ready() -> void:
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
 	# ---------------- stages 1-1 and 1-2 ----------------
-	for stn in [6, 5, 2]:
+	for stn in [6, 5, 2, 3, 7]:
 		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.drop_pick = null; gm.begin(stn)
 		var cb := 0
 		for i in mini(60, Phys.colliders.size()):
@@ -280,10 +280,15 @@ func _ready() -> void:
 		var eb := 0; var efirst := ""
 		for i in mini(en.list.size(), R9.enemies.size()):
 			var e9 = en.list[i]; var q9: Array = R9.enemies[i]
-			if absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4 or absf(e9.pos.y - q9[2]) > 1e-3 or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
+			var moved9: bool = stn == 3 and (absf(e9.pos.x - q9[0]) > 11.0 or absf(e9.pos.z - q9[1]) > 11.0)   # the lab's animals had paced about their cages by the time they were written down
+			if (stn != 3 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or moved9 or e9.type != q9[7] or absf(e9.pos.y - q9[2]) > 1e-3 or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
 				eb += 1
 				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
-		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == 100 and R9.enemies.size() == 100 and eb == 0 and gm.goal == int(R9.goal), efirst)
+		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == R9.enemies.size() and eb == 0 and gm.goal == int(R9.goal), efirst)
+		var cb9 := 0
+		for i in mini(w.crates.size(), R9.crates.size()):
+			if absf(w.crates[i].x - R9.crates[i][0]) > 1e-4 or absf(w.crates[i].z - R9.crates[i][1]) > 1e-4: cb9 += 1
+		check("stage %s: every crate is where the browser game has it" % Store.STAGE_TAG[stn], cb9 == 0, cb9)
 		check("stage %s: you start where the browser game starts you" % Store.STAGE_TAG[stn], absf(w.start.x - R9.start[0]) < 1e-4 and absf(w.start.z - R9.start[1]) < 1e-4 and absf(w.start.yaw - R9.start[2]) < 1e-4, w.start)
 	# ---------------- stage 2: the burning village ----------------
 	gm.begin(2); var s2_V2: Dictionary = ref.stages["2"]
@@ -353,6 +358,97 @@ func _ready() -> void:
 	pl.in_f = 1.0; var s2_before2 := pl.pos; pl.vel = Vector3.ZERO; pl.update(0.02, null, 0.0)
 	check("stage 2: knocked out, you cannot walk", pl.pos.distance_to(s2_before2) < 0.01)
 	pl.in_f = 0.0; pl.stun_t = 0.0
+	# ---------------- stage 3: the lab ----------------
+	gm.begin(3); var lab: Lab = w.lab; var an: Animals = en.animals; pl.invuln = 0.0
+	check("stage 3: 90 animals in ten cages, the giant gorilla in the last", en.list.size() == 90 and gm.goal == 90 and gm.boss != null and gm.boss.max_hp == 5200.0 and gm.boss.scale == 3.0 and lab.cages[5].animals.size() == 3 and lab.cages[8].animals.size() == 2)
+	var zb3 = lab.cages[0].animals[0]; var gb3 = lab.cages[9].animals[0]
+	check("stage 3: bullets pass between the bars but stop on the boss's glass", not Phys.raycast_static(Vector3(-37.5, 1.5, 20.0), Vector3(0, 0, 1), 10.0) and Phys.raycast_static(Vector3(14.7, 1.5, -20.0), Vector3(0, 0, -1), 12.0))
+	en.damage(gb3, 500, gb3.pos, Vector3(0, 0, 1), false)
+	check("stage 3: nothing hurts the boss behind its glass", gb3.hp == 5200.0)
+	for i in 495: lab.update(0.02)
+	check("stage 3: 9.9 s in every cage is still shut", not lab.cages[0].open and lab.next_cage().n == 1)
+	var col3: int = Phys.colliders.size()
+	for i in 10: lab.update(0.02)
+	check("stage 3: at 10 s the first cage opens: its four walls stop blocking and the zebras are let out", lab.cages[0].open and Phys.colliders.size() == col3 - 4 and not zb3.caged and zb3.release_t > 0.0 and lab.next_cage().n == 2)
+	for i in 750: lab.update(0.02)
+	check("stage 3: the second opens 15 s later", lab.cages[1].open and not lab.cages[2].open)
+	# riding: a zebra from the floor, a giraffe only from a zebra
+	for i in 60: en.update(0.02, 0.0)
+	pl.pos = Vector3(zb3.pos.x, 0, zb3.pos.z + 1.5); pl.yaw = 0.0; pl.grounded = true
+	var gf3 = lab.cages[5].animals[0]
+	check("stage 3: a zebra can be mounted from the floor, a giraffe cannot", an.ride_find() == zb3 and not an.ride_ok(gf3) == true or gf3.caged)
+	an.ride_on(zb3)
+	check("stage 3: riding a zebra tames it, and that counts like a kill", an.m == zb3 and zb3.tamed and gm.calm == 1 and an.tier == 1)
+	pl.in_f = 1.0; var p3: Vector3 = zb3.pos
+	for i in 50: pl.update(0.02, null, 0.0)
+	check("stage 3: it goes where you steer it, and you sit on its back", zb3.pos.distance_to(p3) > 2.0 and absf(pl.pos.y - (zb3.pos.y + 1.62 - 0.7)) < 1e-4, zb3.pos.distance_to(p3))
+	pl.in_f = 0.0
+	# a blow meant for you lands on the animal under you, and it bleeds
+	var bf3 = lab.cages[1].animals[0]; bf3.caged = false; var hp3: float = zb3.hp
+	an.hit(bf3, "gore")
+	check("stage 3: up on a zebra the buffalo's horns hit the zebra: 25, and it bleeds", zb3.hp == hp3 - 25.0 and pl.hp == Player.MAX_HP and zb3.bleed_n == 1 and pl.stun_t == 0.0, zb3.hp)
+	an.ride_off(false)
+	check("stage 3: off again, standing beside it", an.m == null and pl.grounded and not zb3.ridden)
+	# on foot: gored (25, out cold 3 s, a wound), bitten, tossed
+	an.hit(bf3, "gore")
+	check("stage 3: on foot the buffalo's charge takes 25, knocks you out for 3 s and opens a wound", pl.hp == Player.MAX_HP - 25.0 and absf(pl.stun_t - 3.0) < 1e-6 and an.bleed_n == 1 and an.bleed_t == 10.0)
+	pl.stun_t = 0.0; var hp4: float = pl.hp
+	for i in 100: an.bleed_update(0.02)
+	check("stage 3: a wound takes 5 a second", absf((hp4 - pl.hp) - 10.0) <= 1.0, hp4 - pl.hp)
+	an.bleed_add(); check("stage 3: a second wound stacks and restarts the clock", an.bleed_n == 2 and an.bleed_t == 10.0)
+	gm.take_loot("hp"); check("stage 3: a potion stops the bleeding", an.bleed_n == 0 and an.bleed_t == 0.0)
+	var rh3 = lab.cages[3].animals[0]; pl.pos = Vector3(0, 0, 0); pl.vel = Vector3.ZERO
+	an.toss(rh3)
+	check("stage 3: a rhino's horn sends you straight up at 13 m/s", pl.toss_on and pl.vel == Vector3(0, 13, 0))
+	var top3 := 0.0
+	for i in 200:
+		pl.update(0.02, null, 0.0); top3 = maxf(top3, pl.pos.y)
+		if not pl.toss_on: break
+	check("stage 3: up about 4.4 m and down again: 50 and a wound", not pl.toss_on and top3 > 4.0 and top3 < 4.8 and an.bleed_n == 1, top3)
+	var tg3 = lab.cages[6].animals[0]; pl.invuln = 0.0
+	check("stage 3: a tiger's roar makes you run for a second", an.fear(tg3) and pl.fear_t == 1.0)
+	pl.fear_t = 0.0; an.bleed_stop()
+	# the male lion's roar
+	var ln3 = lab.cages[7].animals[0]; ln3.caged = false; var el3 = lab.cages[8].animals[0]; el3.caged = false; el3.hp = 1000.0; el3.pos = ln3.pos + Vector3(5, 0, 0)
+	an.king_roar(ln3)
+	check("stage 3: the lion's roar gives the others a third of their health back and makes them faster", el3.hp == 1000.0 + 12000.0 * 0.35 and absf(el3.buff - 1.1) < 1e-6 and el3.kneel_t == 1.2)
+	# money: an animal's own price, a giraffe's head takes ten times
+	gm.begin(3); var m3: int = Store.save.money; var z3b = w.lab.cages[0].animals[1]; z3b.caged = false
+	en.damage(z3b, 999, z3b.pos, Vector3(0, 0, 1), false)
+	var r3b = w.lab.cages[3].animals[1]; r3b.caged = false; en.damage(r3b, 9999, r3b.pos, Vector3(0, 0, 1), false)
+	check("stage 3: a zebra pays 1,000, a rhino 3,000", Store.save.money == m3 + 4000 and gm.kills == 2, Store.save.money - m3)
+	check("stage 3: a giraffe's head takes ten times the damage", w.lab.cages[5].animals[0].head_x == 10.0)
+	# the gorilla: out of its cage it punches for 500
+	var kg = gm.boss; kg.caged = false; kg.release_t = 0.0; kg.fury = true; kg.angry = true; kg.alert = true; kg.lod = 0.0; pl.invuln = 0.0; pl.hp = Player.MAX_HP
+	pl.pos = Vector3(kg.pos.x, 0, kg.pos.z + en.stop_dist(kg) + 1.0); kg.yaw = 0.0; kg.k = {}
+	var hit3 := false
+	for i in 150:
+		en.update(0.02, 0.0); pl.pos = Vector3(kg.pos.x, 0, kg.pos.z + en.stop_dist(kg) + 1.0); pl.vel = Vector3.ZERO
+		if pl.hp < Player.MAX_HP: hit3 = true; break
+	check("stage 3: the giant gorilla's haymaker takes 500", hit3 and pl.hp == Player.MAX_HP - 500.0, pl.hp)
+	kg.k.mode = "beat"; kg.k.t = 1.49; kg.k.called = false; var g3: int = gm.goal; pl.invuln = 1e9
+	en.update(0.02, 0.0); en.update(0.02, 0.0)
+	check("stage 3: its chest-beating calls seven gorillas down, a quarter of its health each", an.minions() == 7 and gm.goal == g3 + 7 and en.list[en.list.size() - 1].max_hp == 1300.0, an.minions())
+	pl.invuln = 0.0; pl.hp = Player.MAX_HP; gm.slam(kg)
+	check("stage 3: under its leap you are done for", gm.ended and gm.result == "slam")
+	# ---------------- stage 3-1: the safari ----------------
+	gm.begin(7); var sf: Safari = w.safari; pl.invuln = 0.0
+	check("stage 3-1: 100 animals living wild, a tower of 10,000, three crates up on it", en.list.size() == 100 and en.list.all(func(e): return e.wild) and sf.hp == 10000.0 and sf.slots.size() == 16 and w.crates[0].y == 3.84, sf.slots.size())
+	check("stage 3-1: the stampede is five minutes away", sf.left() == 300.0 and not sf.stampede)
+	pl.pos = Vector3(0, 3.84, 0); sf.update(0.02)
+	check("stage 3-1: up on the platform counts as holding the tower", sf.on and sf.holds())
+	sf.t = 299.99; sf.update(0.02)
+	check("stage 3-1: at five minutes every wild animal is set off", sf.stampede and en.list.all(func(e): return e.fury and e.alert))
+	var bf7 = null
+	for e in en.list:
+		if e.type == "buffalo": bf7 = e; break
+	var s7 = sf.slots[0]; bf7.pos = Vector3(s7.x + s7.nx * 3.0, 0, s7.z + s7.nz * 3.0); bf7.lod = 0.0
+	for i in 400:
+		en.update(0.02, 0.0)
+		if sf.hp < 10000.0: break
+	check("stage 3-1: with you on the tower a buffalo rams the tower: 20 a blow", sf.hp == 9980.0, sf.hp)
+	var col7: int = Phys.colliders.size(); sf.hurt(9990.0, Vector3.ZERO)
+	check("stage 3-1: at zero the tower comes down and you fall with it", not sf.standing and Phys.colliders.size() == col7 - 16 and pl.stun_t >= 1.0 and not sf.holds())
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var k9 := en.damage(hm, 85, hd9, Vector3(0, 0, -1), true)

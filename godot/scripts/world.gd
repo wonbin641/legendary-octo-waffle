@@ -15,6 +15,15 @@ const STAGE_STYLE := {
 	# the village: deep blue night, a big moon, fires flickering orange
 	2: {"fog": [0.018, 0.024, 0.04], "density": 0.019, "zenith": [0.004, 0.007, 0.02], "glow": [0.07, 0.03, 0.008], "hemi": ["4c5c86", "1a1914", 0.42], "moon": ["c4d6ff", 0.62], "lamp": ["ff7a30", 2.6],
 		"seed": 23, "crates": 46, "fire": true, "sunOff": [-40, 49, -49]},
+	# the sealed lab: cold fluorescent light from above, a pale tiled floor
+	3: {"indoor": true, "lab": true, "ride": true, "fog": [0.02, 0.026, 0.032], "density": 0.008, "zenith": [0.004, 0.006, 0.01], "glow": [0.02, 0.03, 0.04], "hemi": ["dfe8f0", "5a6066", 0.95], "moon": ["f4f8ff", 0.95], "lamp": ["e6f2ff", 2.2],
+		"seed": 41, "crates": 40, "sunOff": [-12, 70, 18], "exposure": 0.8, "lampMul": 0.4},
+	# 3-2: the same lab on the night shift: a little cooler and dimmer, another layout of crates
+	8: {"indoor": true, "lab": true, "ride": true, "seq": true, "fog": [0.016, 0.022, 0.03], "density": 0.009, "zenith": [0.004, 0.006, 0.01], "glow": [0.02, 0.03, 0.04], "hemi": ["d4e0f0", "4e5660", 0.85], "moon": ["e8f0ff", 0.85], "lamp": ["d8e8ff", 2.0],
+		"seed": 43, "crates": 40, "sunOff": [-12, 70, 18], "exposure": 0.76, "lampMul": 0.4},
+	# 3-1: the old safari at golden hour, a low sun, warm haze over the grass
+	7: {"day": true, "savanna": true, "ride": true, "fog": [0.30, 0.25, 0.17], "density": 0.0058, "zenith": [0.10, 0.20, 0.42], "glow": [0.55, 0.28, 0.08], "hemi": ["b0c4e0", "6b5a3a", 0.62], "moon": ["ffd7a8", 1.0], "exposure": 0.6,
+		"lamp": ["ffffff", 0.0], "seed": 41, "sunOff": [-70, 38, 25], "crates": 46},
 	1: {"fog": [0.026, 0.033, 0.052], "density": 0.016, "zenith": [0.006, 0.008, 0.017], "glow": [0.06, 0.036, 0.022], "hemi": ["5d6f96", "2b2420", 0.62],
 		"moon": ["a8bcff", 0.42], "lamp": ["ffa548", 1.8], "seed": 7, "crates": 40, "singles": 12, "empty": 0.1},
 }
@@ -47,6 +56,8 @@ var on_crate: Callable = Callable()   # called with the crate when one breaks
 var fx: Fx = null
 var toy: ToyRoom = null
 var village: Village = null
+var lab: Lab = null
+var safari: Safari = null
 var flames: Array = []   # stage 5's room and its gimmicks
 var _backdrop_blink: Array = []
 var _tex := {}
@@ -129,7 +140,7 @@ func _build_backdrop() -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null; village = null; flames.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null; village = null; lab = null; safari = null; flames.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -153,6 +164,9 @@ func build_stage(stage: int) -> void:
 	if S.get("toy", false):
 		env.ambient_light_color = Color(S.hemi[0]).lerp(Color(S.hemi[1]), 0.35); env.ambient_light_energy = S.hemi[2]; env.fog_depth_end = 400.0; moon.light_color = Color(S.moon[0])
 		toy = ToyRoom.new(); toy.build(self, G); return
+	(get_node("Night") as Node3D).visible = not S.get("day", false) and not S.get("indoor", false)
+	if S.get("lab", false): Phys.set_world_size(Lab.HALF + 1); Phys.set_nav(int(2 * Lab.HALF + 8), 1.0); lab = Lab.new(); lab.build(self, G, S, R); return
+	if S.get("savanna", false): Phys.set_world_size(178.0); Phys.set_nav(180, 2.0); safari = Safari.new(); safari.build(self, G, S, R); return
 	Phys.set_world_size(66.0); Phys.set_nav(140, 1.0)
 	if stage == 2: village = Village.new(); village.build(self, G, S, R); return
 
@@ -315,15 +329,16 @@ func _jersey_mesh() -> ArrayMesh:
 	st.generate_normals()
 	return st.commit()
 
-func _place_crates(G: Node3D, count: int, cand: Callable, fits: Callable) -> void:
+func _place_crates(G: Node3D, count: int, cand: Callable, fits: Callable, with_y := false) -> void:
 	var xs := []; var i := 0; var tries := 0
 	while i < count and tries < count * 40:
 		tries += 1
 		var c: Array = cand.call(); var x: float = c[0]; var z: float = c[1]
-		if not fits.call(x, z): continue
-		xs.push_back(Transform3D(Basis(Vector3.UP, randf_range(-0.2, 0.2)), Vector3(x, 0.6, z)))
-		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": 0.0, "dead": false}
-		cr.b = Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood", cr); crates.push_back(cr); i += 1
+		var y: float = c[2] if with_y else 0.0
+		if not (fits.call(x, z, y) if with_y else fits.call(x, z)): continue
+		xs.push_back(Transform3D(Basis(Vector3.UP, randf_range(-0.2, 0.2)), Vector3(x, y + 0.6, z)))
+		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": y, "dead": false}
+		cr.b = Phys.add_collider(x - 0.6, y, z - 0.6, x + 0.6, y + 1.2, z + 0.6, "wood", cr); crates.push_back(cr); i += 1
 	var bm := BoxMesh.new(); bm.size = Vector3(1.2, 1.2, 1.2)
 	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, _tex.crate); G.add_child(mmi); crate_mm = mmi.multimesh
 
@@ -346,7 +361,7 @@ func update_world(dt: float, t: float, px: float, pz: float) -> void:
 		var near := lamps.duplicate()
 		near.sort_custom(func(a, b): return (a.x - px) * (a.x - px) + (a.z - pz) * (a.z - pz) < (b.x - px) * (b.x - px) + (b.z - pz) * (b.z - pz))
 		for i in lights.size():
-			if i < near.size(): lights[i].position = Vector3(near[i].x, near[i].y, near[i].z); lights[i].light_energy = style.lamp[1] * 2.0
+			if i < near.size(): lights[i].position = Vector3(near[i].x, near[i].y, near[i].z); lights[i].light_energy = style.lamp[1] * 2.0 * style.get("lampMul", 1.0)
 			else: lights[i].light_energy = 0.0
 	if style.get("fire", false):   # the fires flicker
 		for i in lights.size():

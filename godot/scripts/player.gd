@@ -39,6 +39,11 @@ var no_sprint := false # aiming, shooting or reloading: no running
 var hp := 1000.0
 const MAX_HP := 1000.0
 var invuln := 0.0
+var fear_t := 0.0; var fear_x := 0.0; var fear_z := 0.0   # a tiger's roar: your legs carry you away for a second
+var toss_on := false     # thrown by a rhino: straight up and straight down, no steering
+var toss_ceil := INF     # the lab's ceiling
+var on_toss_land: Callable = Callable()
+var rider = null         # Animals: the animal you may be sitting on
 var stun_t := 0.0       # knocked out by a charge: no moving, the view swims
 var no_hp := false      # the zombie village has no health at all: only bites and poison finish you, on a timer
 var since_hurt := 0.0
@@ -101,7 +106,7 @@ func reset(x: float, z: float, yaw_: float) -> void:
 	pos = Vector3(x, 0, z); vel = Vector3.ZERO; yaw = yaw_; pitch = 0.0; grounded = true
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
 	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
-	hp = MAX_HP; invuln = 0.0; stun_t = 0.0; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0
+	hp = MAX_HP; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
 	if stun_t > 0.0:
@@ -116,6 +121,17 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	recoil_pitch *= exp(-dt * 9)
 	var f := in_f; var sd := in_s
 	if stunned: f = 0.0; sd = 0.0; jump_buf = 0.0
+	fear_t = maxf(0.0, fear_t - dt)
+	if rider != null and rider.m != null and rider.ride_update(dt, f, sd, in_run, stunned):
+		# on an animal's back: it carries you where you steer it; you look and shoot freely
+		vel = Vector3.ZERO; grounded = true; speed_xz = sqrt(rider.rvx * rider.rvx + rider.rvz * rider.rvz) * 0.35; sprinting = false; jump_buf = 0.0
+		sprint_blend = lerpf(sprint_blend, 0.0, 1.0 - exp(-dt * 8)); land_dip *= exp(-dt * 8); invuln = maxf(0.0, invuln - dt); since_hurt += dt
+		var rs := shake; shake *= exp(-dt * 7)
+		if cam != null:
+			var sw0 := clampf(stun_t, 0.0, 1.0) if stunned else 0.0
+			cam.position = rider.ride_cam(dt); cam.rotation = Vector3(pitch + recoil_pitch * 0.5 + randf_range(-1, 1) * rs * 0.05 - 0.12 * sw0, yaw + randf_range(-1, 1) * rs * 0.05, sin(time * 3.1) * 0.09 * sw0)
+		return
+	if toss_on: f = 0.0; sd = 0.0; jump_buf = 0.0
 	var m := sqrt(f * f + sd * sd)
 	if m > 1.0: f /= m; sd /= m
 	sprint_lock = maxf(0.0, sprint_lock - dt)
@@ -123,8 +139,10 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	var speed := (8.2 if sprinting else 5.4) * move_mul * ads_slow * slow_mul
 	var sy := sin(yaw); var cy := cos(yaw)
 	var tx := (-sy * f + cy * sd) * speed; var tz := (-cy * f - sy * sd) * speed
-	var acc := 1.0 - exp(-dt * (11.0 if grounded else 2.2))
+	if fear_t > 0.0 and not stunned and not toss_on: tx = fear_x * 8.2; tz = fear_z * 8.2; jump_buf = 0.0
+	var acc := 1.0 - exp(-dt * (11.0 if (grounded or fear_t > 0.0) else 2.2))
 	if not launched: vel.x += (tx - vel.x) * acc; vel.z += (tz - vel.z) * acc
+	if toss_on: vel.x = 0.0; vel.z = 0.0
 	jump_buf -= dt
 	if jet_on:
 		# flying: no gravity; hold jump to rise, Ctrl or C to sink, nothing to hover. it sputters out after 10 seconds
@@ -144,7 +162,11 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if vel.y > 0.0:
 		var c := Phys.ceil_at(pos.x, pos.y - vel.y * dt, pos.z, R, HEIGHT)
 		if pos.y + HEIGHT > c: pos.y = c - HEIGHT; vel.y = 0.0
+	if toss_on and pos.y + HEIGHT > toss_ceil - 0.15:
+		pos.y = toss_ceil - 0.15 - HEIGHT
+		if vel.y > 0.0: vel.y = 0.0
 	if pos.y <= gy:
+		if toss_on and vel.y <= 0.0 and on_toss_land.is_valid(): pos.y = gy; on_toss_land.call()
 		if not grounded and vel.y < -5.0: land_dip = clampf(-vel.y * 0.012, 0.0, 0.12)
 		if jet_on and jet_t < 9.6 and vel.y <= 0.05: jet_end("제트백팩 착지")   # sinking onto the ground ends the flight
 		pos.y = gy; vel.y = 0.0; grounded = true; launched = false; chute = false
