@@ -16,6 +16,7 @@ const STAGES := {
 const BOSS := {
 	1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6},
 	6: {"type": "thug", "name": "헬멧 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6, "helmet": true},
+	2: {"type": "zombie", "name": "거대 좀비", "josa": "가", "scale": 1.7, "hp": 2200, "dmgMul": 1.0},
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
 }
 var drop_pick = null   # 1-2: where you chose to be put down (kept for another go)
@@ -37,6 +38,19 @@ var _result_t := -1.0
 var _result_kind := ""
 var _chest_wait := false
 var flow_t := 0.0
+# stage 2: a bite infects (5 s), a dash poisons (8 s); an antidote, a moment to inject, clears both
+var infected := false
+var infect_t := 0.0
+var poison_t := 0.0
+var antidotes := 0
+var inject_on := false
+var inject_t := 0.0
+var _inject_cured := false
+var _inject_snd := false
+const INJECT_DUR := 1.35
+const CURE_AT := 0.82
+var hint: Callable = Callable()
+var on_flash: Callable = Callable()   # (amount, from): the red flash and the direction of a bite
 
 func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
@@ -50,11 +64,12 @@ func begin(stage_: int) -> void:
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
 	world.build_stage(stage)
 	bonus_guns = []; replay = Store.save.cleared.has(stage)
-	guns.reset(layout()); guns.stage = stage; proj.stage = stage; guns.toy = stage == 9
+	guns.reset(layout()); guns.stage = stage; enemies.stage = stage; enemies.down_hint = false; proj.stage = stage; guns.toy = stage == 9
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
 	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
+	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; opened = []
 	# 1-2 crowds the middle of the docks, so unless you pick somewhere else you come down at the south edge, facing in
 	if stage == 5:
@@ -113,14 +128,18 @@ func populate() -> void:
 		var bp = find.call(55.0, 8.0, 2.5)
 		if bp == null: bp = find.call(30.0, 4.0, 1.5)
 		var bo := B.duplicate(); bo.boss = true; put.call(B.type, bp, bo)
-	# guard posts of 2-4 people
-	var helmet := stage == 6
+	# guard posts of 2-4 people, or packs of 2-6 zombies
+	var helmet := stage == 6; var yard := stage != 2; var kind: String = STAGES[stage].enemy
 	while n[0] < 100 and stage != 5:
-		var center = find.call(36.0, 5.0, 0.8)
+		var center = find.call(36.0 if yard else 22.0, 5.0, 0.8)
 		if center == null: break
-		put.call("thug", center, {"helmet": helmet})
-		var grp := int(floor(SR.rng(2, 5)))
-		for i in range(1, grp): put.call("thug", find.call(33.0, 1.6, 0.6, center, 5.0), {"helmet": helmet})
+		put.call(kind, center, {"helmet": helmet})
+		var grp := int(floor(SR.rng(2, 5))) if yard else int(floor(SR.rng(2, 7)))
+		for i in range(1, grp): put.call(kind, find.call(33.0 if yard else 20.0, 1.6, 0.6, center, 5.0), {"helmet": helmet})
+	while n[0] < 100 and stage != 5:   # anyone still missing goes wherever there is room
+		var p = find.call(18.0, 1.2, 0.6)
+		if p == null: break
+		put.call(kind, p, {"helmet": helmet})
 	goal = enemies.list.size(); boss = null
 	for e in enemies.list:
 		if e.boss: boss = e
@@ -191,13 +210,79 @@ func update(dt: float) -> void:
 		_result_t -= dt
 		if _result_t <= 0.0: _say(on_result, [_result_kind])
 	if not ended and player.hp <= 0.0: over("dead")
+	# the needle: lower the gun, in it goes, and at 0.82 s the antidote takes
+	if inject_on:
+		inject_t += dt; guns.busy = maxf(0.0, INJECT_DUR - inject_t)
+		if not _inject_snd and inject_t >= 0.3: _inject_snd = true; Snd.play("inject")
+		if not _inject_cured and inject_t >= CURE_AT: _inject_cured = true; cure(); Snd.play("cured")
+		if inject_t >= INJECT_DUR: inject_on = false; guns.busy = 0.0
+	# a bite and poison both count down to the end, and both hold while the needle is in
+	if not ended and infected and not inject_on:
+		infect_t -= dt
+		if infect_t <= 0.0: infect_t = 0.0; over("zombie")
+	if not ended and poison_t > 0.0 and not inject_on:
+		poison_t = maxf(0.0, poison_t - dt)
+		if poison_t <= 0.0: over("poison")
+
+func _god() -> bool:
+	return Store.settings.dev and Store.settings.god
+
+func bitten(e: Enemies.Foe) -> void:
+	if ended or _god(): return
+	player.shake = maxf(player.shake, 0.35); _say(on_flash, [30.0, e.pos])
+	var d := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var l := maxf(d.length(), 0.001)
+	player.vel.x += d.x / l * 6.0; player.vel.z += d.y / l * 6.0
+	Snd.play("bite")
+	if infected: infect_t = maxf(0.6, infect_t - 1.0); return
+	infected = true; infect_t = 5.0
+	_say(feed, ["좀비에게 물렸습니다 · 5초", 0])
+
+## stage 2 has no health: a zombie's dash poisons, and the poison kills in 8 seconds unless an antidote goes in, just like a bite
+func poison(e: Enemies.Foe) -> void:
+	if ended or _god(): return
+	Snd.play("bite"); _say(on_flash, [30.0, e.pos]); player.shake = maxf(player.shake, 0.35)
+	if poison_t > 0.0: poison_t = maxf(0.6, poison_t - 1.5); _say(feed, ["또 중독 · 남은 시간이 줄었습니다", 0]); return
+	poison_t = 8.0
+	_say(feed, ["중독 · 8초 안에 해독약을 주사하세요", 0])
+
+## a charge that connects knocks you out: the enraged zombie boss for 2 s
+func stun(e: Enemies.Foe, secs := 2.0) -> void:
+	if ended or player.invuln > 0.0 or _god(): return
+	player.hurt(90.0 * e.dmg_mul, e.pos, "body")
+	if ended or player.hp <= 0.0: return
+	player.stun_t = maxf(player.stun_t, secs); guns.trigger = false; guns.ads_held = false; guns.reload_t = 0.0
+	var d := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var l := maxf(d.length(), 0.001)
+	player.vel.x += d.x / l * 11.0; player.vel.z += d.y / l * 11.0
+	player.shake = maxf(player.shake, 0.6); Snd.play("ring")
+	_say(feed, ["돌진에 맞아 기절 · %d초" % int(secs), 0])
+
+func cure() -> void:
+	var inf := infected; var poi := poison_t > 0.0
+	infected = false; infect_t = 0.0; poison_t = 0.0
+	_say(feed, ["해독 완료 · " + ("감염과 중독" if (inf and poi) else ("감염" if inf else "중독")) + " 치료", 0])
+
+## the antidote is a syringe: a moment to inject (no shooting), then infection and poison are gone
+func use_antidote() -> void:
+	if ended or inject_on or player.stun_t > 0.0: return
+	if not infected and poison_t <= 0.0:
+		if stage == 2: _say(hint, ["감염되지도 중독되지도 않았습니다 · 해독약 %d개" % antidotes, 1.2])
+		return
+	if antidotes <= 0: _say(hint, ["해독약이 없습니다 · 상자를 부수세요", 1.4]); return
+	antidotes -= 1; inject_on = true; inject_t = 0.0; _inject_cured = false; _inject_snd = false
+	guns.busy = INJECT_DUR; guns.trigger = false; guns.ads_held = false; guns.reload_t = 0.0
+
+func take_antidote() -> bool:
+	if antidotes >= 5: return false
+	antidotes += 1; Snd.play("pickup_hp"); _say(feed, ["해독약 획득 · %d개" % antidotes, 0]); return true
 
 func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if ended or e.extra: return
 	kills += 1; stats.kills += 1
 	if weak: stats.heads += 1
 	# a kill with a shot to the head pays 1.5 times; a boss twenty times; a stage you have already cleared pays nothing
-	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((1000 * 20 if e.boss else 1000) * (1.5 if weak else 1.0))
+	# so does a zombie finished off before it ever got back up (the two multiply)
+	var fresh := e.type == "zombie" and not e.revived
+	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((1000 * 20 if e.boss else 1000) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
 	Store.save.money += pay; stats.earned += pay; Store.persist()
 	Snd.play("kill")
 	if pay > 0: Snd.play("coin")
@@ -210,11 +295,12 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "가방 " + Store.won(Store.save.money), 1.8])
 	if kills >= goal and goal > 0: finish()
 
-## a broken crate: a health potion (10% of max health)
+## a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead
 func on_crate(c: Dictionary) -> void:
-	loot.drop("hp", c.x, c.z, c.y)
+	loot.drop("anti" if stage == 2 else "hp", c.x, c.z, c.y)
 
 func take_loot(kind: String) -> bool:
+	if kind == "anti": return take_antidote()
 	if kind == "hp":
 		if player.hp >= Player.MAX_HP: return false
 		var heal := minf(roundf(Player.MAX_HP * 0.1), Player.MAX_HP - player.hp); player.hp += heal
@@ -241,9 +327,9 @@ func open_chest() -> void:
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
-		if not _chest_wait: _chest_wait = true; _say(banner, ["보물상자를 여세요", "상자를 열어야 헬기가 옵니다", 3.0])
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열어야 헬기가 옵니다", 3.0])
 		return
-	ended = true; player.invuln = 1e9; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
+	ended = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
 	opened = [] if Store.settings.dev else (Store.NEXT.get(stage, []) as Array).filter(func(s): return not Store.stage_open(s))
 	if not Store.save.cleared.has(stage): Store.save.cleared.push_back(stage); Store.save.cleared.sort()
 	return_rentals()
@@ -267,6 +353,6 @@ func forfeit() -> void:
 
 func over(reason: String) -> void:
 	if ended: return
-	if Store.settings.dev and Store.settings.god: player.hp = maxf(player.hp, 1.0); return   # developer mode's invincibility
+	if Store.settings.dev and Store.settings.god: infected = false; infect_t = 0.0; poison_t = 0.0; player.hp = maxf(player.hp, 1.0); return   # developer mode's invincibility
 	ended = true; forfeit(); return_rentals()
 	result = reason; _result_kind = reason; _result_t = 1.0

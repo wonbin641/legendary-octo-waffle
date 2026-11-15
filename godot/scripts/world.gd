@@ -12,6 +12,9 @@ const STAGE_STYLE := {
 	5: {"fog": [0.024, 0.031, 0.052], "density": 0.016, "zenith": [0.005, 0.008, 0.019], "glow": [0.05, 0.03, 0.03], "hemi": ["5a6c98", "2a2422", 0.6], "moon": ["a8bcff", 0.44], "lamp": ["ffb060", 1.8], "seed": 11, "crates": 40, "singles": 14, "empty": 0.12},
 	# 1-1: the docks again, another night, another layout, mist over the water
 	6: {"fog": [0.03, 0.034, 0.05], "density": 0.018, "zenith": [0.007, 0.008, 0.016], "glow": [0.07, 0.04, 0.024], "hemi": ["5f6f92", "2b2420", 0.6], "moon": ["b0c0ff", 0.42], "lamp": ["ffa040", 1.85], "seed": 19, "crates": 40, "singles": 12, "empty": 0.1},
+	# the village: deep blue night, a big moon, fires flickering orange
+	2: {"fog": [0.018, 0.024, 0.04], "density": 0.019, "zenith": [0.004, 0.007, 0.02], "glow": [0.07, 0.03, 0.008], "hemi": ["4c5c86", "1a1914", 0.42], "moon": ["c4d6ff", 0.62], "lamp": ["ff7a30", 2.6],
+		"seed": 23, "crates": 46, "fire": true, "sunOff": [-40, 49, -49]},
 	1: {"fog": [0.026, 0.033, 0.052], "density": 0.016, "zenith": [0.006, 0.008, 0.017], "glow": [0.06, 0.036, 0.022], "hemi": ["5d6f96", "2b2420", 0.62],
 		"moon": ["a8bcff", 0.42], "lamp": ["ffa548", 1.8], "seed": 7, "crates": 40, "singles": 12, "empty": 0.1},
 }
@@ -42,7 +45,9 @@ var spawns: Array = []
 var _lamp_t := 0.0
 var on_crate: Callable = Callable()   # called with the crate when one breaks
 var fx: Fx = null
-var toy: ToyRoom = null   # stage 5's room and its gimmicks
+var toy: ToyRoom = null
+var village: Village = null
+var flames: Array = []   # stage 5's room and its gimmicks
 var _backdrop_blink: Array = []
 var _tex := {}
 
@@ -124,7 +129,7 @@ func _build_backdrop() -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null; village = null; flames.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -149,6 +154,7 @@ func build_stage(stage: int) -> void:
 		env.ambient_light_color = Color(S.hemi[0]).lerp(Color(S.hemi[1]), 0.35); env.ambient_light_energy = S.hemi[2]; env.fog_depth_end = 400.0; moon.light_color = Color(S.moon[0])
 		toy = ToyRoom.new(); toy.build(self, G); return
 	Phys.set_world_size(66.0); Phys.set_nav(140, 1.0)
+	if stage == 2: village = Village.new(); village.build(self, G, S, R); return
 
 	var gm := PlaneMesh.new(); gm.size = Vector2(240, 240)
 	var gmat := Gfx.std(Color.WHITE, 0.93, 0.0, _tex.asphalt); gmat.uv1_scale = Vector3(22, 22, 1)
@@ -342,4 +348,8 @@ func update_world(dt: float, t: float, px: float, pz: float) -> void:
 		for i in lights.size():
 			if i < near.size(): lights[i].position = Vector3(near[i].x, near[i].y, near[i].z); lights[i].light_energy = style.lamp[1] * 2.0
 			else: lights[i].light_energy = 0.0
+	if style.get("fire", false):   # the fires flicker
+		for i in lights.size():
+			if lights[i].light_energy > 0.0: lights[i].light_energy = style.lamp[1] * (0.72 + 0.18 * sin(t * 13.0 + i * 2.1) + 0.1 * sin(t * 29.0 + i * 5.7))
+		for i in flames.size(): (flames[i] as Node3D).scale = Vector3(1.0 + 0.12 * sin(t * 11.0 + i), 1.0 + 0.2 * sin(t * 17.0 + i * 3.1), 1.0 + 0.12 * cos(t * 9.0 + i))
 	for i in blink.size(): blink[i].visible = fmod(t + i * 0.3, 1.8) < 0.25

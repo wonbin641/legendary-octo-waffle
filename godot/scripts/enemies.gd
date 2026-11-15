@@ -1,9 +1,12 @@
 class_name Enemies
 extends Node3D
-## The enemies: people with pistols (stage 1). Ported from src/07a_enemies.js and the people's part of src/07b_ai.js.
-## Zombies, the other kits, animals and robots join with their stages.
+## The enemies: people with guns and blades (stages 1, 1-1, 1-2) and zombies (stage 2). Ported from src/07a_enemies.js and src/07b_ai.js.
+## Animals and robots join with their stages.
 
-const ETYPES := {"thug": {"hp": 100, "speed": 3.6, "r": 0.35, "h": 1.8, "name": "조직원"}}
+const ETYPES := {"thug": {"hp": 100, "speed": 3.6, "r": 0.35, "h": 1.8, "name": "조직원"}, "zombie": {"hp": 180, "speed": 1.6, "r": 0.35, "h": 1.8, "name": "좀비"}}
+const ROT := ["7d8f6a", "6f7f63", "8a9a7a", "75806a"]
+const RAGS := ["3b3a35", "4a4038", "2f3536", "534a3f", "3e4a4c"]
+const REVIVE := 3.0   # a zombie that drops gets back up after this long unless it is shot again
 # what an armed man carries: the gun in his right hand (boxes laid along the arm) and how he fights.
 # range: starts a fight inside it; near/far: the distance he tries to keep; end: how far the muzzle sits from the shoulder
 const KITS := {
@@ -28,8 +31,8 @@ const BURST := {"pistol": [1, 3, 0.32, 9.0, 1.1, 2.3], "deagle": [1, 1, 0.3, 45.
 const JACKETS := ["2b3440", "3d4a33", "4a3b30", "2e2e34", "5a5248", "283a4a", "47302e"]
 const SKIN := ["c99a7a", "a8775a", "e0b895", "7d5a44"]
 const KEEP_PAD := 0.14
-const ACT_R := 55.0
-const VIS_R := 85.0
+const ACT_R := {1: 55.0, 6: 55.0, 5: 55.0, 2: 45.0}
+const VIS_R := {1: 85.0, 6: 85.0, 5: 85.0, 2: 72.0}
 
 class Foe:
 	var type := "thug"; var T: Dictionary; var K: Dictionary; var kit := "pistol"
@@ -47,6 +50,8 @@ class Foe:
 	var fly := false; var head_x := 0.0
 	var helmet := false; var helmet_node: Node3D = null; var vest_shot := false; var vest_light: Node3D = null
 	var swing_cd := 0.0; var swing_t := 0.0; var swing_l := false; var stabbed := false; var bat_hit := false
+	var downed := false; var down_t := 0.0; var rising := false; var revived := false; var down_parts: Array = []
+	var dash_used := false; var rage := false; var charge_cd := 0.0; var state_t := 0.0; var hit_done := false; var cx := 0.0; var cz := 0.0; var attack_cd := 0.0; var moan_t := 0.0
 	var fuse := 0.0; var beep2 := false; var flame_on := 0.0; var flame_acc := 0.0; var flame_snd := 0.0; var aim_t := 0.0; var laser: MeshInstance3D = null   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
 
 var list: Array[Foe] = []
@@ -61,6 +66,14 @@ var hitmark: Callable = Callable()
 var fx: Fx = null
 var flying: Array = []                # helmets knocked off: [node, velocity, age]
 var helmet_hint := false
+var down_hint := false
+var stage := 1
+var on_bite: Callable = Callable()     # (foe): a zombie's bite landed
+var on_poison: Callable = Callable()   # (foe): a zombie's dash landed
+var on_stun: Callable = Callable()     # (foe): the boss's charge landed
+var banner: Callable = Callable()
+var _bar_green: StandardMaterial3D
+var _bar_amber: StandardMaterial3D
 var _meshes := {}
 var _mat: StandardMaterial3D
 var _bar_bg: StandardMaterial3D
@@ -71,6 +84,7 @@ func _ready() -> void:
 	_mat = StandardMaterial3D.new(); _mat.vertex_color_use_as_albedo = true; _mat.roughness = 0.85
 	_bar_bg = Gfx.unlit(Color(0.05, 0.06, 0.09), false); _bar_bg.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; _bar_bg.billboard_keep_scale = true
 	_bar_fill = Gfx.unlit(Color("ff5260"), false); _bar_fill.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; _bar_fill.billboard_keep_scale = true; _bar_fill.no_depth_test = false
+	_bar_green = _bar_fill.duplicate(); _bar_green.albedo_color = Color("9be88f"); _bar_amber = _bar_fill.duplicate(); _bar_amber.albedo_color = Color("f2a33a")
 	_bar_mesh = QuadMesh.new(); _bar_mesh.size = Vector2(1, 1)
 
 func _box_mesh(key: String, parts: Array) -> ArrayMesh:
@@ -84,7 +98,8 @@ func _part(parent: Node3D, at: Vector3, key: String, parts: Array) -> Node3D:
 
 ## one person: legs, a torso with the head, two arms (the gun in the right hand)
 func _build(e: Foe) -> void:
-	var body: String = JACKETS[randi() % JACKETS.size()]; var skin: String = SKIN[randi() % SKIN.size()]; var pants := "22252b"
+	var zombie := e.type == "zombie"
+	var body: String = RAGS[randi() % RAGS.size()] if zombie else JACKETS[randi() % JACKETS.size()]; var skin: String = ROT[randi() % ROT.size()] if zombie else SKIN[randi() % SKIN.size()]; var pants := "2c2c2a" if zombie else "22252b"
 	e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; add_child(e.g)
 	var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, pants], [0.16, 0.09, 0.27, 0, -0.88, 0.05, "161616"]]
 	e.leg_l = _part(e.g, Vector3(-0.11, 0.92, 0), "leg", leg); e.leg_r = _part(e.g, Vector3(0.11, 0.92, 0), "leg", leg)
@@ -93,10 +108,11 @@ func _build(e: Foe) -> void:
 	if K.get("tank", false): up.append_array([[0.13, 0.46, 0.13, -0.09, 0.42, -0.21, "8a2a1e"], [0.13, 0.46, 0.13, 0.09, 0.42, -0.21, "8a2a1e"], [0.03, 0.3, 0.03, 0.2, 0.3, -0.12, "2a2a2a"]])
 	if K.get("belt", false):
 		for i in 4: up.push_back([0.07, 0.08, 0.07, -0.15 + i * 0.1, 0.06, 0.15, "3d4430"])
+	if zombie: up.append_array([[0.035, 0.025, 0.01, -0.05, 0.82, 0.13, "fff0a0"], [0.035, 0.025, 0.01, 0.05, 0.82, 0.13, "fff0a0"]])   # pale eyes
 	e.upper = _part(e.g, Vector3(0, 0.92, 0), "up" + body + skin + e.kit, up)
 	var arm := [[0.12, 0.62, 0.13, 0, -0.29, 0, body], [0.1, 0.1, 0.1, 0, -0.62, 0, skin]]
 	e.arm_l = _part(e.upper, Vector3(-0.29, 0.6, 0), "arm" + body + skin + ("2" if K.get("dual", false) else ""), arm + ([[0.05, 0.2, 0.05, 0, -0.7, 0.03, "bfc4cc"]] if K.get("dual", false) else []))
-	e.arm_r = _part(e.upper, Vector3(0.29, 0.6, 0), "armg" + body + skin + e.kit, arm + K.gun)
+	e.arm_r = _part(e.upper, Vector3(0.29, 0.6, 0), "armg" + body + skin + e.kit, arm + ([] if zombie else K.gun))
 	if K.get("blade", false):   # a glowing blade on the hilt; two red ones for the dual wielders
 		for a in ([e.arm_r, e.arm_l] if K.get("dual", false) else [e.arm_r]):
 			var bl := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.05, 1.15, 0.05); bl.mesh = bm; bl.position = Vector3(0, -1.38, 0.03)
@@ -110,6 +126,7 @@ func _build(e: Foe) -> void:
 	e.bar = Node3D.new(); e.bar.visible = false; add_child(e.bar)
 	var bg := MeshInstance3D.new(); bg.mesh = _bar_mesh; bg.material_override = _bar_bg; bg.scale = Vector3(0.7, 0.07, 1); e.bar.add_child(bg)
 	e.fill = MeshInstance3D.new(); e.fill.mesh = _bar_mesh; e.fill.material_override = _bar_fill; e.fill.scale = Vector3(0.66, 0.045, 1); e.bar.add_child(e.fill)
+	if zombie: e.fill.material_override = _bar_green
 
 func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	var e := Foe.new(); e.type = type; e.T = ETYPES[type]; e.kit = opts.get("kit", "pistol"); e.K = KITS.get(e.kit, KITS.pistol)
@@ -120,14 +137,15 @@ func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	# a person's outline from above, in his own frame (x right, z forward): arms out at the front
 	e.foot = {"x0": -0.4 * sc, "x1": 0.4 * sc, "z0": -0.18 * sc, "z1": 0.52 * sc}
 	e.foot_r = Vector2(0.4 * sc, 0.52 * sc).length()
-	e.boss = opts.get("boss", false); e.mass = (2.0 if e.boss else 1.0) * (sc if sc > 1.05 else 1.0)
+	e.boss = opts.get("boss", false); e.mass = (1.3 if type == "zombie" else 1.0) * (2.0 if e.boss else 1.0) * (sc if sc > 1.05 else 1.0)
 	e.name = opts.get("name", e.T.name); e.scale = sc; e.R = e.T.r * sc; e.H = e.T.h * sc
 	e.hp = roundf(opts.get("hp", e.T.hp)); e.max_hp = e.hp; e.diff = opts.get("diff", 0.0); e.dmg_mul = opts.get("dmgMul", 1.0)
 	e.speed = e.T.speed * randf_range(0.9, 1.1) * (0.9 if e.boss else 1.0)
+	if type == "zombie": e.speed = 1.7 if e.boss else randf_range(1.25, 2.0)
 	e.pos = Vector3(x, opts.get("y", 0.0), z); e.yaw = opts.get("yaw", randf() * TAU)
 	e.lod = randf() * 0.5; e.los_t = randf() * 0.3; e.fire_t = randf_range(0.8, 1.6); e.strafe = 1.0 if randf() < 0.5 else -1.0; e.strafe_t = randf_range(1, 2.5); e.walk = randf() * TAU
 	e.muzzle = Vector3(0.2, 1.42, e.K.end)
-	if e.K.has("run"): e.speed = maxf(e.speed, e.K.run * 0.9)   # melee men close the distance quickly even before they see you
+	if type != "zombie" and e.K.has("run"): e.speed = maxf(e.speed, e.K.run * 0.9)   # melee men close the distance quickly even before they see you
 	e.g.position = e.pos; e.g.rotation = Vector3(0, e.yaw, 0); e.g.scale = Vector3.ONE * sc
 	if e.boss: e.bar.scale = Vector3.ONE * 1.6
 	list.push_back(e)
@@ -143,7 +161,7 @@ func raycast(o: Vector3, d: Vector3, max_t: float):
 	for e in list:
 		if not e.alive: continue
 		if (e.pos.x - o.x) * d.x + (e.pos.z - o.z) * d.z < -2.0 * e.scale: continue
-		for p in e.parts:
+		for p in (e.down_parts if e.downed else e.parts):
 			var c := part_centre(e, p); var oc := o - c; var pr: float = p.r * e.scale
 			var b := oc.dot(d); var cc := oc.length_squared() - pr * pr; var disc := b * b - cc
 			if disc < 0.0: continue
@@ -158,7 +176,7 @@ func assist(o: Vector3, d: Vector3, max_ang: float, max_dist: float):
 	var best_score := INF; var best = null
 	for e in list:
 		if not e.alive or not e.g.visible: continue
-		for p in e.parts:
+		for p in (e.down_parts if e.downed else e.parts):
 			var v := part_centre(e, p) - o; var dist := v.length()
 			if dist < 0.5 or dist > max_dist: continue
 			var c := v.dot(d) / dist
@@ -171,8 +189,11 @@ func assist(o: Vector3, d: Vector3, max_ang: float, max_dist: float):
 
 ## wake an enemy up: it starts hunting you
 func alarm(e: Foe) -> void:
-	if e.alert or not e.alive: return
-	e.alert = true; e.state = "move"; e.react = maxf(e.react, randf_range(0.4, 0.8))
+	if e.alert or not e.alive or e.downed: return
+	e.alert = true; e.state = "move"
+	if e.type == "zombie":
+		if e.dist < 30.0: Snd.play("moan", 1.0, e.pos)
+	else: e.react = maxf(e.react, randf_range(0.4, 0.8))
 
 ## gunfire carries: everyone within earshot comes for you
 func noise(at: Vector3, r: float) -> void:
@@ -182,13 +203,113 @@ func noise(at: Vector3, r: float) -> void:
 func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool) -> bool:
 	if not e.alive: return false
 	if weak and e.helmet: _knock_helmet(e, dir); return false   # a helmet takes the first shot to the head and flies off
+	# a zombie lying on the ground: one more hit and the body is gone for good
+	if e.downed: Snd.play("squelch", 1.0, e.pos); e.vanish = true; kill(e, weak, dir); return true
 	e.hp -= dmg; e.flinch = 1.0
 	if not e.boss: e.vel.x += dir.x * 0.9; e.vel.z += dir.z * 0.9
-	alarm(e); e.los = true; e.react = minf(e.react, 0.3)
-	for o in list:
-		if Vector2(o.pos.x - e.pos.x, o.pos.z - e.pos.z).length() < 18.0: alarm(o)
-	if e.hp <= 0.0: kill(e, weak, dir); return true
+	if e.type == "zombie": alarm(e)
+	else:
+		alarm(e); e.los = true; e.react = minf(e.react, 0.3)
+		for o in list:
+			if Vector2(o.pos.x - e.pos.x, o.pos.z - e.pos.z).length() < 18.0: alarm(o)
+	if e.hp <= 0.0:
+		if e.type == "zombie": _down(e, dir); return false
+		kill(e, weak, dir); return true
 	return false
+
+## zombies do not stay dead: they drop, and unless shot again within 3 seconds they get back up at full health
+func _down(e: Foe, dir) -> void:
+	e.downed = true; e.down_t = 0.0; e.hp = 0.0; e.state = "down"; e.vel = Vector3.ZERO; e.flinch = 0.0; e.rising = false
+	e.fall_dir = 1.0
+	if dir != null: e.fall_dir = 1.0 if sin(e.yaw) * dir.x + cos(e.yaw) * dir.z > 0.0 else -1.0
+	# where the body is once it lies flat, for bullets: along the fall direction, just off the ground
+	e.down_parts = e.parts.map(func(p): return {"o": Vector3(p.o.x, maxf(0.16, p.o.y * 0.12 + 0.08), e.fall_dir * p.o.y * 0.99), "r": p.r * 1.05, "mult": 1.0, "weak": p.weak, "bomb": false})
+	e.fill.material_override = _bar_amber
+	Snd.play("thud", 1.0, e.pos); Snd.play("moan", 1.0, e.pos)
+	if not down_hint and say.is_valid(): down_hint = true; say.call("쓰러진 좀비는 3초 안에 한 번 더 쏴야 사라집니다 · 안 그러면 다시 일어납니다")
+
+func _update_downed(e: Foe, dt: float) -> void:
+	e.down_t += dt; var t := e.down_t
+	if t < REVIVE:
+		var k := minf(1.0, t / 0.45); var ease := k * k * (3.0 - 2.0 * k)
+		e.g.rotation = Vector3(e.fall_dir * ease * 1.45, e.yaw, sin(t * 38.0) * 0.06 if t > REVIVE - 1.0 else 0.0)   # twitches before it rises
+		e.leg_l.rotation.x = 0.0; e.leg_r.rotation.x = 0.0; e.upper.rotation.x = 0.0
+	elif t < REVIVE + 0.7:
+		if not e.rising: e.rising = true; Snd.play("revive", 1.0, e.pos)
+		var k2 := (t - REVIVE) / 0.7; var ease2 := k2 * k2 * (3.0 - 2.0 * k2)
+		e.g.rotation = Vector3(e.fall_dir * (1.0 - ease2) * 1.45, e.yaw, 0)
+	else:
+		e.downed = false; e.rising = false; e.hp = e.max_hp; e.dash_used = false; e.revived = true   # too late for the bonus
+		e.state = "move"; e.alert = true; e.charge_cd = 3.0
+		e.g.rotation = Vector3(0, e.yaw, 0); e.fill.material_override = _bar_green; e.bar.visible = false
+		if e.boss and banner.is_valid(): banner.call(e.name + " 부활", "쓰러지면 3초 안에 한 번 더 쏘세요", 2.2)
+		return
+	# the bar above the body counts down to the moment it gets back up
+	e.bar.visible = e.g.visible; e.bar.position = Vector3(e.pos.x, e.pos.y + 0.7 * e.scale, e.pos.z)
+	var f := clampf(1.0 - t / REVIVE, 0.0, 1.0); e.fill.scale.x = 0.66 * f; e.fill.position.x = -0.33 * (1.0 - f)
+
+## zombie skills. ordinary zombies dash once when down to 30% health, and that dash poisons;
+## the boss enrages at half health (red, much faster) and every few seconds rears up and charges, which stuns you
+func _zombie_skill(e: Foe, dt: float, dist: float, to: Vector2) -> bool:
+	if e.boss and not e.rage and e.hp <= e.max_hp * 0.5:
+		e.rage = true; e.speed *= 1.9; e.charge_cd = 1.6
+		for n in e.g.find_children("*", "MeshInstance3D", true, false):   # it turns red
+			var rm: StandardMaterial3D = _mat.duplicate(); rm.albedo_color = Color(1, 0.4, 0.36); rm.emission_enabled = true; rm.emission = Color(0.3, 0.02, 0.01); (n as MeshInstance3D).material_override = rm
+		Snd.play("rage", 1.0, e.pos); player.shake = maxf(player.shake, 0.25)
+		if banner.is_valid(): banner.call(e.name + " 폭주", "빨라지고 가끔 돌진합니다 · 맞으면 2초 기절", 2.4)
+	if not e.boss and not e.dash_used and e.hp > 0.0 and e.hp <= e.max_hp * 0.3 and e.state != "lunge":
+		e.dash_used = true; e.state = "dash"; e.state_t = 1.1; e.hit_done = false
+		e.cx = to.x / dist; e.cz = to.y / dist; e.yaw = atan2(e.cx, e.cz)
+		Snd.play("scream", 1.0, e.pos)
+	if e.boss and e.rage and e.state == "move":
+		e.charge_cd -= dt
+		if e.charge_cd <= 0.0 and dist > 3.5 and dist < 26.0 and e.los: e.state = "windup"; e.state_t = 0.65; Snd.play("rage", 1.0, e.pos)
+	if e.state == "windup":
+		e.state_t -= dt; _turn_toward(e, atan2(to.x, to.y), 7.0, dt)
+		e.upper.rotation.x = -0.32; e.arm_l.rotation.x = -2.6; e.arm_r.rotation.x = -2.6; e.leg_l.rotation.x = 0.35; e.leg_r.rotation.x = -0.35
+		if e.state_t <= 0.0: e.state = "charge"; e.state_t = 1.4; e.hit_done = false; e.cx = sin(e.yaw); e.cz = cos(e.yaw)
+		return true
+	if e.state == "dash" or e.state == "charge":
+		var charge := e.state == "charge"; var sp := 13.0 if charge else 8.5
+		e.state_t -= dt
+		var blocked := _ground_move(e, e.cx * sp, e.cz * sp, dt)
+		_animate(e, sp, dt, false)
+		e.arm_l.rotation.x = -1.6; e.arm_r.rotation.x = -1.65; e.upper.rotation.x = 0.5
+		if not e.hit_done and dist < stop_dist(e) + 0.55 and absf(player.pos.y - e.pos.y) < 1.6 * e.scale:
+			e.hit_done = true
+			if charge:
+				if on_stun.is_valid(): on_stun.call(e)
+			elif on_poison.is_valid(): on_poison.call(e)
+		if charge and fx and randf() < dt * 18.0: fx.smoke(Vector3(e.pos.x, 0.25, e.pos.z))
+		if e.state_t <= 0.0 or blocked or e.hit_done: e.state = "move"; e.charge_cd = randf_range(5, 8)
+		return true
+	return false
+
+## a zombie that is after you: shamble straight for the player once close, otherwise follow the flow field; claw and bite at arm's length
+func _zombie(e: Foe, dt: float, dist: float, to: Vector2, face_yaw: float) -> void:
+	var mvx: float; var mvz: float
+	var fd := Phys.flow_dir(e.pos.x, e.pos.z)
+	if dist < 9.0 and e.los: mvx = to.x / dist; mvz = to.y / dist
+	elif fd != Vector2.ZERO: mvx = fd.x; mvz = fd.y
+	else: mvx = to.x / dist; mvz = to.y / dist
+	var sp := e.speed; e.attack_cd -= dt; var sd := stop_dist(e); var level := absf(player.pos.y - e.pos.y) < 1.6 * e.scale
+	if e.state == "lunge":
+		e.state_t -= dt; sp *= 0.2
+		if e.state_t <= 0.0:
+			e.state = "move"
+			if dist < maxf(1.75, sd + 0.6) and level and on_bite.is_valid(): on_bite.call(e)
+	elif dist < maxf(1.35, sd + 0.25) and e.attack_cd <= 0.0 and level: e.state = "lunge"; e.state_t = 0.35; e.attack_cd = 1.4
+	if dist < sd + 0.05 and e.state != "lunge": sp = 0.0   # pressed against you: stop pushing, just claw
+	mvx *= sp; mvz *= sp
+	_turn_toward(e, face_yaw if dist < 9.0 else atan2(mvx, mvz), 3.5, dt)
+	e.vel *= exp(-dt * 5.0)
+	_ground_move(e, mvx + e.vel.x, mvz + e.vel.z, dt)
+	_animate(e, sp, dt, false)
+	if e.state == "lunge": e.arm_l.rotation.x = -1.75; e.arm_r.rotation.x = -1.8; e.upper.rotation.x = 0.45
+	e.moan_t -= dt
+	if e.moan_t <= 0.0:
+		e.moan_t = randf_range(3, 8)
+		if dist < 28.0: Snd.play("moan", 1.0, e.pos)
 
 func kill(e: Foe, weak: bool, dir) -> void:
 	e.alive = false; e.dead_t = 0.0; e.bar.visible = false; e.g.visible = true
@@ -196,7 +317,7 @@ func kill(e: Foe, weak: bool, dir) -> void:
 	if e.K.get("vest", false):   # the vest goes off (at once if the bomb itself was hit, or he set it off)
 		var now := e.self_det or e.vest_shot; proj.bomb(e.pos, 0.02 if now else 0.3)
 		if now: e.vanish = true
-	e.fall_dir = -1.0
+	e.fall_dir = 1.0 if e.type == "zombie" else -1.0; e.downed = false
 	if dir != null: e.fall_dir = 1.0 if sin(e.yaw) * dir.x + cos(e.yaw) * dir.z > 0.0 else -1.0
 	list.erase(e); dying.push_back(e)
 	Snd.play("thud", 1.0, e.pos)
@@ -366,6 +487,13 @@ func _fight(e: Foe, dt: float, dist: float) -> bool:
 	return false
 
 func _animate(e: Foe, sp: float, dt: float, aim: bool) -> void:
+	if e.type == "zombie":   # a shamble: arms out in front, the body rocking from side to side
+		e.walk += dt * sp * 3.2; var zs := sin(e.walk) * minf(1.0, sp / 2.0) * 0.45
+		e.leg_l.rotation.x = zs; e.leg_r.rotation.x = -zs
+		var sway := sin(e.walk * 0.5) * 0.12
+		e.arm_l.rotation = Vector3(-1.35 + sway, 0, 0.08); e.arm_r.rotation = Vector3(-1.4 - sway, 0, -0.08); e.upper.rotation.z = sin(e.walk * 0.5) * 0.06
+		e.flinch = maxf(0.0, e.flinch - dt * 5.0); e.upper.rotation.x = 0.28 - e.flinch * 0.25
+		return
 	e.walk += dt * sp * 2.6; var s := sin(e.walk) * clampf(sp / 3.0, 0.0, 1.0)
 	e.leg_l.rotation.x = s * 0.7; e.leg_r.rotation.x = -s * 0.7
 	match e.kit:   # how each carries what he has
@@ -412,14 +540,15 @@ func _keep_out(e: Foe) -> void:
 
 func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
-	var vis := VIS_R * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
 	for e in list:
 		if not e.alive: continue
 		e.lod -= dt
 		if e.lod <= 0.0:
 			e.lod = 0.3 + randf() * 0.2; e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length()
-			e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0); e.awake = e.alert or e.dist < ACT_R
+			e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0); e.awake = e.alert or e.dist < ACT_R.get(stage, 60.0)
 			if not e.g.visible: e.bar.visible = false
+		if e.downed: _update_downed(e, dt); e.g.position = e.pos; continue
 		if not e.awake: continue
 		var eye := Vector3(e.pos.x, e.pos.y + 1.65 * e.scale, e.pos.z)
 		var to := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var dist := maxf(to.length(), 0.001)
@@ -427,18 +556,28 @@ func update(dt: float, _time: float) -> void:
 		if e.los_t <= 0.0: e.los_t = 0.2 + randf() * 0.1; e.los = dist < 70.0 and Phys.line_of_sight(eye, eye_cam)
 		e.no_los = 0.0 if e.los else e.no_los + dt
 		var face_yaw := atan2(to.x, to.y); var mvx := 0.0; var mvz := 0.0
+		var zombie := e.type == "zombie"
 		if not e.alert:
-			if (e.los and dist < 30.0) or dist < 7.0 or (e.boss and dist < 24.0):
+			if (e.los and dist < (16.0 if zombie else 30.0)) or dist < (5.0 if zombie else 7.0) or (e.boss and dist < 24.0):
 				alarm(e)
 				for o in list:
-					if not o.alert and Vector2(o.pos.x - e.pos.x, o.pos.z - e.pos.z).length() < 15.0: alarm(o)
+					if not zombie and not o.alert and Vector2(o.pos.x - e.pos.x, o.pos.z - e.pos.z).length() < 15.0: alarm(o)
 			else:
 				if e.idle_t <= 0.0 and not e.has_idle_yaw: e.idle_t = randf_range(2, 6)
 				e.idle_t -= dt
 				if e.idle_t <= 0.0: e.idle_t = randf_range(3, 7); e.idle_yaw = e.yaw + randf_range(-1.3, 1.3); e.has_idle_yaw = true
-				_turn_toward(e, e.idle_yaw if e.has_idle_yaw else e.yaw, 1.2, dt); _animate(e, 0.0, dt, false)
-				e.g.rotation.y = e.yaw
+				var isp := 0.0
+				if zombie and e.idle_t > 3.0: isp = 0.5; _ground_move(e, sin(e.yaw) * isp, cos(e.yaw) * isp, dt)   # milling about
+				_turn_toward(e, e.idle_yaw if e.has_idle_yaw else e.yaw, 1.2, dt); _animate(e, isp, dt, false)
+				e.g.position = e.pos; e.g.rotation.y = e.yaw
 				continue
+		if zombie:
+			if not _zombie_skill(e, dt, dist, to): _zombie(e, dt, dist, to, face_yaw)
+			e.g.position = e.pos; e.g.rotation.y = e.yaw
+			if e.hp < e.max_hp:
+				e.bar.visible = e.g.visible; e.bar.position = Vector3(e.pos.x, e.pos.y + e.H + 0.4 * e.scale, e.pos.z)
+				var zf := clampf(e.hp / e.max_hp, 0.0, 1.0); e.fill.scale.x = 0.66 * zf; e.fill.position.x = -0.33 * (1.0 - zf)
+			continue
 		if e.state == "move":
 			var fd := Phys.flow_dir(e.pos.x, e.pos.z)
 			if fd != Vector2.ZERO: mvx = fd.x * e.speed; mvz = fd.y * e.speed
@@ -476,7 +615,7 @@ func update(dt: float, _time: float) -> void:
 		var a := list[i]
 		for j in range(i + 1, list.size()):
 			var b := list[j]
-			if not a.awake and not b.awake: continue
+			if (not a.awake and not b.awake) or a.downed or b.downed: continue
 			var dx := b.pos.x - a.pos.x; var dz := b.pos.z - a.pos.z
 			if absf(dx) > 5.0 or absf(dz) > 5.0: continue
 			var d := sqrt(dx * dx + dz * dz); var m := a.R + b.R + 0.1
@@ -484,7 +623,7 @@ func update(dt: float, _time: float) -> void:
 				var push := (m - d) * 0.5
 				a.pos = Phys.move_xz(a.pos, -dx / d * push, -dz / d * push, a.R, a.H, 0.0)[0]; b.pos = Phys.move_xz(b.pos, dx / d * push, dz / d * push, b.R, b.H, 0.0)[0]
 	for e in list:
-		if e.alive and e.awake: _keep_out(e)
+		if e.alive and e.awake and not e.downed: _keep_out(e)
 	for i in range(flying.size() - 1, -1, -1):   # helmets tumbling away
 		var f: Array = flying[i]; f[2] += dt; f[1].y -= 12.0 * dt; var n: Node3D = f[0]
 		n.position += (f[1] as Vector3) * dt; n.rotation.x += 10.0 * dt

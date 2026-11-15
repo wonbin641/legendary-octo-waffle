@@ -65,6 +65,12 @@ func query_near(minx: float, minz: float, maxx: float, maxz: float) -> Array[Box
 				if b.q != qstamp: b.q = qstamp; _near.push_back(b)
 	return _near
 
+## while a stage is being built: is any box in this upright slab of space?
+func box_at(x: float, z: float, r: float, y0: float, y1: float) -> bool:
+	for b in colliders:
+		if x + r > b.minx and x - r < b.maxx and z + r > b.minz and z - r < b.maxz and y1 > b.miny and y0 < b.maxy: return true
+	return false
+
 ## while a stage is being built: is anything within m of this footprint?
 func occupied(minx: float, minz: float, maxx: float, maxz: float, m: float) -> bool:
 	for b in colliders:

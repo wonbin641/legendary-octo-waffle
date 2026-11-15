@@ -126,8 +126,13 @@ static func merge_boxes(parts: Array, _srgb := false) -> ArrayMesh:
 	for p in parts:
 		var b := BoxMesh.new(); b.size = Vector3(p[0], p[1], p[2]); var a := b.get_mesh_arrays(); var off := vs.size()
 		var col := Color(str(p[6])) if p.size() > 6 else Color.WHITE   # (the renderer reads vertex colours as screen colours already)
-		for v: Vector3 in a[Mesh.ARRAY_VERTEX]: vs.push_back(v + Vector3(p[3], p[4], p[5])); cols.push_back(col)
-		ns.append_array(a[Mesh.ARRAY_NORMAL]); uvs.append_array(a[Mesh.ARRAY_TEX_UV])
+		# an eighth item turns the box (three.js order x, y, z); a ninth turns it once more about the upright axis (a hut's facing)
+		var bas := Basis.IDENTITY
+		if p.size() > 7 and not (p[7] is String): var e: Array = p[7]; bas = Basis(Vector3.RIGHT, e[0]) * Basis(Vector3.UP, e[1]) * Basis(Vector3.BACK, e[2])
+		if p.size() > 8: bas = Basis(Vector3.UP, p[8]) * bas
+		for v: Vector3 in a[Mesh.ARRAY_VERTEX]: vs.push_back(bas * v + Vector3(p[3], p[4], p[5])); cols.push_back(col)
+		for nrm: Vector3 in a[Mesh.ARRAY_NORMAL]: ns.push_back(bas * nrm)
+		uvs.append_array(a[Mesh.ARRAY_TEX_UV])
 		for i: int in a[Mesh.ARRAY_INDEX]: idx.push_back(i + off)
 	var arr := []; arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_NORMAL] = ns; arr[Mesh.ARRAY_TEX_UV] = uvs; arr[Mesh.ARRAY_COLOR] = cols; arr[Mesh.ARRAY_INDEX] = idx

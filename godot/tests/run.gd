@@ -149,6 +149,7 @@ func _ready() -> void:
 	Store.save = Store.save0(); Store.settings.dev = false; Store.settings.god = false; Store.money_lock = null; Store.own_lock = null; Store.ivory_lock = null
 	var fxn := Fx.new(); add_child(fxn); var lt := Loot.new(); add_child(lt); lt.player = pl
 	var gm := Game.new(); gm.world = w; gm.player = pl; gm.enemies = en; gm.guns = g; gm.proj = pr; gm.loot = lt; gm.fx = fxn
+	en.on_bite = gm.bitten; en.on_poison = gm.poison; en.on_stun = gm.stun
 	en.on_kill = gm.on_kill; w.on_crate = gm.on_crate; lt.take = gm.take_loot; lt.open_chest = gm.open_chest; g.auto_reload = true
 	var shown := []; gm.on_result = func(kind: String) -> void: shown.push_back(kind)
 	gm.begin(1)
@@ -266,7 +267,7 @@ func _ready() -> void:
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
 	# ---------------- stages 1-1 and 1-2 ----------------
-	for stn in [6, 5]:
+	for stn in [6, 5, 2]:
 		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.drop_pick = null; gm.begin(stn)
 		var cb := 0
 		for i in mini(60, Phys.colliders.size()):
@@ -284,6 +285,74 @@ func _ready() -> void:
 				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
 		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == 100 and R9.enemies.size() == 100 and eb == 0 and gm.goal == int(R9.goal), efirst)
 		check("stage %s: you start where the browser game starts you" % Store.STAGE_TAG[stn], absf(w.start.x - R9.start[0]) < 1e-4 and absf(w.start.z - R9.start[1]) < 1e-4 and absf(w.start.yaw - R9.start[2]) < 1e-4, w.start)
+	# ---------------- stage 2: the burning village ----------------
+	gm.begin(2); var s2_V2: Dictionary = ref.stages["2"]
+	var s2_cbad := 0
+	for i in mini(w.crates.size(), s2_V2.crates.size()):
+		if absf(w.crates[i].x - s2_V2.crates[i][0]) > 1e-4 or absf(w.crates[i].z - s2_V2.crates[i][1]) > 1e-4: s2_cbad += 1
+	check("stage 2: 15 huts, and every crate where the browser game has it", w.village.huts.size() == int(s2_V2.huts) and s2_cbad == 0 and w.crates.size() == 46, "%d huts %d off" % [w.village.huts.size(), s2_cbad])
+	check("stage 2: zombies, one giant among them", en.list.all(func(e): return e.type == "zombie") and gm.boss != null and gm.boss.max_hp == 2200.0 and gm.boss.scale == 1.7 and en.list[1].max_hp == 180.0 and gm.antidotes == 1)
+	# no health in the village
+	pl.invuln = 0.0; pl.hurt(500, Vector3.ZERO)
+	check("stage 2: nothing takes health away", pl.hp == Player.MAX_HP)
+	# a zombie drops, and gets back up unless it is shot again
+	var s2_z1 = en.list[5]; var s2_zdir := Vector3(0, 0, 1)
+	var s2_zk := en.damage(s2_z1, 500, s2_z1.pos, s2_zdir, false)
+	check("stage 2: a zombie out of health drops but is not dead yet", not s2_zk and s2_z1.alive and s2_z1.downed and gm.kills == 0)
+	pl.pos = Vector3(s2_z1.pos.x + 60, 0, s2_z1.pos.z); pl.invuln = 1e9
+	for i in 190: en.update(0.02, 0.0)
+	check("stage 2: left alone for 3.7 s it is back on its feet at full health", not s2_z1.downed and s2_z1.hp == 180.0 and s2_z1.revived and s2_z1.alert)
+	var s2_m0: int = Store.save.money
+	en.damage(s2_z1, 500, s2_z1.pos, s2_zdir, false); en.damage(s2_z1, 1, s2_z1.pos, s2_zdir, false)
+	check("stage 2: shot again on the ground it is gone, and one that had got up pays 1,000", not s2_z1.alive and gm.kills == 1 and Store.save.money == s2_m0 + 1000, Store.save.money - s2_m0)
+	var s2_z2 = en.list[5]; s2_m0 = Store.save.money
+	en.damage(s2_z2, 500, s2_z2.pos, s2_zdir, true); en.damage(s2_z2, 1, s2_z2.pos, s2_zdir, true)
+	check("stage 2: finished before it ever rose, with a shot to the head: 1,000 x 1.5 x 1.5", Store.save.money == s2_m0 + 2250, Store.save.money - s2_m0)
+	# a bite: 5 seconds; the antidote takes 0.82 s to work and the gun is busy for 1.35 s
+	pl.invuln = 0.0; gm.bitten(en.list[0])
+	check("stage 2: a bite starts a 5 second countdown", gm.infected and gm.infect_t == 5.0)
+	gm.bitten(en.list[0])
+	check("stage 2: another bite takes a second off", absf(gm.infect_t - 4.0) < 1e-6)
+	gm.use_antidote()
+	check("stage 2: the syringe goes in: no shooting meanwhile, and the countdown holds", gm.inject_on and gm.antidotes == 0 and g.busy > 1.3)
+	for i in 45: gm.update(0.02)
+	check("stage 2: cured 0.82 s into the injection", not gm.infected and gm.inject_on)
+	for i in 30: gm.update(0.02)
+	check("stage 2: the hands are free again after 1.35 s", not gm.inject_on and g.busy == 0.0)
+	# poison from a dash: 8 seconds, and with no antidote left it is the end
+	gm.poison(en.list[0])
+	check("stage 2: a dash poisons for 8 seconds", gm.poison_t == 8.0)
+	gm.use_antidote()
+	check("stage 2: with no antidote there is nothing to inject", not gm.inject_on)
+	check("stage 2: a crate gives an antidote, up to five", gm.take_loot("anti") and gm.antidotes == 1)
+	gm.antidotes = 5; check("stage 2: a sixth stays on the ground", not gm.take_loot("anti"))
+	gm.antidotes = 0
+	for i in 410: gm.update(0.02)
+	check("stage 2: the poison runs out and so do you", gm.ended and gm.result == "poison")
+	gm.begin(2); pl.invuln = 0.0; gm.bitten(en.list[0])
+	for i in 260: gm.update(0.02)
+	check("stage 2: five seconds after a bite with no cure you are one of them", gm.ended and gm.result == "zombie")
+	# an ordinary zombie dashes once at 30% health; the boss rages at half and charges
+	gm.begin(2); var s2_z3 = en.list[7]; pl.invuln = 1e9; pl.pos = Vector3(s2_z3.pos.x, 0, s2_z3.pos.z + 6.0)
+	s2_z3.lod = 0.0; en.damage(s2_z3, 130, s2_z3.pos, s2_zdir, false); en.update(0.02, 0.0)
+	check("stage 2: at 30% health a zombie screams and dashes", s2_z3.state == "dash" and s2_z3.dash_used, s2_z3.state)
+	pl.invuln = 0.0; var s2_hitp := false
+	for i in 60:
+		en.update(0.02, 0.0)
+		if gm.poison_t > 0.0: s2_hitp = true; break
+	check("stage 2: the dash reaches you and poisons", s2_hitp and s2_z3.state == "move")
+	gm.begin(2); var s2_zb = gm.boss; pl.invuln = 1e9; pl.pos = Vector3(s2_zb.pos.x, 0, s2_zb.pos.z + 12.0); s2_zb.yaw = 0.0
+	var s2_sp0: float = s2_zb.speed; s2_zb.lod = 0.0; en.damage(s2_zb, 1200, s2_zb.pos, s2_zdir, false); en.update(0.02, 0.0)
+	check("stage 2: at half health the boss rages and is 1.9 times as fast", s2_zb.rage and absf(s2_zb.speed - s2_sp0 * 1.9) < 1e-5)
+	pl.invuln = 0.0; var s2_stunned := false
+	for i in 400:
+		pl.pos = Vector3(s2_zb.pos.x, 0, s2_zb.pos.z + 8.0) if s2_zb.state == "move" else pl.pos
+		en.update(0.02, 0.0)
+		if pl.stun_t > 0.0: s2_stunned = true; break
+	check("stage 2: its charge knocks you out for 2 seconds", s2_stunned and absf(pl.stun_t - 2.0) < 0.05 and pl.hp == Player.MAX_HP, pl.stun_t)
+	pl.in_f = 1.0; var s2_before2 := pl.pos; pl.vel = Vector3.ZERO; pl.update(0.02, null, 0.0)
+	check("stage 2: knocked out, you cannot walk", pl.pos.distance_to(s2_before2) < 0.01)
+	pl.in_f = 0.0; pl.stun_t = 0.0
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var k9 := en.damage(hm, 85, hd9, Vector3(0, 0, -1), true)

@@ -39,6 +39,8 @@ var no_sprint := false # aiming, shooting or reloading: no running
 var hp := 1000.0
 const MAX_HP := 1000.0
 var invuln := 0.0
+var stun_t := 0.0       # knocked out by a charge: no moving, the view swims
+var no_hp := false      # the zombie village has no health at all: only bites and poison finish you, on a timer
 var since_hurt := 0.0
 var on_hurt: Callable = Callable()
 var on_step: Callable = Callable()
@@ -60,6 +62,10 @@ var in_down := false
 func hurt(dmg: float, from: Vector3, zone := "body") -> void:
 	if Store.settings.dev and Store.settings.god: return   # developer mode's invincibility
 	if invuln > 0.0 or hp <= 0.0: return
+	if no_hp:
+		shake = maxf(shake, 0.2)
+		if on_hurt.is_valid(): on_hurt.call(20.0, from)
+		return
 	var items: Dictionary = Store.save.items
 	# a motorcycle helmet takes one blow to the head for you, then it is gone
 	if zone == "head" and int(items.helmet) > 0:
@@ -81,7 +87,7 @@ func launch(v: Vector3) -> void:
 ## a press of jump at time now (seconds): the second within 0.35 s lights the jetpack, if you have one
 func jet_tap(now: float) -> void:
 	var dbl := now - jet_last_tap < 0.35; jet_last_tap = now
-	if not dbl or jet_on or int(Store.save.items.jet) == 0: return
+	if not dbl or jet_on or int(Store.save.items.jet) == 0 or stun_t > 0.0: return
 	jet_on = true; jet_t = 10.0; Store.save.items.jet = 0; Store.persist()
 	vel.y = maxf(vel.y, 3.0); grounded = false; jet_last_tap = -9.0
 	if say.is_valid(): say.call("제트백팩 · 점프 위로 · 내려가기 아래로")
@@ -95,16 +101,21 @@ func reset(x: float, z: float, yaw_: float) -> void:
 	pos = Vector3(x, 0, z); vel = Vector3.ZERO; yaw = yaw_; pitch = 0.0; grounded = true
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
 	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
-	hp = MAX_HP; invuln = 0.0; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0
+	hp = MAX_HP; invuln = 0.0; stun_t = 0.0; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
-	var s := sens * 0.0021 * sens_mul
+	if stun_t > 0.0:
+		stun_t = maxf(0.0, stun_t - dt)
+		if stun_t == 0.0 and say.is_valid(): say.call("정신이 들었습니다")
+	var stunned := stun_t > 0.0
+	var s := sens * 0.0021 * sens_mul * (0.12 if stunned else 1.0)
 	yaw += in_turn * 2.4 * dt - look_dx * s
 	pitch -= look_dy * s
 	look_dx = 0.0; look_dy = 0.0
 	pitch = clampf(pitch + in_pitch * 1.6 * dt, -1.5, 1.5)
 	recoil_pitch *= exp(-dt * 9)
 	var f := in_f; var sd := in_s
+	if stunned: f = 0.0; sd = 0.0; jump_buf = 0.0
 	var m := sqrt(f * f + sd * sd)
 	if m > 1.0: f /= m; sd /= m
 	sprint_lock = maxf(0.0, sprint_lock - dt)
@@ -118,7 +129,7 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if jet_on:
 		# flying: no gravity; hold jump to rise, Ctrl or C to sink, nothing to hover. it sputters out after 10 seconds
 		jet_t -= dt
-		var want := 5.0 if (in_up and not in_down) else (-5.0 if (in_down and not in_up) else 0.0)
+		var want := 0.0 if stunned else 5.0 if (in_up and not in_down) else (-5.0 if (in_down and not in_up) else 0.0)
 		vel.y += (want - vel.y) * (1.0 - exp(-dt * 6.0)); jump_buf = 0.0
 		if pos.y > 30.0 and vel.y > 0.0: vel.y = 0.0
 		if jet_t <= 0.0: jet_end("제트백팩 연료가 다 떨어졌습니다")
@@ -151,4 +162,6 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	var bob := absf(sin(step_phase)) * 0.045 * clampf(speed_xz / 6.0, 0.0, 1.3) * (1.0 - ads * 0.7) if grounded else 0.0
 	var sh := shake; shake *= exp(-dt * 7)
 	cam.position = Vector3(pos.x, pos.y + EYE - bob - land_dip, pos.z)
-	cam.rotation = Vector3(pitch + recoil_pitch * 0.5 + randf_range(-1, 1) * sh * 0.05, yaw + randf_range(-1, 1) * sh * 0.05, sin(step_phase * 0.5) * 0.004 * clampf(speed_xz / 6.0, 0.0, 1.0))
+	var sw := clampf(stun_t, 0.0, 1.0) if stunned else 0.0   # knocked out: the view sags and swims
+	cam.rotation = Vector3(pitch + recoil_pitch * 0.5 + randf_range(-1, 1) * sh * 0.05 + sin(time * 2.3) * 0.07 * sw - 0.12 * sw, yaw + randf_range(-1, 1) * sh * 0.05 + sin(time * 1.7) * 0.05 * sw,
+		sin(step_phase * 0.5) * 0.004 * clampf(speed_xz / 6.0, 0.0, 1.0) + sin(time * 3.1) * 0.09 * sw)
