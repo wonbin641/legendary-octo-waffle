@@ -98,7 +98,7 @@ func melee_start(target = null) -> void:
 ## touch: a crate within the jab's reach and not behind you, while you are not busy with anything else, is jabbed by itself
 func _auto_crate() -> void:
 	if not auto_jab or melee_on or melee_cd > 0.0 or none or busy > 0.0 or reload_t > 0.0 or switch_t > 0.0 or trigger or ads_held or ads > 0.05: return
-	if not player.grounded: return
+	if not player.grounded or player.jet_on: return
 	var o := cam.global_position; var fx_ := -sin(player.yaw); var fz := -cos(player.yaw); var best = null; var bd := Weapons.MELEE_REACH
 	for c in world.crates:
 		if c.dead: continue

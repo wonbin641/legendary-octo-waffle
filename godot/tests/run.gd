@@ -163,10 +163,9 @@ func _ready() -> void:
 	var near = en.list[5]; pl.reset(near.pos.x + 9.0, near.pos.z, 0.0); pl.update(0.0, cam, 0.0); en.noise(pl.pos, 30.0)
 	var sim := func(sec: float) -> void:
 		for i in roundi(sec * 30): g.update(1.0 / 30.0); pl.update(1.0 / 30.0, cam, 0.0); en.update(1.0 / 30.0, 0.0); pr.update(1.0 / 30.0); lt.update(1.0 / 30.0); gm.update(1.0 / 30.0)
-	pl.invuln = 0.0; Store.settings.dev = true; Store.settings.god = true   # (kept alive to watch the whole fight)
+	pl.invuln = 0.0; pl.hp = 100000.0   # (plenty of health, to watch the whole fight)
 	var tr := []
-	for q9 in 5: sim.call(2.0); tr.push_back(int(pl.hp))
-	Store.settings.dev = false; Store.settings.god = false
+	for q9 in 5: sim.call(2.0); tr.push_back(maxi(1, int(pl.hp - 99000.0)))
 	# the browser game, same spot, three runs: [1000,703,514,289,91], [964,694,433,190,1], [1000,730,379,172,0]
 	check("standing still near a group: they close in and shoot you down as fast as in the browser game", tr[1] < 900 and tr[1] > 500 and tr[2] < 650 and tr[2] > 250 and tr[4] < 200, str(tr))
 	Store.save = Store.save0(); Store.money_lock = null; Store.own_lock = null; Store.ivory_lock = null; gm.begin(1)
