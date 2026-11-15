@@ -56,6 +56,17 @@ const { chromium, ARGS, ROOT, open, play } = require('./lib');
     return out;
   });
   ref.codes = codes;
+  // stages 1-1 (6) and 1-2 (5): the same docks laid out differently, and who stands where with what
+  ref.stages = {};
+  for (const st of [6, 5]) {
+    const pg = await open(browser, 'pc'); await play(pg, st);
+    ref.stages[st] = await pg.evaluate(() => { const y = window.__yard, r6 = (v) => Math.round(v * 1e6) / 1e6;
+      let h = 0, blocked = 0; for (let i = 0; i < y.NAV.blocked.length; i++) { if (y.NAV.blocked[i]) { blocked++; h = (h * 31 + i) % 1000000007; } }
+      return { colliders: y.colliders.length, first: y.colliders.slice(0, 60).map((b) => [b.minx, b.minz, b.maxy].map(r6)), crates: y.crates.map((c) => [r6(c.x), r6(c.z)]), navBlocked: blocked, navHash: h,
+        start: [r6(y.Game.info.start.x), r6(y.Game.info.start.z), r6(y.Game.info.start.yaw)], goal: y.Game.goal,
+        enemies: y.Enemies.list.map((e) => [r6(e.pos.x), r6(e.pos.z), r6(e.pos.y), e.kit || 'pistol', e.boss ? 1 : 0, e.maxHp, e.helmet ? 1 : 0]) }; });
+    console.log('stage', st, 'colliders', ref.stages[st].colliders, 'enemies', ref.stages[st].enemies.length, 'start', ref.stages[st].start, 'errors', pg.errs); await pg.close();
+  }
   fs.writeFileSync(path.join(ROOT, 'godot', 'tests', 'reference_stage1.json'), JSON.stringify(ref));
   ref.codes.forEach((c) => console.log(c.code));
   console.log('enemies', ref.enemies.length, 'goal', ref.goal, JSON.stringify(ref.foot));

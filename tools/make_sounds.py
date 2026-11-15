@@ -111,6 +111,18 @@ SOUNDS = {
     'toy_shot_flame': [N(0.16, 'bandpass', 1800, 2600, 0.6, 0.45), N(0.16, 'lowpass', 600, 400, 0.6, 0.3)],
     'toy_ruler': [N(0.03, 'bandpass', 2200, 1300, 1.5, 0.9), T('square', 900, 420, 0.04, 0.25), T('sine', 260, 150, 0.06, 0.3)],
     'toy_click': [N(0.03, 'bandpass', 1900, 1200, 2, 0.5), T('square', 720, 480, 0.025, 0.12)],
+    # ---- the armed men of 1-2 ----
+    'saber_hum': [T('sawtooth', 92, 96, 0.9, 0.08), T('sine', 184, 190, 0.9, 0.07)],
+    'saber_swing': [T('sawtooth', 120, 260, 0.25, 0.2), T('sine', 300, 140, 0.25, 0.15)],
+    'saber_hit': [N(0.3, 'bandpass', 1800, 900, 2, 0.5), T('sawtooth', 260, 80, 0.3, 0.3)],
+    'bat_hit': [T('triangle', 2100, 1700, 0.18, 0.28), T('square', 950, 600, 0.08, 0.1), N(0.16, 'lowpass', 900, 200, 1, 0.6)],
+    'squelch': [N(0.28, 'lowpass', 900, 160, 1, 0.65), T('sine', 170, 45, 0.22, 0.4)],
+    'swoosh': [N(0.28, 'bandpass', 500, 1400, 1.5, 0.45)],
+    'scream': [T('sawtooth', 260, 880, 0.38, 0.32), N(0.45, 'bandpass', 1500, 2600, 2, 0.35)],
+    'beep': [T('square', 1900, 1900, 0.05, 0.12), T('square', 1900, 1900, 0.05, 0.12, 0.09), T('square', 1900, 1900, 0.05, 0.12, 0.18)],
+    'flame': [N(0.22, 'lowpass', 900, 500, 0.7, 0.4), N(0.2, 'bandpass', 300, 200, 1, 0.3)],
+    'thump': [T('sine', 140, 60, 0.18, 0.45), N(0.12, 'lowpass', 600, 200, 1, 0.35)],
+    'ping': [T('triangle', 2600, 2400, 0.35, 0.22), T('sine', 3900, 3600, 0.25, 0.12, 0.01), N(0.05, 'highpass', 5000, 4000, 1, 0.3)],
     'hiss': [N(1.4, 'highpass', 2600, 5200, 0.7, 0.42), N(0.5, 'bandpass', 900, 300, 1.2, 0.3)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)

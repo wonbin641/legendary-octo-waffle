@@ -265,6 +265,67 @@ func _ready() -> void:
 	check("a rented gun is in your hands for the stage", g.slots == ["pistol", "gl"])
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
+	# ---------------- stages 1-1 and 1-2 ----------------
+	for stn in [6, 5]:
+		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.drop_pick = null; gm.begin(stn)
+		var cb := 0
+		for i in mini(60, Phys.colliders.size()):
+			var b9 = Phys.colliders[i]; var q9: Array = R9.first[i]
+			if absf(b9.minx - q9[0]) > 2e-6 or absf(b9.minz - q9[1]) > 2e-6 or absf(b9.maxy - q9[2]) > 2e-6: cb += 1
+		var nb := 0; var nh := 0
+		for i in Phys.nav_blocked.size():
+			if Phys.nav_blocked[i] != 0: nb += 1; nh = (nh * 31 + i) % 1000000007
+		check("stage %s: the docks are laid out as in the browser game" % Store.STAGE_TAG[stn], Phys.colliders.size() == int(R9.colliders) and cb == 0 and nb == int(R9.navBlocked) and nh == int(R9.navHash) and w.crates.size() == R9.crates.size(), "%d colliders" % Phys.colliders.size())
+		var eb := 0; var efirst := ""
+		for i in mini(en.list.size(), R9.enemies.size()):
+			var e9 = en.list[i]; var q9: Array = R9.enemies[i]
+			if absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4 or absf(e9.pos.y - q9[2]) > 1e-3 or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
+				eb += 1
+				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
+		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == 100 and R9.enemies.size() == 100 and eb == 0 and gm.goal == int(R9.goal), efirst)
+		check("stage %s: you start where the browser game starts you" % Store.STAGE_TAG[stn], absf(w.start.x - R9.start[0]) < 1e-4 and absf(w.start.z - R9.start[1]) < 1e-4 and absf(w.start.yaw - R9.start[2]) < 1e-4, w.start)
+	# 1-1: the helmet takes the first shot to the head
+	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
+	var k9 := en.damage(hm, 85, hd9, Vector3(0, 0, -1), true)
+	check("1-1: the first shot to the head only knocks the helmet off", not k9 and hm.alive and hm.hp == 100.0 and not hm.helmet and en.flying.size() == 1)
+	en.damage(hm, 85, hd9, Vector3(0, 0, -1), true); check("1-1: after that the head is hit as usual", hm.hp == 15.0)
+	check("1-1: the boss wears one too", gm.boss.helmet and gm.boss.name == "헬멧 두목")
+	# 1-2: who is there
+	gm.begin(5); var count := {}
+	for e9 in en.list: count[e9.kit] = int(count.get(e9.kit, 0)) + 1
+	check("1-2: 5 snipers, 9 desert eagles, 10 bombers, 3 flamethrowers, 12 rifles, 20 knives, 10 + 5 lightsabers, 10 grenadiers, 15 bats, a machine-gun boss",
+		count == {"sniper": 5, "deagle": 9, "bomber": 10, "flame": 3, "rifle": 12, "dagger": 20, "saber": 10, "saber2": 5, "nade": 10, "bat": 15, "lmg": 1} and gm.boss.kit == "lmg" and gm.boss.max_hp == 2600.0, count)
+	var sn = en.list.filter(func(e8): return e8.kit == "sniper")
+	check("1-2: the snipers stand up on container stacks", sn.all(func(e8): return e8.pos.y > 2.0))
+	# a bomber's vest: shot in the bomb it goes off at once and the kill pays; reaching you he blows himself up and pays nothing
+	var bm9 = en.list.filter(func(e8): return e8.kit == "bomber"); var b1 = bm9[0]; var m0: int = Store.save.money; pl.invuln = 1e9
+	var rb9 = en.raycast(en.part_centre(b1, b1.parts[1]) + Vector3(sin(b1.yaw), 0, cos(b1.yaw)) * 4.0, -Vector3(sin(b1.yaw), 0, cos(b1.yaw)), 10.0)
+	check("1-2: a ray at a bomber's chest finds the bomb", rb9 != null and rb9.enemy == b1 and rb9.bomb)
+	en.blow_vest(b1, Vector3(0, 0, -1)); check("1-2: a bullet in the bomb kills him and pays", not b1.alive and Store.save.money == m0 + 1000 and pr.list.size() == 1 and pr.list[0].kind == "bomb")
+	for i in 60: pr.update(1.0 / 30.0)
+	check("1-2: and the vest goes off (others caught in it go off too)", pr.list.is_empty())
+	gm.begin(5); pl.invuln = 1e9; bm9 = en.list.filter(func(e8): return e8.kit == "bomber")
+	var b2 = bm9[1]; pl.reset(b2.pos.x + 1.2, b2.pos.z, 0.0); pl.pos.y = b2.pos.y; pl.invuln = 0.0; pl.hp = 1000.0; pl.update(0.0, cam, 0.0); en.alarm(b2); b2.state = "engage"; b2.react = 0.0; m0 = Store.save.money; var kills0 := gm.kills
+	for i in 60: en.update(1.0 / 30.0, 0.0); pr.update(1.0 / 30.0)
+	check("1-2: a bomber who reaches you blows himself up: it hurts, it counts, and he pays nothing (others caught in the blast do)", not b2.alive and b2.self_det and pl.hp < 1000.0 and gm.kills >= kills0 + 1 and Store.save.money == m0 + (gm.kills - kills0 - 1) * 1000,
+		"hp %d kills +%d money +%d" % [int(pl.hp), gm.kills - kills0, Store.save.money - m0])
+	# a lightsaber and a bat hit hard and aim at the head; a helmet you wear stops one such blow
+	var sb9 = en.list.filter(func(e8): return e8.kit == "saber")[0]; Store.save.items.helmet = 1
+	pl.reset(sb9.pos.x + 1.0, sb9.pos.z, 0.0); pl.pos.y = sb9.pos.y; pl.hp = 1000.0; pl.invuln = 0.0; pl.update(0.0, cam, 0.0); en.alarm(sb9); sb9.state = "engage"; sb9.react = 0.0
+	for e8 in en.list:
+		if e8 != sb9: e8.awake = false; e8.lod = 99.0; e8.alert = false
+	for i in 20: en.update(1.0 / 30.0, 0.0)
+	check("1-2: your motorcycle helmet takes the first lightsaber cut", pl.hp == 1000.0 and int(Store.save.items.helmet) == 0, pl.hp)
+	for i in 50: en.update(1.0 / 30.0, 0.0)
+	check("1-2: the next cut is 300", pl.hp == 700.0 or pl.hp == 400.0, pl.hp)
+	# a grenade thrown by a grenadier: it bounces, beeps and bursts
+	pr.clear(); pl.reset(0.0, 0.0, 0.0); pl.hp = 1000.0; pl.invuln = 0.0; pr.egrenade(Vector3(8, 1.5, 0), Vector3(0, 0.3, 0), "nade")
+	for i in 100: pr.update(1.0 / 30.0)
+	check("1-2: a thrown grenade goes off beside you (up to 100)", pr.list.is_empty() and pl.hp < 1000.0 and pl.hp >= 900.0, pl.hp)
+	# 1-2: choosing where to be put down
+	gm.begin(5); var d9 = gm.pick_drop(-50.0, -50.0)
+	check("1-2: you can pick where you are put down, and it is kept for another go", d9 != null and Vector2(pl.pos.x + 50.0, pl.pos.z + 50.0).length() < 10.0 and Phys.collide_at(pl.pos.x, 0.05, pl.pos.z, 0.36, 1.7) == null, pl.pos)
+	gm.begin(5); check("1-2: the next go starts there again", Vector2(pl.pos.x - d9.x, pl.pos.z - d9.z).length() < 0.01); gm.drop_pick = null
 	# ---------------- stage 5: the toy room ----------------
 	Store.save = Store.save0(); gm.begin(9); var toy: ToyRoom = w.toy
 	check("the toy room: no enemies yet, every toy gun in hand", toy != null and en.list.is_empty() and g.loadout == Toys.ORDER and Store.stage_open(9))

@@ -36,6 +36,28 @@ func _bullet_mat() -> StandardMaterial3D:
 	if _bmat == null: _bmat = Gfx.unlit(Color(1.0, 0.85, 0.63), false); _bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	return _bmat
 
+## enemy grenades: 'gl' rounds burst on impact, thrown 'nade's bounce and go off after a fuse
+func egrenade(from: Vector3, target: Vector3, mode: String) -> void:
+	var dx := target.x - from.x; var dz := target.z - from.z; var d := sqrt(dx * dx + dz * dz); var T := 0.55 + d / 30.0 if mode == "gl" else 0.8 + d / 20.0
+	list.push_back({"kind": "egren", "mode": mode, "pos": from, "src": from, "vel": Vector3(dx / T, (target.y - from.y + 0.5 * 9.8 * T * T) / T, dz / T), "life": 6.0 if mode == "gl" else 2.7, "fuse": 2.6, "beeps": 0,
+		"m": _mesh(Vector3.ONE * (0.07 if mode == "gl" else 0.09), "4a5236")})
+	Snd.play("thump", 1.0, from)
+
+## a vest going off where a man fell, after a moment
+func bomb(at: Vector3, delay: float) -> void:
+	var m := _mesh(Vector3.ONE * 0.01, "4a5236"); m.visible = false
+	list.push_back({"kind": "bomb", "pos": Vector3(at.x, at.y + 1.0, at.z), "src": at, "vel": Vector3.ZERO, "life": delay, "m": m}); Snd.play("beep", 1.0, at)
+
+## a blast from the enemy side: hurts you by distance, wrecks crates; the vest also takes other men with it
+func blast(c: Vector3, radius: float, dmg: float, hits_enemies: bool) -> void:
+	if fx: fx.explode(c, true)
+	Snd.play("boom", 1.0, c); enemies.noise(c, 50)
+	var body := Vector3(player.pos.x, player.pos.y + 0.9, player.pos.z); var d := c.distance_to(body)
+	player.shake = maxf(player.shake, clampf(0.9 - d * 0.04, 0.0, 0.9))
+	if d < radius and Phys.line_of_sight(c, Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z)): player.hurt(dmg * (1.0 - d / radius), c, "body")
+	_crates_near(c, radius)
+	if hits_enemies: enemies.splash(c, radius, dmg)
+
 func rocket_centre(e) -> Vector3:
 	return Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.55), e.pos.z)
 
@@ -95,6 +117,26 @@ func update(dt: float) -> void:
 			if not dead and p.life <= 0.0: _rocket_hit(p, null); dead = true
 			if not dead and stage == 9 and fx: fx.spark(p.pos - rd * 0.3)   # the tail of fire
 			if not dead: (p.m as MeshInstance3D).look_at_from_position(p.pos, p.pos + rd, Vector3.UP if absf(rd.y) < 0.99 else Vector3.RIGHT)
+		elif p.kind == "bomb":
+			if p.life <= 0.0: blast(p.pos, 7.0, 300.0, true); dead = true
+		elif p.kind == "egren":
+			p.vel.y -= 9.8 * dt; var hy := player.pos.y + 0.9
+			for s in 3:
+				if dead: break
+				p.pos += p.vel * (dt / 3.0)
+				var near: bool = Vector3(p.pos.x - player.pos.x, p.pos.y - hy, p.pos.z - player.pos.z).length() < 0.7
+				var hit: bool = p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.06 or Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.06, 0.1) != null or near
+				if hit and p.mode == "gl": blast(p.pos, 5.5, 120.0, false); dead = true
+				elif hit:   # a thrown grenade bounces and rolls
+					var g := Phys.ground_at(p.pos.x, p.pos.y + 0.3, p.pos.z, 0.05); p.pos.y = maxf(p.pos.y, g + 0.06)
+					if absf(p.vel.y) > 1.2: Snd.play("metal", 1.0, p.pos)
+					p.vel = Vector3(p.vel.x * 0.45, absf(p.vel.y) * 0.3, p.vel.z * 0.45)
+			if not dead and p.mode == "nade":   # three beeps, then it goes off
+				p.fuse -= dt
+				if p.beeps < 3 and p.fuse <= 1.5 - p.beeps * 0.5: p.beeps += 1; Snd.play("beep", 1.0, p.pos)
+				if p.fuse <= 0.0: blast(p.pos, 5.5, 100.0, false); dead = true
+			if p.life <= 0.0 and not dead: blast(p.pos, 5.5, 120.0 if p.mode == "gl" else 100.0, false); dead = true
+			if not dead: (p.m as MeshInstance3D).position = p.pos
 		elif p.kind == "bullet":
 			# small steps so fast rounds cannot skip past you between checks
 			var hy0 := player.pos.y + 0.1; var hy1 := player.pos.y + Player.HEIGHT

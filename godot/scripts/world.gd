@@ -8,6 +8,10 @@ const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
 	# stage 5, the toy room: a sunny bedroom, bright and warm
 	9: {"toy": true, "fog": [0.55, 0.62, 0.68], "density": 0.004, "zenith": [0.55, 0.62, 0.68], "glow": [0.0, 0.0, 0.0], "hemi": ["ffffff", "cdb99a", 0.5], "moon": ["fff1d6", 0.62], "lamp": ["ffffff", 0.0], "seed": 77, "crates": 0, "sunOff": [30, 60, 34], "exposure": 0.95},
+	# 1-2: the same docks later that night, a little colder, laid out differently
+	5: {"fog": [0.024, 0.031, 0.052], "density": 0.016, "zenith": [0.005, 0.008, 0.019], "glow": [0.05, 0.03, 0.03], "hemi": ["5a6c98", "2a2422", 0.6], "moon": ["a8bcff", 0.44], "lamp": ["ffb060", 1.8], "seed": 11, "crates": 40, "singles": 14, "empty": 0.12},
+	# 1-1: the docks again, another night, another layout, mist over the water
+	6: {"fog": [0.03, 0.034, 0.05], "density": 0.018, "zenith": [0.007, 0.008, 0.016], "glow": [0.07, 0.04, 0.024], "hemi": ["5f6f92", "2b2420", 0.6], "moon": ["b0c0ff", 0.42], "lamp": ["ffa040", 1.85], "seed": 19, "crates": 40, "singles": 12, "empty": 0.1},
 	1: {"fog": [0.026, 0.033, 0.052], "density": 0.016, "zenith": [0.006, 0.008, 0.017], "glow": [0.06, 0.036, 0.022], "hemi": ["5d6f96", "2b2420", 0.62],
 		"moon": ["a8bcff", 0.42], "lamp": ["ffa548", 1.8], "seed": 7, "crates": 40, "singles": 12, "empty": 0.1},
 }
@@ -188,7 +192,7 @@ func build_stage(stage: int) -> void:
 
 	# rubber-tyred gantry cranes straddling some blocks
 	var crane_mat := Gfx.std(lin("c9a227"), 0.6, 0.3); var blink_mat := Gfx.unlit(lin("ff3a3a"), false)
-	for c: Array in [[-24.0, -22.0], [24.0, 22.0], [-48.0, 22.0], [48.0, -22.0]]:
+	for c: Array in ([[-24.0, -22.0], [24.0, 22.0], [-48.0, 22.0], [48.0, -22.0]] if stage == 1 else [[24.0, 22.0], [-24.0, -22.0], [48.0, 22.0]]):
 		var cx: float = c[0]; var cz: float = c[1]; var parts := []
 		for sx: int in [-1, 1]:
 			for sz: int in [-1, 1]:

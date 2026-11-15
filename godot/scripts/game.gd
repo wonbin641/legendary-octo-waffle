@@ -13,7 +13,12 @@ const STAGES := {
 	9: {"name": "장난감 방", "enemy": "toy", "goal": 0, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 지금은 맵과 장난감 무기만 둘러볼 수 있습니다"},
 	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": ""},
 }
-const BOSS := {1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6}}
+const BOSS := {
+	1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6},
+	6: {"type": "thug", "name": "헬멧 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6, "helmet": true},
+	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
+}
+var drop_pick = null   # 1-2: where you chose to be put down (kept for another go)
 
 var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var proj: Proj; var loot: Loot; var fx: Fx
 var banner: Callable = Callable(); var feed: Callable = Callable(); var on_result: Callable = Callable()   # on_result(kind) shows the result sheet
@@ -51,14 +56,40 @@ func begin(stage_: int) -> void:
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
 	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; opened = []
+	# 1-2 crowds the middle of the docks, so unless you pick somewhere else you come down at the south edge, facing in
+	if stage == 5:
+		var d = open_spot(0.0, 58.0)
+		if d != null: world.start = d; player.reset(d.x, d.z, d.yaw); player.invuln = 1.5
 	populate()
+	if stage == 5 and drop_pick != null: set_drop(drop_pick)
 	var B: Dictionary = BOSS.get(stage, {})
 	boss_msg = ("보스 " + B.name + B.josa + " 어딘가에 있습니다" + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(20000))) if not B.is_empty() else ""
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
 
+## the nearest open ground to a point on the map: room to land, not on a container, inside the fence; you face the middle of the docks
+func open_spot(x: float, z: float):
+	var rr := 0.0
+	while rr <= 9.0:
+		var n := maxi(8, roundi(rr * 6.0)) if rr > 0.0 else 1
+		for i in n:
+			var a := (float(i) / n) * TAU; var px := x + cos(a) * rr; var pz := z + sin(a) * rr
+			if absf(px) > Phys.HALF - 4 or absf(pz) > Phys.HALF - 4 or Phys.collide_at(px, 0.05, pz, 1.1, 2) != null or Phys.ground_at(px, 0.3, pz, 0.5) > 0.1: continue
+			return {"x": px, "z": pz, "yaw": atan2(px, pz) if Vector2(px, pz).length() > 3.0 else 0.0}
+		rr += 0.5
+	return null
+
+func pick_drop(x: float, z: float):
+	var d = open_spot(x, z)
+	if d == null: return null
+	drop_pick = d; set_drop(d); return d
+
+func set_drop(d: Dictionary) -> void:
+	world.start = {"x": d.x, "z": d.z, "yaw": d.yaw}; player.pos = Vector3(d.x, 0, d.z); player.yaw = d.yaw; player.pitch = 0.0; Phys.update_flow(d.x, d.z)
+
 ## the same stage always puts the same enemies in the same places
 func populate() -> void:
 	if stage == 9: goal = 0; boss = null; return   # nobody in the toy room yet
+	enemies.helmet_hint = false
 	var SR := World.Rng.new(5150 + stage * 101); var st := world.start; var placed: Array = []; var half := Phys.HALF
 	var ok := func(x: float, z: float, min_start: float, gap: float, rad: float) -> bool:
 		if absf(x) > half - 4 or absf(z) > half - 4 or Vector2(x - st.x, z - st.z).length() < min_start or Phys.collide_at(x, 0, z, rad, 2) != null: return false
@@ -77,20 +108,78 @@ func populate() -> void:
 			var o := {"yaw": SR.rng(0, TAU)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1
 	var B: Dictionary = BOSS.get(stage, {})
-	if not B.is_empty():
+	if stage == 5: _populate_armed(SR, ok, find, put, placed, n)
+	elif not B.is_empty():
 		var bp = find.call(55.0, 8.0, 2.5)
 		if bp == null: bp = find.call(30.0, 4.0, 1.5)
 		var bo := B.duplicate(); bo.boss = true; put.call(B.type, bp, bo)
 	# guard posts of 2-4 people
-	while n[0] < 100:
+	var helmet := stage == 6
+	while n[0] < 100 and stage != 5:
 		var center = find.call(36.0, 5.0, 0.8)
 		if center == null: break
-		put.call("thug", center, {})
+		put.call("thug", center, {"helmet": helmet})
 		var grp := int(floor(SR.rng(2, 5)))
-		for i in range(1, grp): put.call("thug", find.call(33.0, 1.6, 0.6, center, 5.0), {})
+		for i in range(1, grp): put.call("thug", find.call(33.0, 1.6, 0.6, center, 5.0), {"helmet": helmet})
 	goal = enemies.list.size(); boss = null
 	for e in enemies.list:
 		if e.boss: boss = e
+
+## 1-2: 5 snipers up on container stacks, 9 gold desert eagles, 10 suicide bombers, 3 flamethrowers, 12 rifles, 20 knives, 10 blue lightsabers,
+## 5 with a lightsaber in each hand, 10 grenade throwers, 15 aluminium bats, and the boss with a machine gun: 100 in all.
+## 70 of them, the boss among them, are packed into the middle nine blocks; the other 30 are spread round the outside
+func _populate_armed(SR: World.Rng, ok: Callable, find: Callable, put: Callable, placed: Array, n: Array) -> void:
+	var half := Phys.HALF; var B: Dictionary = BOSS[5]
+	var inside := func(x: float, z: float) -> bool: return absf(x) < 36.0 and absf(z) < 33.0
+	var find_r := func(want_in: bool, min_start: float, gap: float, rad: float, near = null, spread := 0.0):
+		for k in 400:
+			var x: float = near.x + SR.rng(-spread, spread) if near != null else (SR.rng(-35, 35) if want_in else SR.rng(-half + 6, half - 6))
+			var z: float = near.z + SR.rng(-spread, spread) if near != null else (SR.rng(-32, 32) if want_in else SR.rng(-half + 6, half - 6))
+			if inside.call(x, z) != want_in or not ok.call(x, z, min_start, gap, rad): continue
+			var p := {"x": x, "z": z}; placed.push_back(p); return p
+		return null
+	var inner := [0]
+	var put_n := func(p, opts: Dictionary) -> bool:   # returns whether someone was placed
+		var before: int = n[0]; put.call("thug", p, opts); return n[0] > before
+	var bp = find_r.call(true, 20.0, 8.0, 2.5)
+	if bp == null: bp = find.call(30.0, 4.0, 1.5)
+	var bo := B.duplicate(); bo.boss = true
+	if put_n.call(bp, bo): inner[0] += 1
+	var kits := []
+	for r in [["sniper", 5], ["deagle", 9], ["bomber", 10], ["flame", 3], ["rifle", 12], ["dagger", 20], ["saber", 10], ["saber2", 5], ["nade", 10], ["bat", 15]]:
+		for i in r[1]: kits.push_back(r[0])
+	for i in range(kits.size() - 1, 0, -1): var j := int(floor(SR.next() * (i + 1))); var t = kits[i]; kits[i] = kits[j]; kits[j] = t
+	# the snipers on stacks in the middle, looking out over the rest
+	var tops: Array = Phys.colliders.filter(func(b): return b.kind == "metal" and b.maxy > 2 and b.maxy < 9 and (b.maxx - b.minx) * (b.maxz - b.minz) > 10 and inside.call((b.minx + b.maxx) / 2, (b.minz + b.maxz) / 2))
+	var snipers: int = kits.count("sniper"); var left: Array = kits.filter(func(k): return k != "sniper")
+	for i in snipers:
+		var spot = null; var k := 0
+		while k < 40 and not tops.is_empty() and spot == null:
+			k += 1; var b: Phys.Box = tops.pop_at(int(floor(SR.next() * tops.size()))); var q := {"x": (b.minx + b.maxx) / 2, "z": (b.minz + b.maxz) / 2, "y": b.maxy}
+			if placed.all(func(o): return Vector2(o.x - q.x, o.z - q.z).length() > 6.0): spot = q
+		if spot != null:
+			placed.push_back(spot)
+			if put_n.call(spot, {"kit": "sniper", "y": spot.y}): inner[0] += 1
+		else: left.push_back("sniper")
+	# posts of 2-5 in the middle until it holds 70, then posts of 2-3 outside for the rest
+	var guard := 0
+	while inner[0] < 70 and not left.is_empty() and guard < 200:
+		guard += 1; var center = find_r.call(true, 20.0, 4.5, 0.8)
+		if center == null: break
+		if put_n.call(center, {"kit": left.pop_front()}): inner[0] += 1
+		var grp := int(floor(SR.rng(2, 6)))
+		for i in range(1, grp):
+			if left.is_empty() or inner[0] >= 70: break
+			if put_n.call(find_r.call(true, 18.0, 1.6, 0.6, center, 5.0), {"kit": left[0]}): left.pop_front(); inner[0] += 1
+	guard = 0
+	while n[0] < 100 and not left.is_empty() and guard < 200:
+		guard += 1; var center = find_r.call(false, 26.0, 5.0, 0.8)
+		if center == null: break
+		put.call("thug", center, {"kit": left.pop_front()})
+		var grp := int(floor(SR.rng(2, 4)))
+		for i in range(1, grp):
+			if left.is_empty(): break
+			if put_n.call(find_r.call(false, 24.0, 1.6, 0.6, center, 5.0), {"kit": left[0]}): left.pop_front()
 
 func update(dt: float) -> void:
 	if not ended: stats.time += dt
@@ -115,6 +204,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if e.boss:
 		_say(banner, ["보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "보물상자가 떨어졌습니다", 3.0])
 		loot.chest(e.pos.x, e.pos.z, e.pos.y); boss = null
+	elif e.self_det: _say(feed, ["자폭맨이 터졌습니다", 0])
 	else: _say(feed, [STAGES[stage].label + (" · 머리 명중" if weak else " 처치"), pay])
 	var left := goal - kills; var S: Dictionary = STAGES[stage]
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "가방 " + Store.won(Store.save.money), 1.8])

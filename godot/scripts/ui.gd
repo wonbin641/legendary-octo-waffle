@@ -11,7 +11,7 @@ const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵�
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 · 숨은 스파이더 마인"}
 const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82]}
 const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8]]
-const BUILT := [1, 9]   # stages the Godot version can play so far
+const BUILT := [1, 6, 5, 9]   # stages the Godot version can play so far
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var game: Game; var guns: Guns
@@ -562,13 +562,18 @@ func _build_brief() -> void:
 	var s := sheet("brief", "작전 브리핑 · 위에서 본 지도", "스테이지 1", 620.0); var body: VBoxContainer = s[1]; br_code = s[0].get_meta("code")
 	br_title = lbl("", f_title, 36, INK); body.add_child(br_title)
 	br_map = Control.new(); br_map.custom_minimum_size = Vector2(0, 260); body.add_child(br_map); br_map.draw.connect(_draw_map)
+	br_map.gui_input.connect(func(e: InputEvent) -> void:   # 1-2: tap the map to choose where you are put down
+		if game.stage != 5 or not ((e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed)): return
+		var ms := minf(br_map.size.x, br_map.size.y); var half := Phys.HALF + 2.0; var o := Vector2((br_map.size.x - ms) / 2, 0)
+		var d = game.pick_drop((e.position.x - o.x) / ms * 2.0 * half - half, (e.position.y - o.y) / ms * 2.0 * half - half)
+		br_gear_note = "내릴 곳을 바꿨습니다" if d != null else "그곳에는 내릴 수 없습니다 · 빈 땅을 눌러 주세요"; _brief_gear(); br_map.queue_redraw())
 	br_note = lbl("", f_body, 13, INK, true); body.add_child(br_note); br_gear = lbl("", f_body, 13, SODIUM, true); body.add_child(br_gear)
 	br_go = btn("출동", "primary", func() -> void: _deploy()); br_go.set_meta("first", true)
 	var b1 := btn("상점", "ghost", func() -> void: shop_ctx = sel; open_sub("shop")); var b2 := btn("무기 편성", "ghost", func() -> void: open_sub("loadout")); var b3 := btn("돌아가기", "ghost", func() -> void: do_menu.call())
 	for i in 4: s[2].add_child([br_go, b1, b2, b3][i]); s[2].move_child([br_go, b1, b2, b3][i], i)
 
 func open_brief(stage: int) -> void:
-	sel = stage; game.begin(stage); back_stack.clear(); show_screen("brief"); _brief_gear()
+	sel = stage; game.begin(stage); back_stack.clear(); br_gear_note = ""; show_screen("brief"); _brief_gear()
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name
 	br_note.text = Game.STAGES[stage].intro + ("\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1) if game.goal > 0 else ""); br_map.queue_redraw()
 
@@ -578,7 +583,7 @@ func _brief_gear() -> void:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
 	if sel == 9: br_gear.text = "장난감 무기 9종 · 1-9번 키"; br_go.disabled = false; return
-	br_gear.text = ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n추천 스펙 · " + ("적합" if fit else "부적합")
+	br_gear.text = ((("지도를 눌러 내릴 곳을 고를 수 있습니다" if br_gear_note == "" else br_gear_note) + "\n") if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n추천 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
 func _deploy() -> void:
@@ -612,6 +617,7 @@ func render_pause() -> void:
 	pa_body.add_child(lbl("처치 %d / %d · 가방 %s" % [game.kills, game.goal, Store.won(Store.save.money)], f_mono, 13, INK))
 	_settings_rows(pa_body, false)
 var pa_note_text := ""
+var br_gear_note := ""
 
 # ================= the result sheet =================
 func _build_over() -> void:

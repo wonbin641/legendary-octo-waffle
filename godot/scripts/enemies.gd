@@ -4,7 +4,27 @@ extends Node3D
 ## Zombies, the other kits, animals and robots join with their stages.
 
 const ETYPES := {"thug": {"hp": 100, "speed": 3.6, "r": 0.35, "h": 1.8, "name": "조직원"}}
-const KITS := {"pistol": {"name": "권총", "range": 32.0, "near": 8.0, "far": 20.0, "end": 0.62}}
+# what an armed man carries: the gun in his right hand (boxes laid along the arm) and how he fights.
+# range: starts a fight inside it; near/far: the distance he tries to keep; end: how far the muzzle sits from the shoulder
+const KITS := {
+	"pistol": {"name": "권총", "gun": [[0.045, 0.1, 0.18, 0, -0.66, 0.06, "1d2024"]], "range": 32.0, "near": 8.0, "far": 20.0, "end": 0.62},
+	"deagle": {"name": "데저트 이글", "gun": [[0.06, 0.3, 0.12, 0, -0.78, 0.02, "d9a531"], [0.05, 0.08, 0.07, 0, -0.64, -0.04, "b8861e"]], "range": 34.0, "near": 7.0, "far": 18.0, "end": 0.95},
+	"dagger": {"name": "단검", "gun": [[0.04, 0.13, 0.045, 0, -0.66, 0.03, "2a1e16"], [0.035, 0.035, 0.11, 0, -0.73, 0.03, "8a8f98"], [0.018, 0.27, 0.05, 0, -0.88, 0.03, "d6dbe3"]], "range": 60.0, "near": 0.0, "far": 0.0, "end": 0.8, "melee": true, "run": 5.2},
+	"bomber": {"name": "자폭맨", "gun": [], "range": 80.0, "near": 0.0, "far": 0.0, "end": 0.6, "melee": true, "vest": true, "run": 6.2},
+	"saber2": {"name": "쌍광선검", "gun": [[0.05, 0.2, 0.05, 0, -0.7, 0.03, "bfc4cc"]], "range": 60.0, "near": 0.0, "far": 0.0, "end": 0.8, "melee": true, "blade": true, "dual": true, "run": 4.6},
+	"bat": {"name": "야구방망이", "gun": [[0.036, 0.26, 0.036, 0, -0.75, 0.03, "26262a"], [0.05, 0.3, 0.05, 0, -1.03, 0.03, "b9bec6"], [0.066, 0.34, 0.066, 0, -1.34, 0.03, "d3d7dd"], [0.07, 0.03, 0.07, 0, -1.52, 0.03, "9ea3ab"]], "range": 50.0, "near": 0.0, "far": 0.0, "end": 0.8, "melee": true, "run": 4.5},
+	"smg": {"name": "기관단총", "gun": [[0.06, 0.46, 0.12, 0, -0.84, 0.03, "24272c"], [0.04, 0.06, 0.16, 0, -0.8, -0.08, "1b1d20"]], "range": 30.0, "near": 6.0, "far": 14.0, "end": 1.07},
+	"rifle": {"name": "돌격소총", "gun": [[0.06, 0.8, 0.12, 0, -0.98, 0.03, "2b2f26"], [0.05, 0.06, 0.18, 0, -0.86, -0.09, "1b1d20"]], "range": 40.0, "near": 8.0, "far": 22.0, "end": 1.38},
+	"sniper": {"name": "저격총", "gun": [[0.05, 1.12, 0.09, 0, -1.12, 0.03, "2a2e24"], [0.06, 0.26, 0.06, 0, -0.86, -0.07, "111111"]], "range": 95.0, "near": 0.0, "far": 0.0, "end": 1.68, "still": true},
+	"shotgun": {"name": "샷건", "gun": [[0.07, 0.84, 0.11, 0, -1.0, 0.03, "4a3424"], [0.06, 0.2, 0.07, 0, -1.05, 0.09, "2a2a2a"]], "range": 18.0, "near": 4.0, "far": 9.0, "end": 1.42},
+	"gl": {"name": "유탄발사기", "gun": [[0.12, 0.58, 0.13, 0, -0.9, 0.03, "3d4430"], [0.13, 0.2, 0.13, 0, -1.25, 0.03, "2a2e24"]], "range": 45.0, "near": 10.0, "far": 28.0, "end": 1.35},
+	"nade": {"name": "수류탄", "gun": [[0.08, 0.1, 0.08, 0, -0.68, 0.03, "3d4430"]], "range": 26.0, "near": 9.0, "far": 20.0, "end": 0.62, "belt": true},
+	"flame": {"name": "화염방사기", "gun": [[0.07, 0.74, 0.09, 0, -0.98, 0.03, "3a3a3a"], [0.05, 0.1, 0.05, 0, -1.38, 0.03, "8a5a2a"]], "range": 30.0, "near": 2.5, "far": 6.5, "end": 1.45, "tank": true},
+	"saber": {"name": "광선검", "gun": [[0.05, 0.2, 0.05, 0, -0.7, 0.03, "bfc4cc"]], "range": 60.0, "near": 0.0, "far": 0.0, "end": 0.8, "melee": true, "blade": true, "run": 4.3},
+	"lmg": {"name": "기관총", "gun": [[0.1, 0.98, 0.16, 0, -1.06, 0.03, "2c2f28"], [0.14, 0.16, 0.12, 0, -0.8, -0.1, "3d4430"]], "range": 45.0, "near": 8.0, "far": 24.0, "end": 1.55},
+}
+# guns that fire bullets: shots per burst (from, to), gap between shots, damage, pause between bursts (from, to)
+const BURST := {"pistol": [1, 3, 0.32, 9.0, 1.1, 2.3], "deagle": [1, 1, 0.3, 45.0, 1.3, 2.2], "smg": [6, 9, 0.08, 7.0, 1.3, 2.1], "rifle": [3, 5, 0.11, 11.0, 1.2, 2.0], "lmg": [12, 18, 0.075, 10.0, 1.0, 1.6], "shotgun": [1, 1, 0.3, 11.0, 1.2, 1.8]}
 const JACKETS := ["2b3440", "3d4a33", "4a3b30", "2e2e34", "5a5248", "283a4a", "47302e"]
 const SKIN := ["c99a7a", "a8775a", "e0b895", "7d5a44"]
 const KEEP_PAD := 0.14
@@ -24,7 +44,10 @@ class Foe:
 	var dead_t := 0.0; var fall_dir := -1.0; var vanish := false; var sid := -1
 	var foot := {}; var foot_r := 0.0; var parts: Array = []; var muzzle := Vector3(0.2, 1.42, 0.62)
 	var extra := false; var self_det := false; var no_pay := false
-	var fly := false; var head_x := 0.0   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
+	var fly := false; var head_x := 0.0
+	var helmet := false; var helmet_node: Node3D = null; var vest_shot := false; var vest_light: Node3D = null
+	var swing_cd := 0.0; var swing_t := 0.0; var swing_l := false; var stabbed := false; var bat_hit := false
+	var fuse := 0.0; var beep2 := false; var flame_on := 0.0; var flame_acc := 0.0; var flame_snd := 0.0; var aim_t := 0.0; var laser: MeshInstance3D = null   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
 
 var list: Array[Foe] = []
 var dying: Array[Foe] = []
@@ -33,6 +56,11 @@ var player: Player
 var cam: Camera3D
 var proj: Proj
 var on_kill: Callable = Callable()   # (foe, weak)
+var say: Callable = Callable()       # a line for the feed
+var hitmark: Callable = Callable()
+var fx: Fx = null
+var flying: Array = []                # helmets knocked off: [node, velocity, age]
+var helmet_hint := false
 var _meshes := {}
 var _mat: StandardMaterial3D
 var _bar_bg: StandardMaterial3D
@@ -60,12 +88,25 @@ func _build(e: Foe) -> void:
 	e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; add_child(e.g)
 	var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, pants], [0.16, 0.09, 0.27, 0, -0.88, 0.05, "161616"]]
 	e.leg_l = _part(e.g, Vector3(-0.11, 0.92, 0), "leg", leg); e.leg_r = _part(e.g, Vector3(0.11, 0.92, 0), "leg", leg)
-	e.upper = _part(e.g, Vector3(0, 0.92, 0), "up" + body + skin, [[0.44, 0.62, 0.26, 0, 0.36, 0, body], [0.22, 0.25, 0.24, 0, 0.8, 0.01, skin], [0.24, 0.08, 0.26, 0, 0.94, 0, pants]])
+	var K := e.K; var up := [[0.44, 0.62, 0.26, 0, 0.36, 0, body], [0.22, 0.25, 0.24, 0, 0.8, 0.01, skin], [0.24, 0.08, 0.26, 0, 0.94, 0, pants]]
+	if K.get("vest", false): up.append_array([[0.42, 0.28, 0.07, 0, 0.42, 0.15, "5b4a2c"], [0.07, 0.22, 0.05, -0.13, 0.42, 0.2, "8a3a24"], [0.07, 0.22, 0.05, 0, 0.42, 0.2, "8a3a24"], [0.07, 0.22, 0.05, 0.13, 0.42, 0.2, "8a3a24"], [0.36, 0.02, 0.02, 0, 0.53, 0.21, "d8c040"]])
+	if K.get("tank", false): up.append_array([[0.13, 0.46, 0.13, -0.09, 0.42, -0.21, "8a2a1e"], [0.13, 0.46, 0.13, 0.09, 0.42, -0.21, "8a2a1e"], [0.03, 0.3, 0.03, 0.2, 0.3, -0.12, "2a2a2a"]])
+	if K.get("belt", false):
+		for i in 4: up.push_back([0.07, 0.08, 0.07, -0.15 + i * 0.1, 0.06, 0.15, "3d4430"])
+	e.upper = _part(e.g, Vector3(0, 0.92, 0), "up" + body + skin + e.kit, up)
 	var arm := [[0.12, 0.62, 0.13, 0, -0.29, 0, body], [0.1, 0.1, 0.1, 0, -0.62, 0, skin]]
-	e.arm_l = _part(e.upper, Vector3(-0.29, 0.6, 0), "arm" + body + skin, arm)
-	e.arm_r = _part(e.upper, Vector3(0.29, 0.6, 0), "armg" + body + skin, arm + [[0.045, 0.1, 0.18, 0, -0.66, 0.06, "1d2024"]])
-	e.parts = [{"o": Vector3(0, 1.72, 0.01), "r": 0.15, "mult": 1.0, "weak": true}, {"o": Vector3(0, 1.3, 0), "r": 0.3, "mult": 1.0, "weak": false},
-		{"o": Vector3(0, 0.95, 0), "r": 0.22, "mult": 0.9, "weak": false}, {"o": Vector3(0, 0.48, 0), "r": 0.24, "mult": 0.7, "weak": false}]
+	e.arm_l = _part(e.upper, Vector3(-0.29, 0.6, 0), "arm" + body + skin + ("2" if K.get("dual", false) else ""), arm + ([[0.05, 0.2, 0.05, 0, -0.7, 0.03, "bfc4cc"]] if K.get("dual", false) else []))
+	e.arm_r = _part(e.upper, Vector3(0.29, 0.6, 0), "armg" + body + skin + e.kit, arm + K.gun)
+	if K.get("blade", false):   # a glowing blade on the hilt; two red ones for the dual wielders
+		for a in ([e.arm_r, e.arm_l] if K.get("dual", false) else [e.arm_r]):
+			var bl := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.05, 1.15, 0.05); bl.mesh = bm; bl.position = Vector3(0, -1.38, 0.03)
+			var bmat := Gfx.unlit(Color(1.0, 0.45, 0.45) if K.get("dual", false) else Color(0.55, 0.78, 1.0), false); bl.material_override = bmat; a.add_child(bl)
+	if K.get("vest", false):
+		var vl := MeshInstance3D.new(); var vb := BoxMesh.new(); vb.size = Vector3(0.05, 0.05, 0.03); vl.mesh = vb; vl.material_override = Gfx.unlit(Color(1, 0.16, 0.1), false); vl.position = Vector3(0.11, 1.45, 0.215); e.g.add_child(vl); e.vest_light = vl
+	e.parts = [{"o": Vector3(0, 1.72, 0.01), "r": 0.15, "mult": 1.0, "weak": true, "bomb": false}, {"o": Vector3(0, 1.3, 0), "r": 0.3, "mult": 1.0, "weak": false, "bomb": false},
+		{"o": Vector3(0, 0.95, 0), "r": 0.22, "mult": 0.9, "weak": false, "bomb": false}, {"o": Vector3(0, 0.48, 0), "r": 0.24, "mult": 0.7, "weak": false, "bomb": false}]
+	# the bomb strapped to a bomber's chest: one bullet in it and it goes off
+	if K.get("vest", false): e.parts.insert(1, {"o": Vector3(0, 1.34, 0.18), "r": 0.2, "mult": 1.0, "weak": false, "bomb": true})
 	e.bar = Node3D.new(); e.bar.visible = false; add_child(e.bar)
 	var bg := MeshInstance3D.new(); bg.mesh = _bar_mesh; bg.material_override = _bar_bg; bg.scale = Vector3(0.7, 0.07, 1); e.bar.add_child(bg)
 	e.fill = MeshInstance3D.new(); e.fill.mesh = _bar_mesh; e.fill.material_override = _bar_fill; e.fill.scale = Vector3(0.66, 0.045, 1); e.bar.add_child(e.fill)
@@ -73,6 +114,8 @@ func _build(e: Foe) -> void:
 func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	var e := Foe.new(); e.type = type; e.T = ETYPES[type]; e.kit = opts.get("kit", "pistol"); e.K = KITS.get(e.kit, KITS.pistol)
 	_build(e)
+	if opts.get("helmet", false):   # a full-face motorcycle helmet: the first shot to the head knocks it off
+		e.helmet = true; e.helmet_node = _helmet(); e.upper.add_child(e.helmet_node)
 	var sc: float = opts.get("scale", 1.0)
 	# a person's outline from above, in his own frame (x right, z forward): arms out at the front
 	e.foot = {"x0": -0.4 * sc, "x1": 0.4 * sc, "z0": -0.18 * sc, "z1": 0.52 * sc}
@@ -84,6 +127,7 @@ func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	e.pos = Vector3(x, opts.get("y", 0.0), z); e.yaw = opts.get("yaw", randf() * TAU)
 	e.lod = randf() * 0.5; e.los_t = randf() * 0.3; e.fire_t = randf_range(0.8, 1.6); e.strafe = 1.0 if randf() < 0.5 else -1.0; e.strafe_t = randf_range(1, 2.5); e.walk = randf() * TAU
 	e.muzzle = Vector3(0.2, 1.42, e.K.end)
+	if e.K.has("run"): e.speed = maxf(e.speed, e.K.run * 0.9)   # melee men close the distance quickly even before they see you
 	e.g.position = e.pos; e.g.rotation = Vector3(0, e.yaw, 0); e.g.scale = Vector3.ONE * sc
 	if e.boss: e.bar.scale = Vector3.ONE * 1.6
 	list.push_back(e)
@@ -95,7 +139,7 @@ func part_centre(e: Foe, p: Dictionary) -> Vector3:
 
 ## the first enemy a ray meets before max_t: null, or {enemy, t, weak, mult, bomb}
 func raycast(o: Vector3, d: Vector3, max_t: float):
-	var best := max_t; var hit: Foe = null; var r_mult := 1.0; var r_weak := false
+	var best := max_t; var hit: Foe = null; var r_mult := 1.0; var r_weak := false; var r_bomb := false
 	for e in list:
 		if not e.alive: continue
 		if (e.pos.x - o.x) * d.x + (e.pos.z - o.z) * d.z < -2.0 * e.scale: continue
@@ -105,9 +149,9 @@ func raycast(o: Vector3, d: Vector3, max_t: float):
 			if disc < 0.0: continue
 			var t := -b - sqrt(disc)
 			if t < 0.0: t = -b + sqrt(disc)
-			if t > 0.0 and (t < best - 0.02 or (t < best + 0.02 and p.weak and hit == e and not r_weak)): best = t; hit = e; r_mult = p.mult; r_weak = p.weak
+			if t > 0.0 and (t < best - 0.02 or (t < best + 0.02 and p.weak and hit == e and not r_weak)): best = t; hit = e; r_mult = p.mult; r_weak = p.weak; r_bomb = p.bomb
 	if hit == null: return null
-	return {"enemy": hit, "t": best, "mult": r_mult, "weak": r_weak, "bomb": false}
+	return {"enemy": hit, "t": best, "mult": r_mult, "weak": r_weak, "bomb": r_bomb}
 
 ## touch aim help: the direction to the body part closest to the line of fire (within max_ang), or null
 func assist(o: Vector3, d: Vector3, max_ang: float, max_dist: float):
@@ -137,6 +181,7 @@ func noise(at: Vector3, r: float) -> void:
 
 func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool) -> bool:
 	if not e.alive: return false
+	if weak and e.helmet: _knock_helmet(e, dir); return false   # a helmet takes the first shot to the head and flies off
 	e.hp -= dmg; e.flinch = 1.0
 	if not e.boss: e.vel.x += dir.x * 0.9; e.vel.z += dir.z * 0.9
 	alarm(e); e.los = true; e.react = minf(e.react, 0.3)
@@ -147,6 +192,10 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool) -> bool:
 
 func kill(e: Foe, weak: bool, dir) -> void:
 	e.alive = false; e.dead_t = 0.0; e.bar.visible = false; e.g.visible = true
+	if e.laser: e.laser.visible = false
+	if e.K.get("vest", false):   # the vest goes off (at once if the bomb itself was hit, or he set it off)
+		var now := e.self_det or e.vest_shot; proj.bomb(e.pos, 0.02 if now else 0.3)
+		if now: e.vanish = true
 	e.fall_dir = -1.0
 	if dir != null: e.fall_dir = 1.0 if sin(e.yaw) * dir.x + cos(e.yaw) * dir.z > 0.0 else -1.0
 	list.erase(e); dying.push_back(e)
@@ -164,13 +213,39 @@ func splash(c: Vector3, radius: float, dmg: float, skip = null) -> void:
 		var k := 1.0 - minf(1.0, d / (radius + e.R))
 		damage(e, dmg * (0.35 + 0.65 * k), mid, Vector3((e.pos.x - c.x) / maxf(d, 0.001), 0, (e.pos.z - c.z) / maxf(d, 0.001)), false)
 
-func blow_vest(_e, _dir: Vector3) -> void:
-	pass
+## a bullet in a bomber's chest bomb: it goes off there and then, and the kill is yours
+func blow_vest(e: Foe, dir: Vector3) -> void:
+	if not e.alive: return
+	e.vest_shot = true; e.hp = 0.0
+	if say.is_valid(): say.call("자폭 조끼 명중 · 폭탄이 터졌습니다")
+	kill(e, false, dir)
+
+## a bomber who reaches you: his own vest, no money for you, but he counts as gone
+func detonate(e: Foe) -> void:
+	if e.alive: e.self_det = true; kill(e, false, null)
+
+func _helmet() -> Node3D:
+	var n := Node3D.new(); var m := MeshInstance3D.new()
+	m.mesh = _box_mesh("helmet", [[0.34, 0.31, 0.36, 0, 0.83, -0.005, "0d0e10"], [0.3, 0.07, 0.31, 0, 1.0, -0.015, "0d0e10"], [0.33, 0.12, 0.12, 0, 0.67, -0.12, "0d0e10"], [0.3, 0.11, 0.11, 0, 0.7, 0.14, "0d0e10"],
+		[0.28, 0.13, 0.03, 0, 0.825, 0.18, "3a4d60"], [0.26, 0.018, 0.034, 0, 0.885, 0.183, "c2d2e2"], [0.3, 0.05, 0.3, 0, 0.655, 0, "121316"]])
+	var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.25; mat.metallic = 0.3; m.material_override = mat; n.add_child(m)
+	return n
+
+func _knock_helmet(e: Foe, dir: Vector3) -> void:
+	e.helmet = false
+	var n := e.helmet_node; e.helmet_node = null; var at := n.global_position; e.upper.remove_child(n); add_child(n); n.global_position = at; n.rotation.y = e.yaw; n.scale = Vector3.ONE * e.scale
+	flying.push_back([n, Vector3(dir.x * 3.0 + randf_range(-1, 1), randf_range(3, 4.5), dir.z * 3.0 + randf_range(-1, 1)), 0.0])
+	Snd.play("ping", 1.0, e.pos); e.flinch = 1.0
+	if hitmark.is_valid(): hitmark.call(false, false)
+	if not helmet_hint and say.is_valid(): helmet_hint = true; say.call("헬멧이 벗겨졌습니다 · 한 번 더 머리를 쏘세요")
+	alarm(e)
 
 func clear() -> void:
-	for e in list: e.g.queue_free(); e.bar.queue_free()
-	for e in dying: e.g.queue_free(); e.bar.queue_free()
-	list.clear(); dying.clear()
+	for e in list + dying:
+		e.g.queue_free(); e.bar.queue_free()
+		if e.laser: e.laser.queue_free()
+	for f in flying: f[0].queue_free()
+	list.clear(); dying.clear(); flying.clear()
 
 # ---------------- the people's AI ----------------
 func stop_dist(e: Foe) -> float:
@@ -191,27 +266,126 @@ func _ground_move(e: Foe, vx: float, vz: float, dt: float) -> bool:
 	e.pos.x = clampf(e.pos.x, -Phys.HALF + e.R, Phys.HALF - e.R); e.pos.z = clampf(e.pos.z, -Phys.HALF + e.R, Phys.HALF - e.R)
 	return res[1]
 
-## a man with a pistol: bursts of 1-3 shots (the boss: 4, faster), 9 damage each
+## how each kit fights once it has you in sight. returns true while it is busy (and moves slower)
 func _fight(e: Foe, dt: float, dist: float) -> bool:
-	e.fire_t -= dt
-	const G := [1, 3, 0.32, 9.0, 1.1, 2.3]
+	var kit := e.kit; var m := e.dmg_mul; e.fire_t -= dt; var sd := stop_dist(e); var dy := absf(player.pos.y - e.pos.y)
+	match kit:
+		"saber", "saber2":   # runs you down and swings; one cut is 300. with a blade in each hand the cuts come twice as often
+			var dual := kit == "saber2"; e.swing_cd -= dt
+			if e.swing_t > 0.0:
+				e.swing_t -= dt; var arm := e.arm_l if e.swing_l else e.arm_r
+				arm.rotation = Vector3(-2.6 + (0.28 - e.swing_t) * 9.0, 0, 0.4 * (1.0 if e.swing_l else -1.0))
+				if e.swing_t <= 0.0 and dist < sd + 1.3 and dy < 1.8: player.hurt(300.0 * m, e.pos, "head"); Snd.play("saber_hit", 1.0, e.pos)   # an overhead chop
+				return true
+			if dist < sd + 0.9 and e.swing_cd <= 0.0: e.swing_t = 0.28; e.swing_cd = 0.62 if dual else 1.25; e.swing_l = dual and not e.swing_l; Snd.play("saber_swing", 1.0, e.pos)
+			if e.fire_t <= 0.0:
+				e.fire_t = randf_range(1.2, 2.0)
+				if dist < 25.0: Snd.play("saber_hum", 1.0, e.pos)
+			return false
+		"dagger":   # a knife: arm back, then a quick thrust; 70 a stab, nearly two a second once he is on you
+			e.swing_cd -= dt
+			if e.swing_t > 0.0:
+				e.swing_t -= dt; var u := 1.0 - e.swing_t / 0.32
+				e.arm_r.rotation = Vector3(-0.7 + u * 1.2 if u < 0.45 else -0.16 - (u - 0.45) / 0.55 * 1.5, 0, -0.12)
+				if not e.stabbed and u >= 0.6:
+					e.stabbed = true; Snd.play("swoosh", 1.0, e.pos)
+					if dist < sd + 1.0 and dy < 1.7: player.hurt(70.0 * m, e.pos, "body"); Snd.play("squelch", 1.0, e.pos)
+				return true
+			if dist < sd + 0.8 and e.swing_cd <= 0.0: e.swing_t = 0.32; e.swing_cd = 0.55; e.stabbed = false
+			return false
+		"bat":   # the bat goes up over the shoulder, then comes round flat: 150 and a shove
+			e.swing_cd -= dt
+			if e.swing_t > 0.0:
+				e.swing_t -= dt; var u := 1.0 - e.swing_t / 0.55
+				if u < 0.55: var w := u / 0.55; e.arm_r.rotation = Vector3(-1.2 - w * 1.5, 0, -0.2 - w * 0.6)
+				else: var w2 := (u - 0.55) / 0.45; e.arm_r.rotation = Vector3(-2.7 + w2 * 1.4, 0, -0.8 + w2 * 1.6)
+				if not e.bat_hit and u >= 0.75:
+					e.bat_hit = true; Snd.play("swoosh", 1.0, e.pos)
+					if dist < sd + 1.25 and dy < 1.8:
+						player.hurt(150.0 * m, e.pos, "head"); Snd.play("bat_hit", 1.0, e.pos)   # swung at head height
+						player.vel.x += (player.pos.x - e.pos.x) / maxf(dist, 0.001) * 6.0; player.vel.z += (player.pos.z - e.pos.z) / maxf(dist, 0.001) * 6.0
+				return true
+			if dist < sd + 0.9 and e.swing_cd <= 0.0: e.swing_t = 0.55; e.swing_cd = 1.4; e.bat_hit = false
+			return false
+		"bomber":   # close enough: arms up, the vest beeps fast, and after a moment it all goes
+			if e.fuse > 0.0:
+				e.fuse -= dt; e.arm_l.rotation = Vector3(-2.9, 0, 0.35); e.arm_r.rotation = Vector3(-2.9, 0, -0.35)
+				if not e.beep2 and e.fuse < 0.3: e.beep2 = true; Snd.play("beep", 1.0, e.pos)
+				if e.fuse <= 0.0: detonate(e)
+				return true
+			if dist < sd + 1.4 and dy < 2.0: e.fuse = 0.6; e.beep2 = false; Snd.play("beep", 1.0, e.pos); Snd.play("scream", 1.0, e.pos)
+			return false
+		"flame":
+			if e.flame_on > 0.0:
+				e.flame_on -= dt; var mz := muzzle_of(e); var fx_ := sin(e.yaw); var fz := cos(e.yaw)
+				if fx: fx.flame(mz, Vector3(fx_, 0.02, fz) * 0.45)
+				# you are in the cone: inside 9.5 m and within about 20 degrees of where the nozzle points
+				var c := ((player.pos.x - e.pos.x) * fx_ + (player.pos.z - e.pos.z) * fz) / maxf(dist, 0.001)
+				if dist < 9.5 and c > 0.94 and dy < 2.2:
+					e.flame_acc += 75.0 * m * dt
+					if e.flame_acc >= 15.0: e.flame_acc -= 15.0; player.hurt(15.0, e.pos, "fire")
+				e.flame_snd -= dt
+				if e.flame_snd <= 0.0: e.flame_snd = 0.18; Snd.play("flame", 1.0, mz)
+				return true
+			if dist < 9.0 and e.fire_t <= 0.0: e.flame_on = randf_range(1.6, 2.4); e.fire_t = e.flame_on + randf_range(0.9, 1.5)
+			return false
+		"sniper":   # a red laser shows where he is aiming for a moment before the shot
+			if e.laser == null:
+				e.laser = MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(0.018, 0.018, 1.0); e.laser.mesh = lb
+				var lm := Gfx.unlit(Color(1, 0.16, 0.16, 0.75), false); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; e.laser.material_override = lm; e.laser.visible = false; add_child(e.laser)
+			if e.aim_t > 0.0:
+				e.aim_t -= dt; var mz := muzzle_of(e); var aim := Vector3(player.pos.x + player.vel.x * dist / 400.0, player.pos.y + 1.58, player.pos.z + player.vel.z * dist / 400.0)   # snipers go for the head
+				var L := mz.distance_to(aim)
+				if L > 0.5: e.laser.look_at_from_position((mz + aim) / 2, aim, Vector3.UP); e.laser.scale = Vector3(1, 1, L); e.laser.visible = true
+				if e.aim_t <= 0.0: e.laser.visible = false; proj.bullet(mz, aim, 160.0, 140.0 * m, 0.05 + player.speed_xz * 0.12); Snd.play("shot_far", 1.2, mz); e.fire_t = randf_range(2.4, 3.4)
+				return true
+			if e.fire_t <= 0.0: e.aim_t = 1.3
+			return false
+		"gl", "nade":
+			if e.fire_t <= 0.0:
+				var mz := muzzle_of(e); var lead := 60.0 if kit == "gl" else 45.0
+				var aim := Vector3(player.pos.x + player.vel.x * dist / lead, player.pos.y + 0.3, player.pos.z + player.vel.z * dist / lead)
+				if kit == "nade": e.arm_r.rotation = Vector3(-2.8, 0, 0); mz.y += 0.4
+				proj.egrenade(mz, aim, kit); e.fire_t = randf_range(2.6, 3.6) if kit == "gl" else randf_range(2.4, 3.6)
+			return false
+	# guns that fire bullets
+	var G: Array = BURST.get(kit, BURST.pistol)
+	if kit == "shotgun" and dist > 18.0: return false
 	if e.burst > 0:
 		e.burst_t -= dt
 		if e.burst_t <= 0.0:
-			e.burst -= 1; e.burst_t = G[2] * (0.62 if e.boss else 1.0)
-			var mz := muzzle_of(e)
-			var aim := Vector3(player.pos.x + player.vel.x * dist / 150.0, player.pos.y + 1.25, player.pos.z + player.vel.z * dist / 150.0)
-			proj.bullet(mz, aim, 80.0, G[3] * e.dmg_mul, 0.35 + dist * 0.028 + player.speed_xz * 0.08 - (0.15 if e.boss else 0.0))
+			e.burst -= 1; e.burst_t = G[2] * (0.62 if (e.boss and kit == "pistol") else 1.0)
+			var mz := muzzle_of(e); var lead := 120.0 if kit == "shotgun" else 150.0
+			var aim := Vector3(player.pos.x + player.vel.x * dist / lead, player.pos.y + 1.25, player.pos.z + player.vel.z * dist / lead)
+			if kit == "shotgun":
+				for k in 7: proj.bullet(mz, aim, 70.0, G[3] * m, 0.9 + dist * 0.05)
+			else: proj.bullet(mz, aim, 95.0 if kit == "deagle" else 80.0, G[3] * m, (0.2 if kit == "deagle" else (0.55 if kit == "smg" else 0.35)) + dist * 0.028 + player.speed_xz * 0.08 - (0.15 if e.boss else 0.0))
 			Snd.play("shot_far", 1.0, mz)
 		return true
-	if e.fire_t <= 0.0: e.burst = 4 if e.boss else randi_range(G[0], G[1]); e.burst_t = 0.0; e.fire_t = randf_range(G[4], G[5]) * (0.7 if e.boss else 1.0)
+	if e.fire_t <= 0.0: e.burst = 4 if (e.boss and kit == "pistol") else randi_range(G[0], G[1]); e.burst_t = 0.0; e.fire_t = randf_range(G[4], G[5]) * (0.7 if e.boss else 1.0)
 	return false
 
 func _animate(e: Foe, sp: float, dt: float, aim: bool) -> void:
 	e.walk += dt * sp * 2.6; var s := sin(e.walk) * clampf(sp / 3.0, 0.0, 1.0)
 	e.leg_l.rotation.x = s * 0.7; e.leg_r.rotation.x = -s * 0.7
-	if aim: e.arm_r.rotation = Vector3(-PI / 2 + 0.05, 0, 0); e.arm_l.rotation = Vector3(-1.25, 0, 0.5)
-	else: e.arm_r.rotation = Vector3(-s * 0.8, 0, 0); e.arm_l.rotation = Vector3(s * 0.8, 0, 0)
+	match e.kit:   # how each carries what he has
+		"saber":
+			if e.swing_t <= 0.0: e.arm_r.rotation = Vector3(-1.15 if aim else -0.5 - s * 0.3, 0, -0.3)
+			e.arm_l.rotation = Vector3(s * 0.8, 0, 0.1)
+		"saber2":
+			if not (e.swing_t > 0.0 and not e.swing_l): e.arm_r.rotation = Vector3(-1.15 if aim else -0.5 - s * 0.3, 0, -0.3)
+			if not (e.swing_t > 0.0 and e.swing_l): e.arm_l.rotation = Vector3(-1.15 if aim else -0.5 + s * 0.3, 0, 0.3)
+		"dagger":
+			if e.swing_t <= 0.0: e.arm_r.rotation = Vector3(-0.9 if aim else -0.55 - s * 0.3, 0, -0.12)
+			e.arm_l.rotation = Vector3(s * 0.9, 0, 0.12)
+		"bat":
+			if e.swing_t <= 0.0: e.arm_r.rotation = Vector3(-2.3 if aim else -2.0 - s * 0.15, 0, -0.35)
+			e.arm_l.rotation = Vector3(s * 0.8, 0, 0.1)
+		"bomber":
+			if e.fuse <= 0.0: e.arm_r.rotation = Vector3(-s * 1.1, 0, -0.15); e.arm_l.rotation = Vector3(s * 1.1, 0, 0.15)
+		_:
+			if aim: e.arm_r.rotation = Vector3(-PI / 2 + 0.05, 0, 0); e.arm_l.rotation = Vector3(-1.25, 0, 0.5)
+			else: e.arm_r.rotation = Vector3(-s * 0.8, 0, 0); e.arm_l.rotation = Vector3(s * 0.8, 0, 0)
 	e.flinch = maxf(0.0, e.flinch - dt * 5.0); e.upper.rotation.x = -e.flinch * 0.25
 
 ## nobody walks into you: your body, and the camera with it, stays outside every enemy's footprint
@@ -270,17 +444,25 @@ func update(dt: float, _time: float) -> void:
 			if fd != Vector2.ZERO: mvx = fd.x * e.speed; mvz = fd.y * e.speed
 			else: mvx = to.x / dist * e.speed; mvz = to.y / dist * e.speed
 			_turn_toward(e, face_yaw if (e.los and dist < 34.0) else atan2(mvx, mvz), 6.0, dt)
-			if e.los and dist < e.K.range * (1.2 if e.boss else 1.0): e.state = "engage"; e.react = randf_range(0.45, 0.9) * (1.0 - e.diff * 0.35)
+			if e.los and dist < e.K.range * (1.2 if e.boss else 1.0): e.state = "engage"; e.react = (0.15 if e.K.get("melee", false) else randf_range(0.45, 0.9)) * (1.0 - e.diff * 0.35)
 		else:
 			e.strafe_t -= dt
 			if e.strafe_t <= 0.0: e.strafe *= -1.0; e.strafe_t = randf_range(0.9, 2.4)
 			var fx := to.x / dist; var fz := to.y / dist
-			var fwd := 1.0 if dist > e.K.far else (-0.8 if dist < e.K.near else 0.0)
-			mvx = (fx * fwd - fz * e.strafe * 0.6) * e.speed * 0.55; mvz = (fz * fwd + fx * e.strafe * 0.6) * e.speed * 0.55
-			_turn_toward(e, face_yaw, 7.0, dt)
+			var melee: bool = e.K.get("melee", false)
+			if melee: var sp: float = e.K.get("run", 4.3) * (1.0 if dist > stop_dist(e) + 0.2 else 0.0); mvx = fx * sp; mvz = fz * sp
+			elif e.K.get("still", false): mvx = 0.0; mvz = 0.0
+			else:
+				var fwd := 1.0 if dist > e.K.far else (-0.8 if dist < e.K.near else 0.0)
+				mvx = (fx * fwd - fz * e.strafe * 0.6) * e.speed * 0.55; mvz = (fz * fwd + fx * e.strafe * 0.6) * e.speed * 0.55
+			_turn_toward(e, face_yaw, 9.0 if melee else 7.0, dt)
 			e.react -= dt
-			if e.no_los > 1.6 or dist > e.K.range + 6.0: e.state = "move"
-			if e.react <= 0.0 and e.los and _fight(e, dt, dist): mvx *= 0.4; mvz *= 0.4
+			if e.no_los > 1.6 or dist > e.K.range + 6.0:
+				e.state = "move"; e.flame_on = 0.0
+				if e.laser: e.laser.visible = false
+			if e.react <= 0.0 and (e.los or melee) and e.alive and _fight(e, dt, dist): mvx *= 0.4; mvz *= 0.4
+			if not e.alive: continue   # a bomber who has just gone off
+		if e.vest_light: e.vest_light.visible = fmod(_time * (14.0 if e.fuse > 0.0 else 3.0) + e.walk, 1.0) < 0.45
 		e.vel *= exp(-dt * 6.0)
 		var blocked := _ground_move(e, mvx + e.vel.x, mvz + e.vel.z, dt)
 		if blocked and e.state == "engage": e.strafe *= -1.0
@@ -303,10 +485,18 @@ func update(dt: float, _time: float) -> void:
 				a.pos = Phys.move_xz(a.pos, -dx / d * push, -dz / d * push, a.R, a.H, 0.0)[0]; b.pos = Phys.move_xz(b.pos, dx / d * push, dz / d * push, b.R, b.H, 0.0)[0]
 	for e in list:
 		if e.alive and e.awake: _keep_out(e)
+	for i in range(flying.size() - 1, -1, -1):   # helmets tumbling away
+		var f: Array = flying[i]; f[2] += dt; f[1].y -= 12.0 * dt; var n: Node3D = f[0]
+		n.position += (f[1] as Vector3) * dt; n.rotation.x += 10.0 * dt
+		if n.position.y <= 0.2: n.position.y = 0.2; f[1] = Vector3(f[1].x * 0.6, absf(f[1].y) * 0.25, f[1].z * 0.6)
+		if f[2] > 4.0: n.queue_free(); flying.remove_at(i)
 	# the fallen tip over, lie a while, then sink away
 	for i in range(dying.size() - 1, -1, -1):
 		var e := dying[i]; e.dead_t += dt
 		var t := minf(1.0, e.dead_t / 0.5); var ease := t * t * (3.0 - 2.0 * t)
-		e.g.rotation = Vector3(e.fall_dir * ease * 1.45, e.yaw, 0)
+		if e.vanish: e.g.scale = Vector3.ONE * maxf(0.001, 1.0 - e.dead_t / 0.45) * e.scale; e.dead_t = 99.0 if e.dead_t > 0.45 else e.dead_t
+		else: e.g.rotation = Vector3(e.fall_dir * ease * 1.45, e.yaw, 0)
 		if e.dead_t > 2.6: e.pos.y -= dt * 0.6; e.g.position = e.pos
-		if e.dead_t > 3.4: e.g.queue_free(); e.bar.queue_free(); dying.remove_at(i)
+		if e.dead_t > 3.4:
+			e.g.queue_free(); e.bar.queue_free(); dying.remove_at(i)
+			if e.laser: e.laser.queue_free()

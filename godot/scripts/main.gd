@@ -46,7 +46,7 @@ func _ready() -> void:
 	guns.hint = hint; guns.banner = banner
 	guns.hitmark = func(killed: bool, head: bool) -> void: hit_t = 0.18; hit_kill = killed; hit_head = head; Snd.play("headshot" if head else "hit")
 	proj.player = player; proj.world = world; proj.enemies = enemies; proj.fx = fx; proj.hitmark = guns.hitmark
-	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player
+	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player; enemies.fx = fx; enemies.hitmark = guns.hitmark; enemies.say = func(t: String) -> void: feed(t, 0)
 	game.world = world; game.player = player; game.enemies = enemies; game.guns = guns; game.proj = proj; game.loot = loot; game.fx = fx
 	game.banner = banner; game.feed = feed; game.on_result = _on_result
 	enemies.on_kill = game.on_kill; world.on_crate = game.on_crate; loot.take = game.take_loot; loot.open_chest = game.open_chest
