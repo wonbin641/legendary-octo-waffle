@@ -19,9 +19,13 @@ var dpr := 1.0
 var base_fov := BASE_FOV
 var toy_models := {}; var ruler: Node3D; var inspect := false; var laser: MeshInstance3D; var laser_dot: MeshInstance3D
 var needle: Node3D; var needle_arm: Node3D; var needle_syr: Node3D; var needle_juice: MeshInstance3D
+var gm_models: GunModels
 var view: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var hint_label: Label; var fps_label: Label; var banner_label: Label; var banner_sub: Label
-var hint_t := 0.0; var banner_t := 0.0; var hit_t := 0.0; var hit_kill := false; var hit_head := false; var hurt_t := 0.0
+var hint_t := 0.0; var banner_t := 0.0; var hit_t := 0.0; var hit_kill := false; var hit_head := false; var heat_k := -1.0
+var cu_ang := 0.6
+var cu_light: OmniLight3D = null   # the menu scene is dark: the gun being fitted out gets a lamp of its own
+var hurt_t := 0.0
 var feed_lines: Array = []         # [text, seconds left]
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var joy_id := -1; var look_id := -1; var fire_id := -1; var joy := Vector2.ZERO; var pad_sprint := false; var pad_last_up := -9.0
@@ -72,9 +76,7 @@ func _ready() -> void:
 func apply_settings() -> void:
 	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
-	for id in gun_mats:   # paint
-		var p: Dictionary = Custom.PAINTS[Custom.paint_index(Custom.setup(id).paint)]; var m: StandardMaterial3D = gun_mats[id]
-		m.albedo_color = World.lin(p.get("c", "3b4048")); m.metallic = p.get("metal", 0.35); m.roughness = p.get("rough", 0.45); m.set_meta("base", m.albedo_color)
+	for id in Weapons.ORDER: gm_models.apply_look(id, Custom.setup(id))   # parts and paint
 	if ui and ui.cur == "menu": ui.refresh_menu()
 
 func _on_resize() -> void:
@@ -89,12 +91,8 @@ const GUN_SHAPE := {"pistol": [0.2, 0.05, 0.035], "shotgun": [0.62, 0.06, 0.05],
 	"gl": [0.5, 0.11, 0.09], "lmg": [0.72, 0.09, 0.07], "rocket": [0.85, 0.12, 0.12]}
 func _build_guns() -> void:
 	view = Node3D.new(); cam.add_child(view); _build_needle(cam)
-	for id in Weapons.ORDER:
-		var d: Array = GUN_SHAPE[id]; var g := Node3D.new(); view.add_child(g); g.visible = false; gun_models[id] = g
-		var mat := Gfx.std(World.lin("3b4048"), 0.45, 0.35); gun_mats[id] = mat
-		var parts := [[d[2], d[1], d[0], 0, 0, -d[0] / 2], [d[2] * 0.8, 0.11, 0.045, 0, -0.07, -0.03]]   # barrel and body, grip
-		if d[0] > 0.3: parts.push_back([d[2] * 0.7, 0.1, 0.05, 0, -0.07, -d[0] * 0.45])                      # magazine or fore grip
-		var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; g.add_child(m)
+	gm_models = GunModels.new(); gm_models.build(view)
+	for id in Weapons.ORDER: gun_models[id] = gm_models.models[id].g
 	for id in Toys.ORDER: var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
 	ruler = Toys.build("ruler"); view.add_child(ruler); ruler.visible = false
 	# the laser pointer's beam and its dot (stage 5's rifle, while you aim)
@@ -139,6 +137,7 @@ func _pose_gun(dt: float) -> void:
 		if from.distance_to(end) > 0.5: laser.look_at_from_position((from + end) / 2, end, Vector3.UP if absf(f.y) < 0.99 else Vector3.RIGHT); laser.scale = Vector3(1, 1, from.distance_to(end))
 	var hip_scale := clampf((hud.size.x / maxf(1.0, hud.size.y)) / 1.5, 0.55, 1.0)
 	var pos := Vector3(0.17 * lerpf(hip_scale, 1.0, a), -0.16, -0.3).lerp(Vector3(0.0, -d[1] / 2 - 0.012, -0.24), a)
+	if not toy: pos = GunModels.hip(guns.cur).lerp(GunModels.ads(guns.cur), a); pos.x *= lerpf(hip_scale, 1.0, a)
 	var bob := clampf(player.speed_xz / 6.0, 0.0, 1.4) * (1.0 if player.grounded else 0.2) * (1.0 - a * 0.85); var ph := player.step_phase; var sprint := player.sprint_blend
 	pos.x += sin(ph) * 0.012 * bob + sprint * 0.04; pos.y += -absf(cos(ph)) * 0.012 * bob - sprint * 0.05 + player.land_dip * 0.4; pos.z += guns.kick_z * (1.0 - a * 0.5)
 	var rot := Vector3(guns.kick_rot * (1.0 - a * 0.5) - sprint * 0.35, sprint * 0.55, sin(ph) * 0.01 * bob)
@@ -161,12 +160,21 @@ func _pose_gun(dt: float) -> void:
 		needle_juice.scale.x = maxf(0.04, 1.0 - push); needle_juice.position.x = 0.002 - push * 0.058
 	else: needle.visible = false
 	if inspect: pos = Vector3(0.02, -0.03, -0.62 - d[0] * 0.25); rot = Vector3(0.18, 1.15, 0.0)   # held out to look at
+	var GM: Dictionary = gm_models.models[guns.cur]
+	if GM.tip != null: (GM.tip as Node3D).visible = guns.st().mag > 0   # the rocket's nose shows while one is loaded
 	view.position = pos; view.rotation = rot
-	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5 and (not toy or guns.cur == "smg"); flash.position = Vector3(0, 0, -d[0] - 0.05)
+	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5 and (not toy or guns.cur == "smg"); flash.position = Vector3(0, 0, -d[0] - 0.05) if toy else Vector3(0, GunModels.MUZZLE[guns.cur][1], GM.flash_z)
 	flash_light.light_energy = (3.0 if not toy else (1.2 if guns.cur == "smg" else 0.0)) if guns.flash_t > 0.0 else flash_light.light_energy * exp(-dt * 30)
 	var heat: Dictionary = guns.wstate.lmg  # the machine gun goes red as it heats
 	var hk: float = (0.9 + 0.1 * sin(time * 18.0)) if heat.hot else pow(heat.heat, 1.6)
-	var lm: StandardMaterial3D = gun_mats.lmg; lm.albedo_color = (lm.get_meta("base", World.lin("3b4048")) as Color).lerp(Color(0.9, 0.12, 0.05), hk * 0.85)
+	if absf(hk - heat_k) > 0.004: heat_k = hk; gm_models.heat("lmg", hk)
+	# the laser's red dot, out in the world where the crosshair falls
+	var dot_on: bool = not toy and state == "playing" and not guns.none and Custom.setup(guns.cur).under == "laser" and guns.switch_t <= 0.0 and guns.reload_t <= 0.0
+	if dot_on:
+		var o2 := cam.global_position; var f2 := -cam.global_basis.z
+		if Phys.raycast_static(o2, f2, 90.0): var t2 := Phys.rh_t - 0.04; laser_dot.visible = true; laser_dot.position = o2 + f2 * t2; laser_dot.scale = Vector3.ONE * (0.35 + t2 * 0.035)
+		else: laser_dot.visible = false
+	elif not toy: laser_dot.visible = false
 
 # ---------------- the HUD ----------------
 func _label(text: String, font: Font, size: int, color: Color) -> Label:
@@ -357,6 +365,8 @@ func to_menu() -> void:
 	cam.fov = base_fov; ui.in_stage = false; ui.back_stack.clear(); _set_state("menu"); ui.show_screen("menu")
 
 func enter_play() -> void:
+	for gid in Weapons.ORDER: gm_models.show_hands(gid, true)
+	if cu_light != null: cu_light.visible = false
 	guns.look_mode = look_mode; apply_settings(); feed_lines.clear(); banner_label.text = ""; banner_sub.text = ""; banner_t = 0.0; ui.in_stage = true
 	_set_state("playing"); request_lock()
 	if game.boss_msg != "": banner("스테이지 " + Store.STAGE_TAG[game.stage], game.boss_msg, 3.5)
@@ -505,6 +515,20 @@ func _process(delta: float) -> void:
 		var orbit := 58.0 if world.toy else 42.0; var oh := 34.0 if world.toy else 16.0   # the toy room is seen from higher up
 		cam.fov = base_fov; cam.position = Vector3(cos(menu_t) * orbit, oh + sin(menu_t * 2.0) * 2.0, sin(menu_t) * orbit); cam.look_at(Vector3(0, 6 if world.toy else 3, 0), Vector3.UP)
 		world.update_world(dt, time, cam.position.x * 0.5, cam.position.z * 0.5)
+		# the customisation screen: the gun you are fitting out turns slowly beside the sheet (on a screen wide enough to have a beside)
+		var cu: bool = ui.cur == "custom" and hud.size.x >= 980.0
+		for id in gun_models: (gun_models[id] as Node3D).visible = cu and id == ui.cu_gun
+		for id in toy_models: (toy_models[id] as Node3D).visible = false
+		ruler.visible = false; flash.visible = false; needle.visible = false
+		if cu_light == null: cu_light = OmniLight3D.new(); cu_light.omni_range = 4.0; cu_light.light_energy = 0.9; cu_light.light_color = Color(1.0, 0.96, 0.9); cam.add_child(cu_light)
+		cu_light.visible = cu
+		view.visible = cu
+		if cu:
+			cu_ang += dt * 0.45; gm_models.apply_look(ui.cu_gun, Custom.setup(ui.cu_gun)); gm_models.show_hands(ui.cu_gun, false)
+			var dist := 0.55 + absf(GunModels.MUZZLE[ui.cu_gun][0]) * 0.9; var hw := tan(deg_to_rad(cam.fov) / 2.0) * dist * hud.size.x / maxf(1.0, hud.size.y)
+			var bas := Basis(Vector3.UP, cu_ang); var mid := Vector3(0, 0, GunModels.MUZZLE[ui.cu_gun][0] / 2.0 + 0.12)
+			view.rotation = Vector3(0, cu_ang, 0); view.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x), 0.02, -dist) - bas * mid
+			cu_light.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x) + 0.3, 0.5, -dist + 0.7)
 	if hint_t > 0.0:
 		hint_t -= dt
 		if hint_t <= 0.0: hint_label.text = ""
@@ -548,6 +572,8 @@ func command(line: String) -> Dictionary:
 			for e in enemies.list.duplicate():
 				if not e.boss or (a.size() > 1 and a[1] == "boss"): enemies.damage(e, 1e6, e.pos, Vector3(0, 0, -1), false)
 		"inspect": inspect = a[1] == "1"
+		"part": Custom.set_part(a[1], a[2], a[3]); apply_settings()
+		"cugun": ui.cu_gun = a[1]; ui.render_custom()
 		"bite": game.bitten(enemies.list[0])
 		"takekey": world.ship.take_key()
 		"hurt": player.invuln = 0.0; player.hurt(float(a[1]), Vector3.ZERO)
