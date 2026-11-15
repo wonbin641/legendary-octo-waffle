@@ -45,8 +45,13 @@ func _crates_near(c: Vector3, radius: float) -> void:
 
 func _rocket_hit(p: Dictionary, e) -> void:
 	var c: Vector3 = p.pos
-	if fx: fx.explode(c, true)
-	Snd.play("boom", 1.0, c); enemies.noise(c, 70)
+	if stage == 9:   # a bottle rocket: a pop of coloured stars
+		if fx: fx.firework(c)
+		Snd.play("toy_boom", 1.0, c)
+	else:
+		if fx: fx.explode(c, true)
+		Snd.play("boom", 1.0, c)
+	enemies.noise(c, 70)
 	player.shake = maxf(player.shake, clampf(0.7 - c.distance_to(player.pos) * 0.02, 0.0, 0.7))
 	if e != null and e.alive and hitmark.is_valid(): hitmark.call(enemies.damage(e, p.dmg, c, (p.vel as Vector3).normalized(), false), false)
 	enemies.splash(c, p.radius, p.splash_dmg, e)
@@ -88,6 +93,7 @@ func update(dt: float) -> void:
 					if Vector2(e.pos.x - p.pos.x, e.pos.z - p.pos.z).length() < e.R * 0.95 + 0.25: hit_e = e; break
 				if hit_e != null or p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.06, p.pos.z, 0.06, 0.12) != null: _rocket_hit(p, hit_e); dead = true
 			if not dead and p.life <= 0.0: _rocket_hit(p, null); dead = true
+			if not dead and stage == 9 and fx: fx.spark(p.pos - rd * 0.3)   # the tail of fire
 			if not dead: (p.m as MeshInstance3D).look_at_from_position(p.pos, p.pos + rd, Vector3.UP if absf(rd.y) < 0.99 else Vector3.RIGHT)
 		elif p.kind == "bullet":
 			# small steps so fast rounds cannot skip past you between checks

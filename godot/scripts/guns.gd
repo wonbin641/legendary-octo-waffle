@@ -40,6 +40,9 @@ var hits := 0
 var _pump_t := -1.0
 var _auto_reload_t := -1.0
 var _auto_reload_for = null
+var toy := false           # stage 5: the guns are toys (their own sounds and effects)
+var since_shot := 9.0
+var _reload_f := 0.0
 var auto_reload := true   # an emptied gun reloads by itself a quarter of a second later
 # the jab
 var melee_on := false
@@ -61,6 +64,7 @@ func reset(layout: Array) -> void:
 	for id in Weapons.all_ids():
 		wstate[id].mag = Custom.weapon(id).mag; wstate[id].reserve = Custom.weapon(id).reserve
 		wstate[id].heat = 0.0; wstate[id].hot = false; wstate[id].smoke_t = 0.0; wstate[id].cool_t = 0.0
+	since_shot = 9.0; _reload_f = 0.0
 	cooldown = 0.0; reload_t = 0.0; switch_t = 0.0; pending = null; ads = 0.0; ads_held = false; bloom = 0.0; kick_z = 0.0; kick_rot = 0.0; flash_t = 0.0
 	trigger = false; trigger_edge = false; melee_on = false; melee_t = 0.0; melee_cd = 0.0; _melee_target = null; _pump_t = -1.0; _auto_reload_t = -1.0
 	loadout = layout.duplicate(); slots = loadout.filter(func(x): return x != null); none = slots.is_empty()
@@ -120,7 +124,7 @@ func _melee_strike() -> void:
 	if _melee_target != null:
 		var c = _melee_target; _melee_target = null
 		if c.dead: return
-		var at := Vector3(c.x, c.y + 0.6, c.z); world.damage_crate(c, 60, at); Snd.play("melee", 1.0, at); return
+		var at := Vector3(c.x, c.y + 0.6, c.z); world.damage_crate(c, 60, at); Snd.play("toy_ruler" if toy else "melee", 1.0, at); return
 	var b := cam.global_basis; var f := -b.z; var o := cam.global_position; var best = null
 	for ab in [[0, 0], [0.16, 0], [-0.16, 0], [0, -0.15], [0, 0.12], [0.3, -0.12], [-0.3, -0.12], [0, -0.32]]:
 		var d: Vector3 = (f + b.x * ab[0] + b.y * ab[1]).normalized()
@@ -132,7 +136,7 @@ func _melee_strike() -> void:
 		elif best == null and s_box != null and s_box.kind == "wood" and s_box.ref != null and s_t < Weapons.MELEE_REACH: best = {"crate": s_box.ref, "t": s_t, "d": d}
 	if best == null: return
 	var hit: Vector3 = o + best.d * best.t
-	if best.has("crate"): world.damage_crate(best.crate, 60, hit); Snd.play("melee", 1.0, hit); return
+	if best.has("crate"): world.damage_crate(best.crate, 60, hit); Snd.play("toy_ruler" if toy else "melee", 1.0, hit); return
 	var e = best.e; var killed := false
 	if best.bomb and e.alive: enemies.blow_vest(e, best.d); killed = true
 	else: killed = enemies.damage(e, Weapons.MELEE_DMG * (2.0 if best.weak else float(best.mult)), hit, best.d, best.weak)
@@ -167,7 +171,7 @@ func fire() -> void:
 		if s.reserve > 0: start_reload()
 		else: _say(hint, ["탄약 없음 · 상점에서 채우거나 다른 총으로", 2.0])
 		return
-	s.mag -= 1; cooldown = W.rate; shots += 1
+	s.mag -= 1; cooldown = W.rate; shots += 1; since_shot = 0.0; var hit_snd := false
 	if W.get("heat", false): _heat_shot(W, s)
 	enemies.noise(cam.global_position, 42.0 * float(W.get("noise", 1.0)))   # a suppressor carries less far
 	var spr := current_spread(); var muz := muzzle()
@@ -197,27 +201,50 @@ func fire() -> void:
 				elif enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
 				hit_any = true
 				if eh.weak: head = true
-				if k < 3 and fx and not W.get("flame", false): fx.tracer(muz, at)
+				if toy: hit_snd = _toy_hit(muz, at, k, hit_snd)
+				elif k < 3 and fx: fx.tracer(muz, at)
 			else:
 				var at := o + d * s_t
 				if s_hit and s_box != null and s_box.kind == "wood" and s_box.ref != null: world.damage_crate(s_box.ref, W.dmg, at)
 				if s_hit and k < 4 and s_box != null and s_box.kind == "metal" and randf() < 0.5: Snd.play("metal", 1.0, at)
-				if k < 3 and fx and not W.get("flame", false): fx.tracer(muz, at)
-				if k == 0 and fx and W.get("flame", false): fx.flame(muz, d)
+				if toy:
+					if W.get("flame", false):
+						if k == 0 and fx: fx.flame(muz, d)
+					else: hit_snd = _toy_hit(muz, at, k, hit_snd if s_hit else true)
+				elif k < 3 and fx: fx.tracer(muz, at)
 	if hit_any: hits += 1; _say(hitmark, [killed, head])
 	var rk: float = W.recoil * (1.0 - ads * 0.35)
 	player.recoil_pitch += rk; player.pitch += rk * 0.55; player.yaw += randf_range(-1, 1) * rk * 0.35
 	kick_z += W.kick; kick_rot += W.kick * 1.6; bloom = minf(bloom + W.bloom, 0.05); flash_t = 0.045
-	Snd.play("shot_" + W.sound)
+	Snd.play(("toy_shot_" + cur) if toy else ("shot_" + W.sound))
+	if toy and fx:
+		if cur == "smg": fx.smoke(muz)
+		if cur == "rocket": for i in 6: fx.spark(muz)
 	if W.pellets > 1 or W.get("scope", false): _pump_t = 0.52 if W.get("scope", false) else 0.28
 	if auto_reload and s.mag == 0 and s.reserve > 0: _auto_reload_t = 0.26; _auto_reload_for = cur
 	player.shake = maxf(player.shake, 0.18 if (W.pellets > 1 or W.get("scope", false)) else 0.05)
+
+## what a toy's shot looks and sounds like where it lands; returns whether the landing sound has been played for this shot
+func _toy_hit(muz: Vector3, at: Vector3, k: int, played: bool) -> bool:
+	if fx:
+		match cur:
+			"rifle": fx.streak(muz, at, Color(1.0, 0.55, 0.1, 0.9), 0.03, 0.09); fx.tap(at, Color(1.0, 0.6, 0.2, 0.7))
+			"shotgun":
+				fx.streak(muz, at, Color(0.5, 0.75, 1.0, 0.55), 0.035, 0.12)
+				if k < 4: fx.splash(at)
+			"sniper": fx.streak(muz, at, Color(1, 1, 1, 0.8), 0.012, 0.1); fx.tap(at, Color(1, 0.3, 0.3, 0.8))
+			"smg": fx.streak(muz, at, Color(1.0, 0.9, 0.6, 0.6), 0.012, 0.05)
+			"lmg": fx.streak(muz, at, Color(1.0, 0.85, 0.3, 0.9), 0.016, 0.07)
+			"pistol": fx.streak(muz, at, Color(1.0, 0.4, 0.3, 0.9), 0.025, 0.1); fx.tap(at, Color(1, 0.4, 0.3, 0.7))
+	if not played and ResourceLoader.exists("res://sounds/toy_hit_%s.wav" % cur): Snd.play("toy_hit_" + cur, 1.0, at)
+	return true
 
 func start_reload() -> void:
 	var W := w(); var s := st()
 	if W.get("heat", false) and s.hot: _say(hint, ["기관총이 과열됐습니다 · 다른 총으로 바꾼 뒤에 재장전하세요", 2.0]); return
 	if none or busy > 0.0 or melee_on or reload_t > 0.0 or switch_t > 0.0 or s.mag >= W.mag or s.reserve <= 0: return
-	reload_t = W.reload; reload_half = false; Snd.play("reload0")
+	reload_t = W.reload; reload_half = false; _reload_f = 0.0
+	if not toy: Snd.play("reload0")
 
 func _finish_reload() -> void:
 	var W := w(); var s := st()
@@ -239,14 +266,14 @@ func cycle(step: int) -> void:
 	switch_to(slots[(at + step + n) % n])
 
 func update(dt: float) -> void:
-	time += dt
+	time += dt; since_shot += dt
 	var W := w()
 	_auto_crate(); _melee_update(dt); _heat_update(dt)
 	cooldown = maxf(0.0, cooldown - dt)
 	bloom = maxf(0.0, bloom - dt * (0.02 if (trigger and W.auto) else 0.09))
 	if _pump_t > 0.0:
 		_pump_t -= dt
-		if _pump_t <= 0.0: Snd.play("pump")
+		if _pump_t <= 0.0: Snd.play(("toy_stretch" if cur == "sniper" else "toy_pump") if toy else "pump")
 	if _auto_reload_t > 0.0:
 		_auto_reload_t -= dt
 		if _auto_reload_t <= 0.0 and _auto_reload_for == cur and st().mag == 0: start_reload()
@@ -263,7 +290,12 @@ func update(dt: float) -> void:
 	if trigger and (W.auto or trigger_edge): fire(); trigger_edge = false
 	if reload_t > 0.0:
 		reload_t -= dt
-		if not reload_half and reload_t < W.reload * 0.45: reload_half = true; Snd.play("reload1")
+		if toy:   # each step of a toy's reload has its own sound
+			var f: float = 1.0 - reload_t / float(W.reload)
+			for st in Toys.RELOAD_SND.get(cur, []):
+				if _reload_f <= st[0] and f > st[0]: Snd.play(st[1])
+			_reload_f = f
+		elif not reload_half and reload_t < W.reload * 0.45: reload_half = true; Snd.play("reload1")
 		if reload_t <= 0.0: reload_t = 0.0; _finish_reload()
 	if switch_t > 0.0:
 		var before := switch_t; switch_t -= dt

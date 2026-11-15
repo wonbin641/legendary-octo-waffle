@@ -6,12 +6,15 @@ var _players: Array[AudioStreamPlayer] = []
 var _next := 0
 var volume := 0.7
 var listener := Vector3.ZERO
+var keep_log := false   # the tests listen in
+var played: Array = []
 
 func _ready() -> void:
 	for i in 12:
 		var p := AudioStreamPlayer.new(); add_child(p); _players.push_back(p)
 
 func play(name: String, gain := 1.0, at = null) -> void:
+	if keep_log: played.push_back(name)
 	if not _streams.has(name):
 		var path := "res://sounds/%s.wav" % name
 		_streams[name] = load(path) if ResourceLoader.exists(path) else null

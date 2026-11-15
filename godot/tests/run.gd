@@ -315,6 +315,56 @@ func _ready() -> void:
 	check("nine toy guns and the ruler are modelled", okm and Toys.ORDER.size() == 9)
 	g.reset(Toys.ORDER.duplicate()); g.cur = "flame"; g.cooldown = 0.0; pl.reset(0.0, 56.0, 0.0); pl.update(0.0, cam, 0.0); g.trigger = true; simt.call(1.0); g.trigger = false
 	check("the spray-can flamethrower sprays (20 a second)", g.wstate.flame.mag < 120 and g.wstate.flame.mag >= 104, g.wstate.flame.mag)
+	# ---- the toys' sounds, reloads and effects ----
+	gm.begin(9); pl.reset(0.0, 56.0, 0.0); pl.pitch = -0.25; pl.update(0.0, cam, 0.0); Snd.keep_log = true; g.fx = fxn; pr.fx = fxn
+	check("in the toy room the guns are toys", g.toy)
+	var missing_snd := []
+	for id in Toys.ORDER:
+		if not ResourceLoader.exists("res://sounds/toy_shot_%s.wav" % id): missing_snd.push_back("shot " + id)
+		for st9 in Toys.RELOAD_SND.get(id, []):
+			if not ResourceLoader.exists("res://sounds/%s.wav" % st9[1]): missing_snd.push_back(st9[1])
+	for nm in ["toy_hit_rifle", "toy_hit_shotgun", "toy_hit_sniper", "toy_boom", "toy_ruler", "toy_pump", "toy_stretch"]:
+		if not ResourceLoader.exists("res://sounds/%s.wav" % nm): missing_snd.push_back(nm)
+	check("every toy sound exists", missing_snd.is_empty(), missing_snd)
+	for id in ["rifle", "shotgun", "sniper", "smg", "rocket"]:
+		g.reset(Toys.ORDER.duplicate()); g.cur = id; g.cooldown = 0.0; Snd.played.clear(); pl.pitch = -0.25; pl.update(0.0, cam, 0.0)
+		g.trigger = true; g.trigger_edge = true; simt.call(0.1); g.trigger = false; simt.call(2.5); pr.update(3.0)
+		var shot_ok: bool = Snd.played.has("toy_shot_" + id) and not Snd.played.has("shot_" + str(Weapons.LIST[id].sound))
+		var land_ok: bool = Snd.played.has("toy_boom") if id == "rocket" else (Snd.played.has("toy_hit_" + id))
+		g.reload_t = 0.0; g.wstate[id].mag = 0; Snd.played.clear(); g.start_reload(); var W9: Dictionary = Custom.weapon(id)
+		var model := Toys.build(id); var seen := {}
+		for i in roundi(W9.reload * 30) + 2:
+			var f9: float = (1.0 - g.reload_t / W9.reload) if g.reload_t > 0.0 else -1.0; Toys.pose(model, id, f9, g.wstate[id].mag, W9.mag, g.since_shot)
+			match id:
+				"rifle":
+					if f9 > 0.25 and f9 < 0.4 and not model.get_node("mag").visible: seen.out = true
+					if f9 > 0.8 and model.get_node("slide").position.z > 0.05: seen.rack = true
+				"shotgun":
+					if f9 > 0.3 and model.get_node("bottle").visible: seen.bottle = true
+					if f9 > 0.05 and f9 < 0.1: seen.low = model.get_node("water").scale.z
+					if f9 > 0.58: seen.high = model.get_node("water").scale.z
+					if f9 > 0.7 and model.get_node("pump").position.z > 0.04: seen.pump = true
+				"sniper":
+					if f9 > 0.6 and model.get_node("band").position.z > 0.3: seen.drawn = true
+					if f9 > 0.9 and model.get_node("tack").visible: seen.tack = true
+				"smg":
+					if f9 > 0.2 and f9 < 0.5 and model.get_node("cyl").position.x > 0.05: seen.open = true
+					if f9 > 0.42 and f9 < 0.5 and not model.get_node("ring").visible: seen.gone = true
+				"rocket":
+					if f9 > 0.3 and model.get_node("rocket").visible: seen.inn = true
+					if f9 > 0.7 and model.get_node("lighter").visible: seen.lit = true
+			simt.call(1.0 / 30.0)
+		model.free()
+		var steps: Array = Toys.RELOAD_SND[id].map(func(st8): return st8[1]); var heard := Snd.played.filter(func(nm8): return steps.has(nm8))
+		var anim_ok: bool = {"rifle": seen.has("out") and seen.has("rack"), "shotgun": seen.has("bottle") and seen.has("pump") and float(seen.get("low", 1.0)) < 0.2 and float(seen.get("high", 0.0)) > 0.95,
+			"sniper": seen.has("drawn") and seen.has("tack"), "smg": seen.has("open") and seen.has("gone"), "rocket": seen.has("inn") and seen.has("lit")}[id]
+		check("toy %s: its own shot and landing sounds, a reload in steps (%s), the parts move" % [id, ", ".join(steps)], shot_ok and land_ok and heard == steps and g.wstate[id].mag == int(W9.mag) and anim_ok,
+			"shot %s land %s heard %s anim %s %s" % [str(shot_ok), str(land_ok), str(heard), str(anim_ok), str(seen)])
+	g.reset(Toys.ORDER.duplicate()); g.cur = "shotgun"; var wm := Toys.build("shotgun"); Toys.pose(wm, "shotgun", -1.0, 3.0, 6.0, 9.0)
+	check("the water gun's tank shows what is left (half full with 3 of 6)", absf(wm.get_node("water").scale.z - 0.5) < 0.01); wm.free()
+	gm.begin(1); Snd.played.clear(); g.reset(["pistol", "rifle"]); g.cur = "rifle"; g.cooldown = 0.0; pl.reset(0, 6, 0); pl.pitch = 1.2; pl.update(0.0, cam, 0.0); g.trigger = true; simt.call(0.2); g.trigger = false
+	check("outside the toy room the guns sound as before", not g.toy and Snd.played.has("shot_rifle") and not Snd.played.has("toy_shot_rifle"))
+	Snd.keep_log = false
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

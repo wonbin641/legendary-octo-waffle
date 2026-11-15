@@ -17,7 +17,7 @@ var ever_locked := false
 var lock_wait := -1.0
 var dpr := 1.0
 var base_fov := BASE_FOV
-var toy_models := {}; var ruler: Node3D; var inspect := false
+var toy_models := {}; var ruler: Node3D; var inspect := false; var laser: MeshInstance3D; var laser_dot: MeshInstance3D
 var view: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var hint_label: Label; var fps_label: Label; var banner_label: Label; var banner_sub: Label
 var hint_t := 0.0; var banner_t := 0.0; var hit_t := 0.0; var hit_kill := false; var hit_head := false; var hurt_t := 0.0
@@ -91,6 +91,11 @@ func _build_guns() -> void:
 		var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; g.add_child(m)
 	for id in Toys.ORDER: var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
 	ruler = Toys.build("ruler"); view.add_child(ruler); ruler.visible = false
+	# the laser pointer's beam and its dot (stage 5's rifle, while you aim)
+	laser = MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(0.006, 0.006, 1.0); laser.mesh = lb
+	var lm := StandardMaterial3D.new(); lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; lm.albedo_color = Color(1, 0.1, 0.08, 0.55); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; lm.disable_fog = true
+	laser.material_override = lm; laser.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; laser.visible = false; add_child(laser)
+	laser_dot = MeshInstance3D.new(); var ls := SphereMesh.new(); ls.radius = 0.05; ls.height = 0.1; laser_dot.mesh = ls; var dm: StandardMaterial3D = lm.duplicate(); dm.albedo_color = Color(1, 0.15, 0.1, 1); laser_dot.material_override = dm; laser_dot.visible = false; add_child(laser_dot)
 	flash = MeshInstance3D.new(); var q := QuadMesh.new(); q.size = Vector2(0.16, 0.16); flash.mesh = q
 	var fm := StandardMaterial3D.new(); fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; fm.albedo_texture = Gfx.glow_tex(Color(1, 0.95, 0.8, 1), Color(1, 0.7, 0.3, 0.6))
 	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; fm.disable_fog = true
@@ -103,21 +108,32 @@ func _pose_gun(dt: float) -> void:
 	for id in gun_models: (gun_models[id] as Node3D).visible = not toy and id == guns.cur and shown
 	for id in toy_models: (toy_models[id] as Node3D).visible = toy and id == guns.cur and shown and not guns.melee_on
 	ruler.visible = toy and guns.melee_on   # the jab swings a ruler
-	if toy: d = [Toys.LENGTH[guns.cur], 0.07, 0.05]
+	if toy:
+		d = [Toys.LENGTH[guns.cur], 0.07, 0.05]
+		Toys.pose(toy_models[guns.cur], guns.cur, (1.0 - guns.reload_t / W.reload) if guns.reload_t > 0.0 else -1.0, guns.st().mag, W.mag, guns.since_shot)
+	var beam: bool = toy and guns.cur == "sniper" and guns.ads > 0.25 and guns.reload_t <= 0.0 and state == "playing"
+	laser.visible = beam and not guns.scoped(); laser_dot.visible = beam
+	if beam:   # the pointer's red line runs out to whatever it touches
+		var o := cam.global_position; var f := -cam.global_basis.z; Phys.raycast_static(o, f, 320.0); var end := o + f * Phys.rh_t; var from := guns.muzzle()
+		laser_dot.position = end - f * 0.03; laser_dot.scale = Vector3.ONE * clampf(Phys.rh_t * 0.05, 0.6, 6.0)
+		if from.distance_to(end) > 0.5: laser.look_at_from_position((from + end) / 2, end, Vector3.UP if absf(f.y) < 0.99 else Vector3.RIGHT); laser.scale = Vector3(1, 1, from.distance_to(end))
 	var hip_scale := clampf((hud.size.x / maxf(1.0, hud.size.y)) / 1.5, 0.55, 1.0)
 	var pos := Vector3(0.17 * lerpf(hip_scale, 1.0, a), -0.16, -0.3).lerp(Vector3(0.0, -d[1] / 2 - 0.012, -0.24), a)
 	var bob := clampf(player.speed_xz / 6.0, 0.0, 1.4) * (1.0 if player.grounded else 0.2) * (1.0 - a * 0.85); var ph := player.step_phase; var sprint := player.sprint_blend
 	pos.x += sin(ph) * 0.012 * bob + sprint * 0.04; pos.y += -absf(cos(ph)) * 0.012 * bob - sprint * 0.05 + player.land_dip * 0.4; pos.z += guns.kick_z * (1.0 - a * 0.5)
 	var rot := Vector3(guns.kick_rot * (1.0 - a * 0.5) - sprint * 0.35, sprint * 0.55, sin(ph) * 0.01 * bob)
-	if guns.reload_t > 0.0: var c := sin((1.0 - guns.reload_t / W.reload) * PI); rot.x -= c * 0.5; rot.z += c * 0.6; pos.y -= c * 0.06
+	if guns.reload_t > 0.0:
+		var c := sin((1.0 - guns.reload_t / W.reload) * PI)
+		if toy: rot.x += c * 0.22; rot.z += c * 0.3; pos.y += c * 0.02; pos.x -= c * 0.05   # tipped up and turned a little, so you see the hands' work
+		else: rot.x -= c * 0.5; rot.z += c * 0.6; pos.y -= c * 0.06
 	if guns.switch_t > 0.0: var c2 := sin(guns.switch_t / 0.36 * PI); pos.y -= c2 * 0.3; rot.x -= c2 * 0.6
 	if guns.melee_on:  # the jab: the gun thrusts forward and turns on its side, then comes back
 		var u := guns.melee_t / Weapons.MELEE_T; var k := u / 0.28 if u < 0.28 else maxf(0.0, 1.0 - (u - 0.28) / 0.72); var j := k * k * (3.0 - 2.0 * k)
 		pos += Vector3(-j * 0.12, j * 0.03, -j * 0.3); rot += Vector3(j * 0.15, j * 0.9, j * 0.35)
 	if inspect: pos = Vector3(0.02, -0.03, -0.62 - d[0] * 0.25); rot = Vector3(0.18, 1.15, 0.0)   # held out to look at
 	view.position = pos; view.rotation = rot
-	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5; flash.position = Vector3(0, 0, -d[0] - 0.05)
-	flash_light.light_energy = 3.0 if guns.flash_t > 0.0 else flash_light.light_energy * exp(-dt * 30)
+	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5 and (not toy or guns.cur == "smg"); flash.position = Vector3(0, 0, -d[0] - 0.05)
+	flash_light.light_energy = (3.0 if not toy else (1.2 if guns.cur == "smg" else 0.0)) if guns.flash_t > 0.0 else flash_light.light_energy * exp(-dt * 30)
 	var heat: Dictionary = guns.wstate.lmg  # the machine gun goes red as it heats
 	var hk: float = (0.9 + 0.1 * sin(time * 18.0)) if heat.hot else pow(heat.heat, 1.6)
 	var lm: StandardMaterial3D = gun_mats.lmg; lm.albedo_color = (lm.get_meta("base", World.lin("3b4048")) as Color).lerp(Color(0.9, 0.12, 0.05), hk * 0.85)
@@ -427,6 +443,7 @@ func command(line: String) -> Dictionary:
 			for e in enemies.list.duplicate():
 				if not e.boss or (a.size() > 1 and a[1] == "boss"): enemies.damage(e, 1e6, e.pos, Vector3(0, 0, -1), false)
 		"inspect": inspect = a[1] == "1"
+		"reload": guns.st().mag = int(a[1]) if a.size() > 1 else 0; guns.start_reload()
 		"cam":   # a free camera for pictures: x y z yaw pitch
 			_set_state("shot"); ui.show_screen(""); cam.fov = base_fov; cam.position = Vector3(float(a[1]), float(a[2]), float(a[3])); cam.rotation = Vector3(float(a[5]), float(a[4]), 0)
 		"gun": guns.cur = a[1]; guns.pending = null; guns.switch_t = 0.0; guns.cooldown = 0.0

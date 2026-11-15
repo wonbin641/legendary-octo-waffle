@@ -45,7 +45,7 @@ func begin(stage_: int) -> void:
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
 	world.build_stage(stage)
 	bonus_guns = []; replay = Store.save.cleared.has(stage)
-	guns.reset(layout()); guns.stage = stage; proj.stage = stage
+	guns.reset(layout()); guns.stage = stage; proj.stage = stage; guns.toy = stage == 9
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5

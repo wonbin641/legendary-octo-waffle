@@ -70,6 +70,47 @@ SOUNDS = {
     'pickup_ammo': [T('triangle', 400, 400, 0.08, 0.25), T('triangle', 500, 500, 0.08, 0.25, 0.07), T('triangle', 600, 600, 0.14, 0.25, 0.14)],
     'buy': [T('triangle', 880, 880, 0.14, 0.18), T('triangle', 1175, 1175, 0.14, 0.18, 0.07), T('triangle', 1568, 1568, 0.14, 0.18, 0.14), N(0.06, 'highpass', 3000, 2000, 1, 0.15)],
     'clear': [T('triangle', 523, 523, 0.3, 0.2), T('triangle', 659, 659, 0.3, 0.2, 0.1), T('triangle', 784, 784, 0.3, 0.2, 0.2), T('triangle', 1046, 1046, 0.3, 0.2, 0.3)],
+    # ---- stage 5, the toy room: plastic, springs, rubber bands, water. no real gunfire ----
+    # foam-dart blaster: a puff of compressed air and the trigger spring; the dart bounces off with a soft 'tong'
+    'toy_shot_rifle': [N(0.09, 'lowpass', 2600, 500, 0.8, 0.9), N(0.05, 'bandpass', 900, 400, 2, 0.5), T('square', 950, 320, 0.035, 0.14, 0.012), T('sine', 240, 120, 0.06, 0.35)],
+    'toy_hit_rifle': [T('sine', 430, 170, 0.09, 0.5), N(0.03, 'bandpass', 900, 500, 1.5, 0.25)],
+    'toy_mag_out': [N(0.03, 'bandpass', 1900, 1200, 2, 0.5), T('square', 720, 480, 0.025, 0.12), T('sine', 300, 180, 0.05, 0.25, 0.16), N(0.03, 'lowpass', 900, 300, 1, 0.3, 0.16)],
+    'toy_mag_in': [N(0.025, 'bandpass', 1500, 900, 2, 0.5), T('square', 520, 380, 0.03, 0.14), N(0.03, 'bandpass', 2400, 1500, 2, 0.55, 0.07), T('square', 900, 600, 0.025, 0.14, 0.07)],
+    'toy_slide': [N(0.07, 'highpass', 1800, 3200, 1, 0.4), T('square', 600, 420, 0.03, 0.1), N(0.05, 'highpass', 3200, 1700, 1, 0.5, 0.13), T('square', 820, 520, 0.03, 0.14, 0.13)],
+    # pump water gun: a jet of water, a splash; the stopper pops, the tank gurgles full, three squeaky pumps
+    'toy_shot_shotgun': [N(0.34, 'bandpass', 2600, 900, 0.7, 0.9), N(0.3, 'highpass', 4200, 2600, 0.6, 0.45), N(0.2, 'lowpass', 700, 200, 0.6, 0.4, 0.04)],
+    'toy_hit_shotgun': [N(0.2, 'lowpass', 1100, 180, 0.7, 0.75), T('sine', 320, 110, 0.12, 0.35), N(0.12, 'highpass', 3600, 2200, 0.8, 0.22, 0.03)],
+    'toy_cork': [T('sine', 280, 980, 0.05, 0.6), N(0.03, 'bandpass', 1400, 800, 2, 0.35)],
+    'toy_glug': [T('sine', 170, 250, 0.09, 0.55), T('sine', 190, 280, 0.09, 0.55, 0.16), T('sine', 210, 310, 0.09, 0.55, 0.32), T('sine', 235, 340, 0.09, 0.5, 0.48), T('sine', 260, 380, 0.09, 0.45, 0.64),
+                 N(0.8, 'lowpass', 500, 900, 0.8, 0.22)],
+    'toy_pump': [N(0.09, 'highpass', 2200, 4200, 0.8, 0.45), T('sine', 900, 1500, 0.07, 0.16, 0.03)],
+    # the tack crossbow with a laser pointer: the band creaks tight, sings 'ping', and the tack sticks with a 'tak'
+    'toy_shot_sniper': [T('triangle', 1900, 620, 0.13, 0.6), T('sine', 3200, 1400, 0.07, 0.25), N(0.03, 'highpass', 5200, 3000, 0.8, 0.5)],
+    'toy_hit_sniper': [N(0.03, 'bandpass', 2600, 1500, 2, 0.9), T('square', 520, 190, 0.04, 0.3), T('sine', 180, 90, 0.07, 0.4)],
+    'toy_stretch': [T('sawtooth', 210, 540, 0.62, 0.2), T('sine', 420, 1080, 0.62, 0.1), N(0.6, 'bandpass', 700, 1700, 4, 0.2), N(0.03, 'bandpass', 2200, 1400, 2, 0.5, 0.64)],
+    'toy_tack': [T('square', 2600, 1900, 0.02, 0.1), N(0.02, 'highpass', 4000, 3000, 1, 0.3)],
+    # cap gun: a sharp crack every shot; the cylinder swings out, the spent ring is flicked off, a new one clicks on
+    'toy_shot_smg': [N(0.03, 'highpass', 5200, 2600, 0.7, 1.2), N(0.05, 'bandpass', 2200, 1200, 1.2, 0.8), T('square', 1300, 420, 0.02, 0.2)],
+    'toy_hit_smg': [N(0.02, 'bandpass', 2000, 1200, 2, 0.4), T('sine', 600, 300, 0.03, 0.2)],
+    'toy_cyl_open': [N(0.03, 'bandpass', 2400, 1500, 2, 0.5), T('square', 1100, 700, 0.02, 0.1)],
+    'toy_ring_off': [T('square', 1500, 900, 0.02, 0.14), N(0.02, 'highpass', 3600, 2400, 1, 0.3), T('sine', 2200, 1500, 0.04, 0.1, 0.12)],
+    'toy_ring_on': [N(0.025, 'bandpass', 1800, 1200, 2, 0.5), T('square', 800, 600, 0.02, 0.12), N(0.02, 'bandpass', 2600, 1900, 2, 0.4, 0.06)],
+    'toy_cyl_shut': [N(0.035, 'bandpass', 1600, 800, 1.5, 0.75), T('square', 520, 300, 0.03, 0.2)],
+    # bottle rocket: the fuse fizzes, then a long whistle away, and a pop with crackles
+    'toy_shot_rocket': [N(0.22, 'highpass', 6500, 4200, 0.6, 0.5), N(0.9, 'bandpass', 1100, 3800, 1.2, 0.7, 0.2), T('sine', 1500, 2700, 0.85, 0.2, 0.22), N(0.5, 'lowpass', 900, 250, 0.6, 0.3, 0.2)],
+    'toy_boom': [N(0.22, 'lowpass', 3200, 200, 0.7, 1.5), T('sine', 210, 70, 0.22, 0.8), N(0.03, 'highpass', 6000, 3500, 0.8, 0.5, 0.18), N(0.03, 'highpass', 5500, 3200, 0.8, 0.45, 0.27),
+                 N(0.03, 'highpass', 6500, 3800, 0.8, 0.4, 0.35), N(0.03, 'highpass', 5800, 3400, 0.8, 0.35, 0.46), N(0.03, 'highpass', 6200, 3600, 0.8, 0.28, 0.58), N(0.5, 'bandpass', 2400, 900, 0.8, 0.25, 0.1)],
+    'toy_fuse': [N(0.55, 'highpass', 6800, 4600, 0.6, 0.45), N(0.06, 'bandpass', 2600, 1800, 2, 0.5), T('square', 1800, 1200, 0.02, 0.1)],
+    'toy_tube': [N(0.2, 'lowpass', 800, 300, 0.8, 0.5), T('sine', 240, 150, 0.12, 0.3, 0.14)],
+    # the rest of the toy box
+    'toy_shot_pistol': [T('sine', 520, 210, 0.07, 0.6), N(0.04, 'lowpass', 1800, 500, 0.8, 0.5)],
+    'toy_hit_pistol': [T('sine', 380, 200, 0.06, 0.4), N(0.03, 'bandpass', 1200, 700, 1.5, 0.3)],
+    'toy_shot_gl': [T('triangle', 260, 110, 0.16, 0.8), T('sine', 520, 260, 0.1, 0.3), N(0.04, 'bandpass', 1500, 600, 1.5, 0.4)],
+    'toy_shot_lmg': [T('triangle', 620, 250, 0.05, 0.55), N(0.025, 'highpass', 3800, 2200, 0.8, 0.5), T('sine', 1300, 700, 0.03, 0.15)],
+    'toy_hit_lmg': [N(0.025, 'bandpass', 1700, 900, 2, 0.4), T('sine', 500, 260, 0.03, 0.2)],
+    'toy_shot_flame': [N(0.16, 'bandpass', 1800, 2600, 0.6, 0.45), N(0.16, 'lowpass', 600, 400, 0.6, 0.3)],
+    'toy_ruler': [N(0.03, 'bandpass', 2200, 1300, 1.5, 0.9), T('square', 900, 420, 0.04, 0.25), T('sine', 260, 150, 0.06, 0.3)],
+    'toy_click': [N(0.03, 'bandpass', 1900, 1200, 2, 0.5), T('square', 720, 480, 0.025, 0.12)],
     'hiss': [N(1.4, 'highpass', 2600, 5200, 0.7, 0.42), N(0.5, 'bandpass', 900, 300, 1.2, 0.3)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
