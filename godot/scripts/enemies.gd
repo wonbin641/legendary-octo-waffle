@@ -427,12 +427,20 @@ func blow_vest(e: Foe, dir: Vector3) -> void:
 func detonate(e: Foe) -> void:
 	if e.alive: e.self_det = true; kill(e, false, null)
 
+## the browser game's MotoHelmet: a full-face shell, chin bar, tinted visor with its light catch, vents and pivots, all
+## fourteen of its boxes, glossy (roughness 0.18, metalness 0.35)
 func _helmet() -> Node3D:
 	var n := Node3D.new(); var m := MeshInstance3D.new()
-	m.mesh = _box_mesh("helmet", [[0.34, 0.31, 0.36, 0, 0.83, -0.005, "0d0e10"], [0.3, 0.07, 0.31, 0, 1.0, -0.015, "0d0e10"], [0.33, 0.12, 0.12, 0, 0.67, -0.12, "0d0e10"], [0.3, 0.11, 0.11, 0, 0.7, 0.14, "0d0e10"],
-		[0.28, 0.13, 0.03, 0, 0.825, 0.18, "3a4d60"], [0.26, 0.018, 0.034, 0, 0.885, 0.183, "c2d2e2"], [0.3, 0.05, 0.3, 0, 0.655, 0, "121316"]])
-	var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.25; mat.metallic = 0.3; m.material_override = mat; n.add_child(m)
+	var blk := "0d0e10"; var dk := "1b1d21"
+	m.mesh = _box_mesh("helmet", [[0.34, 0.31, 0.36, 0, 0.83, -0.005, blk], [0.3, 0.07, 0.31, 0, 1.0, -0.015, blk], [0.26, 0.04, 0.26, 0, 1.04, -0.02, blk],
+		[0.33, 0.12, 0.12, 0, 0.67, -0.12, blk], [0.3, 0.11, 0.11, 0, 0.7, 0.14, blk], [0.06, 0.04, 0.03, 0, 0.7, 0.2, dk],
+		[0.28, 0.13, 0.03, 0, 0.825, 0.18, "3a4d60"], [0.26, 0.018, 0.034, 0, 0.885, 0.183, "c2d2e2"], [0.2, 0.012, 0.034, -0.02, 0.79, 0.183, "7f94a8"], [0.3, 0.03, 0.05, 0, 0.9, 0.17, blk],
+		[0.02, 0.06, 0.06, -0.173, 0.83, 0.07, "3a3d42"], [0.02, 0.06, 0.06, 0.173, 0.83, 0.07, "3a3d42"], [0.09, 0.03, 0.07, 0, 1.06, 0.07, dk],
+		[0.3, 0.05, 0.3, 0, 0.655, 0, "121316"]])
+	if _helmet_mat == null: _helmet_mat = StandardMaterial3D.new(); _helmet_mat.vertex_color_use_as_albedo = true; _helmet_mat.roughness = 0.18; _helmet_mat.metallic = 0.35
+	m.material_override = _helmet_mat; n.add_child(m)
 	return n
+var _helmet_mat: StandardMaterial3D
 
 func _knock_helmet(e: Foe, dir: Vector3) -> void:
 	e.helmet = false

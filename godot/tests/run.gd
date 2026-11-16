@@ -649,6 +649,9 @@ func _ready() -> void:
 	pr.clear()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
+	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
+	check("1-1: the helmet is the browser game's MotoHelmet: its fourteen boxes, glossy (roughness 0.18, metalness 0.35)",
+		(hm_mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == 14 * 24 and absf(hm_mat.roughness - 0.18) < 1e-6 and absf(hm_mat.metallic - 0.35) < 1e-6)
 	var k9 := en.damage(hm, 85, hd9, Vector3(0, 0, -1), true)
 	check("1-1: the first shot to the head only knocks the helmet off", not k9 and hm.alive and hm.hp == 100.0 and not hm.helmet and en.flying.size() == 1)
 	en.damage(hm, 85, hd9, Vector3(0, 0, -1), true); check("1-1: after that the head is hit as usual", hm.hp == 15.0)
