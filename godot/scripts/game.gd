@@ -34,7 +34,6 @@ var result := ""
 var replay := false
 var boss: Enemies.Foe = null
 var boss_msg := ""
-var opened: Array = []
 var stats := {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 var bonus_guns: Array = []
 var _result_t := -1.0
@@ -88,7 +87,7 @@ func begin(stage_: int) -> void:
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
 	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
-	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; opened = []
+	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false
 	# 1-2 crowds the middle of the docks, so unless you pick somewhere else you come down at the south edge, facing in
 	if stage == 5:
 		var d = open_spot(0.0, 58.0)
@@ -443,7 +442,6 @@ func finish() -> void:
 		return
 	_leave_animals()
 	ended = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
-	opened = [] if Store.settings.dev else (Store.NEXT.get(stage, []) as Array).filter(func(s): return not Store.stage_open(s))
 	if not Store.save.cleared.has(stage): Store.save.cleared.push_back(stage); Store.save.cleared.sort()
 	return_rentals()
 	var key := "t%d" % stage; var t := int(stats.time)

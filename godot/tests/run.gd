@@ -206,8 +206,11 @@ func _ready() -> void:
 	pl.pos = Vector3(bp.x, 0, bp.z + 1.0); sim.call(0.2)
 	check("opening the chest gives a gun for good and ends the stage", Store.save.owned.size() == 1 and gm.ended and gm.result == "clear")
 	sim.call(2.0)
-	check("cleared: recorded, best time kept, money and gun stay, 2 and 1-1 open", shown == ["clear"] and Store.save.cleared == [1] and Store.save.best.has("t1") and Store.save.money == 119000 and Store.save.owned.size() == 1 \
-		and Store.stage_open(2) and Store.stage_open(6) and not Store.stage_open(3) and gm.opened == [2, 6], str(gm.opened))
+	check("cleared: recorded, best time kept, money and gun stay, 2 and 1-1 offered next", shown == ["clear"] and Store.save.cleared == [1] and Store.save.best.has("t1") and Store.save.money == 119000 and Store.save.owned.size() == 1 \
+		and Store.next_stages(1) == [2, 6], str(Store.next_stages(1)))
+	var keep_save: Dictionary = Store.save; var keep_dev: bool = Store.settings.dev; Store.save = Store.save0(); Store.settings.dev = false
+	check("every stage can be played from the start: none waits for another to be cleared", Store.STAGE_ORDER.size() == 9 and Store.STAGE_ORDER.all(func(s): return Store.stage_open(s)) and not Store.stage_open(10))
+	Store.save = keep_save; Store.settings.dev = keep_dev
 	gm.begin(1); en.damage(en.list[3], 1000, en.list[3].pos, Vector3(0, 0, -1), false)
 	check("a stage played again pays nothing", gm.replay and Store.save.money == 119000)
 	check("money reads with thousands separators", Store.won(119000) == "119,000원" and Store.fmt_time(252) == "4:12")

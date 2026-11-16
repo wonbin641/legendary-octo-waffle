@@ -4,7 +4,6 @@ extends Node
 
 const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # 9 is stage 5, the toy room
 const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4", 9: "5"}
-const PREREQ := {1: 0, 6: 1, 5: 6, 2: 1, 3: 2, 7: 3, 8: 7, 4: 3, 9: 4}
 const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [9], 9: []}
 
 var save := {}
@@ -80,9 +79,9 @@ func persist() -> void:
 func persist_settings() -> void:
 	_write("settings", settings)
 
+## every stage can be played from the start; NEXT only says which stages follow on the stage tree (the browser game opens them in turn)
 func stage_open(n: int) -> bool:
-	if n == 9: return true   # stage 5 is open from the start for now while the Godot version is tried out (on the stage tree it follows 4)
-	return STAGE_TAG.has(n) and (settings.dev or PREREQ[n] == 0 or save.cleared.has(PREREQ[n]) or save.cleared.has(n))
+	return STAGE_TAG.has(n)
 
 func next_stages(n: int) -> Array:
 	return (NEXT.get(n, []) as Array).filter(func(s): return stage_open(s))

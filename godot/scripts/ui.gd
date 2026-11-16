@@ -255,19 +255,16 @@ func _draw_board() -> void:
 		var y := board.size.y - 14.0
 		board.draw_circle(Vector2(22, y - 4), 5, VITAL); board.draw_string(f_mono, Vector2(34, y), "클리어", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, STEEL)
 		board.draw_arc(Vector2(100, y - 4), 5, 0, TAU, 16, SODIUM, 2.0); board.draw_string(f_mono, Vector2(112, y), "도전 가능", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, STEEL)
-		for k in 6: board.draw_arc(Vector2(196, y - 4), 5, k * TAU / 6, k * TAU / 6 + TAU / 12, 4, STEEL, 2.0)
-		board.draw_string(f_mono, Vector2(208, y), "잠김", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, STEEL)
 
 func refresh_menu() -> void:
 	if strip == null: return
 	var n_clear: int = Store.save.cleared.size()
-	strip_r.text = "가방 %s    클리어 %d / 8" % [Store.won(Store.save.money), n_clear]
+	strip_r.text = "가방 %s    클리어 %d / %d" % [Store.won(Store.save.money), n_clear, Store.STAGE_ORDER.size()]
 	strip_l.text = "● 7번 야드 관제" + ("  ·  개발자 모드 켜짐" if Store.settings.dev else "")
 	var open := Store.stage_open(sel); var st: Array = _status(sel); var best := int(Store.save.best.get("t%d" % sel, 0)); var done: bool = Store.save.cleared.has(sel)
 	d_code.text = "스테이지 " + Store.STAGE_TAG[sel] + "  ·  " + st[1]
 	d_name.text = Game.STAGES[sel].name
-	var pre: int = Store.PREREQ[sel]
-	d_note.text = (NOTE[sel] + (" · 다시 하면 보상 없음" if done else "")) if open else "스테이지 %s%s 깨면 열립니다" % [Store.STAGE_TAG[pre], _eul(Store.STAGE_TAG[pre])]
+	d_note.text = NOTE[sel] + (" · 다시 하면 보상 없음" if done else "")
 	d_best.text = Store.fmt_time(best) if best > 0 else "—"
 	var fit := Meta.fits(sel); var miss := Meta.missing(sel)
 	var no_spec: bool = Meta.spec(sel).all.is_empty() and Meta.spec(sel).any.is_empty()
@@ -277,9 +274,6 @@ func refresh_menu() -> void:
 	d_go.disabled = not open or not built
 	d_msg.text = "" if (built or not open) else "이 스테이지는 아직 Godot판에 옮기지 않았습니다"
 	board.queue_redraw()
-
-static func _eul(tag: String) -> String:   # 을/를 after a stage number
-	return "을" if tag[tag.length() - 1] in ["1", "3", "6", "7", "8", "0"] else "를"
 
 func _to_brief() -> void:
 	if not Store.stage_open(sel) or not BUILT.has(sel): return
@@ -648,6 +642,5 @@ func show_result(kind: String) -> void:
 		var b: Button = [ov.next, ov.next2][i]; b.visible = i < nx.size()
 		if i < nx.size(): b.set_meta("st", nx[i]); b.text = "스테이지 %s%s" % [Store.STAGE_TAG[nx[i]], "으로" if Store.STAGE_TAG[nx[i]].ends_with("1") or Store.STAGE_TAG[nx[i]].ends_with("3") else "로"]; b.disabled = not BUILT.has(nx[i])
 	var all_done: bool = Store.STAGE_ORDER.all(func(s): return Store.save.cleared.has(s))
-	var opened := ("새로 열림 · 스테이지 " + ", ".join(game.opened.map(func(s): return Store.STAGE_TAG[s])) + " · ") if (clear_ and not game.opened.is_empty()) else ""
-	(ov.best as Label).text = ((opened + ("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ")) if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else "")) + "가방 " + Store.won(Store.save.money)
+	(ov.best as Label).text = (("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ") if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else "")) + "가방 " + Store.won(Store.save.money)
 	back_stack.clear(); show_screen("over")
