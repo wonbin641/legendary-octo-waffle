@@ -156,4 +156,19 @@ for name, layers in SOUNDS.items():
     # the browser game runs everything through a compressor; here a soft limit keeps the loud ones from clipping
     data = b''.join(struct.pack('<h', int(max(-1.0, min(1.0, math.tanh(v * 0.55))) * 32000)) for v in mix)
     with wave.open(os.path.join(out_dir, name + '.wav'), 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(data)
-print(len(SOUNDS), 'sounds')
+# the helicopter's rotor (Sound.rotor in src/03_core.js): white noise through a 420 Hz low-pass, chopped 11.5 times a second, with a thin
+# 1650 Hz whine. Two seconds that loop without a seam: 23 chops, 3300 whine cycles, and the filter run twice round the same noise so it
+# starts where it ends. The game loops it and sets its level by how near the helicopter is.
+def rotor():
+    n = int(2.0 * SR); rnd = random.Random(11); src = [rnd.uniform(-1, 1) for _ in range(n)]
+    w = 2 * math.pi * 420 / SR; al = math.sin(w) / (2 * 0.8); c = math.cos(w); a0 = 1 + al
+    b0, b1, b2, a1, a2 = (1 - c) / 2 / a0, (1 - c) / a0, (1 - c) / 2 / a0, -2 * c / a0, (1 - al) / a0
+    x1 = x2 = y1 = y2 = 0.0; low = [0.0] * n
+    for _ in range(2):
+        for i in range(n):
+            x = src[i]; y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2, x1, y2, y1 = x1, x, y1, y; low[i] = y
+    peak = max(abs(v) for v in low) or 1.0
+    return [low[i] / peak * 0.9 * (0.5 + 0.5 * math.sin(2 * math.pi * 11.5 * i / SR)) + 0.03 * math.sin(2 * math.pi * 1650 * i / SR) for i in range(n)]
+data = b''.join(struct.pack('<h', int(max(-1.0, min(1.0, v)) * 32000)) for v in rotor())
+with wave.open(os.path.join(out_dir, 'rotor.wav'), 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(data)
+print(len(SOUNDS) + 1, 'sounds')

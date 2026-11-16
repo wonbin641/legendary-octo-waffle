@@ -35,12 +35,12 @@ func flame(from: Vector3, dir: Vector3) -> void:
 	_flames.push_back([m, 0.0, dir * randf_range(18.0, 24.0) + Vector3(randf_range(-1, 1), randf_range(-0.5, 1.5), randf_range(-1, 1))])
 
 # ---- small things that fly and fade: [node, age, life, velocity, size at start, size at end, gravity, alpha at start] ----
-func _bit(at: Vector3, color: Color, life: float, vel: Vector3, s0: float, s1: float, grav := 0.0, glow := true) -> void:
+func _bit(at: Vector3, color: Color, life: float, vel: Vector3, s0: float, s1: float, grav := 0.0, glow := true, drag := 0.0) -> void:
 	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 1.0; s.height = 2.0; s.radial_segments = 8; s.rings = 4; m.mesh = s
 	var mat := StandardMaterial3D.new(); mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.albedo_color = color; mat.disable_fog = true
 	if glow: mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = at; m.scale = Vector3.ONE * s0; add_child(m)
-	_bits.push_back([m, 0.0, life, vel, s0, s1, grav, color.a])
+	_bits.push_back([m, 0.0, life, vel, s0, s1, grav, color.a, drag])
 
 ## a streak from the muzzle to where the shot went: a foam dart, a jet of water, a band, a tack
 func streak(from: Vector3, to: Vector3, color: Color, width: float, life: float) -> void:
@@ -77,6 +77,12 @@ func firework(at: Vector3) -> void:
 		_bit(at, Color(cols[i % 5], 1.0), randf_range(0.6, 1.0), Vector3(cos(a) * cos(e), sin(e), sin(a) * cos(e)) * sp, 0.16, 0.03, 7.0)
 	var l := OmniLight3D.new(); l.light_color = Color(1, 0.8, 0.6); l.light_energy = 6.0; l.omni_range = 14.0; l.position = at; add_child(l); _lights.push_back([l, 0.3])
 
+## dust or smoke (src/05_fx.js FX.puff): soft grey balls that drift up, grow and fade
+func puff(p: Vector3, n: int, shade: float, size: float) -> void:
+	for i in n:
+		_bit(p + Vector3(randf_range(-0.1, 0.1), randf_range(-0.1, 0.1), randf_range(-0.1, 0.1)), Color(shade, shade, minf(1.0, shade * 1.08), 0.5), randf_range(0.6, 1.4),
+			Vector3(randf_range(-0.6, 0.6), randf_range(0.2, 1.1), randf_range(-0.6, 0.6)), size * 0.25, size * randf_range(1.3, 2.0) * 0.5, -0.4, false, 1.5)
+
 func chips(at: Vector3) -> void:
 	explode(at, false)
 
@@ -87,7 +93,7 @@ func update(dt: float) -> void:
 	for i in range(_bits.size() - 1, -1, -1):
 		var b: Array = _bits[i]; b[1] += dt; var u: float = b[1] / b[2]
 		if u >= 1.0: b[0].queue_free(); _bits.remove_at(i); continue
-		b[3] = (b[3] as Vector3) + Vector3(0, -b[6] * dt, 0); var n: MeshInstance3D = b[0]
+		b[3] = ((b[3] as Vector3) + Vector3(0, -b[6] * dt, 0)) * exp(-float(b[8]) * dt); var n: MeshInstance3D = b[0]
 		n.position += (b[3] as Vector3) * dt; n.scale = Vector3.ONE * lerpf(b[4], b[5], u); (n.material_override as StandardMaterial3D).albedo_color.a = b[7] * (1.0 - u)
 	for i in range(_lights.size() - 1, -1, -1):
 		_lights[i][1] -= dt; (_lights[i][0] as OmniLight3D).light_energy = 6.0 * maxf(0.0, _lights[i][1] / 0.3)

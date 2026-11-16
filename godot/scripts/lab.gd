@@ -36,6 +36,12 @@ var monkey_t := 0.0
 var _arm_l: Node3D; var _arm_r: Node3D
 var _bar_mat: StandardMaterial3D; var _glass_mat: StandardMaterial3D
 var beacons: Array = []
+var pressed := false      # the monkey has slammed his button (in the opening scene, or as play begins if it was skipped)
+var clock := false        # the boards count down (before the button they show "- -")
+var alarm := false        # the red beacons turn
+var door: Node3D          # the sealed door in the south wall: it rolls up as you leave
+var door_open := 0.0
+var _press_at := 1.0
 
 func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	seq = S.get("seq", false); var E := HALF
@@ -60,7 +66,6 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		Phys.add_collider(DW if sx > 0 else -E - 2, 0, E, E + 2 if sx > 0 else -DW, 40, E + 2, "concrete")
 	walls.push_back([2 * DW, CEIL - 7, 2.0, 0, 7 + (CEIL - 7) / 2, E + 1, "d3d9de"])
 	Phys.add_collider(-DW, 7, E, DW, 40, E + 2, "concrete"); Phys.add_collider(-DW, 0, E - 0.4, DW, 7, E + 2, "metal")
-	walls.push_back([8.4, 7.0, 0.4, 0, 3.5, E - 0.15, "5c646c"])
 	# a teal band round the room, trusses under the ceiling
 	for q in [[0.06, 1.3, 2 * E, -E + 0.03, 4.6, 0.0], [0.06, 1.3, 2 * E, E - 0.03, 4.6, 0.0], [2 * E, 1.3, 0.06, 0.0, 4.6, E - 0.03]]: walls.push_back([q[0], q[1], q[2], q[3], q[4], q[5], "2f7f86"])
 	var tx := -45.0
@@ -94,7 +99,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		for side in ["n", "s", "e", "w"]: c.panels.push_back(_panel(G, c, side))
 		var lb := Label3D.new(); lb.billboard = BaseMaterial3D.BILLBOARD_ENABLED; lb.pixel_size = 0.02; lb.font_size = 64; lb.outline_size = 12; lb.no_depth_test = false
 		lb.position = Vector3(c.x, c.h + (2.6 if c.boss else 2.1), c.z); G.add_child(lb); c.label = lb; c.shown = ""
-		cages.push_back(c)
+		cages.push_back(c); _draw(c)
 	# lab furniture in the middle: cover that stays put (outside every cage's fall zone)
 	for q in [[-10.5, 31.5, 0], [10.5, 31.5, 0], [-15.75, 9.0, 1], [15.75, 9.0, 1], [-15.75, -14.0, 1], [15.75, -14.0, 1], [0.0, 38.0, 0], [-22.0, 22.0, 0], [22.0, 22.0, 0]]:
 		var hx := 0.6 if q[2] else 2.1; var hz := 2.1 if q[2] else 0.6
@@ -112,6 +117,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		walls.push_back([0.08, 2.6, 1.2, q[0] - 2.96, 1.3, q[1], "59626b"]); walls.push_back([0.08, 2.6, 1.2, q[0] + 2.96, 1.3, q[1], "59626b"])
 		Phys.add_collider(q[0] - 3, 0, q[1] - 0.6, q[0] + 3, 2.6, q[1] + 0.6, "metal")
 	var wm := MeshInstance3D.new(); wm.mesh = Gfx.merge_boxes(walls); var wmat := StandardMaterial3D.new(); wmat.vertex_color_use_as_albedo = true; wmat.roughness = 0.7; wm.material_override = wmat; G.add_child(wm)
+	var dm := MeshInstance3D.new(); dm.mesh = Gfx.merge_boxes([[8.4, 7.0, 0.4, 0, 0, 0, "5c646c"]]); dm.material_override = wmat; dm.position = Vector3(0, 3.5, E - 0.15); G.add_child(dm); door = dm
 	# wooden crates: in the middle and the aisles, never where a cage wall will land
 	var in_fall := func(x: float, z: float, m: float) -> bool:
 		for c in cages:
@@ -231,7 +237,8 @@ func next_cage():
 	return best
 
 func update(dt: float) -> void:
-	running = true; t += dt
+	if not running: running = true; clock = true; alarm = true
+	t += dt
 	if push_t >= 0.0:   # the monkey's arm is on its way to the button
 		push_t -= dt
 		if push_t < 0.0 and reach != null: reach.held = false; reach.open_at = t + 0.5; reach = null; Snd.play("press")
@@ -248,20 +255,35 @@ func update(dt: float) -> void:
 			if remain <= 0.0: open(c)
 		_fall(c, dt); _draw(c)
 
+## the monkey's red button: the boards light up and the alarm starts (the clock itself runs once play begins)
+func press() -> void:
+	pressed = true; alarm = true; clock = true
+	for c in cages: _draw(c)
+
+func monkey_press(at: float) -> void:
+	monkey_mode = "press"; monkey_t = 0.0; _press_at = at
+
 ## the board over a cage: its number, the animal, the seconds left
 func _draw(c: Dictionary) -> void:
 	var remain: float = maxf(0.0, c.open_at - t); var sec := ceili(remain) if c.open_at != INF else -1
-	var key: String = ("열림" if t - c.opened_t < 4.0 else "—") if c.open else ("잠김" if c.held else ("%d:%02d" % [sec / 60, sec % 60] if sec >= 60 else str(sec)))
+	var key: String = ("열림" if t - c.opened_t < 4.0 else "—") if c.open else ("잠김" if c.held else ("- -" if not clock else ("%d:%02d" % [sec / 60, sec % 60] if sec >= 60 else str(sec))))
 	if c.shown == key: return
 	c.shown = key; var lb: Label3D = c.label
 	lb.text = "%02d %s\n%s" % [c.n, ("보스 · " if c.boss else "") + Animals.ANIMALS[c.type].name, key]
-	lb.modulate = Color("5ed6b0") if c.open else (Color("8fb8ff") if c.held else (Color("ff4b4b") if sec <= 3 else Color("f2a33a")))
+	lb.modulate = Color("5ed6b0") if c.open else (Color("8fb8ff") if c.held else (Color("3a4250") if not clock else (Color("ff4b4b") if sec <= 3 else Color("f2a33a"))))
 
 ## things that move whatever the game state is: the monkey, the beacons
 func anim(dt: float, time: float) -> void:
 	monkey_t += dt
 	var al := Vector3(0, 0, 0.15); var ar := Vector3(0, 0, -0.15); var jump := 0.0
 	match monkey_mode:
+		"press":   # the right fist up high, then down on the button, then a cackle
+			var k := monkey_t - _press_at
+			if k < 0.0: ar = Vector3(-3.0, 0, -0.2); al = Vector3(-1.2, 0.5, 0.3); jump = absf(sin(monkey_t * 9.0)) * 0.05
+			elif k < 0.12: ar = Vector3(-3.0 + k / 0.12 * 1.85, 0, -0.2)
+			elif k <= 0.5: ar = Vector3(-1.15, 0, -0.2); al = Vector3(-2.6, 0, 0.6)
+			else: var s5 := sin(monkey_t * 18.0); al = Vector3(-2.7 + s5 * 0.25, 0, 0.5); ar = Vector3(-2.7 - s5 * 0.25, 0, -0.5); jump = absf(sin(monkey_t * 7.0)) * 0.12
+		"cackle": var s6 := sin(monkey_t * 18.0); al = Vector3(-2.7 + s6 * 0.25, 0, 0.5); ar = Vector3(-2.7 - s6 * 0.25, 0, -0.5); jump = absf(sin(monkey_t * 7.0)) * 0.12
 		"panic": var s := sin(monkey_t * 24.0); al = Vector3(-2.9, 0, 0.9 + s * 0.4); ar = Vector3(-2.9, 0, -0.9 - s * 0.4); jump = absf(sin(monkey_t * 10.0)) * 0.25
 		"reach":
 			if monkey_t < 0.45: ar = Vector3(-1.55 * monkey_t / 0.45, 0, -0.1)
@@ -275,6 +297,7 @@ func anim(dt: float, time: float) -> void:
 			else: var s4 := sin(monkey_t * 2.2); al = Vector3(-0.3 + s4 * 0.1, 0, 0.2); ar = Vector3(-0.8, -0.6, -0.3)
 	var f := 1.0 - exp(-dt * 14.0)
 	if _arm_l: _arm_l.rotation = _arm_l.rotation.lerp(al, f); _arm_r.rotation = _arm_r.rotation.lerp(ar, f); monkey.position.y = WIN.y0 + jump
+	if door != null: door.position.y = 3.5 + door_open * 6.6
 	for i in beacons.size():
-		var on := running and fmod(time * 1.6 + i * 0.25, 1.0) < 0.5
+		var on := alarm and fmod(time * 1.6 + i * 0.25, 1.0) < 0.5
 		((beacons[i] as MeshInstance3D).material_override as StandardMaterial3D).albedo_color = Color("ff2a20") if on else Color("401010")

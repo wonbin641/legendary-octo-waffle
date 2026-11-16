@@ -819,6 +819,69 @@ func _ready() -> void:
 	check("the legend: each stage's kinds, the drop point to pick on 1-2's briefing, who is after you while you play; the toy room has no boss",
 		m_l4.has("스파이더 마인 (움직일 때만)") and m_l4.has("흰 테두리 · 나를 쫓는 중") and m_l4.has("에어록 · 시작하는 곳") and m_l5.has("내리는 곳 · 지도를 눌러 바꾸기") and not m_l5.has("흰 테두리 · 나를 쫓는 중")
 		and m_l9.has("플라스틱 군인") and m_l9.has("조립 블록 피규어") and not m_l9.has("보스"), [m_l4.size(), m_l5.size(), m_l9])
+	# ---------------- the cutscenes: played through or skipped, they end the same ----------------
+	var ct := Cut.new(); add_child(ct); ct.cam = cam; ct.player = pl; ct.game = gm; ct.world = w; ct.enemies = en; ct.fx = fxn
+	var c_done := [0]; var c_end := func() -> void: c_done[0] += 1
+	var c_run := func(sec: float) -> void:
+		for i in roundi(sec * 30.0):
+			if not ct.active(): break
+			ct.update(1.0 / 30.0); fxn.update(1.0 / 30.0)
+			if w.ship != null: w.ship.anim_door(1.0 / 30.0)
+	# in by helicopter: down the rope, on the ground at the drop point looking the way you will face
+	gm.begin(1); Snd.keep_log = true; Snd.played.clear(); c_done[0] = 0; ct.start_intro(1, c_end); var c_rope := false
+	for i in 230:
+		ct.update(1.0 / 30.0)
+		if ct.rope.visible: c_rope = true
+		if not ct.active(): break
+	var c_st: Dictionary = w.start
+	check("in by helicopter: down the rope beside it, then on the ground where the stage starts (7.2 s)", c_done[0] == 1 and not ct.active() and c_rope and Snd.played.has("land") and Snd.played.has("rotor")
+		and Vector2(cam.global_position.x - c_st.x, cam.global_position.z - c_st.z).length() < 0.01 and absf(cam.global_position.y - Player.EYE) < 0.01 and not ct.heli.visible, [c_done[0], c_rope, cam.global_position])
+	gm.begin(1); c_done[0] = 0; ct.start_intro(1, c_end); c_run.call(1.0); ct.skip()
+	check("skipped, the helicopter is gone and play starts the same", c_done[0] == 1 and not ct.active() and not ct.heli.visible and not ct.rope.visible and ct.fade_to == 0.0)
+	pl.reset(5, 30, 0.7); c_done[0] = 0; ct.start_outro(c_end); var c_climb := false
+	for i in 270:
+		ct.update(1.0 / 30.0)
+		if ct.fig.visible and ct.fig.position.y > 1.0: c_climb = true
+		if not ct.active(): break
+	check("out by helicopter: up the rope ladder, then black (8.6 s)", c_done[0] == 1 and c_climb and ct.fade_to == 1.0 and not ct.fig.visible)
+	# the lab: the monkey slams his button and the boards light up; the clock itself starts with play
+	gm.begin(3); var L3: Lab = w.lab
+	var c_dark: bool = not L3.pressed and not L3.clock and str(L3.cages[0].label.text).ends_with("- -")
+	c_done[0] = 0; Snd.played.clear(); ct.start_intro(3, c_end); var c_press_t := -1.0
+	for i in 330:
+		ct.update(1.0 / 30.0)
+		if L3.pressed and c_press_t < 0.0: c_press_t = float(ct.C.t)
+		if not ct.active(): break
+	check("the lab's opening: dark boards, the monkey's button at 4.1 s, the boards count, and the cages' clock waits for play", c_dark and c_done[0] == 1 and absf(c_press_t - 4.13) < 0.05 and L3.clock and L3.t == 0.0
+		and Snd.played.has("press") and Snd.played.has("siren") and str(L3.cages[0].label.text).ends_with("10"), [c_dark, c_press_t, L3.t, L3.cages[0].label.text])
+	gm.begin(3); L3 = w.lab; c_done[0] = 0; ct.start_intro(3, c_end); c_run.call(1.0); ct.skip()
+	L3.update(1.0)
+	check("skipped before the button: it is pressed for you, and the first cage still opens 10 s into play", c_done[0] == 1 and L3.pressed and absf(L3.t - 1.0) < 1e-6 and not L3.cages[0].open and float(L3.cages[0].open_at) == 10.0)
+	c_done[0] = 0; ct.start_outro(c_end); c_run.call(8.0)
+	check("out of the lab: the alarm stops, the sealed door rolls up, black", c_done[0] == 1 and not L3.alarm and L3.door_open == 1.0 and ct.fade_to == 1.0)
+	# the ship: the airlock's inner door rolls up, you step out, it shuts behind you
+	gm.begin(4); var S4: Ship = w.ship; c_done[0] = 0; ct.start_intro(4, c_end); var c_up := 0.0
+	for i in 200:
+		ct.update(1.0 / 30.0); S4.anim_door(1.0 / 30.0); c_up = maxf(c_up, S4.door_open)
+		if not ct.active(): break
+	var c_shut0: bool = S4.closing and S4.door_open > 0.9
+	for i in 45: S4.anim_door(1.0 / 30.0)
+	check("the ship's opening: the airlock door rolls up, then shuts behind you", c_done[0] == 1 and c_up == 1.0 and c_shut0 and S4.door_open == 0.0 and S4.air_door.position.y == 2.25, [c_up, S4.door_open])
+	gm.begin(4); S4 = w.ship; c_done[0] = 0; ct.start_intro(4, c_end); c_run.call(0.5); ct.skip()
+	for i in 45: S4.anim_door(1.0 / 30.0)
+	check("skipped, the airlock ends shut just the same", c_done[0] == 1 and not S4.closing and S4.door_open == 0.0)
+	c_done[0] = 0; ct.start_outro(c_end); c_run.call(7.5)
+	check("out of the ship: back through the airlock, and it shuts", c_done[0] == 1 and S4.door_open == 0.0 and ct.fade_to == 1.0)
+	# a sealed door: a look at the bee, its name, then you are inside and it locks
+	for c_skip in [false, true]:
+		gm.begin(4); S4 = w.ship; var D4: Dictionary = S4.doors[0]; var bee = S4.drone(D4)
+		S4.on_cut = func(D: Dictionary, e: Enemies.Foe, done: Callable) -> void: ct.start_boss_intro(D, e, done)
+		S4.enter(D4); var c_mid: String = D4.mode; var c_kind := ct.kind()
+		if c_skip: c_run.call(0.4); ct.skip()
+		else: c_run.call(2.0)
+		check("the bridge door: a second and a half looking at the gold bee, then locked in with it (%s)" % ("skipped" if c_skip else "watched"),
+			c_kind == "boss" and c_mid == "cut" and D4.mode == "locked" and not bee.sealed and absf(pl.pos.x - (D4.x + D4.inward * 2.4)) < 1e-4 and not ct.active(), [c_kind, c_mid, D4.mode, pl.pos])
+	S4.on_cut = Callable(); Snd.keep_log = false
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

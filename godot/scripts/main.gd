@@ -20,6 +20,7 @@ var base_fov := BASE_FOV
 var toy_models := {}; var ruler: Node3D; var inspect := false; var laser: MeshInstance3D; var laser_dot: MeshInstance3D
 var needle: Node3D; var needle_arm: Node3D; var needle_syr: Node3D; var needle_juice: MeshInstance3D
 var gm_models: GunModels
+var cut: Cut   # the cutscenes: in by helicopter, out by helicopter, the lab, the ship, the look behind a sealed door
 var view: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var hint_label: Label; var fps_label: Label; var banner_label: Label; var banner_sub: Label
 var hint_t := 0.0; var banner_t := 0.0; var hit_t := 0.0; var hit_kill := false; var hit_head := false; var heat_k := -1.0
@@ -62,8 +63,11 @@ func _ready() -> void:
 	player.say = func(t: String) -> void: feed(t, 0)
 	world.build_stage(1)
 	_build_guns(); _build_hud()
+	cut = Cut.new(); add_child(cut); cut.cam = cam; cut.player = player; cut.game = game; cut.world = world; cut.enemies = enemies; cut.fx = fx
+	cut.build_overlay(hud.get_parent(), f_title, f_mono)
 	ui = Ui.new(); ui.f_title = f_title; ui.f_body = f_body; ui.f_bold = f_bold; ui.f_mono = f_mono; ui.game = game; ui.guns = guns; ui.is_touch = is_touch
-	ui.do_deploy = enter_play; ui.do_resume = resume_game; ui.do_quit = func() -> void: game.forfeit(); game.return_rentals(); to_menu()
+	ui.do_deploy = func() -> void: enter_play(true)
+	ui.do_resume = resume_game; ui.do_quit = func() -> void: game.forfeit(); game.return_rentals(); to_menu()
 	ui.do_menu = to_menu; ui.do_again = func(stage: int) -> void:
 		if game.sp != null and game.result != "clear" and stage == game.stage:   # back to the save point, as things were when you took it
 			game.from_save(); ui.show_screen(""); enter_play(); banner("세이브 포인트에서 다시", "처치 %d · 열쇠를 가진 채 운전실에서 시작합니다" % game.kills, 3.0); return
@@ -364,18 +368,38 @@ func to_menu() -> void:
 	if not game.ended and game.stats.time > 0.0: game.forfeit()
 	game.return_rentals(); Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear(); player.jet_end()
-	cam.fov = base_fov; ui.in_stage = false; ui.back_stack.clear(); _set_state("menu"); ui.show_screen("menu")
+	cam.fov = base_fov; ui.in_stage = false; ui.back_stack.clear(); cut.abort(); _set_state("menu"); ui.show_screen("menu")
 
-func enter_play() -> void:
+func enter_play(intro := false) -> void:
 	for gid in Weapons.ORDER: gm_models.show_hands(gid, true)
 	if cu_light != null: cu_light.visible = false
 	guns.look_mode = look_mode; apply_settings(); feed_lines.clear(); banner_label.text = ""; banner_sub.text = ""; banner_t = 0.0; ui.in_stage = true
-	_set_state("playing"); request_lock()
+	if world.ship != null: world.ship.on_cut = _boss_cut
+	if intro and world.toy == null:   # (the toy room has its own way in: you come down under a parachute)
+		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
+	else: _go_play()
+
+## the fight starts (after the opening scene, or at once)
+func _go_play() -> void:
+	_set_state("playing"); request_lock(); player.invuln = maxf(player.invuln, 1.5)
 	if game.boss_msg != "": banner("스테이지 " + Store.STAGE_TAG[game.stage], game.boss_msg, 3.5)
 	hint("1번 우리가 10초 뒤에 열립니다 · 창살 사이로 쏠 수 있습니다" if world.lab != null else ("마우스 이동으로 조준 · Q/E로 회전 · M 키로 지도" if look_mode == "drag" else ("오른쪽 위 지도 버튼으로 적 위치를 볼 수 있습니다" if look_mode == "touch" else "M 키로 작전 지도를 볼 수 있습니다")), 3.5)
 
+## the ship: standing at a sealed door, a short look at what waits inside before it locks behind you
+func _boss_cut(D: Dictionary, e: Enemies.Foe, done: Callable) -> void:
+	_set_state("cutscene"); player.jet_end(); cut.touch = look_mode == "touch"
+	cut.start_boss_intro(D, e, func() -> void: done.call(); _back_to_play())
+
+func _back_to_play() -> void:
+	_set_state("playing"); player.invuln = maxf(player.invuln, 1.0); request_lock()
+
 func _on_result(kind: String) -> void:
-	_set_state("gameover"); ui.in_stage = false; ui.show_result(kind)
+	if kind == "clear" and state == "playing" and world.toy == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
+		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_outro(func() -> void: _show_result("clear")); return
+	_show_result(kind)
+
+func _show_result(kind: String) -> void:
+	_set_state("gameover"); ui.in_stage = false; ui.show_result(kind); cut.fade_to = 0.0
 
 func pause_game(msg := "") -> void:
 	if state != "playing": return
@@ -407,6 +431,9 @@ func request_lock() -> void:
 
 # ---------------- input ----------------
 func _unhandled_input(e: InputEvent) -> void:
+	if state == "cutscene":
+		if (e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_SPACE, KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_E]) or (e is InputEventMouseButton and e.pressed) or (e is InputEventScreenTouch and e.pressed): cut.skip()
+		return
 	if e is InputEventKey and e.pressed and not e.echo:
 		if e.physical_keycode == KEY_F3 or e.physical_keycode == KEY_QUOTELEFT: Store.settings.fps = not Store.settings.fps; Store.persist_settings()  # some browsers keep F3 for themselves: the ` key does the same
 		elif state == "playing":
@@ -505,6 +532,13 @@ func tick(dt: float) -> void:
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 	if world.lab != null: world.lab.anim(dt, time)
 
+## a cutscene's frame: the world moves (lamps, the lab's monkey and beacons, the ship's airlock), the fight does not
+func _cut_step(dt: float) -> void:
+	time += dt; cut.update(dt); fx.update(dt); world.update_world(dt, time, cam.global_position.x, cam.global_position.z)
+	if world.lab != null: world.lab.anim(dt, time)
+	if world.ship != null: world.ship.anim_door(dt)
+	Snd.listener = cam.global_position
+
 func _process(delta: float) -> void:
 	var dt := minf(delta, 0.05)
 	if state == "playing":
@@ -526,6 +560,8 @@ func _process(delta: float) -> void:
 			for i in range(feed_lines.size() - 1, -1, -1):
 				feed_lines[i][1] -= dt
 				if feed_lines[i][1] <= 0.0: feed_lines.remove_at(i)
+	elif state == "cutscene":
+		_cut_step(dt)
 	elif state == "gameover" and game.result != "clear":
 		pass
 	elif state == "shot":
@@ -550,6 +586,7 @@ func _process(delta: float) -> void:
 			var bas := Basis(Vector3.UP, cu_ang); var mid := Vector3(0, 0, GunModels.MUZZLE[ui.cu_gun][0] / 2.0 + 0.12)
 			view.rotation = Vector3(0, cu_ang, 0); view.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x), 0.02, -dist) - bas * mid
 			cu_light.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x) + 0.3, 0.5, -dist + 0.7)
+	cut.tick_fade(dt)
 	if hint_t > 0.0:
 		hint_t -= dt
 		if hint_t <= 0.0: hint_label.text = ""
@@ -573,6 +610,7 @@ func command(line: String) -> Dictionary:
 	match a[0]:
 		"start":   # straight into a stage, mouse aim without the pointer lock
 			ui.sel = int(a[1]) if a.size() > 1 else 1; state = "brief"; ui.open_brief(ui.sel); ui._deploy(); ever_locked = false; lock_wait = -1.0
+			if not (a.size() > 2 and a[2] == "intro"): cut.skip()
 			if look_mode == "lock": look_mode = "drag"; guns.look_mode = "drag"
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		"menu": to_menu(); menu_t = float(a[1]) if a.size() > 1 else menu_t
@@ -583,6 +621,7 @@ func command(line: String) -> Dictionary:
 		"pause": pause_game()
 		"map": open_map(a[1] if a.size() > 1 else "play")
 		"mapclose": close_map()
+		"skip": cut.skip()
 		"resume": resume_game()
 		"money": Store.save.money = int(a[1]); Store.persist(); ui.refresh_menu()
 		"dev": Store.settings.dev = a[1] == "1"; Store.settings.god = a.size() > 2 and a[2] == "1"; ui.refresh_menu()
@@ -591,6 +630,7 @@ func command(line: String) -> Dictionary:
 		"sim":
 			for i in roundi(float(a[1]) * 30):
 				if state == "playing": tick(1.0 / 30.0)
+				elif state == "cutscene": _cut_step(1.0 / 30.0); cut.tick_fade(1.0 / 30.0)
 		"killall":   # every enemy but the boss (or the boss too with 'boss')
 			for e in enemies.list.duplicate():
 				if not e.boss or (a.size() > 1 and a[1] == "boss"): enemies.damage(e, 1e6, e.pos, Vector3(0, 0, -1), false)
@@ -628,7 +668,7 @@ func command(line: String) -> Dictionary:
 		"trigger": guns.trigger = a[1] == "1"; guns.trigger_edge = guns.trigger
 		"ads": guns.ads_held = a[1] == "1"
 		"touch": look_mode = "touch"; guns.look_mode = "touch"; apply_settings(); touch_ui.visible = state == "playing"
-	return {"state": state, "screen": ui.cur, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
+	return {"state": state, "screen": ui.cur, "cut": cut.kind(), "fade": cut.fade.color.a if cut.fade != null else 0.0, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
 		"colliders": Phys.colliders.size(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
 		"gun": guns.cur, "slots": guns.slots, "mag": guns.st().mag, "hp": player.hp, "ads": guns.ads, "fov": cam.fov, "money": Store.save.money, "cleared": Store.save.cleared, "owned": Store.save.owned,
 		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "key": world.ship.key if world.ship != null else false, "doors": world.ship.doors.map(func(d): return d.mode) if world.ship != null else [], "phase": int(game.boss.k.get("phase", -1)) if game.boss != null else -1, "pit": Phys.PIT != null, "sp": game.sp != null, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}

@@ -13,8 +13,8 @@ const REACTOR := {"x": 120.0, "z": -6.0, "r": 1.7}
 const DAIS := [[96.0, -28.0, 144.0, 16.0, 0.45], [105.0, -20.0, 135.0, 8.0, 0.9], [112.0, -14.0, 128.0, 2.0, 1.35]]
 const PILLARS := [[80.0, -34.0], [80.0, 30.0], [154.0, -36.0], [154.0, 32.0]]   # 1.2 m half-width, floor to ceiling
 const BRIDGE := {"gy": 7.0, "x0": -123.0, "x1": -92.0, "z0": -28.0, "z1": 13.0, "stairX0": -117.0, "stairX1": -107.4, "eastX": -97.0, "steps": 16}
-const DOORS := [{"x": -91.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "운전실", "inward": -1.0, "room": "bridge", "who": "gdrone", "needKey": false},
-	{"x": 67.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "메인홀", "inward": 1.0, "room": "hall", "who": "bdrone", "needKey": true}]
+const DOORS := [{"x": -91.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "운전실", "inward": -1.0, "room": "bridge", "who": "gdrone", "title": "황금꿀벌드론", "tone": "bee", "needKey": false},
+	{"x": 67.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "메인홀", "inward": 1.0, "room": "hall", "who": "bdrone", "title": "최첨단 감시 드론 보스 B-3", "tone": "boss", "needKey": true}]
 const KEY := Vector3(-105, 1.6, -7.5)   # the main hall's key, stuck upright in the commander's console on the bridge
 const SAVE := {"x": -98.5, "z": -7.5, "yaw": -PI / 2}   # where the save point puts you back
 const HATCHES := [[75.2, -16.0], [75.2, 22.0], [90.0, 40.0], [118.0, 40.8], [150.0, 20.0], [150.0, -28.0], [118.0, -42.8], [86.0, -38.0]]
@@ -24,6 +24,10 @@ const PYR_OZ := 25.0
 const PYR_BOTTOM := -9.0
 
 var steps: Array = []     # {k, ax, az, y, w, land}
+var air_door: Node3D      # the airlock's inner door: it rolls up as the stage starts and shuts behind you
+var door_open := 0.0
+var closing := false
+var on_cut: Callable = Callable()   # the look inside a sealed door (main's cutscene); without it you are simply put inside
 var pyr_bx := 0.0; var pyr_bz := 0.0
 var doors: Array = []
 var hatches: Array = []
@@ -101,7 +105,6 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	# 4. the passage from the airlock: red warning lamps, the airlock door behind you
 	for q in [[-41.75, 16.0], [-41.75, 20.0], [-38.0, 10.0], [-30.0, 10.0], [-24.25, 4.0], [-24.25, 0.0]]: glow.push_back([1.2, 0.05, 0.4, q[0], 4.46, q[1], "cfe6ff"])
 	Phys.add_collider(-44, 0, DOOR_Z - 0.2, -39.5, 4.5, DOOR_Z + 0.2, "metal")
-	solid.push_back([4.5, 4.5, 0.3, -41.75, 2.25, DOOR_Z, "4a5162"])
 	w.lamps.push_back({"x": -41.75, "y": 3.6, "z": 27.5})
 	# 5. the corridor: a light strip on each wall, panels in the ceiling, low barricades to hide behind
 	for z: float in [-12.46, -2.54]: glow.push_back([160.0, 0.06, 0.04, -12.0, 2.4, z, "3a9cff"])
@@ -201,6 +204,8 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		var gq := MeshInstance3D.new(); var gp := PlaneMesh.new(); gp.size = Vector2(2.3, 2.3); gq.mesh = gp; gq.material_override = Gfx.unlit(Color(1.0, 0.29, 0.12), false); gq.position = Vector3(q[0], 0.012, q[1]); gq.visible = false; G.add_child(gq)
 		hatches.push_back({"x": q[0], "z": q[1], "a": la, "b": lb2, "glow": gq, "open": false, "k": 0.0})
 	var sm := MeshInstance3D.new(); sm.mesh = Gfx.merge_boxes(solid); sm.material_override = smat; G.add_child(sm)
+	air_door = MeshInstance3D.new(); (air_door as MeshInstance3D).mesh = Gfx.merge_boxes([[4.5, 4.5, 0.3, 0, 0, 0, "4a5162"]]); (air_door as MeshInstance3D).material_override = smat
+	air_door.position = Vector3(-41.75, 2.25, DOOR_Z); G.add_child(air_door)
 	var gmesh := MeshInstance3D.new(); gmesh.mesh = Gfx.merge_boxes(glow); var gmat := StandardMaterial3D.new(); gmat.vertex_color_use_as_albedo = true; gmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; gmesh.material_override = gmat; G.add_child(gmesh)
 	# walking grid: only inside the ship
 	Phys.nav_mask = func(nx: float, nz: float) -> bool: return not room_at(nx, nz).is_empty()
@@ -285,11 +290,18 @@ func drone(D: Dictionary):
 		if o.alive and o.type == D.who: return o
 	return null
 
-## you stand against a door from the corridor: it opens, you are put just inside, and it shuts and locks behind you until the thing in there is dead
+## you stand against a door from the corridor: a short look at what waits inside (the cutscene), then you are put just inside and the door
+## shuts and locks behind you until the thing in there is dead
 func enter(D: Dictionary) -> void:
 	var e = drone(D)
 	if e == null: D.mode = "open"; return   # nothing left in there: just a door
-	var cz: float = (D.z0 + D.z1) / 2; Snd.play("clank", 1.0, Vector3(D.x, 2, cz))
+	Snd.play("clank", 1.0, Vector3(D.x, 2, (D.z0 + D.z1) / 2))
+	if on_cut.is_valid(): D.mode = "cut"; on_cut.call(D, e, func() -> void: lock_in(D)); return
+	lock_in(D)
+
+func lock_in(D: Dictionary) -> void:
+	var e = drone(D)
+	var cz: float = (D.z0 + D.z1) / 2
 	# nobody follows you in: anything standing in the doorway goes back out into the corridor
 	for o in enemies.list:
 		if o.alive and o != e and not o.fly and absf(o.pos.z - cz) < 6.0:
@@ -298,7 +310,7 @@ func enter(D: Dictionary) -> void:
 			elif inside >= 0.6 and inside < 4.0: o.pos.x = D.x + D.inward * 5.0
 	player.pos = Vector3(D.x + D.inward * 2.4, 0, cz); player.vel = Vector3.ZERO; player.yaw = PI / 2 if D.inward < 0 else -PI / 2; player.pitch = 0.0
 	D.mode = "locked"
-	e.sealed = false; enemies.alarm(e)
+	if e != null: e.sealed = false; enemies.alarm(e)
 	var here := room_at(player.pos.x, player.pos.z)
 	for o in enemies.list:
 		if o.alive and o.sealed and room_at(o.pos.x, o.pos.z) == here: o.sealed = false   # the hall's patrols too
@@ -360,7 +372,13 @@ func open_hatches() -> void:
 	for i in 32: var Hq: Dictionary = hatches[i % hatches.size()]; hatch_q.push_back({"x": Hq.x, "z": Hq.z, "t": 1.2 + (i / hatches.size()) * 2.2 + randf_range(0, 0.8)})
 	Snd.play("alarm"); game.say_banner("해치 개방", "메인홀 바닥에서 드론 수십 대가 출격합니다", 2.6)
 
+## the airlock's inner door: shutting slowly once it is told to (after the opening scene), then held where it is
+func anim_door(dt: float) -> void:
+	if closing: door_open = maxf(0.0, door_open - dt * 0.9); closing = door_open > 0.0
+	if air_door != null: air_door.position.y = 2.25 + door_open * 4.3
+
 func update(dt: float, time: float) -> void:
+	anim_door(dt)
 	if break_t > 0.0:
 		break_t -= dt
 		if break_t <= 0.0: break_floor()
