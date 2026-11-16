@@ -443,6 +443,37 @@ func _ready() -> void:
 	gm.begin(3); var lab: Lab = w.lab; var an: Animals = en.animals; pl.invuln = 0.0
 	check("stage 3: 90 animals in ten cages, the giant gorilla in the last", en.list.size() == 90 and gm.goal == 90 and gm.boss != null and gm.boss.max_hp == 5200.0 and gm.boss.scale == 3.0 and lab.cages[5].animals.size() == 3 and lab.cages[8].animals.size() == 2)
 	var zb3 = lab.cages[0].animals[0]; var gb3 = lab.cages[9].animals[0]
+	# the lab as the browser game draws it
+	var l3_tex := {}   # what each lab picture is put on
+	for n9 in w.group.find_children("*", "MeshInstance3D", true, false):
+		var m9 = (n9 as MeshInstance3D).material_override
+		if m9 is StandardMaterial3D and (m9 as StandardMaterial3D).albedo_texture != null:
+			var tx9: Texture2D = (m9 as StandardMaterial3D).albedo_texture; l3_tex[tx9] = int(l3_tex.get(tx9, 0)) + 1
+	check("stage 3: the floor is pale tiles (27 times each way), the walls white panels with the teal band and dark skirting, and stencilled signs on three walls",
+		l3_tex.has(Lab.tiles_tex()) and l3_tex.get(Lab.wall_tex(), 0) >= 8 and l3_tex.has(Lab._tx.sign1) and l3_tex.get(Lab._tx.sign1, 0) == 2 and l3_tex.has(Lab._tx.sign2), l3_tex.size())
+	check("stage 3: hazard paint round every cage, on its kick plates and under the window; each cage's number on the floor; straw inside",
+		l3_tex.get(Lab.hazard_tex(), 0) >= 40 + 40 + 1 and range(1, 11).all(func(n9): return l3_tex.has(Lab.num_tex(n9))) and l3_tex.get(Lab.straw_tex(), 0) == 10 and l3_tex.has(Lab.door_tex()))
+	var l3_untoned := w.group.find_children("*", "MultiMeshInstance3D", true, false).filter(func(n9): return n9.material_override is ShaderMaterial)
+	check("stage 3: the ceiling panels shine white as the browser game's (1.6, 1.7, 1.8, not tone mapped)",
+		l3_untoned.size() == 1 and (l3_untoned[0].material_override as ShaderMaterial).get_shader_parameter("mul") == Vector3(1.6, 1.7, 1.8))
+	check("stage 3: the scientist has his wild white hair, goggles, ears and legs (the browser game's monkey)", lab._mk_head != null and lab._mk_head.get_child_count() == 2 and lab._leg_l != null and lab._leg_r != null)
+	# the animals, part for part as AnimalKit.quad
+	var zs3: Dictionary = Animals.quad_spec("zebra"); var ts3: Dictionary = Animals.quad_spec("tiger"); var hs3: Dictionary = Animals.quad_spec("hippo")
+	check("stage 3: a zebra is an egg-shaped striped body (a sphere scaled 0.66 x 0.84 x 1.95) on hoofed legs, stripes on its body and neck, its mane plain",
+		zs3.P[0][9] == true and zs3.P[0][8] == false and zs3.P[3][8] == true and zs3.plain and zs3.legs.size() == 4 and Animals.kit_tex("zebra") != null and zb3.legs.size() == 4
+		and ((zb3.legs[0].get_child(0) as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == 48)
+	check("stage 3: cats open their jaws (a jaw on its own pivot), the hippo tips its head and drops its jaw",
+		ts3.subs.size() == 1 and ts3.subs[0].name == "jaw" and hs3.subs.map(func(sb): return sb.name) == ["head", "jaw"] and lab.cages[6].animals[0].jaw != null and lab.cages[2].animals[0].head != null and lab.cages[2].animals[0].jaw != null)
+	# the gorillas: KongKit's rig, the head and chest hit spheres riding on it (D7)
+	check("stage 3: the giant gorilla is the browser game's rig (hips, torso, head, arms and forearms, legs and shins)",
+		gb3.rig.has("torso") and gb3.rig.has("foreL") and gb3.rig.has("shinR") and gb3.legs.is_empty() and gb3.parts[0].has("node") and gb3.parts[1].has("node"))
+	var g3_o0: Vector3 = gb3.parts[0].o
+	gb3.k = {"mode": "beat", "t": 0.3, "combo": 0, "arm": 1, "hit": true, "chargeCd": 9.0, "jumpCd": 9.0, "summonCd": 9.0, "summons": 0, "engaged": 0.0, "called": true}
+	for i in 30: en.animals._kong(gb3, 0.02, 0.0, 10.0, 0.0)
+	check("stage 3: rearing up to beat its chest, its head's hit sphere goes up with it (it follows the pose)", gb3.parts[0].o.y > g3_o0.y + 0.15, [g3_o0, gb3.parts[0].o])
+	var mb3 := Gfx.merge_boxes([[1, 1, 1, 0, 0, 0, "ffffff", [0.5, 0.5, 0]]]).surface_get_arrays(0)[Mesh.ARRAY_NORMAL] as PackedVector3Array
+	var want3 := (Basis(Vector3.UP, 0.5) * Basis(Vector3.RIGHT, 0.5)) * Vector3(0, 1, 0)
+	check("merged boxes turn as three.js turns a geometry: x first, then y, then z", mb3.has(want3) or Array(mb3).any(func(nn): return nn.distance_to(want3) < 1e-4))
 	check("stage 3: bullets pass between the bars but stop on the boss's glass", not Phys.raycast_static(Vector3(-37.5, 1.5, 20.0), Vector3(0, 0, 1), 10.0) and Phys.raycast_static(Vector3(14.7, 1.5, -20.0), Vector3(0, 0, -1), 12.0))
 	en.damage(gb3, 500, gb3.pos, Vector3(0, 0, 1), false)
 	check("stage 3: nothing hurts the boss behind its glass", gb3.hp == 5200.0)

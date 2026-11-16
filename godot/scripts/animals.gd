@@ -82,56 +82,226 @@ func _mesh(parent: Node3D, at: Vector3, parts: Array, key: String) -> Node3D:
 	if parts.is_empty(): return n
 	var mi := MeshInstance3D.new(); mi.mesh = en._box_mesh(key, parts); mi.material_override = en._mat; n.add_child(mi); return n   # one mesh per kind and part, shared
 
+# ---------------- the browser game's AnimalKit: pictures, parts, pivots, legs ----------------
+static var _tx := {}
+static func _corners(img: Image) -> void:   # the white corners plain parts take their colour from
+	Gfx.frect(img, 242, 114, 14, 14, Color.WHITE); Gfx.frect(img, 242, 0, 14, 14, Color.WHITE)
+## stripes: wobbly ink bands across a base (tiger, zebra)
+static func _stripe_tex(base: String, ink: String, wobble: float) -> ImageTexture:
+	var img := Image.create(256, 128, false, Image.FORMAT_RGBA8); img.fill(Color(base)); var x := 6.0
+	while x < 246.0:
+		var pts := PackedVector2Array([Vector2(x, 0)]); var y := 0.0
+		while y <= 128.0: pts.push_back(Vector2(x + sin(y * 0.08 + x) * wobble, y)); y += 16.0
+		y = 128.0
+		while y >= 0.0: pts.push_back(Vector2(x + randf_range(3, 6) + sin(y * 0.08 + x) * wobble, y)); y -= 16.0
+		Gfx.fpoly(img, pts, Color(ink)); x += randf_range(10, 17)
+	_corners(img); return Gfx.tex(img)
+## spots (cheetah)
+static func _spots_tex(base: String, ink: String) -> ImageTexture:
+	var img := Image.create(256, 128, false, Image.FORMAT_RGBA8); img.fill(Color(base))
+	for i in 280: Gfx.fellipse(img, randf() * 240, randf() * 128, randf_range(2, 4.5), randf_range(2, 4), randf_range(0, 3), Color(ink))
+	_corners(img); return Gfx.tex(img)
+## patches parted by pale lines (giraffe)
+static func _patches_tex(base: String, line: String) -> ImageTexture:
+	var img := Image.create(256, 128, false, Image.FORMAT_RGBA8); img.fill(Color(line)); var x := 0.0
+	while x < 240.0:
+		var y := 0.0
+		while y < 128.0:
+			var ox := randf_range(-3, 3); var oy := randf_range(-3, 3)
+			Gfx.fpoly(img, PackedVector2Array([Vector2(x + 3 + ox, y + 3 + oy), Vector2(x + 19 + ox, y + 2 + oy), Vector2(x + 20 + ox, y + 17 + oy), Vector2(x + 2 + ox, y + 18 + oy)]), Color(base)); y += 20.0
+		x += 22.0
+	_corners(img); return Gfx.tex(img)
+static func kit_tex(type: String) -> ImageTexture:
+	if not _tx.has(type):
+		match type:
+			"tiger": _tx[type] = _stripe_tex("d9822b", "1c1410", 4)
+			"zebra": _tx[type] = _stripe_tex("f0ede4", "151515", 6)
+			"cheetah": _tx[type] = _spots_tex("d9a85a", "1a1510")
+			"giraffe": _tx[type] = _patches_tex("b8692a", "efe2c4")
+			_: return null
+	return _tx[type]
+
+## [sx, sy, sz, x, y, z, colour, (rotation), (sphere), (striped)] as AnimalKit's add() takes them, to a kit part
+static func _p(a: Array, plain: bool) -> Array:
+	return [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7] if a.size() > 7 else null, plain and not (a.size() > 9 and a[9]), a.size() > 8 and a[8]]
+## a kind's model, part for part as the browser game's AnimalKit.quad: the body, parts on pivots of their own (a head, a jaw),
+## and the legs [x, z, length, thickness, colour]
+static func quad_spec(type: String, mane := false) -> Dictionary:
+	var plain: bool = type in ["tiger", "zebra", "cheetah", "giraffe"]
+	var P := []; var subs := []; var legs := []
+	match type:
+		"zebra":
+			P = [[0.66, 0.84, 1.95, 0, 1.08, 0, "ffffff", null, true, true], [0.26, 0.75, 0.32, 0, 1.55, 0.95, "ffffff", [-0.6, 0, 0], false, true],
+				[0.26, 0.28, 0.6, 0, 1.85, 1.3, "ffffff", [0.35, 0, 0], false, true], [0.08, 0.5, 0.5, 0, 1.75, 1.0, "151515", [-0.6, 0, 0]],
+				[0.06, 0.55, 0.06, 0, 1.0, -1.0, "151515", [0.4, 0, 0]], [0.07, 0.16, 0.06, -0.1, 2.05, 1.2, "151515"], [0.07, 0.16, 0.06, 0.1, 2.05, 1.2, "151515"]]
+			for q in [[0.2, 0.75], [-0.2, 0.75], [0.2, -0.75], [-0.2, -0.75]]: legs.push_back([q[0], q[1], 0.75, 0.13, "f0ede4"])
+		"cheetah":
+			P = [[0.48, 0.56, 1.7, 0, 0.88, 0, "ffffff", null, true, true], [0.34, 0.32, 0.38, 0, 1.06, 0.98, "ffffff", null, true, true], [0.18, 0.12, 0.14, 0, 0.98, 1.2, "e8d2a8"],
+				[0.03, 0.16, 0.02, -0.07, 1.0, 1.17, "151515"], [0.03, 0.16, 0.02, 0.07, 1.0, 1.17, "151515"],
+				[0.08, 0.08, 0.05, -0.12, 1.24, 0.94, "ffffff", null, false, true], [0.08, 0.08, 0.05, 0.12, 1.24, 0.94, "ffffff", null, false, true],
+				[0.06, 0.06, 1.1, 0, 0.8, -1.25, "ffffff", [-0.45, 0, 0], false, true], [0.07, 0.07, 0.14, 0, 0.42, -1.74, "151515"]]
+			subs.push_back({"name": "jaw", "at": Vector3(0, 0.95, 1.08), "P": [[0.15, 0.05, 0.22, 0, -0.03, 0.12, "e8d2a8"], [0.13, 0.02, 0.2, 0, 0.0, 0.11, "7a2626"], [0.025, 0.05, 0.025, -0.05, 0.02, 0.21, "f4efe2"], [0.025, 0.05, 0.025, 0.05, 0.02, 0.21, "f4efe2"]]})
+			for q in [[0.17, 0.62], [-0.17, 0.62], [0.17, -0.62], [-0.17, -0.62]]: legs.push_back([q[0], q[1], 0.74, 0.11, "d8a55c"])
+		"giraffe":   # the neck and head hang from a pivot where the neck meets the shoulders
+			P = [[0.86, 0.95, 1.85, 0, 2.35, 0, "ffffff", [0.12, 0, 0], true, true], [0.05, 0.8, 0.05, 0, 2.1, -1.0, "6a3a18", [0.3, 0, 0]]]
+			var NY: float = NECK[0]; var NZ: float = NECK[1]
+			var nk := [[0.34, 2.3, 0.42, 0, 3.55, 0.95, "ffffff", [0.52, 0, 0], false, true], [0.1, 2.0, 0.08, 0, 3.62, 0.74, "6a3a18", [0.52, 0, 0]],
+				[0.3, 0.32, 0.7, 0, 4.62, 1.62, "ffffff", [0.25, 0, 0], false, true], [0.2, 0.2, 0.26, 0, 4.5, 1.98, "d8c4a0"],
+				[0.05, 0.22, 0.05, -0.08, 4.88, 1.45, "5a3a20"], [0.05, 0.22, 0.05, 0.08, 4.88, 1.45, "5a3a20"],
+				[0.12, 0.06, 0.18, -0.2, 4.75, 1.45, "ffffff", null, false, true], [0.12, 0.06, 0.18, 0.2, 4.75, 1.45, "ffffff", null, false, true]]
+			for q in nk: q[4] -= NY; q[5] -= NZ
+			subs.push_back({"name": "head", "at": Vector3(0, NY, NZ), "P": nk})
+			for q in [[0.26, 0.68, 1.95], [-0.26, 0.68, 1.95], [0.26, -0.68, 1.95 * 0.95], [-0.26, -0.68, 1.95 * 0.95]]: legs.push_back([q[0], q[1], q[2], 0.15, "e9d9b8"])
+		"puma", "lion", "tiger", "lionM":
+			var sc: float = {"puma": 0.72, "lion": 1.0, "lionM": 1.08, "tiger": 1.06}[type]; var col := "a0784a" if type == "puma" else ("ffffff" if type == "tiger" else "c49a5c")
+			var st := type == "tiger"; var mc := "efe3cf" if st else "d8b98a"
+			P = [[0.64 * sc, 0.72 * sc, 1.85 * sc, 0, 0.9 * sc, 0, col, null, true, st], [0.46 * sc, 0.44 * sc, 0.5 * sc, 0, 1.1 * sc, 1.0 * sc, col, null, true, st],
+				[0.22 * sc, 0.15 * sc, 0.16 * sc, 0, 1.0 * sc, 1.27 * sc, mc], [0.03 * sc, 0.08 * sc, 0.03 * sc, -0.07 * sc, 0.9 * sc, 1.31 * sc, "f4efe2"], [0.03 * sc, 0.08 * sc, 0.03 * sc, 0.07 * sc, 0.9 * sc, 1.31 * sc, "f4efe2"],
+				[0.1 * sc, 0.1 * sc, 0.05 * sc, -0.14 * sc, 1.32 * sc, 0.98 * sc, col, null, false, st], [0.1 * sc, 0.1 * sc, 0.05 * sc, 0.14 * sc, 1.32 * sc, 0.98 * sc, col, null, false, st],
+				[0.08 * sc, 0.08 * sc, 1.0 * sc, 0, 0.85 * sc, -1.25 * sc, col, [-0.5, 0, 0], false, st]]
+			subs.push_back({"name": "jaw", "at": Vector3(0, 0.97 * sc, 1.08 * sc), "P": [[0.2 * sc, 0.07 * sc, 0.3 * sc, 0, -0.04 * sc, 0.16 * sc, mc], [0.17 * sc, 0.025 * sc, 0.26 * sc, 0, 0, 0.14 * sc, "7a2626"],
+				[0.03 * sc, 0.07 * sc, 0.03 * sc, -0.07 * sc, 0.03 * sc, 0.27 * sc, "f4efe2"], [0.03 * sc, 0.07 * sc, 0.03 * sc, 0.07 * sc, 0.03 * sc, 0.27 * sc, "f4efe2"]]})
+			if type == "lion" and mane: P.append_array([[0.78, 0.8, 0.5, 0, 1.1, 0.82, "5a3a1e", null, true], [0.14, 0.14, 0.18, 0, 0.6, -1.7, "3a2412"]])
+			if type == "lionM": P.append_array([[0.98, 1.0, 0.66, 0, 1.18 * sc, 0.84 * sc, "4e3018", null, true], [0.5, 0.4, 0.3, 0, 0.82 * sc, 0.9 * sc, "4e3018", null, true], [0.14, 0.14, 0.18, 0, 0.62, -1.8, "3a2412"]])
+			if st: P.push_back([0.3, 0.2, 1.4, 0, 0.6, 0, "efe3cf"])   # the pale belly
+			for q in [[0.2, 0.62], [-0.2, 0.62], [0.2, -0.62], [-0.2, -0.62]]: legs.push_back([q[0] * sc, q[1] * sc, 0.62 * sc, 0.17 * sc, col])
+		"buffalo":
+			P = [[0.95, 1.05, 2.2, 0, 1.2, 0, "2a2622", null, true], [0.5, 0.55, 0.62, 0, 1.15, 1.25, "24201c"], [0.95, 0.16, 0.22, 0, 1.52, 1.18, "8a8070"],
+				[0.16, 0.36, 0.16, -0.52, 1.38, 1.18, "8a8070", [0, 0, 0.4]], [0.16, 0.36, 0.16, 0.52, 1.38, 1.18, "8a8070", [0, 0, -0.4]], [0.06, 0.6, 0.06, 0, 1.25, -1.15, "1a1714", [0.4, 0, 0]]]
+			for q in [[0.3, 0.75], [-0.3, 0.75], [0.3, -0.75], [-0.3, -0.75]]: legs.push_back([q[0], q[1], 0.78, 0.2, "24201c"])
+		"hippo":   # the head swings up and the jaw drops for the gape: pink inside, four big tusks
+			P = [[1.4, 1.2, 2.6, 0, 1.0, 0, "5e5457", null, true], [0.78, 0.64, 0.6, 0, 1.02, 1.08, "5a5053", null, true]]
+			subs.push_back({"name": "head", "at": Vector3(0, 1.0, 1.15), "P": [[0.95, 0.62, 0.95, 0, 0.1, 0.32, "5a5053", null, true], [0.92, 0.3, 0.66, 0, 0.02, 0.86, "6f6064"], [0.8, 0.04, 0.56, 0, -0.13, 0.84, "b8606a"],
+				[0.1, 0.24, 0.1, -0.3, -0.2, 1.08, "efe8d8"], [0.1, 0.24, 0.1, 0.3, -0.2, 1.08, "efe8d8"], [0.12, 0.14, 0.1, -0.3, 0.44, 0.12, "5a4a52"], [0.12, 0.14, 0.1, 0.3, 0.44, 0.12, "5a4a52"],
+				[0.14, 0.1, 0.12, -0.24, 0.36, 0.42, "4a3e44"], [0.14, 0.1, 0.12, 0.24, 0.36, 0.42, "4a3e44"], [0.1, 0.06, 0.06, -0.18, 0.18, 1.2, "3a3036"], [0.1, 0.06, 0.06, 0.18, 0.18, 1.2, "3a3036"]]})
+			subs.push_back({"name": "jaw", "at": Vector3(0, 0.86, 1.2), "P": [[0.9, 0.3, 0.98, 0, -0.1, 0.55, "6a5c60"], [0.76, 0.04, 0.8, 0, 0.06, 0.52, "c0707a"], [0.11, 0.34, 0.11, -0.32, 0.16, 0.94, "efe8d8"], [0.11, 0.34, 0.11, 0.32, 0.16, 0.94, "efe8d8"]]})
+			for q in [[0.45, 0.85], [-0.45, 0.85], [0.45, -0.85], [-0.45, -0.85]]: legs.push_back([q[0], q[1], 0.55, 0.34, "5f4f57"])
+		"rhino":   # the head, both horns on it, hangs from the neck so it can drop for the charge and flick up
+			P = [[1.2, 1.25, 2.6, 0, 1.25, 0, "7a7774", null, true]]
+			subs.push_back({"name": "head", "at": Vector3(0, 1.18, 1.05), "P": [[0.62, 0.62, 0.95, 0, -0.13, 0.45, "73716d"], [0.18, 0.55, 0.18, 0, 0.27, 0.87, "c9c2b2", [0.5, 0, 0]],
+				[0.13, 0.32, 0.13, 0, 0.22, 0.57, "c9c2b2", [0.3, 0, 0]], [0.1, 0.18, 0.08, -0.22, 0.24, 0.07, "7a7873"], [0.1, 0.18, 0.08, 0.22, 0.24, 0.07, "7a7873"]]})
+			for q in [[0.42, 0.85], [-0.42, 0.85], [0.42, -0.85], [-0.42, -0.85]]: legs.push_back([q[0], q[1], 0.75, 0.32, "7d7b77"])
+		"elephant":
+			P = [[1.9, 2.1, 3.2, 0, 2.4, 0, "77746f", null, true], [1.2, 1.25, 1.1, 0, 2.85, 1.75, "72706b", null, true],
+				[0.14, 1.3, 1.1, -0.72, 2.7, 1.45, "6a6863", [0, -0.35, 0]], [0.14, 1.3, 1.1, 0.72, 2.7, 1.45, "6a6863", [0, 0.35, 0]],
+				[0.34, 0.8, 0.34, 0, 2.15, 2.3, "6f6c68", [0.25, 0, 0]], [0.28, 0.7, 0.28, 0, 1.45, 2.45, "6f6c68"], [0.22, 0.5, 0.22, 0, 0.95, 2.55, "6f6c68", [-0.3, 0, 0]],
+				[0.12, 0.12, 0.75, -0.32, 2.2, 2.35, "efe8d8", [0.5, 0, 0]], [0.12, 0.12, 0.75, 0.32, 2.2, 2.35, "efe8d8", [0.5, 0, 0]], [0.08, 0.9, 0.08, 0, 2.3, -1.65, "7a7773", [0.3, 0, 0]]]
+			for q in [[0.6, 1.1], [-0.6, 1.1], [0.6, -1.1], [-0.6, -1.1]]: legs.push_back([q[0], q[1], 1.45, 0.58, "6f6c68"])
+		_:   # gorilla: knuckle-walking, long arms in front, a silver back
+			P = [[0.9, 1.0, 1.05, 0, 1.15, 0, "1e1d1f", [-0.55, 0, 0], true], [0.7, 0.35, 0.6, 0, 1.45, -0.15, "8f8f8f", [-0.55, 0, 0]],
+				[0.42, 0.44, 0.4, 0, 1.7, 0.55, "1e1d1f"], [0.3, 0.22, 0.12, 0, 1.64, 0.76, "3a3532"], [0.36, 0.1, 0.12, 0, 1.86, 0.62, "151416"]]
+			legs = [[0.42, 0.42, 1.05, 0.26, "1e1d1f"], [-0.42, 0.42, 1.05, 0.26, "1e1d1f"], [0.25, -0.35, 0.62, 0.26, "1e1d1f"], [-0.25, -0.35, 0.62, 0.26, "1e1d1f"]]
+	var conv := func(list: Array) -> Array: return list.map(func(a): return _p(a, plain))
+	for sb in subs: sb.P = conv.call(sb.P)
+	return {"P": conv.call(P), "subs": subs, "legs": legs, "plain": plain, "hoof": "6f6c68" if type == "elephant" else "2a2420"}
+
+# ---------------- the browser game's KongKit: a gorilla on a rig of joints, posed every frame ----------------
+const KNUCKLE := {"lean": 0.6, "twist": 0.0, "head": -0.35, "aLx": -1.1, "aLy": 0.0, "aRx": -1.1, "aRy": 0.0, "fL": 0.15, "fR": 0.15, "lL": 0.0, "lR": 0.0, "sL": 0.0, "sR": 0.0, "y": 0.0}
+const KONG_HIP := 0.62
+var _kong_mat: StandardMaterial3D = null
+## a gorilla's build: a huge chest and shoulders, a silver saddle, long thick arms, short legs, the head sunk between the shoulders
+func kong_build(e: Enemies.Foe, boss: bool) -> void:
+	var fur := "1d1c1e"; var dark := "141315"; var skin := "37312e"; var silver := "9a9a9c" if boss else "4b4a4c"; var eye := "d33a1a" if boss else "c08a2a"
+	if _kong_mat == null: _kong_mat = StandardMaterial3D.new(); _kong_mat.vertex_color_use_as_albedo = true; _kong_mat.roughness = 0.88
+	var key := "kong_" + ("boss" if boss else "small")
+	var mesh := func(parent: Node3D, k2: String, list: Array) -> void:
+		var mi := MeshInstance3D.new(); var kk := key + "_" + k2
+		if not en._meshes.has(kk): en._meshes[kk] = Gfx.kit_mesh(list)
+		mi.mesh = en._meshes[kk]; mi.material_override = _kong_mat; parent.add_child(mi)
+	var grp := func(parent: Node3D, at: Vector3, yxz := false) -> Node3D:
+		var n := Node3D.new(); n.position = at; parent.add_child(n)
+		if yxz: n.rotation_order = EULER_ORDER_YXZ
+		return n
+	var hips: Node3D = grp.call(e.g, Vector3(0, KONG_HIP, -0.1)); var torso: Node3D = grp.call(hips, Vector3.ZERO, true)
+	var body: Node3D = grp.call(torso, Vector3.ZERO)
+	mesh.call(body, "body", [[1.12, 0.86, 0.72, 0, 0.5, 0.05, fur], [0.86, 0.46, 0.62, 0, 0.1, 0.07, fur], [1.3, 0.38, 0.7, 0, 0.84, 0.02, fur],
+		[0.82, 0.56, 0.08, 0, 0.46, -0.33, silver], [0.66, 0.4, 0.06, 0, 0.54, 0.43, skin], [0.5, 0.3, 0.06, 0, 0.12, 0.39, skin]])
+	var chest: Node3D = grp.call(torso, Vector3(0, 0.5, 0.1))
+	var head: Node3D = grp.call(torso, Vector3(0, 0.95, 0.26))
+	mesh.call(head, "head", [[0.48, 0.46, 0.46, 0, 0.1, 0, fur], [0.22, 0.18, 0.34, 0, 0.37, -0.05, fur], [0.46, 0.1, 0.11, 0, 0.21, 0.22, dark],
+		[0.34, 0.26, 0.17, 0, -0.02, 0.24, skin], [0.32, 0.1, 0.19, 0, -0.16, 0.19, skin], [0.06, 0.04, 0.02, -0.1, 0.12, 0.282, eye], [0.06, 0.04, 0.02, 0.1, 0.12, 0.282, eye],
+		[0.12, 0.05, 0.03, 0, 0.0, 0.33, "201c1b"]])
+	var head_c: Node3D = grp.call(head, Vector3(0, 0.1, 0.05))
+	var rig := {"hips": hips, "torso": torso, "head": head, "chest": chest}
+	for sx in [-1.0, 1.0]:
+		var a: Node3D = grp.call(torso, Vector3(sx * 0.68, 0.74, 0.08), true); mesh.call(a, "arm", [[0.38, 0.66, 0.38, 0, -0.3, 0, fur]])
+		var f: Node3D = grp.call(a, Vector3(0, -0.6, 0)); mesh.call(f, "fore", [[0.33, 0.6, 0.33, 0, -0.28, 0, fur], [0.4, 0.28, 0.42, 0, -0.62, 0.02, skin]])
+		var l: Node3D = grp.call(hips, Vector3(sx * 0.3, 0, -0.02)); mesh.call(l, "leg", [[0.36, 0.38, 0.38, 0, -0.16, 0.02, fur]])
+		var sh: Node3D = grp.call(l, Vector3(0, -0.32, 0.05)); mesh.call(sh, "shin", [[0.32, 0.26, 0.32, 0, -0.12, 0, fur], [0.36, 0.08, 0.48, 0, -0.27, 0.1, skin]])
+		var sd := "L" if sx < 0 else "R"; rig["arm" + sd] = a; rig["fore" + sd] = f; rig["leg" + sd] = l; rig["shin" + sd] = sh
+	e.rig = rig; e.body = body; e.legs.clear(); kong_pose(e, KNUCKLE, 1.0)   # (the footprint is taken in this pose)
+	# the head and chest hit spheres ride on the body (the browser game moves them with the pose every frame)
+	e.parts = [{"o": Vector3(0, 1.42, 0.55), "r": 0.27, "mult": 1.0, "weak": true, "bomb": false, "node": head_c}, {"o": Vector3(0, 1.15, 0.25), "r": 0.6, "mult": 1.0, "weak": false, "bomb": false, "node": chest},
+		{"o": Vector3(0, 0.82, -0.12), "r": 0.5, "mult": 1.0, "weak": false, "bomb": false}, {"o": Vector3(0, 0.36, -0.1), "r": 0.38, "mult": 0.7, "weak": false, "bomb": false}]
+
+## ease the rig toward a pose (k: how far this frame)
+func kong_pose(e: Enemies.Foe, P: Dictionary, kk: float) -> void:
+	var R: Dictionary = e.rig
+	if not R.has("pose"): R.pose = P.duplicate()
+	var c: Dictionary = R.pose
+	for key in P: c[key] += (P[key] - c[key]) * kk
+	R.torso.rotation.x = c.lean; R.torso.rotation.y = c.twist; R.head.rotation.x = c.head
+	R.armL.rotation.x = c.aLx; R.armL.rotation.y = c.aLy; R.armR.rotation.x = c.aRx; R.armR.rotation.y = c.aRy
+	R.foreL.rotation.x = c.fL; R.foreR.rotation.x = c.fR
+	R.legL.rotation.x = c.lL; R.legR.rotation.x = c.lR; R.shinL.rotation.x = c.sL; R.shinR.rotation.x = c.sR
+	R.hips.position.y = KONG_HIP + c.y
+
+## the knuckle-walk: arms and legs swinging against each other, faster at a gallop
+static func kong_gait(P: Dictionary, k: Dictionary, sp: float, dt: float, gallop: bool, sc: float) -> void:
+	var g := minf(1.0, sp / 5.0)
+	k.phase = float(k.get("phase", 0.0)) + dt * (1.6 + sp * (1.0 if gallop else 0.85) / sqrt(sc))
+	var s := sin(k.phase); var c := cos(k.phase); var amp := 0.75 if gallop else 0.55
+	P.aLx += s * amp * g; P.aRx -= s * amp * g; P.lL = -s * 0.5 * g; P.lR = s * 0.5 * g
+	P.sL = maxf(0.0, c) * 0.6 * g; P.sR = maxf(0.0, -c) * 0.6 * g; P.y = absf(s) * 0.05 * g; P.twist = s * 0.08 * g
+
+## beating the chest, fists in turn
+static func beat_pose(P: Dictionary, k: Dictionary) -> void:
+	var L := sin(float(k.t) * 40.0) > 0.0
+	P.lean = -0.05; P.head = -0.35; P.lL = -0.25; P.lR = -0.25; P.sL = 0.4; P.sR = 0.4; P.y = -0.06
+	P.aLx = -0.9; P.aLy = 1.1 if L else 0.55; P.fL = -1.85 if L else -1.3
+	P.aRx = -0.9; P.aRy = -0.55 if L else -1.1; P.fR = -1.3 if L else -1.85
+
+## a haymaker's pose, side 1 the right arm (the browser game's punch and spunch)
+static func punch_pose(P: Dictionary, side: int, u: float) -> float:
+	var A := "aR" if side > 0 else "aL"; var O := "aL" if side > 0 else "aR"
+	P.lean = 0.32; P.head = -0.25; P[O + "x"] = -1.15; P[O + "y"] = 0.0
+	if u < 0.38: P[A + "x"] = -2.0; P[A + "y"] = side * 1.7; P.twist = -side * 0.45; return 16.0
+	if u < 0.62: var w := (u - 0.38) / 0.24; P[A + "x"] = -1.55; P[A + "y"] = side * (1.7 - 2.3 * w); P.twist = side * (-0.45 + 0.9 * w); return 40.0
+	P[A + "x"] = -1.3; P[A + "y"] = -side * 0.5; P.twist = side * 0.4; return 12.0
+
+var _kit_mats := {}
+func _kit(parent: Node3D, at: Vector3, parts: Array, key: String, mat: Material) -> Node3D:
+	var n := Node3D.new(); n.position = at; parent.add_child(n)
+	if not en._meshes.has(key): en._meshes[key] = Gfx.kit_mesh(parts)
+	var mi := MeshInstance3D.new(); mi.mesh = en._meshes[key]; mi.material_override = mat; n.add_child(mi); return n
+
 func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	e.animal = true; e.kong = opts.get("kong", false); e.minion = opts.get("minion", false)
 	e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; en.add_child(e.g)
-	var P := []; var legs := []; var head := []; var head_at := Vector3.ZERO; var has_head := false
-	match type:
-		"zebra":
-			P = [[0.66, 0.84, 1.95, 0, 1.08, 0, "f0ede4"], [0.26, 0.75, 0.32, 0, 1.55, 0.95, "f0ede4", [-0.6, 0, 0]], [0.26, 0.28, 0.6, 0, 1.85, 1.3, "f0ede4", [0.35, 0, 0]], [0.08, 0.5, 0.5, 0, 1.75, 1.0, "151515", [-0.6, 0, 0]]]
-			for z: float in [-0.75, -0.45, -0.15, 0.15, 0.45, 0.75]: P.push_back([0.68, 0.86, 0.09, 0, 1.08, z, "151515"])
-			legs = [[0.2, 0.75, 0.75, 0.13, "f0ede4"], [-0.2, 0.75, 0.75, 0.13, "f0ede4"], [0.2, -0.75, 0.75, 0.13, "f0ede4"], [-0.2, -0.75, 0.75, 0.13, "f0ede4"]]
-		"cheetah":
-			P = [[0.48, 0.56, 1.7, 0, 0.88, 0, "d9a85a"], [0.34, 0.32, 0.38, 0, 1.06, 0.98, "d9a85a"], [0.18, 0.12, 0.14, 0, 0.98, 1.2, "e8d2a8"], [0.06, 0.06, 1.1, 0, 0.8, -1.25, "d9a85a", [-0.45, 0, 0]]]
-			legs = [[0.17, 0.62, 0.74, 0.11, "d8a55c"], [-0.17, 0.62, 0.74, 0.11, "d8a55c"], [0.17, -0.62, 0.74, 0.11, "d8a55c"], [-0.17, -0.62, 0.74, 0.11, "d8a55c"]]
-		"giraffe":
-			P = [[0.86, 0.95, 1.85, 0, 2.35, 0, "b8692a", [0.12, 0, 0]], [0.05, 0.8, 0.05, 0, 2.1, -1.0, "6a3a18", [0.3, 0, 0]]]
-			has_head = true; head_at = Vector3(0, NECK[0], NECK[1])
-			head = [[0.34, 2.3, 0.42, 0, 3.55 - NECK[0], 0.95 - NECK[1], "c9853f", [0.52, 0, 0]], [0.3, 0.32, 0.7, 0, 4.62 - NECK[0], 1.62 - NECK[1], "b8692a", [0.25, 0, 0]], [0.2, 0.2, 0.26, 0, 4.5 - NECK[0], 1.98 - NECK[1], "d8c4a0"]]
-			legs = [[0.26, 0.68, 1.95, 0.15, "e9d9b8"], [-0.26, 0.68, 1.95, 0.15, "e9d9b8"], [0.26, -0.68, 1.8525, 0.15, "e9d9b8"], [-0.26, -0.68, 1.8525, 0.15, "e9d9b8"]]
-		"puma", "lion", "tiger", "lionM":
-			var s: float = CAT_S[type]; var col: String = "a0784a" if type == "puma" else ("d9822b" if type == "tiger" else "c49a5c")
-			P = [[0.64 * s, 0.72 * s, 1.85 * s, 0, 0.9 * s, 0, col], [0.46 * s, 0.44 * s, 0.5 * s, 0, 1.1 * s, 1.0 * s, col], [0.22 * s, 0.15 * s, 0.16 * s, 0, 1.0 * s, 1.27 * s, "d8b98a"], [0.08 * s, 0.08 * s, 1.0 * s, 0, 0.85 * s, -1.25 * s, col, [-0.5, 0, 0]]]
-			if type == "lionM": P.push_back([0.98, 1.0, 0.66, 0, 1.18 * s, 0.84 * s, "4e3018"])
-			if type == "tiger":
-				for z: float in [-0.7, -0.35, 0.0, 0.35, 0.7]: P.push_back([0.66 * s, 0.74 * s, 0.08, 0, 0.9 * s, z * s, "1c1410"])
-			legs = [[0.2 * s, 0.62 * s, 0.62 * s, 0.17 * s, col], [-0.2 * s, 0.62 * s, 0.62 * s, 0.17 * s, col], [0.2 * s, -0.62 * s, 0.62 * s, 0.17 * s, col], [-0.2 * s, -0.62 * s, 0.62 * s, 0.17 * s, col]]
-		"buffalo":
-			P = [[0.95, 1.05, 2.2, 0, 1.2, 0, "2a2622"], [0.5, 0.55, 0.62, 0, 1.15, 1.25, "24201c"], [0.95, 0.16, 0.22, 0, 1.52, 1.18, "8a8070"], [0.16, 0.36, 0.16, -0.52, 1.38, 1.18, "8a8070", [0, 0, 0.4]], [0.16, 0.36, 0.16, 0.52, 1.38, 1.18, "8a8070", [0, 0, -0.4]]]
-			legs = [[0.3, 0.75, 0.78, 0.2, "24201c"], [-0.3, 0.75, 0.78, 0.2, "24201c"], [0.3, -0.75, 0.78, 0.2, "24201c"], [-0.3, -0.75, 0.78, 0.2, "24201c"]]
-		"hippo":
-			P = [[1.3, 1.15, 2.3, 0, 1.0, -0.1, "6b5a62"]]
-			has_head = true; head_at = Vector3(0, 1.05, 1.0); head = [[0.95, 0.7, 1.2, 0, 0.0, 0.7, "75636b"], [0.9, 0.3, 0.5, 0, -0.2, 1.2, "8a7078"]]
-			legs = [[0.45, 0.85, 0.55, 0.34, "5f4f57"], [-0.45, 0.85, 0.55, 0.34, "5f4f57"], [0.45, -0.85, 0.55, 0.34, "5f4f57"], [-0.45, -0.85, 0.55, 0.34, "5f4f57"]]
-		"rhino":
-			P = [[1.15, 1.25, 2.3, 0, 1.3, -0.1, "8a8884"]]
-			has_head = true; head_at = Vector3(0, 1.25, 1.0); head = [[0.62, 0.62, 1.0, 0, -0.1, 0.6, "7d7b77"], [0.14, 0.55, 0.14, 0, 0.3, 1.0, "d8d2c0", [0.3, 0, 0]], [0.1, 0.25, 0.1, 0, 0.25, 0.7, "d8d2c0"]]
-			legs = [[0.42, 0.85, 0.75, 0.32, "7d7b77"], [-0.42, 0.85, 0.75, 0.32, "7d7b77"], [0.42, -0.85, 0.75, 0.32, "7d7b77"], [-0.42, -0.85, 0.75, 0.32, "7d7b77"]]
-		"elephant":
-			P = [[1.9, 2.1, 3.3, 0, 2.45, -0.2, "7a7773"], [1.3, 1.4, 1.2, 0, 2.9, 1.8, "74716d"], [0.4, 1.9, 0.4, 0, 1.6, 2.55, "6f6c68", [0.12, 0, 0]], [0.1, 1.5, 1.1, -0.95, 2.9, 1.3, "6a6763"], [0.1, 1.5, 1.1, 0.95, 2.9, 1.3, "6a6763"],
-				[0.12, 0.12, 0.9, -0.4, 2.2, 2.5, "ece4d0", [0.3, 0, 0]], [0.12, 0.12, 0.9, 0.4, 2.2, 2.5, "ece4d0", [0.3, 0, 0]]]
-			legs = [[0.6, 1.1, 1.45, 0.58, "6f6c68"], [-0.6, 1.1, 1.45, 0.58, "6f6c68"], [0.6, -1.1, 1.45, 0.58, "6f6c68"], [-0.6, -1.1, 1.45, 0.58, "6f6c68"]]
-		_:   # gorilla: knuckle-walking, long arms in front, a silver back
-			P = [[0.9, 1.0, 1.05, 0, 1.15, 0, "1e1d1f", [-0.55, 0, 0]], [0.7, 0.35, 0.6, 0, 1.45, -0.15, "8f8f8f", [-0.55, 0, 0]], [0.42, 0.44, 0.4, 0, 1.7, 0.55, "1e1d1f"], [0.3, 0.22, 0.12, 0, 1.64, 0.76, "3a3532"]]
-			legs = [[0.42, 0.42, 1.05, 0.26, "1e1d1f"], [-0.42, 0.42, 1.05, 0.26, "1e1d1f"], [0.25, -0.35, 0.62, 0.26, "1e1d1f"], [-0.25, -0.35, 0.62, 0.26, "1e1d1f"]]
-	e.body = _mesh(e.g, Vector3.ZERO, P, "beast_" + type)
-	if has_head: e.head = _mesh(e.body, head_at, head, "beast_head_" + type)
+	if opts.get("kong", false): kong_build(e, opts.get("boss", false)); _bar(e); return
+	var mane := type == "lion" and randf() < 0.55   # (some lions have a mane)
+	var spec := quad_spec(type, mane); var tex := kit_tex(type)
+	var mat: Material = en._mat
+	if tex != null:   # (vertex colours times the picture)
+		if not _kit_mats.has(type): var km := Gfx.std(Color.WHITE, 0.85, 0.0, tex); km.vertex_color_use_as_albedo = true; _kit_mats[type] = km
+		mat = _kit_mats[type]
+	e.body = _kit(e.g, Vector3.ZERO, spec.P, "kit_%s%s" % [type, "_mane" if mane else ""], mat)
+	for sb in spec.subs:
+		var piv := _kit(e.body, sb.at, sb.P, "kit_%s_%s" % [type, sb.name], mat)
+		if sb.name == "head": e.head = piv
+		else: e.jaw = piv
 	e.legs.clear()
-	for q in legs: e.legs.push_back(_mesh(e.g, Vector3(q[0], q[2], q[1]), [[q[3], q[2], q[3] * 1.1, 0, -q[2] / 2, 0, q[4]]], "beast_leg_%s_%.3f" % [type, q[2]]))
+	for q in spec.legs:   # each leg on a pivot at the hip, its hoof at the foot
+		var L: float = q[2]; var th: float = q[3]
+		e.legs.push_back(_kit(e.g, Vector3(q[0], L, q[1]), [[th, L, th * 1.1, 0, -L / 2, 0, q[4], null, false, false], [th * 1.05, L * 0.12, th * 1.25, 0, -L + L * 0.06, th * 0.08, spec.hoof, null, spec.plain, false]],
+			"kit_%s_leg_%.3f_%.3f_%s" % [type, L, th, q[4]], mat))
 	var hits: Array = HITS.get(type, [])
 	if type in CAT_S: var s2: float = CAT_S[type]; hits = [[0, 1.08 * s2, 1.05 * s2, 0.26 * s2, true], [0, 0.9 * s2, 0.4 * s2, 0.4 * s2], [0, 0.9 * s2, -0.45 * s2, 0.4 * s2], [0, 0.35 * s2, 0, 0.35 * s2, false, 0.7]]
 	e.parts = hits.map(func(h): return {"o": Vector3(h[0], h[1], h[2]), "r": h[3], "mult": h[5] if h.size() > 5 else 1.0, "weak": h.size() > 4 and h[4], "bomb": false})
 	e.head_x = ANIMALS[type].get("headX", 0.0)
+	_bar(e)
+
+func _bar(e: Enemies.Foe) -> void:   # the health bar above it
 	e.bar = Node3D.new(); e.bar.visible = false; en.add_child(e.bar)
 	var bg := MeshInstance3D.new(); bg.mesh = en._bar_mesh; bg.material_override = en._bar_bg; bg.scale = Vector3(0.9, 0.08, 1); e.bar.add_child(bg)
 	e.fill = MeshInstance3D.new(); e.fill.mesh = en._bar_mesh; e.fill.material_override = en._bar_amber; e.fill.scale = Vector3(0.86, 0.05, 1); e.bar.add_child(e.fill)
@@ -313,6 +483,7 @@ func king_roar(e: Enemies.Foe) -> void:
 
 func _rest(e: Enemies.Foe) -> void:
 	if e.head: e.head.rotation.x = 0.0
+	if e.jaw: e.jaw.rotation.x = 0.0
 	e.body.rotation.x = 0.0
 
 func _kneel(e: Enemies.Foe, dt: float) -> void:
@@ -605,6 +776,7 @@ func _biter(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face_y
 	if e.bs == "chase": _unstick(e, e.bx0, e.bz0, dx, dz, sp, dt); _turn(e, face_yaw if qd < 8.0 else atan2(dx, dz), T.turn, dt)
 	_gait(e, sp, dt)
 	if e.head: e.head.rotation.x = -0.95 * open   # the hippo's whole head tips back as the jaw drops
+	if e.jaw: e.jaw.rotation.x = (0.85 if lion else 0.55) * open
 	e.body.rotation.x = lerpf(e.body.rotation.x, -0.12 * look if lion else 0.0, 1.0 - exp(-dt * 8.0))
 
 ## rhino: a charge that slows as it closes, then the horn comes up and you go straight up into the air.
@@ -654,24 +826,25 @@ func _rhino(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face_y
 ## at the closest point, and a stop a few metres behind you. then round for another go. the tiger also roars: you run away for a second
 func _runner(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face_yaw: float) -> void:
 	var T := e.T; var B := e.buff; var tiger := e.type == "tiger"; e.bt -= dt * B; e.charge_cd -= dt * B; e.roar_cd -= dt
-	var q := quarry(); var sp := 0.0; var dx := 0.0; var dz := 0.0; var turn: float = T.turn; var lift := 0.0
+	var q := quarry(); var sp := 0.0; var dx := 0.0; var dz := 0.0; var turn: float = T.turn; var lift := 0.0; var open := 0.0
 	match e.bs:
 		"run":
 			dx = e.cx; dz = e.cz; sp = T.run; turn = 24.0
 			var rx: float = q.x - e.pos.x; var rz: float = q.z - e.pos.z; var f := rx * dx + rz * dz; var l := absf(rx * dz - rz * dx); var ns := nose(e)
+			open = clampf(1.0 - (f - ns) / 5.0, 0.0, 1.0)   # the mouth opens as it draws level
 			if not e.bit and f <= ns * 0.8:
 				e.bit = true
 				if l < q.r + 1.2 and absf(q.y - e.pos.y) < e.H + 0.4: hit(e, "maul")
 				e.bs = "pass"; e.pass_v = sp
 			elif e.bt <= 0.0: e.bs = "pass"; e.pass_v = sp
 		"pass":   # keeps going past you, slowing to a stop in about three metres
-			e.pass_v = maxf(0.0, e.pass_v - (T.run * T.run / 6.0) * dt * B); sp = e.pass_v / B; dx = e.cx; dz = e.cz; turn = 2.0
+			e.pass_v = maxf(0.0, e.pass_v - (T.run * T.run / 6.0) * dt * B); sp = e.pass_v / B; dx = e.cx; dz = e.cz; turn = 2.0; open = clampf(e.pass_v / T.run, 0.0, 1.0) * 0.5
 			if e.pass_v <= 0.4: e.bs = "turn"; e.bt = 0.5
 		"turn":
 			_turn(e, face_yaw, 8.0, dt)
 			if e.bt <= 0.0: e.bs = "stalk"; e.charge_cd = rnd(0.2, 0.8)
 		"roar":
-			lift = 1.0; _turn(e, face_yaw, 4.0, dt)
+			lift = 1.0; open = 1.0; _turn(e, face_yaw, 4.0, dt)
 			if not e.roared and e.bt < 0.75:
 				e.roared = true; Snd.play("roar_cat", 1.0, e.pos)
 				if dist < 24.0 and e.los: fear(e)
@@ -690,6 +863,7 @@ func _runner(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face_
 	if e.bs == "stalk": _unstick(e, e.bx0, e.bz0, dx, dz, sp, dt)
 	if sp > 0.1 and e.bs != "turn" and e.bs != "roar": _turn(e, face_yaw if (e.bs == "stalk" and dist < 6.0) else atan2(dx, dz), turn, dt)
 	_gait(e, sp, dt)
+	if e.jaw: e.jaw.rotation.x = 0.75 * open
 	e.body.rotation.x = lerpf(e.body.rotation.x, -0.1 * lift, 1.0 - exp(-dt * 8.0))
 
 ## giraffe: walks up to you and swings its long neck down like a club. the neck reaches a long way, up over a watchtower's railing too
@@ -742,7 +916,7 @@ func _siege(e: Enemies.Foe, dt: float, _dist: float) -> void:
 	# a place at the tower: kept while it is ours, looked for again every half second while waiting
 	var slot = tw.claim(e) if (e.slot != null and e.slot.owner == e) else null
 	if slot == null and e.claim_t <= 0.0: e.claim_t = rnd(0.4, 0.7); slot = tw.claim(e)
-	var sp := 0.0; var mx := 0.0; var mz := 0.0; var pitch := 0.0; var has_face := false; var face := 0.0; var turn: float = T.turn * 1.5
+	var sp := 0.0; var mx := 0.0; var mz := 0.0; var pitch := 0.0; var has_face := false; var face := 0.0; var turn: float = T.turn * 1.5; var open := 0.0
 	if slot == null:
 		# all taken: wait a little way off, on its own side of the tower, pacing and roaring
 		if e.bs != "swait": e.bs = "swait"; var a := atan2(e.pos.z - twz, e.pos.x - twx) + rnd(-0.4, 0.4); var r := rnd(9.5, 13); e.wx = twx + cos(a) * r; e.wz = twz + sin(a) * r; e.bt = rnd(2, 5)
@@ -774,7 +948,7 @@ func _siege(e: Enemies.Foe, dt: float, _dist: float) -> void:
 				if fx: fx.puff(Vector3(slot.x, 0.4, slot.z), 3, 0.55, 0.9)
 			elif e.bt <= 0.0: e.bs = "sgo"
 		elif e.bs == "sbite":
-			var u := 1.0 - clampf(e.bt / 0.45, 0.0, 1.0); pitch = 0.1 * (u / 0.6 if u < 0.6 else 1.0 - (u - 0.6) / 0.4); has_face = true; face = in_face
+			var u := 1.0 - clampf(e.bt / 0.45, 0.0, 1.0); open = u / 0.6 if u < 0.6 else 1.0 - (u - 0.6) / 0.4; pitch = 0.1 * open; has_face = true; face = in_face
 			if not e.hit_done and u >= 0.6: e.hit_done = true; tw.hurt(S.dmg, at); Snd.play("thud", 1.0, e.pos)
 			if e.bt <= 0.0: e.bs = "sgo"; e.sg_cd = rnd(S.cd[0], S.cd[1])
 		else:
@@ -793,6 +967,8 @@ func _siege(e: Enemies.Foe, dt: float, _dist: float) -> void:
 	if sp > 0.0 and (e.bs == "sgo" or e.bs == "swait"): _unstick(e, e.bx0, e.bz0, mx, mz, sp, dt)
 	if has_face or sp > 0.0: _turn(e, face if has_face else atan2(mx, mz), turn, dt)
 	_gait(e, sp, dt)
+	if e.jaw: e.jaw.rotation.x = 0.7 * open
+	if e.head and e.type == "rhino": e.head.rotation.x = lerpf(e.head.rotation.x, 0.4 if e.bs == "sram" else 0.0, 1.0 - exp(-dt * 10.0))   # the horn down to ram
 	e.body.rotation.x = lerpf(e.body.rotation.x, pitch, 1.0 - exp(-dt * 8.0))
 
 ## the safari's zebras once the stampede starts: they come to the tower with the rest, and just stand about it
@@ -861,6 +1037,7 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 	var set_mode := func(md: String) -> void: k.mode = md; k.t = 0.0; k.hit = false
 	var reach_p: float = en.stop_dist(e) + K.reach; var upright := absf(player.pos.y - e.pos.y) < 2.6 * sc
 	var sp := 0.0; var dirx := 0.0; var dirz := 0.0; var turn := 6.0; var move := true; var lean := 0.0
+	var P := KNUCKLE.duplicate(); var rate := 12.0; var gallop := false   # the pose it eases toward (KongKit's)
 	var tw: Safari = world.safari
 	k.t += dt
 	if not e.caged: k.chargeCd -= dt; k.jumpCd -= dt; k.summonCd -= dt; k.engaged += dt
@@ -880,7 +1057,7 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 		"wander":
 			if not k.has("wx") or Vector2(k.wx - e.pos.x, k.wz - e.pos.z).length() < 1.5 or k.t > 14.0:
 				var a := rnd(0, TAU); var r := rnd(5, 16); k.wx = clampf(e.pos.x + cos(a) * r, -Phys.HALF + 4, Phys.HALF - 4); k.wz = clampf(e.pos.z + sin(a) * r, -Phys.HALF + 4, Phys.HALF - 4); k.t = 0.0; k.sit = rnd(2, 6) if randf() < 0.45 else 0.0
-			if k.sit > 0.0: k.sit -= dt; move = false
+			if k.sit > 0.0: k.sit -= dt; move = false; P.lean = 0.15; P.head = -0.15 + sin(_time * 0.7 + e.walk) * 0.25; P.aLx = -0.6; P.aRx = -0.6
 			else: var v := Vector2(k.wx - e.pos.x, k.wz - e.pos.z).normalized(); dirx = v.x; dirz = v.y; sp = 1.4; turn = 3.0
 		"sgo", "swait", "spunch":
 			# at the watchtower: a place along its foot, or a wait a little way off; then fists into the planks
@@ -896,10 +1073,13 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 					if l > 16.0 and fd != Vector2.ZERO: dirx = fd.x; dirz = fd.y
 					else: dirx = dx / l; dirz = dz / l
 					sp = K.run if l > 16.0 else 2.0
+				else:   # waiting its turn: faces the tower, beating its chest now and then
+					move = false; _turn(e, atan2(twx - e.pos.x, twz - e.pos.z), 3.0, dt)
+					if fmod(k.t, 6.0) < 1.6: beat_pose(P, k)
 			else:
 				var gx: float = slot.x + slot.nx * (en.stop_dist(e) + 0.25); var gz: float = slot.z + slot.nz * (en.stop_dist(e) + 0.25); var in_face := atan2(-slot.nx, -slot.nz)
 				if k.mode == "spunch":
-					var u: float = k.t / K.swing; move = false; _turn(e, in_face, 6.0, dt); lean = 0.32
+					var u: float = k.t / K.swing; move = false; _turn(e, in_face, 6.0, dt); lean = 0.32; rate = punch_pose(P, k.arm, u)
 					if not k.hit and u >= 0.5: k.hit = true; var at := Vector3(slot.x, 1.6, slot.z); tw.hurt(Safari.SIEGE.gorilla.dmg, at); Snd.play("thud", 1.0, at)
 					if k.t >= K.swing:
 						k.combo -= 1; k.arm = -k.arm
@@ -923,7 +1103,7 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 				var r3 := randf(); set_mode.call("cbeat" if r3 < 0.3 else ("clunge" if (r3 < 0.6 and dist < 26.0) else "cpace")); k.cx = tx; k.cz = tz
 				var c: Dictionary = e.cage; var ix: float = c.w / 2 - 0.5 - e.R; var iz: float = c.d / 2 - 0.5 - e.R; k.wx = c.x + rnd(-ix, ix); k.wz = c.z + rnd(-iz, iz)
 		"cbeat":
-			move = false; lean = -0.1
+			move = false; lean = -0.1; beat_pose(P, k)
 			if not k.hit and k.t > 0.15: k.hit = true; Snd.play("roar_beat", 1.0, e.pos)
 			if k.t > 1.8: set_mode.call("cidle")
 		"cpace":
@@ -935,10 +1115,11 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 			if k.t > 1.2: set_mode.call("cidle")
 		"roar":
 			move = false; lean = -0.1; _turn(e, face_yaw, 4.0, dt)
+			P.lean = -0.1; P.aLx = -2.2; P.aLy = -0.8; P.aRx = -2.2; P.aRy = 0.8; P.head = -0.7; P.lL = -0.2; P.lR = -0.2; P.sL = 0.35; P.sR = 0.35; P.y = -0.05   # rears up and roars
 			if not k.hit and k.t > 0.1: k.hit = true; Snd.play("roar_beat", 1.0, e.pos); Snd.play("rage", 1.0, e.pos); player.shake = maxf(player.shake, 0.35)
 			if k.t > 1.4: set_mode.call("chase"); k.engaged = 0.0
 		"drop":   # minions coming down from the roof
-			move = false; lean = 0.3; en._ground_move(e, 0.0, 0.0, dt)
+			move = false; lean = 0.3; en._ground_move(e, 0.0, 0.0, dt); P.lean = 0.3; P.aLx = -2.4; P.aRx = -2.4; P.lL = -0.5; P.lR = -0.5; P.sL = 0.8; P.sR = 0.8
 			if e.pos.y <= Phys.ground_at(e.pos.x, e.pos.y, e.pos.z, e.R) + 0.01: Snd.play("thud", 1.0, e.pos); set_mode.call("chase"); _puff_at(e.pos, 6, 0.8, 0.8)
 		"chase":
 			var fd3 := Phys.flow_dir(e.pos.x, e.pos.z)
@@ -952,7 +1133,7 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 			elif e.boss and k.summons < SUMMON_MAX and k.summonCd <= 0.0 and (e.hp < e.max_hp * 0.85 or k.engaged > 14.0) and minions() < MINIONS_AT: set_mode.call("beat")
 		"punch":   # big haymakers, left and right in turn
 			var S: float = K.swing; var u2: float = k.t / S; var side: int = k.arm
-			_turn(e, face_yaw, 5.0, dt); sp = 1.6 * sc if dist > reach_p * 0.7 else 0.0; dirx = tx; dirz = tz; lean = 0.2
+			_turn(e, face_yaw, 5.0, dt); sp = 1.6 * sc if dist > reach_p * 0.7 else 0.0; dirx = tx; dirz = tz; lean = 0.2; rate = punch_pose(P, side, u2)
 			if u2 >= 0.38 and u2 < 0.62 and not k.hit and u2 >= 0.5:
 				k.hit = true; Snd.play("swoosh", 1.0, e.pos)
 				var d := face_yaw - e.yaw; d = atan2(sin(d), cos(d))
@@ -967,10 +1148,10 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 				if k.combo > 0 and dist < reach_p + 1.0: k.t = 0.0; k.hit = false
 				else: set_mode.call("chase")
 		"windup":
-			move = false; lean = 1.05; _turn(e, face_yaw, 10.0, dt)
+			move = false; lean = 1.05; _turn(e, face_yaw, 10.0, dt); P.lean = 1.05; P.head = -0.7; P.aLx = -1.3; P.aRx = -1.3; P.lL = -0.35; P.lR = -0.35; P.sL = 0.6; P.sR = 0.6; P.y = -0.08
 			if k.t >= K.windup: set_mode.call("charge"); k.cx = sin(e.yaw); k.cz = cos(e.yaw); _puff_at(e.pos, 3, 0.6 * e.scale, 0.6)
 		"charge":
-			dirx = k.cx; dirz = k.cz; sp = K.charge; turn = 0.0; lean = 0.8
+			dirx = k.cx; dirz = k.cz; sp = K.charge; turn = 0.0; lean = 0.8; gallop = true
 			if randf() < dt * 14.0: _puff_at(e.pos, 1, 0.5 * e.scale, 0.4)
 			if not k.hit and dist < en.stop_dist(e) + 0.7 and (upright or m != null):
 				k.hit = true
@@ -981,16 +1162,19 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 				set_mode.call("recover"); k.rec = K.recover
 			elif k.t >= K.chargeT: set_mode.call("recover"); k.rec = K.recover
 		"stagger":
-			move = false; lean = 0.5
+			move = false; lean = 0.5; P.lean = 0.5; P.head = 0.2 + sin(k.t * 10.0) * 0.15
 			if k.t >= k.rec: set_mode.call("chase"); k.chargeCd = rnd(K.chargeCd[0], K.chargeCd[1])
 		"recover":
-			lean = 0.7 if e.boss else 0.55
+			lean = 0.7 if e.boss else 0.55; P.lean = lean
+			if not e.boss: P.head = -0.1 + sin(k.t * 9.0) * 0.12; P.aLx = -0.7; P.aRx = -0.7
 			if k.t >= k.rec: set_mode.call("chase"); k.chargeCd = rnd(K.chargeCd[0], K.chargeCd[1])
 		"crouch":   # gathering for the leap
 			move = false; lean = 0.85; _turn(e, atan2(k.tgx - e.pos.x, k.tgz - e.pos.z), 8.0, dt)
+			P.lean = 0.85; P.lL = -1.0; P.lR = -1.0; P.sL = 1.5; P.sR = 1.5; P.y = -0.25; P.aLx = 0.3; P.aRx = 0.3; P.head = -0.6
 			if k.t >= 0.5: var TT := 1.9; k.vx = (k.tgx - e.pos.x) / TT; k.vz = (k.tgz - e.pos.z) / TT; k.vy = 15.0 * TT / 2.0; k.air = TT; set_mode.call("air"); Snd.play("roar_grunt", 1.0, e.pos); _puff_at(e.pos, 8, 1.2 * e.scale, 1.0)
 		"air":
 			move = false; e.pos.x += k.vx * dt; e.pos.z += k.vz * dt; k.vy -= 15.0 * dt; e.pos.y = maxf(0.0, e.pos.y + k.vy * dt); lean = -0.1 if k.t / k.air < 0.62 else 0.5
+			var ua: float = k.t / k.air; P.lean = -0.1 if ua < 0.62 else 0.5; P.aLx = -2.9 if ua < 0.62 else -0.9; P.aRx = P.aLx; P.lL = -0.6; P.lR = -0.6; P.sL = 0.9; P.sR = 0.9; P.head = -0.4; rate = 8.0 if ua < 0.62 else 22.0
 			if e.pos.y <= 0.0 and k.vy < 0.0:
 				# the slam: inside the ring you are dead, near it you are thrown
 				e.pos.y = 0.0; unwarn()
@@ -1005,10 +1189,10 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 				if p2 != null: e.pos.x = p2.x; e.pos.z = p2.y
 				set_mode.call("land"); k.jumpCd = rnd(9, 13)
 		"land":
-			move = false; lean = 0.95
+			move = false; lean = 0.95; P.lean = 0.95; P.aLx = -1.25; P.aRx = -1.25; P.lL = -0.5; P.lR = -0.5; P.sL = 0.8; P.sR = 0.8; P.y = -0.15
 			if k.t >= 0.6: set_mode.call("chase")
 		"beat":   # chest-beating roar: seven gorillas come down
-			lean = -0.15; move = false
+			lean = -0.15; move = false; beat_pose(P, k); _turn(e, face_yaw, 3.0, dt)
 			if not k.hit and k.t > 0.15: k.hit = true; Snd.play("roar_beat", 1.0, e.pos)
 			if k.t > 1.5 and not k.called: k.called = true; _summon(e)
 			if k.t > 1.8: set_mode.call("chase"); k.called = false; k.summonCd = rnd(22, 28)
@@ -1026,9 +1210,18 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 		if blocked and k.mode == "charge": set_mode.call("stagger"); k.rec = 0.45 if e.boss else 2.2; Snd.play("thud", 1.0, e.pos); _puff_front(e, 6, 0.6 * e.scale, 0.8)
 		if blocked and k.mode == "clunge": set_mode.call("cidle"); world.lab.rattle(e.cage, e.pos.x + dirx * e.R, e.pos.z + dirz * e.R)
 		if sp > 0.1 and turn > 0.0: _turn(e, face_yaw if (k.mode == "chase" and dist < 14.0) else atan2(dirx, dirz), turn, dt)
-	_gait(e, sp, dt)
-	e.body.rotation.x = lerpf(e.body.rotation.x, lean - 0.3, 1.0 - exp(-dt * 12.0))
-	if k.mode == "punch" and e.legs.size() == 4: e.legs[0 if k.arm < 0 else 1].rotation.x = -2.0 + 2.2 * clampf(k.t / K.swing, 0.0, 1.0)
+	if e.rig.is_empty():   # (a gorilla built without the rig: lean the body, swing a front leg)
+		_gait(e, sp, dt); e.body.rotation.x = lerpf(e.body.rotation.x, lean - 0.3, 1.0 - exp(-dt * 12.0))
+		if k.mode == "punch" and e.legs.size() == 4: e.legs[0 if k.arm < 0 else 1].rotation.x = -2.0 + 2.2 * clampf(k.t / K.swing, 0.0, 1.0)
+	else:
+		if sp > 0.1: kong_gait(P, k, sp, dt, gallop, sc)
+		kong_pose(e, P, 1.0 - exp(-dt * rate))
+		# keep the head and chest hit spheres on the moving body
+		var cy := cos(e.yaw); var sy := sin(e.yaw)
+		for pp in e.parts:
+			if pp.has("node"):
+				var wp: Vector3 = (pp.node as Node3D).global_position; var dx5 := wp.x - e.pos.x; var dy5 := wp.y - e.pos.y; var dz5 := wp.z - e.pos.z
+				pp.o = Vector3((dx5 * cy - dz5 * sy) / sc, dy5 / sc, (dx5 * sy + dz5 * cy) / sc)
 	e.roar_t -= dt
 	if e.roar_t <= 0.0:
 		e.roar_t = rnd(6, 12)

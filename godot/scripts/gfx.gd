@@ -44,14 +44,26 @@ static func fellipse(img: Image, cx: float, cy: float, rx: float, ry: float, rot
 			var a := c.a * clampf((1.0 - sqrt(u * u + v * v)) * m + 0.5, 0.0, 1.0)
 			if a > 0.0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), a))
 
-## a line one pixel wide from a to b (a canvas stroke() with lineWidth 1), each pixel taking the share of it the line covers
-static func fline(img: Image, a: Vector2, b: Vector2, c: Color) -> void:
-	var w := img.get_width(); var h := img.get_height(); var ab := b - a; var L2 := maxf(ab.length_squared(), 1e-6)
-	for py in range(maxi(0, int(floor(minf(a.y, b.y) - 1.0))), mini(h, int(ceil(maxf(a.y, b.y) + 1.0)))):
-		for px in range(maxi(0, int(floor(minf(a.x, b.x) - 1.0))), mini(w, int(ceil(maxf(a.x, b.x) + 1.0)))):
+## a line from a to b (a canvas stroke() with that lineWidth), each pixel taking the share of it the line covers
+static func fline(img: Image, a: Vector2, b: Vector2, c: Color, width := 1.0) -> void:
+	var w := img.get_width(); var h := img.get_height(); var ab := b - a; var L2 := maxf(ab.length_squared(), 1e-6); var m := width / 2.0 + 1.0
+	for py in range(maxi(0, int(floor(minf(a.y, b.y) - m))), mini(h, int(ceil(maxf(a.y, b.y) + m)))):
+		for px in range(maxi(0, int(floor(minf(a.x, b.x) - m))), mini(w, int(ceil(maxf(a.x, b.x) + m)))):
 			var q := Vector2(px + 0.5, py + 0.5); var t := clampf((q - a).dot(ab) / L2, 0.0, 1.0)
-			var cov := clampf(1.0 - q.distance_to(a + ab * t), 0.0, 1.0) * c.a
+			var cov := clampf(width / 2.0 + 0.5 - q.distance_to(a + ab * t), 0.0, 1.0) * c.a
 			if cov > 0.0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), cov))
+
+## a filled polygon (a canvas path and fill()), its edges blended by coverage (four by four samples a pixel)
+static func fpoly(img: Image, pts: PackedVector2Array, c: Color) -> void:
+	var w := img.get_width(); var h := img.get_height(); var lo := pts[0]; var hi := pts[0]
+	for p in pts: lo = lo.min(p); hi = hi.max(p)
+	for py in range(maxi(0, int(floor(lo.y))), mini(h, int(ceil(hi.y)))):
+		for px in range(maxi(0, int(floor(lo.x))), mini(w, int(ceil(hi.x)))):
+			var n := 0
+			for sy in 4:
+				for sx in 4:
+					if Geometry2D.is_point_in_polygon(Vector2(px + (sx + 0.5) / 4.0, py + (sy + 0.5) / 4.0), pts): n += 1
+			if n > 0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), c.a * n / 16.0))
 
 ## three.js's Color.setHSL (hue, saturation and lightness, 0 to 1)
 static func hsl(hh: float, ss: float, ll: float) -> Color:
@@ -195,7 +207,7 @@ static func merge_boxes(parts: Array, _srgb := false) -> ArrayMesh:
 		var col := Color(str(p[6])) if p.size() > 6 else Color.WHITE   # (the renderer reads vertex colours as screen colours already)
 		# an eighth item turns the box (three.js order x, y, z); a ninth turns it once more about the upright axis (a hut's facing)
 		var bas := Basis.IDENTITY
-		if p.size() > 7 and not (p[7] is String): var e: Array = p[7]; bas = Basis(Vector3.RIGHT, e[0]) * Basis(Vector3.UP, e[1]) * Basis(Vector3.BACK, e[2])
+		if p.size() > 7 and not (p[7] is String): var e: Array = p[7]; bas = Basis(Vector3.BACK, e[2]) * Basis(Vector3.UP, e[1]) * Basis(Vector3.RIGHT, e[0])   # (rotateX, then Y, then Z)
 		if p.size() > 8: bas = Basis(Vector3.UP, p[8]) * bas
 		for v: Vector3 in a[Mesh.ARRAY_VERTEX]: vs.push_back(bas * v + Vector3(p[3], p[4], p[5])); cols.push_back(col)
 		for nrm: Vector3 in a[Mesh.ARRAY_NORMAL]: ns.push_back(bas * nrm)
@@ -207,6 +219,51 @@ static func merge_boxes(parts: Array, _srgb := false) -> ArrayMesh:
 	return m
 
 ## a box with three surfaces, as the containers need: 0 = the two ends (x), 1 = top and bottom, 2 = the two long sides (z)
+## parts merged as the browser game's AnimalKit makes them (geoBox and merge): a unit box, or three.js's SphereGeometry(0.5,
+## 10, 7), scaled, turned (x, then y, then z) and moved; its colour per vertex (a screen colour, decoded by the renderer); its
+## texture coordinates as three.js lays them, or all on the picture's white corner when the part is plain.
+## part: [sx, sy, sz, x, y, z, colour, rotation or null, plain, sphere]
+static func kit_mesh(parts: Array) -> ArrayMesh:
+	var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var cs := PackedColorArray(); var idx := PackedInt32Array()
+	for p in parts:
+		var sphere: bool = p.size() > 9 and p[9]; var plain: bool = p.size() > 8 and p[8]
+		var src: Array = _unit_sphere() if sphere else _unit_box()
+		var R := Basis.IDENTITY
+		if p.size() > 7 and p[7] != null: var r: Array = p[7]; R = Basis(Vector3.BACK, r[2]) * Basis(Vector3.UP, r[1]) * Basis(Vector3.RIGHT, r[0])
+		var M := R * Basis.from_scale(Vector3(p[0], p[1], p[2])); var N := R * Basis.from_scale(Vector3(1.0 / p[0], 1.0 / p[1], 1.0 / p[2]))   # (normals: the inverse transpose)
+		var t := Vector3(p[3], p[4], p[5]); var col := Color(str(p[6])); var off := vs.size()
+		var sv: PackedVector3Array = src[0]; var sn: PackedVector3Array = src[1]; var su: PackedVector2Array = src[2]
+		for i in sv.size():
+			vs.push_back(M * sv[i] + t); ns.push_back((N * sn[i]).normalized()); uvs.push_back(Vector2(0.98, 0.02) if plain else su[i]); cs.push_back(col)
+		for i: int in src[3]: idx.push_back(i + off)
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_NORMAL] = ns; arr[Mesh.ARRAY_TEX_UV] = uvs; arr[Mesh.ARRAY_COLOR] = cs; arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
+static var _ubox: Array = []
+static func _unit_box() -> Array:
+	if _ubox.is_empty():
+		var a := box(Vector3.ONE).surface_get_arrays(0); _ubox = [a[Mesh.ARRAY_VERTEX], a[Mesh.ARRAY_NORMAL], a[Mesh.ARRAY_TEX_UV], a[Mesh.ARRAY_INDEX]]
+	return _ubox
+static var _usph: Array = []
+## three.js's SphereGeometry(0.5, 10, 7): its vertices, normals, texture coordinates (v counted from the top here) and faces
+static func _unit_sphere() -> Array:
+	if _usph.is_empty():
+		var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var idx := PackedInt32Array(); var W := 10; var H := 7
+		for iy in H + 1:
+			var v := float(iy) / H; var uo := 0.5 / W if iy == 0 else (-0.5 / W if iy == H else 0.0)
+			for ix in W + 1:
+				var u := float(ix) / W
+				var p := Vector3(-0.5 * cos(u * TAU) * sin(v * PI), 0.5 * cos(v * PI), 0.5 * sin(u * TAU) * sin(v * PI))
+				vs.push_back(p); ns.push_back(p.normalized() if p.length() > 1e-6 else Vector3(0, signf(p.y), 0)); uvs.push_back(Vector2(u + uo, v))
+		for iy in H:
+			for ix in W:
+				var a := iy * (W + 1) + ix + 1; var b := iy * (W + 1) + ix; var c := (iy + 1) * (W + 1) + ix; var d := (iy + 1) * (W + 1) + ix + 1
+				if iy != 0: idx.append_array([a, d, b])        # (three.js winds these the other way round)
+				if iy != H - 1: idx.append_array([b, d, c])
+		_usph = [vs, ns, uvs, idx]
+	return _usph
+
 static func box3(sx: float, sy: float, sz: float) -> ArrayMesh:
 	var m := ArrayMesh.new()
 	var faces := [
@@ -348,6 +405,39 @@ vec3 unshow(vec3 s) {
 	return max(v * inverse(RRT), vec3(0.0)) / exposure;
 }
 """
+## what a three.js MeshBasicMaterial with toneMapped: false puts on the screen: its map (decoded) times its colour, untoned.
+## Godot tone maps every material here, so the colour is taken back through the tone mapping first. Solid ones mark the
+## stencil so the moon's shadow layer leaves them be (they take no light, so they lose none in shadow)
+const UNTONED := """
+shader_type spatial;
+render_mode unshaded, %s cull_back, fog_disabled, shadows_disabled;
+%s
+uniform sampler2D tex : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_white;
+uniform vec3 mul = vec3(1.0); uniform float opacity = 1.0; uniform float exposure = 1.0; uniform vec2 uv_scale = vec2(1.0);
+%s
+%s
+vec3 dec(vec3 s) { return mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), s)); }
+vec3 enc(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
+void fragment() {
+	vec4 t = texture(tex, UV * uv_scale);
+	ALBEDO = albedo_of(unshow(enc(dec(t.rgb) * mul)));
+	%s
+}
+"""
+static var _untoned := {}
+static func untoned(mul: Color, map: Texture2D = null, exposure := 1.0, opacity := 1.0, add := false, two_sided := false) -> ShaderMaterial:
+	var see := opacity < 1.0 or add
+	var key := "%s%s%s" % [see, add, two_sided]
+	if not _untoned.has(key):
+		var sh := Shader.new()
+		var modes := ("blend_add, " if add else "blend_mix, ") + ("depth_draw_never, " if see else "") + ("cull_disabled, " if two_sided else "")
+		sh.code = (UNTONED % [modes, "" if see else "stencil_mode write, compare_always, 2;", ALBEDO_GLSL, UNSHOW_GLSL, "ALPHA = t.a * opacity;" if see else ""]).replace("cull_disabled,  cull_back", "cull_disabled")
+		_untoned[key] = sh
+	var m := ShaderMaterial.new(); m.shader = _untoned[key]
+	m.set_shader_parameter("mul", Vector3(mul.r, mul.g, mul.b)); m.set_shader_parameter("exposure", exposure); m.set_shader_parameter("opacity", opacity)
+	if map: m.set_shader_parameter("tex", map)
+	return m
+
 const ALBEDO_GLSL := """
 vec3 albedo_of(vec3 c) {
 	vec3 s = pow(max(c, vec3(0.0)), vec3(0.4545));

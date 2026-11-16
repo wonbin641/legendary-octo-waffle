@@ -62,7 +62,7 @@ class Foe:
 	var roar_t := 0.0; var roar_cd := 0.0; var airborne := false; var windup := 0.0; var graze := 0.0; var home := Vector2.ZERO; var wx := 0.0; var wz := 0.0; var cstate := ""
 	var detour_t := 0.0; var dx2 := 0.0; var dz2 := 0.0; var stuck_t := 0.0; var bx0 := 0.0; var bz0 := 0.0; var last_x := 0.0; var last_z := 0.0; var has_last := false; var pin_t := 0.0; var ghost_t := 0.0
 	var zig_t := 0.0; var fx_ := 0.0; var fz_ := 0.0; var bit := false; var roared := false; var tossed := false; var v0 := 0.0; var pass_v := 0.0; var slot = null; var claim_t := 0.0; var sg_cd := 0.0
-	var bleed_n := 0; var bleed_t := 0.0; var bleed_acc := 0.0; var k := {}; var legs: Array = []; var body: Node3D = null; var head: Node3D = null; var neck_base: Array = []; var yaw_off := 0.0
+	var bleed_n := 0; var bleed_t := 0.0; var bleed_acc := 0.0; var k := {}; var legs: Array = []; var body: Node3D = null; var head: Node3D = null; var jaw: Node3D = null; var rig: Dictionary = {}; var neck_base: Array = []; var yaw_off := 0.0
 	var fuse := 0.0; var beep2 := false; var flame_on := 0.0; var flame_acc := 0.0; var flame_snd := 0.0; var aim_t := 0.0; var laser: MeshInstance3D = null   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
 
 var list: Array[Foe] = []
