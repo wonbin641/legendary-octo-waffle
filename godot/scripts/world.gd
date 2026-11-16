@@ -46,6 +46,7 @@ var style: Dictionary = STAGE_STYLE[1]
 var group: Node3D = null
 var crates: Array = []      # {idx, hp, x, z, y, dead, b}
 var crate_mm: MultiMesh = null
+var crate_mmi: MultiMeshInstance3D = null; var crate_xf: Array = []   # the crates' node and where each one stands
 var lamps: Array = []       # {x, y, z}
 var blink: Array = []
 var lights: Array[OmniLight3D] = []
@@ -144,7 +145,7 @@ func _build_backdrop() -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; toy = null; village = null; lab = null; safari = null; ship = null; flames.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; toy = null; village = null; lab = null; safari = null; ship = null; flames.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -345,19 +346,30 @@ func _place_crates(G: Node3D, count: int, cand: Callable, fits: Callable, with_y
 		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": y, "dead": false}
 		cr.b = Phys.add_collider(x - 0.6, y, z - 0.6, x + 0.6, y + 1.2, z + 0.6, "wood", cr); crates.push_back(cr); i += 1
 	var bm := BoxMesh.new(); bm.size = Vector3(1.2, 1.2, 1.2)
-	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, _tex.crate); G.add_child(mmi); crate_mm = mmi.multimesh
+	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, _tex.crate); G.add_child(mmi); crate_mm = mmi.multimesh; crate_mmi = mmi; crate_xf = xs.duplicate()
+
+## a broken crate gone from the picture: the crates are drawn again from a new MultiMesh (one changed in place does not
+## always reach the screen on the web renderer, and the broken crate stayed in view)
+func hide_crate(c: Dictionary) -> void:
+	if crate_mm == null or c.idx >= crate_xf.size(): return
+	crate_xf[c.idx] = Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z))
+	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.mesh = crate_mm.mesh; mm.instance_count = crate_xf.size()
+	for i in crate_xf.size(): mm.set_instance_transform(i, crate_xf[i])
+	crate_mm = mm
+	if is_instance_valid(crate_mmi): crate_mmi.multimesh = mm
 
 func damage_crate(c: Dictionary, dmg: float, _at: Vector3) -> void:
 	if c.dead: return
 	c.hp -= dmg
+	if fx: fx.sparks(_at, 4, [0.85, 0.65, 0.4], 2.5)
 	if c.hp > 0.0: return
 	c.dead = true
 	if c.has("node"):   # a brick wall: its own node
 		if is_instance_valid(c.node): (c.node as Node3D).queue_free()
-	elif crate_mm: crate_mm.set_instance_transform(c.idx, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z)))
+	else: hide_crate(c)
 	Phys.remove_collider(c.b); Phys.nav_patch(c.b.minx, c.b.minz, c.b.maxx, c.b.maxz)  # just round it, not the whole grid
 	var at := Vector3(c.x, c.y + 0.6, c.z)
-	if fx: fx.chips(at)
+	if fx: fx.chunks(at, 9, 0.28, "wood"); fx.puff(at, 4, 0.35, 0.6)
 	Snd.play("crack", 1.0, at)
 	if on_crate.is_valid(): on_crate.call(c)
 

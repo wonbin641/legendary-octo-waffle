@@ -110,7 +110,7 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": 0.0, "dead": false}
 		cr.b = Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood", cr); w.crates.push_back(cr); i += 1
 	var bm := BoxMesh.new(); bm.size = Vector3(1.2, 1.2, 1.2)
-	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); w.crate_mm = mmi.multimesh
+	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); w.crate_mm = mmi.multimesh; w.crate_mmi = mmi; w.crate_xf = xs.duplicate()
 
 	# everything built of logs, in one mesh
 	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.92; mi.material_override = mat; G.add_child(mi)

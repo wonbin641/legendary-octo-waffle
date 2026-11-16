@@ -846,14 +846,14 @@ func _ready() -> void:
 	check("out by helicopter: up the rope ladder, then black (8.6 s)", c_done[0] == 1 and c_climb and ct.fade_to == 1.0 and not ct.fig.visible)
 	# the lab: the monkey slams his button and the boards light up; the clock itself starts with play
 	gm.begin(3); var L3: Lab = w.lab
-	var c_dark: bool = not L3.pressed and not L3.clock and str(L3.cages[0].label.text).ends_with("- -")
+	var c_dark: bool = not L3.pressed and not L3.clock and str(L3.cages[0].shown) == "- -"
 	c_done[0] = 0; Snd.played.clear(); ct.start_intro(3, c_end); var c_press_t := -1.0
 	for i in 330:
 		ct.update(1.0 / 30.0)
 		if L3.pressed and c_press_t < 0.0: c_press_t = float(ct.C.t)
 		if not ct.active(): break
 	check("the lab's opening: dark boards, the monkey's button at 4.1 s, the boards count, and the cages' clock waits for play", c_dark and c_done[0] == 1 and absf(c_press_t - 4.13) < 0.05 and L3.clock and L3.t == 0.0
-		and Snd.played.has("press") and Snd.played.has("siren") and str(L3.cages[0].label.text).ends_with("10"), [c_dark, c_press_t, L3.t, L3.cages[0].label.text])
+		and Snd.played.has("press") and Snd.played.has("siren") and str(L3.cages[0].shown) == "10", [c_dark, c_press_t, L3.t, L3.cages[0].shown])
 	gm.begin(3); L3 = w.lab; c_done[0] = 0; ct.start_intro(3, c_end); c_run.call(1.0); ct.skip()
 	L3.update(1.0)
 	check("skipped before the button: it is pressed for you, and the first cage still opens 10 s into play", c_done[0] == 1 and L3.pressed and absf(L3.t - 1.0) < 1e-6 and not L3.cages[0].open and float(L3.cages[0].open_at) == 10.0)
@@ -911,6 +911,52 @@ func _ready() -> void:
 	Store.save.cleared = [7]; var cx_safari := Codex.seen(["3", "3-1", "3-2"]) and not Codex.seen(["3", "3-2"])
 	Store.save = cx_keep; Store.settings.dev = cx_dev
 	check("the book opens with the first clear, and each card with a stage it is in", cx_none and cx_one and cx_safari)
+	# ---------------- the fight's screen and its effects ----------------
+	var hud_m := {"game": gm, "player": pl, "enemies": en, "loot": lt, "guns": g, "state": "playing", "time": 0.0}
+	var hud9 := Hud.new(); hud9.m = hud_m; gm.begin(1); pl.reset(0, 6, 0.0)
+	hud9.hurt(30.0, Vector3(10, 0, 6)); var h_arc: float = hud9.arcs[0][0]; var h_t := hud9.hurt_t
+	for i in 40: hud9.update(1.0 / 30.0)
+	check("a hit: the red edge (0.2 + 1.2 % of the damage, at most 0.6 s) and an arc towards where it came from, gone after 1.2 s", absf(h_t - 0.56) < 1e-6 and h_arc == 1.2 and hud9.arcs[0][0] == 0.0, [h_t, h_arc])
+	var h_none := hud9.aims(gm).size()
+	for e in en.list.duplicate():
+		if en.list.size() > 10 and not e.boss: en.vanish(e); gm.kills += 1
+	var h_three := hud9.aims(gm).size(); gm.begin(4); for e in en.list.duplicate():
+		if en.list.size() > 10: en.vanish(e); gm.kills += 1
+	var h_ship := hud9.aims(gm).size()
+	check("arrows: none while many are left, the nearest three once ten or fewer are, never on the ship", h_none == 0 and h_three == 3 and h_ship == 0, [h_none, h_three, h_ship])
+	gm.begin(2); Snd.keep_log = true; Snd.played.clear(); gm.infected = true; gm.infect_t = 5.0
+	for i in 60: hud9.update(1.0 / 30.0)
+	var h_beats := Snd.played.filter(func(n): return n == "heart").size(); gm.infected = false; Snd.keep_log = false
+	check("infected: a heartbeat (about every 1.05 s with 5 s to go)", h_beats == 2, h_beats)
+	gm.begin(1); var h_thug = en.list.filter(func(e): return not e.boss)[0]; h_thug.lod = 0.0
+	en.damage(h_thug, 10.0, h_thug.pos + Vector3(0, 1.3, 0), Vector3(0, 0, -1), false); var h_f: float = h_thug.flash_t
+	en.update(0.02, 0.0); var h_on: String = h_thug.glow
+	for i in 6: en.update(0.02, 0.0)
+	check("a man hit glows orange for 0.08 s", h_f == 0.08 and h_on == "flash" and h_thug.glow == "" and (h_thug.g.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D).material_overlay == null, [h_f, h_on, h_thug.glow])
+	fxn.clear(); for i in 60: fxn.update(1.0 / 30.0)
+	var h_n0: int = fxn._debris.size() + fxn.live(); fxn.chunks(Vector3(0, 1, 0), 9, 0.28, "wood"); fxn.sparks(Vector3(0, 1, 0), 4, [1.0, 0.8, 0.5], 2.5)
+	var h_n1: int = fxn._debris.size() + fxn.live(); var h_low := 9.0
+	for i in 150:
+		fxn.update(1.0 / 30.0)
+		for d in fxn._debris: h_low = minf(h_low, (d[0] as Node3D).position.y)
+	check("splinters and sparks fly, bounce off the ground, and are gone (debris in 4 s at most)", h_n1 == h_n0 + 13 and fxn._debris.size() + fxn.live() == 0 and h_low > -0.01, [h_n0, h_n1, h_low])
+	fxn.clear(); fxn.explode(Vector3(0, 2, 0), true); var h_ex := [fxn._glow.p.size(), fxn._smoke.p.size(), fxn._boom.visible]
+	fxn.update(1.0 / 30.0); var h_drawn := [fxn._glow.shown, fxn._smoke.shown]
+	for i in 3000: fxn.sparks(Vector3.ZERO, 1, [1.0, 1.0, 1.0], 1.0)
+	for i in 400: fxn.puff(Vector3.ZERO, 1, 0.5, 0.3)
+	var h_full := [fxn._glow.p.size(), fxn._smoke.p.size()]
+	for i in 70: fxn.decal(Vector3(0, 1, 5), Vector3(0, 0, -1))
+	var h_hole: Transform3D = fxn.hole_xf[0]
+	for i in 20: fxn.update(1.0 / 30.0)
+	check("a blast as the browser game's: 70 sparks and 14 balls of fire, 16 puffs of smoke, a light that dies in 0.35 s; the pools hold 900 and 260 specks at most",
+		h_ex == [84, 16, true] and h_drawn == [84, 16] and h_full == [900, 260] and not fxn._boom.visible, [h_ex, h_drawn, h_full, fxn._boom.visible])
+	check("bullet holes: the newest 64 stay, each lying flat on the wall it struck", fxn.hole_xf.size() == 64 and fxn._holes.get_surface_count() == 1 and h_hole.basis.z.normalized().dot(Vector3(0, 0, -1)) > 0.99 and h_hole.origin.distance_to(Vector3(0, 1, 4.98)) < 0.001,
+		[fxn.hole_xf.size(), h_hole.basis.z.normalized(), h_hole.origin])
+	gm.begin(1); var h_old: MultiMesh = w.crate_mm; var h_cr: Dictionary = w.crates[0]
+	w.damage_crate(h_cr, 9999.0, Vector3(h_cr.x, 0.6, h_cr.z))
+	check("a broken crate leaves the picture: the crates are drawn from a new MultiMesh with that one at no size (on the web one changed in place kept showing it)",
+		h_cr.dead and w.crate_mm != h_old and w.crate_mmi.multimesh == w.crate_mm and (w.crate_xf[h_cr.idx] as Transform3D).basis.get_scale().length() < 0.001 and w.crate_mm.instance_count == w.crate_xf.size(),
+		[h_cr.dead, w.crate_mm != h_old, w.crate_xf.size()])
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

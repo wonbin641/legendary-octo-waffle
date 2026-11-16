@@ -2,7 +2,7 @@ extends Node3D
 ## The running game: the 3D scene, the states (menu, briefing, playing, paused, result), input for mouse, keyboard and touch,
 ## the camera and the HUD. The screens are in ui.gd, a stage's rules in game.gd.
 
-const NIGHT := Color("0d1220"); const INK := Color("ece6d8"); const STEEL := Color("8f9bb0"); const SODIUM := Color("f2a33a")
+const NIGHT := Color("0d1220"); const INK := Color("ece6d8"); const STEEL := Color("8f9bb0"); const SODIUM := Color("f2a33a"); const VITAL := Color("5ed6b0")
 const BASE_FOV := 74.0
 
 var world: World; var fx: Fx; var proj: Proj; var enemies: Enemies; var loot: Loot; var guns: Guns; var game: Game; var ui: Ui
@@ -20,14 +20,14 @@ var base_fov := BASE_FOV
 var toy_models := {}; var ruler: Node3D; var inspect := false; var laser: MeshInstance3D; var laser_dot: MeshInstance3D
 var needle: Node3D; var needle_arm: Node3D; var needle_syr: Node3D; var needle_juice: MeshInstance3D
 var gm_models: GunModels
+var jet_puff_t := 0.0
 var cut: Cut   # the cutscenes: in by helicopter, out by helicopter, the lab, the ship, the look behind a sealed door
 var view: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
-var hud: Control; var touch_ui: Control; var hint_label: Label; var fps_label: Label; var banner_label: Label; var banner_sub: Label
-var hint_t := 0.0; var banner_t := 0.0; var hit_t := 0.0; var hit_kill := false; var hit_head := false; var heat_k := -1.0
+var hud: Control; var touch_ui: Control; var fps_label: Label
+var hudd: Hud   # the fight's screen (scripts/hud.gd)
+var heat_k := -1.0
 var cu_ang := 0.6
 var cu_light: OmniLight3D = null   # the menu scene is dark: the gun being fitted out gets a lamp of its own
-var hurt_t := 0.0
-var feed_lines: Array = []         # [text, seconds left]
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var joy_id := -1; var look_id := -1; var fire_id := -1; var joy := Vector2.ZERO; var pad_sprint := false; var pad_last_up := -9.0
 var _js_cb
@@ -50,15 +50,16 @@ func _ready() -> void:
 	guns = Guns.new(); game = Game.new()
 	guns.player = player; guns.cam = cam; guns.world = world; guns.enemies = enemies; guns.fx = fx; guns.proj = proj
 	guns.hint = hint; guns.banner = banner
-	guns.hitmark = func(killed: bool, head: bool) -> void: hit_t = 0.18; hit_kill = killed; hit_head = head; Snd.play("headshot" if head else "hit")
+	guns.hitmark = func(killed: bool, head: bool) -> void: hudd.hitmark(killed, head); Snd.play("headshot" if head else "hit")
 	proj.player = player; proj.world = world; proj.enemies = enemies; proj.fx = fx; proj.hitmark = guns.hitmark
-	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player; enemies.fx = fx; enemies.hitmark = guns.hitmark; enemies.say = func(t: String) -> void: feed(t, 0)
+	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player; loot.fx = fx; enemies.fx = fx; enemies.hitmark = guns.hitmark; enemies.say = func(t: String) -> void: feed(t, 0)
 	game.world = world; game.player = player; game.enemies = enemies; game.guns = guns; game.proj = proj; game.loot = loot; game.fx = fx
 	game.banner = banner; game.feed = feed; game.on_result = _on_result
 	enemies.on_bite = game.bitten; enemies.on_poison = game.poison; enemies.on_stun = game.stun; enemies.banner = banner; game.hint = hint
-	game.on_flash = func(_a: float, _from: Vector3) -> void: hurt_t = 0.35
+	game.on_flash = func(a: float, from: Vector3) -> void: hudd.hurt(a, from)
+	game.on_pay = func(n: int) -> void: if look_mode != "touch": hudd.money_pop(n)
 	enemies.on_kill = game.on_kill; world.on_crate = game.on_crate; loot.take = game.take_loot; loot.open_chest = game.open_chest
-	player.on_hurt = func(_dmg: float, _from: Vector3) -> void: hurt_t = 0.35; Snd.play("hurt")
+	player.on_hurt = func(dmg: float, from: Vector3) -> void: hudd.hurt(dmg, from); Snd.play("hurt")
 	player.on_step = func() -> void: Snd.play("step")
 	player.say = func(t: String) -> void: feed(t, 0)
 	world.build_stage(1)
@@ -78,6 +79,7 @@ func _ready() -> void:
 	apply_settings(); to_menu(); _bridge()
 
 func apply_settings() -> void:
+	Snd.touch = look_mode == "touch"
 	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
 	for id in Weapons.ORDER: gm_models.apply_look(id, Custom.setup(id))   # parts and paint
@@ -189,131 +191,26 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new(); add_child(layer)
 	var root := Control.new(); root.set_anchors_preset(Control.PRESET_FULL_RECT); root.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(root)
 	hud = Control.new(); hud.set_anchors_preset(Control.PRESET_FULL_RECT); hud.mouse_filter = Control.MOUSE_FILTER_IGNORE; root.add_child(hud); hud.draw.connect(_draw_hud)
-	hint_label = _label("", f_bold, 15, INK); hint_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM); hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint_label.grow_horizontal = Control.GROW_DIRECTION_BOTH; hint_label.grow_vertical = Control.GROW_DIRECTION_BEGIN; hint_label.offset_bottom = -90; hud.add_child(hint_label)
-	banner_label = _label("", f_title, 34, SODIUM); banner_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; banner_label.offset_top = 70; hud.add_child(banner_label)
-	banner_sub = _label("", f_bold, 14, INK); banner_sub.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP); banner_sub.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	banner_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; banner_sub.offset_top = 116; hud.add_child(banner_sub)
+	hudd = Hud.new(); hudd.m = self
 	touch_ui = Control.new(); touch_ui.set_anchors_preset(Control.PRESET_FULL_RECT); touch_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE; touch_ui.visible = false; root.add_child(touch_ui); touch_ui.draw.connect(_draw_touch)
 	fps_label = _label("", f_mono, 12, SODIUM); fps_label.position = Vector2(12, 40); fps_label.z_index = 50; root.add_child(fps_label)
 
 func _draw_hud() -> void:
-	var s := hud.size; var c := s / 2; var W := guns.w(); var st := guns.st(); var ink := Color(str(Store.settings.crossColor)); ink.a = 0.9
-	if guns.scoped():  # through the scope: black all round a circle, a fine cross
-		var r := minf(s.x, s.y) * 0.42
-		hud.draw_arc(c, r + s.length(), 0, TAU, 96, Color.BLACK, s.length() * 2.0); hud.draw_arc(c, r, 0, TAU, 96, Color.BLACK, 4.0)
-		hud.draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(0, 0, 0, 0.8), 1.0); hud.draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(0, 0, 0, 0.8), 1.0)
-	elif guns.ads < 0.6 and not guns.none:
-		var gap := 5.0 + guns.current_spread() * 420.0
-		match str(Store.settings.cross):
-			"circle": hud.draw_arc(c, gap + 3, 0, TAU, 40, ink, 2.0); hud.draw_circle(c, 1.2, ink)
-			"big": hud.draw_arc(c, gap + 12, 0, TAU, 48, ink, 2.0); hud.draw_circle(c, 1.5, ink)
-			"dot": hud.draw_circle(c, 2.6, ink)
-			_:
-				for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]: hud.draw_line(c + d * gap, c + d * (gap + 7), ink, 2.0)
-				hud.draw_circle(c, 1.2, ink)
-	if hit_t > 0.0:  # a hit: a small X, red for a kill
-		var col := Color("ff5260") if hit_kill else (SODIUM if hit_head else INK)
-		for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]: hud.draw_line(c + d * 6, c + d * 13, col, 2.0)
-	if hurt_t > 0.0: hud.draw_rect(Rect2(Vector2.ZERO, s), Color(1, 0.2, 0.25, 0.28 * hurt_t / 0.35))
-	# the count and the bag, top left; what you carry under it
-	hud.draw_string(f_title, Vector2(16, 30), "처치 %d / %d" % [game.kills + game.calm, game.goal], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, INK)
-	hud.draw_string(f_mono, Vector2(16, 50), "가방 " + Store.won(Store.save.money), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, SODIUM)
-	var it: Dictionary = Store.save.items; var carry := []
-	if int(it.helmet) > 0: carry.push_back("헬멧")
-	if int(it.vest) > 0: carry.push_back("조끼 %d" % int(it.vest))
-	if int(it.jet) > 0 or player.jet_on: carry.push_back("제트백팩 %.0f초" % player.jet_t if player.jet_on else "제트백팩")
-	if not carry.is_empty(): hud.draw_string(f_mono, Vector2(16, 68), " · ".join(carry), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, STEEL)
-	for i in feed_lines.size(): hud.draw_string(f_bold, Vector2(16, 92 + i * 18), feed_lines[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(INK, clampf(feed_lines[i][1], 0.0, 1.0)))
-	# health, bottom left (above the D-pad on a touch screen)
-	var hy := s.y - (196.0 if look_mode == "touch" else 34.0)
-	if game.stage == 2:   # the village has no health: the antidotes you carry, and the countdown once you are bitten or poisoned
-		hud.draw_string(f_bold, Vector2(22, hy + 6), "해독약 %d" % game.antidotes, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("5ed6b0") if game.antidotes > 0 else Color("ff5260"))
-		var inf := game.infected; var poi := game.poison_t > 0.0
-		if inf or poi:
-			var T := minf(game.infect_t, game.poison_t) if (inf and poi) else (game.infect_t if inf else game.poison_t); var what := "감염 + 중독" if (inf and poi) else ("감염됨" if inf else "중독됨")
-			var msg := (what + (" · 해독약 버튼을 누르세요" if look_mode == "touch" else " · F 키로 해독약 사용")) if game.antidotes > 0 else what + " · 해독약이 없습니다! 상자를 부수세요"
-			if game.inject_on: msg = what + " · 주사 중"
-			hud.draw_rect(Rect2(Vector2.ZERO, s), Color(0.35, 0.75, 0.2, 0.10 + 0.06 * sin(time * 9.0)))
-			hud.draw_string(f_title, Vector2(c.x - 100, c.y - 70), "%.1f" % maxf(0.0, T), HORIZONTAL_ALIGNMENT_CENTER, 200, 46, Color("ff5260"))
-			hud.draw_string(f_bold, Vector2(c.x - 220, c.y - 46), msg, HORIZONTAL_ALIGNMENT_CENTER, 440, 14, INK)
-	else:
-		hud.draw_rect(Rect2(22, hy, 180, 8), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(22, hy, 180 * player.hp / Player.MAX_HP, 8), Color("5ed6b0"))
-		hud.draw_string(f_mono, Vector2(22, hy - 6), "HP %d" % int(player.hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, INK)
-	_draw_beasts(s, c)
-	if player.stun_t > 0.0:
-		hud.draw_rect(Rect2(Vector2.ZERO, s), Color(1, 1, 1, 0.16 * clampf(player.stun_t, 0.0, 1.0)))
-		hud.draw_string(f_title, Vector2(c.x - 100, c.y + 96), "기절 %.1f" % player.stun_t, HORIZONTAL_ALIGNMENT_CENTER, 200, 22, SODIUM)
-	# the gun: top right on a touch screen (the buttons have the bottom), bottom right otherwise
-	var ax := s.x - (76.0 if look_mode == "touch" else 22.0); var ay := 96.0 if look_mode == "touch" else s.y - 30.0
-	var res: String = "∞" if st.reserve == INF else str(int(st.reserve))
-	hud.draw_string(f_title, Vector2(ax - 220, ay), str(int(st.mag)), HORIZONTAL_ALIGNMENT_RIGHT, 150, 40, Color("ff5260") if st.mag == 0 else INK)
-	hud.draw_string(f_mono, Vector2(ax - 64, ay), "/ " + res, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, STEEL)
-	hud.draw_string(f_bold, Vector2(ax - 220, ay - 44), Toys.NAMES[guns.cur] if game.stage == 9 else "%s · %s" % [W.name, W.model], HORIZONTAL_ALIGNMENT_RIGHT, 220, 13, SODIUM)
-	if guns.reload_t > 0.0:
-		hud.draw_string(f_bold, Vector2(c.x - 60, c.y + 56), "재장전", HORIZONTAL_ALIGNMENT_CENTER, 120, 13, INK)
-		hud.draw_rect(Rect2(c.x - 60, c.y + 62, 120, 4), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(c.x - 60, c.y + 62, 120 * (1.0 - guns.reload_t / W.reload), 4), SODIUM)
-	if W.get("heat", false):
-		hud.draw_rect(Rect2(ax - 120, ay + 8, 120, 4), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(ax - 120, ay + 8, 120 * st.heat, 4), Color("ff5260") if st.hot else SODIUM)
-	var x := ax; var sy := ay - 66.0
-	for i in range(guns.loadout.size() - 1, -1, -1):
-		var id = guns.loadout[i]
-		if id == null: continue
-		var t := "%d %s" % [i + 1, Custom.weapon(id).short]; var wd := f_mono.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
-		x -= wd; hud.draw_string(f_mono, Vector2(x, sy), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, SODIUM if id == guns.cur else Color(STEEL, 0.8)); x -= 12
-	# the boss, once it is hurt: its name and health across the top
-	if world.ship != null and world.ship.key_near() and look_mode != "touch": hud.draw_string(f_bold, Vector2(c.x - 200, s.y - 96), "E 키로 메인홀 열쇠 줍기", HORIZONTAL_ALIGNMENT_CENTER, 400, 14, INK)
-	var bb: Enemies.Foe = game.boss; var bmid := false   # on the ship, the gold commander instead while it is the fight at hand
-	if game.mid != null and game.mid.alive and game.mid.alert and (bb == null or not bb.alert): bb = game.mid; bmid = true
-	if bb != null and bb.hp < bb.max_hp:
-		var bw := minf(360.0, s.x * 0.4); hud.draw_string(f_bold, Vector2(c.x - bw / 2, 26), ("중간 보스 · " if bmid else "보스 · ") + bb.name + (" · %d페이즈" % (int(bb.k.phase) + 1) if bb.k.has("phase") else ""), HORIZONTAL_ALIGNMENT_CENTER, bw, 13, INK)
-		hud.draw_rect(Rect2(c.x - bw / 2, 32, bw, 6), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(c.x - bw / 2, 32, bw * bb.hp / bb.max_hp, 6), Color("ff5260"))
+	hudd.draw(hud)
 
-## stages 3 and 3-1: the next cage or the time to the stampede, bleeding, what you are riding, the tower
-func _draw_beasts(s: Vector2, c: Vector2) -> void:
-	var an := enemies.animals; var lab := world.lab; var sf := world.safari
-	an.find_t -= get_process_delta_time()
-	if an.find_t <= 0.0: an.find_t = 0.15; an.target = an.ride_find() if world.style.get("ride", false) else null
-	var top := ""; var soon := false
-	if sf != null and not game.ended:
-		var L := sf.left(); var sec := ceili(L)
-		top = "습격 중 · 남은 동물 %d마리" % (game.goal - game.kills - game.calm) if sf.stampede else "습격까지 %d:%02d · 동물 100마리가 감시탑으로" % [sec / 60, sec % 60]; soon = not sf.stampede and L <= 30.0
-	elif lab != null and lab.running:
-		var nc = lab.next_cage()
-		if nc != null:
-			var alive := 0
-			for e in nc.animals:
-				if e.alive: alive += 1
-			var what: String = ("보스 " + Game.BOSS[3].name) if nc.boss else "%s %d마리" % [Animals.ANIMALS[nc.type].name, alive]
-			var when: String = ("버튼을 누르는 중" if lab.reach == nc else "앞 우리 %d마리 남음" % mini(99, lab.wait_left(nc))) if nc.held else "%d초" % ceili(maxf(0.0, nc.open_at - lab.t))
-			top = "다음 우리 · %d번 · %s · %s" % [nc.n, what, when]; soon = not nc.held and nc.open_at - lab.t <= 3.0
-	if top != "": hud.draw_string(f_bold, Vector2(c.x - 260, 58), top, HORIZONTAL_ALIGNMENT_CENTER, 520, 14, Color("ff5260") if soon else SODIUM)
-	var hy := s.y - (196.0 if look_mode == "touch" else 34.0)
-	if an.bleed_t > 0.0: hud.draw_string(f_bold, Vector2(22, hy - 24), "출혈 ×%d  %d초 · 초당 %d" % [an.bleed_n, ceili(an.bleed_t), int(Animals.BLEED_DPS * an.bleed_n)], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("ff5260"))
-	var st := "공포 %.1f" % player.fear_t if player.fear_t > 0.0 else ("공중으로 날아가는 중" if player.toss_on else "")
-	if st != "": hud.draw_string(f_title, Vector2(c.x - 140, c.y + 96), st, HORIZONTAL_ALIGNMENT_CENTER, 280, 20, SODIUM)
-	# the animal under you, and the watchtower: a tall red bar on the right
-	var bars := []
-	if an.m != null: bars.push_back([Animals.SEAT[an.m.type].name + (" · 출혈 ×%d" % an.m.bleed_n if an.m.bleed_t > 0.0 else ""), an.m.hp, an.m.max_hp])
-	if sf != null and sf.standing and not game.ended: bars.push_back(["감시탑 · 탑 위" if sf.on else "감시탑", sf.hp, Safari.TOWER.hp])
-	for i in bars.size():
-		var bx := s.x - 34.0 - i * 64.0; var by := s.y * 0.26; var bh := s.y * 0.34; var f: float = clampf(float(bars[i][1]) / float(bars[i][2]), 0.0, 1.0)
-		hud.draw_rect(Rect2(bx, by, 14, bh), Color(NIGHT, 0.7)); hud.draw_rect(Rect2(bx + 2, by + bh * (1.0 - f) + 2, 10, maxf(0.0, bh * f - 4)), Color("ff5260"))
-		hud.draw_string(f_mono, Vector2(bx - 46, by - 8), str(maxi(0, ceili(bars[i][1]))), HORIZONTAL_ALIGNMENT_RIGHT, 64, 13, INK)
-		hud.draw_string(f_bold, Vector2(bx - 86, by + bh + 16), bars[i][0], HORIZONTAL_ALIGNMENT_RIGHT, 104, 11, STEEL)
-	if look_mode != "touch" and hint_t <= 0.0 and world.style.get("ride", false):
-		var act := _ride_act()
-		if act != "": hud.draw_string(f_bold, Vector2(c.x - 200, s.y - 96), "E 키로 " + act + (" · X 키로 내리기" if (an.m != null and act != "내리기") else ""), HORIZONTAL_ALIGNMENT_CENTER, 400, 14, INK)
+## what the keys would do now, for the hint under the crosshair: pick up the hall's key, get on, change over, get off
+func key_hint() -> String:
+	if world.ship != null and world.ship.key_near(): return "E 키로 메인홀 열쇠 줍기"
+	if int(guns.st().mag) <= 0 or not world.style.get("ride", false): return ""
+	var an := enemies.animals; var act := _ride_act()
+	if act == "": return ""
+	return "E 키로 " + act + (" · X 키로 내리기" if (an.m != null and act != "내리기") else "")
 
-func banner(title: String, sub: String, sec: float) -> void:
-	banner_label.text = title; banner_sub.text = sub; banner_t = sec
-func hint(text: String, sec: float) -> void:
-	hint_label.text = text; hint_t = sec
-func feed(text: String, pay := 0) -> void:
-	if is_touch and pay > 0: return   # on a phone the kill lines are left out: the bag at the top still counts up
-	feed_lines.push_back([text + (" · +" + Store.won(pay) if pay > 0 else ""), 3.5])
-	if feed_lines.size() > 5: feed_lines.pop_front()
+func banner(title: String, sub: String, sec: float) -> void: hudd.banner(title, sub, sec)
+func hint(text: String, sec: float) -> void: hudd.hint(text, sec)
+func feed(text: String, pay := 0, red := false) -> void:
+	if look_mode == "touch" and pay > 0: return   # on a phone the kill lines are left out: the bag at the top still counts up
+	hudd.say_feed(text, pay, red)
 
 ## what E (or the button) would do now: get on, change over, or get off
 func _ride_act() -> String:
@@ -321,37 +218,66 @@ func _ride_act() -> String:
 	if tg != null: var nm: String = Animals.SEAT[tg.type].name; return nm + (Animals.euro(nm) + " 옮겨 타기" if an.m != null else " 타기")
 	return "내리기" if an.m != null else ""
 
+## the touch layout of the browser game: the D-pad at the left middle, the pause button top left, the map top right
 func _touch_rects() -> Dictionary:
-	var s := hud.size; var pad := 150.0
-	return {"pad": Rect2(22, s.y - pad - 22, pad, pad), "pause": Rect2(s.x - 62, 14, 48, 48), "map": Rect2(s.x - 62, 72, 48, 48)}
-
-## the round buttons on the right: [centre, radius, label]
-func _touch_buttons() -> Dictionary:
 	var s := hud.size
-	var b := {"fire": [Vector2(s.x - 92, s.y - 150), 42.0, "발사"], "jump": [Vector2(s.x - 62, s.y - 56), 32.0, "점프"], "ads": [Vector2(s.x - 176, s.y - 92), 30.0, "조준"],
-		"reload": [Vector2(s.x - 186, s.y - 166), 26.0, "장전"], "melee": [Vector2(s.x - 156, s.y - 232), 26.0, "근접"], "swap": [Vector2(s.x - 82, s.y - 244), 26.0, "무기"]}
-	if game.stage == 2: b["anti"] = [Vector2(s.x - 262, s.y - 62), 30.0, "해독약 %d" % game.antidotes if game.antidotes > 0 else "해독약 없음"]
-	if world.ship != null and world.ship.key_near(): b["key"] = [Vector2(s.x - 262, s.y - 62), 30.0, "열쇠 줍기"]
-	var ract := _ride_act()
-	if ract != "": b["ride"] = [Vector2(s.x - 262, s.y - 62), 30.0, ract]
-	if enemies.animals.m != null and enemies.animals.target != null: b["off"] = [Vector2(s.x - 262, s.y - 132), 26.0, "내리기"]
-	if player.jet_on: b["down"] = [Vector2(s.x - 140, s.y - 40), 26.0, "내려가기"]
+	return {"pad": Rect2(10, s.y / 2.0 - 78.0, 156, 156), "pause": Rect2(16, 14, 42, 42), "map": Rect2(s.x - 14.0 - 46.0, 14, 46, 46)}
+
+## the round buttons on the right: [centre, radius, label] (a little smaller and closer on a very short screen)
+func _touch_buttons() -> Dictionary:
+	var s := hud.size; var short := s.y <= 340.0
+	var at := func(right: float, bottom: float, d: float) -> Vector2: return Vector2(s.x - right - d / 2.0, s.y - bottom - d / 2.0)
+	var b := {}
+	if short:
+		b = {"fire": [at.call(26, 104, 78), 39.0, "사격"], "ads": [at.call(116, 152, 50), 25.0, "조준"], "jump": [at.call(116, 90, 50), 25.0, "점프"], "melee": [at.call(116, 28, 50), 25.0, "근접"],
+			"reload": [at.call(50, 196, 50), 25.0, "장전"], "swap": [at.call(112, 214, 50), 25.0, "교체"]}
+	else:
+		b = {"fire": [at.call(28, 120, 84), 42.0, "사격"], "ads": [at.call(128, 170, 54), 27.0, "조준"], "jump": [at.call(128, 100, 54), 27.0, "점프"], "melee": [at.call(128, 30, 54), 27.0, "근접"],
+			"reload": [at.call(52, 220, 54), 27.0, "장전"], "swap": [at.call(116, 240, 54), 27.0, "교체"]}
+	if player.jet_on: b["down"] = [at.call(200, 96, 60), 30.0, "내려가기"]
 	return b
 
+## the pill buttons low in the middle: the antidote (while infected or poisoned), getting on or the hall's key, getting off
+func _touch_pills() -> Dictionary:
+	var s := hud.size; var p := {}
+	var pill := func(text: String, bottom: float, h: float, pad: float, fs: int) -> Rect2:
+		var w := f_bold.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + pad * 2.0; return Rect2(s.x / 2.0 - w / 2.0, s.y - bottom - h, w, h)
+	if (game.infected or game.poison_t > 0.0) and not game.inject_on:
+		var at := "해독약 사용 (%d)" % game.antidotes if game.antidotes > 0 else "해독약 없음"; p["anti"] = [pill.call(at, 150, 54, 24, 15), at]
+	var key := world.ship != null and world.ship.key_near(); var act := "메인홀 열쇠 줍기" if key else _ride_act()
+	if act != "": p["car"] = [pill.call(act, 16, 50, 26, 15), act]
+	if enemies.animals.m != null and enemies.animals.target != null: p["off"] = [pill.call("내리기", 76, 40, 18, 13), "내리기"]
+	return p
+
+func _sbox(bg: Color, line: Color, r: int, bw := 1.5) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new(); sb.bg_color = bg; sb.border_color = line; sb.set_border_width_all(int(ceilf(bw))); sb.set_corner_radius_all(r); return sb
+
 func _draw_touch() -> void:
-	var r := _touch_rects(); var p: Rect2 = r.pad; var c := p.get_center(); var line := Color(INK, 0.5)
-	touch_ui.draw_arc(c, p.size.x / 2, 0, TAU, 48, SODIUM if pad_sprint else Color(INK, 0.22), 3.0 if pad_sprint else 2.0)
-	for d: Vector2 in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-		var on := (d.x != 0 and signf(joy.x) == d.x) or (d.y != 0 and signf(joy.y) == d.y)
-		var t := c + d * p.size.x * 0.3; var n := Vector2(-d.y, d.x) * 13
-		touch_ui.draw_colored_polygon(PackedVector2Array([t + d * 15, t - d * 5 + n, t - d * 5 - n]), SODIUM if on else line)
+	var r := _touch_rects(); var p: Rect2 = r.pad; var o := p.position; var key_line := Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.32); var arrow := Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.88)
+	# the D-pad: four keys round a hub; a pressed arrow lights up, and ▲ turns solid while running
+	touch_ui.draw_style_box(_sbox(Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.28), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.14), 8, 1.0), Rect2(o + Vector2(52, 52), Vector2(52, 52)))
+	for k in [["up", Vector2(52, 0), Vector2(0, -1)], ["down", Vector2(52, 104), Vector2(0, 1)], ["left", Vector2(0, 52), Vector2(-1, 0)], ["right", Vector2(104, 52), Vector2(1, 0)]]:
+		var d: Vector2 = k[2]; var on := (d.x != 0 and signf(joy.x) == d.x) or (d.y != 0 and signf(joy.y) == d.y)
+		var bg := SODIUM if (k[0] == "up" and pad_sprint) else (Color(SODIUM, 0.5) if on else Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.42))
+		var kr := Rect2(o + k[1], Vector2(52, 52)); touch_ui.draw_style_box(_sbox(bg, SODIUM if on else key_line, 10), kr)
+		var c := kr.get_center(); var n := Vector2(-d.y, d.x) * 11.0
+		touch_ui.draw_colored_polygon(PackedVector2Array([c + d * 9.0, c - d * 6.0 + n, c - d * 6.0 - n]), arrow)
+	if pad_sprint: touch_ui.draw_string(f_bold, o + Vector2(52, -9), "달리기", HORIZONTAL_ALIGNMENT_CENTER, 52, 11, SODIUM)
 	var tb := _touch_buttons()
 	for k in tb:
 		var b: Array = tb[k]; var on: bool = (k == "fire" and guns.trigger) or (k == "ads" and guns.ads_held)
-		touch_ui.draw_circle(b[0], b[1], Color(SODIUM, 0.35) if on else Color(NIGHT, 0.35)); touch_ui.draw_arc(b[0], b[1], 0, TAU, 40, SODIUM if on else line, 2.0)
-		touch_ui.draw_string(f_bold, b[0] + Vector2(-b[1], 5), b[2], HORIZONTAL_ALIGNMENT_CENTER, b[1] * 2, 13, INK)
-	var q: Rect2 = r.pause; touch_ui.draw_rect(Rect2(q.position + Vector2(15, 12), Vector2(6, 24)), line); touch_ui.draw_rect(Rect2(q.position + Vector2(27, 12), Vector2(6, 24)), line)
-	var mq: Rect2 = r.map; touch_ui.draw_rect(mq, Color(NIGHT, 0.35)); touch_ui.draw_rect(mq, line, false, 2.0)
+		touch_ui.draw_circle(b[0], b[1], Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.45) if on else Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.45))
+		touch_ui.draw_arc(b[0], b[1], 0, TAU, 40, SODIUM if on else Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35), 1.5)
+		touch_ui.draw_string(f_mono, b[0] + Vector2(-b[1], 4), b[2], HORIZONTAL_ALIGNMENT_CENTER, b[1] * 2, 12 if k == "fire" else 11, INK)
+	for k in _touch_pills():
+		var q: Array = _touch_pills()[k]; var pr: Rect2 = q[0]
+		var bg := Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.9) if k == "car" else (Color(94 / 255.0, 214 / 255.0, 176 / 255.0, 0.4) if k == "anti" else Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.55))
+		var ln := SODIUM if k == "car" else (VITAL if k == "anti" else Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35))
+		touch_ui.draw_style_box(_sbox(bg, ln, int(pr.size.y / 2.0)), pr)
+		touch_ui.draw_string(f_bold, Vector2(pr.position.x, pr.get_center().y + 5), q[1], HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 13 if k == "off" else 15, NIGHT if k == "car" else INK)
+	var q2: Rect2 = r.pause; touch_ui.draw_style_box(_sbox(Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.45), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35), 4), q2)
+	touch_ui.draw_string(f_mono, Vector2(q2.position.x, q2.get_center().y + 5), "II", HORIZONTAL_ALIGNMENT_CENTER, q2.size.x, 13, INK)
+	var mq: Rect2 = r.map; touch_ui.draw_style_box(_sbox(Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.45), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35), 6), mq)
 	touch_ui.draw_string(f_bold, Vector2(mq.position.x, mq.get_center().y + 5), "지도", HORIZONTAL_ALIGNMENT_CENTER, mq.size.x, 12, INK)
 
 # ---------------- states ----------------
@@ -373,7 +299,7 @@ func to_menu() -> void:
 func enter_play(intro := false) -> void:
 	for gid in Weapons.ORDER: gm_models.show_hands(gid, true)
 	if cu_light != null: cu_light.visible = false
-	guns.look_mode = look_mode; apply_settings(); feed_lines.clear(); banner_label.text = ""; banner_sub.text = ""; banner_t = 0.0; ui.in_stage = true
+	guns.look_mode = look_mode; apply_settings(); hudd.reset(); ui.in_stage = true
 	if world.ship != null: world.ship.on_cut = _boss_cut
 	if intro and world.toy == null:   # (the toy room has its own way in: you come down under a parachute)
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
@@ -475,6 +401,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			var tb := _touch_buttons(); var hit := ""
 			for k in tb:
 				if p.distance_to(tb[k][0]) <= tb[k][1] + 6.0: hit = k; break
+			var pills := _touch_pills()
+			for k in pills:
+				if hit == "" and (pills[k][0] as Rect2).grow(4).has_point(p): hit = k
 			match hit:
 				"fire":  # the firing thumb also aims
 					guns.trigger = true; guns.trigger_edge = true; fire_id = e.index
@@ -485,8 +414,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				"reload": guns.start_reload()
 				"melee": guns.melee_start()
 				"anti": game.use_antidote()
-				"ride": enemies.animals.ride_toggle()
-				"key": world.ship.take_key()
+				"car":
+					if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
 				"off": enemies.animals.ride_off(false)
 				"swap": guns.cycle(1)
 			if hit != "": touch_ui.queue_redraw(); return
@@ -531,6 +460,13 @@ func tick(dt: float) -> void:
 	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 	if world.lab != null: world.lab.anim(dt, time)
+	if player.jet_on:
+		jet_puff_t -= dt
+		if jet_puff_t <= 0.0:
+			jet_puff_t = 0.05; fx.puff(Vector3(player.pos.x + sin(player.yaw) * 0.35, player.pos.y + 0.6, player.pos.z + cos(player.yaw) * 0.35), 1, 0.35, 0.35)
+			fx.glow(Vector3(player.pos.x + sin(player.yaw) * 0.3, player.pos.y + 0.7, player.pos.z + cos(player.yaw) * 0.3), Vector3(0, -4, 0), 0.25, 0.25, 0.05, Color(1, 0.6, 0.25, 0.8), 0.0, 1.0)
+	var an := enemies.animals; an.find_t -= dt   # what you could get on (E or the touch button), looked for a few times a second
+	if an.find_t <= 0.0: an.find_t = 0.15; an.target = an.ride_find() if world.style.get("ride", false) else null
 
 ## a cutscene's frame: the world moves (lamps, the lab's monkey and beacons, the ship's airlock), the fight does not
 func _cut_step(dt: float) -> void:
@@ -539,6 +475,7 @@ func _cut_step(dt: float) -> void:
 	if world.ship != null: world.ship.anim_door(dt)
 	Snd.listener = cam.global_position
 
+var hold := false
 func _process(delta: float) -> void:
 	var dt := minf(delta, 0.05)
 	if state == "playing":
@@ -551,15 +488,10 @@ func _process(delta: float) -> void:
 					if not ever_locked: look_mode = "drag"; guns.look_mode = "drag"; Input.mouse_mode = Input.MOUSE_MODE_VISIBLE; hint("마우스 잠금이 막혀 있어 마우스 이동으로 조준합니다 · Q/E로 회전", 5.0)
 					else: pause_game("마우스 잠금을 다시 켜지 못했습니다. 잠시 후 계속하기를 눌러 주세요.")
 			elif ever_locked and lock_wait < 0.0: pause_game()  # Esc let the pointer go
-		if state == "playing":
+		if state == "playing" and not hold:
 			tick(dt); _pose_gun(dt); Snd.listener = cam.global_position
-			hit_t = maxf(0.0, hit_t - dt); hurt_t = maxf(0.0, hurt_t - dt); hud.queue_redraw()
-			if banner_t > 0.0:
-				banner_t -= dt
-				if banner_t <= 0.0: banner_label.text = ""; banner_sub.text = ""
-			for i in range(feed_lines.size() - 1, -1, -1):
-				feed_lines[i][1] -= dt
-				if feed_lines[i][1] <= 0.0: feed_lines.remove_at(i)
+			hudd.update(dt); hud.queue_redraw()
+			if touch_ui.visible: touch_ui.queue_redraw()   # the pills come and go with what is happening
 	elif state == "cutscene":
 		_cut_step(dt)
 	elif state == "gameover" and game.result != "clear":
@@ -587,9 +519,6 @@ func _process(delta: float) -> void:
 			view.rotation = Vector3(0, cu_ang, 0); view.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x), 0.02, -dist) - bas * mid
 			cu_light.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x) + 0.3, 0.5, -dist + 0.7)
 	cut.tick_fade(dt)
-	if hint_t > 0.0:
-		hint_t -= dt
-		if hint_t <= 0.0: hint_label.text = ""
 	fps_label.text = ("%d FPS" % Engine.get_frames_per_second()) if Store.settings.fps else ""
 
 func _notification(what: int) -> void:
@@ -610,7 +539,7 @@ func command(line: String) -> Dictionary:
 	match a[0]:
 		"start":   # straight into a stage, mouse aim without the pointer lock
 			ui.sel = int(a[1]) if a.size() > 1 else 1; state = "brief"; ui.open_brief(ui.sel); ui._deploy(); ever_locked = false; lock_wait = -1.0
-			if not (a.size() > 2 and a[2] == "intro"): cut.skip()
+			if not (a.size() > 2 and a[2] == "intro"): cut.skip(); cut.set_fade(0.0, 0.0)
 			if look_mode == "lock": look_mode = "drag"; guns.look_mode = "drag"
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		"menu": to_menu(); menu_t = float(a[1]) if a.size() > 1 else menu_t
@@ -656,6 +585,21 @@ func command(line: String) -> Dictionary:
 			enemies.toys._build_wall(bl[0], Vector2(0, 1))
 		"takekey": world.ship.take_key()
 		"hurt": player.invuln = 0.0; player.hurt(float(a[1]), Vector3.ZERO)
+		"hold": hold = a[1] == "1"   # the clock stands still between bridge steps (for pictures of things that last a split second)
+		"boom": # pictures of the effects: a blast (or dust, sparks, a bullet hole) this many metres in front of the camera
+			var at := cam.global_position - cam.global_basis.z * (float(a[2]) if a.size() > 2 else 8.0)
+			match a[1] if a.size() > 1 else "big":
+				"small": fx.explode(at, false)
+				"puff": fx.puff(at, 12, 0.6, 1.0)
+				"white": fx.puff(at, 6, 1.0, 3.0)
+				"crate":   # break the crate nearest to you
+					var best = null
+					for c in world.crates:
+						if not c.dead and (best == null or Vector2(c.x - player.pos.x, c.z - player.pos.z).length() < Vector2(best.x - player.pos.x, best.z - player.pos.z).length()): best = c
+					if best != null: world.damage_crate(best, 99999, Vector3(best.x, best.y + 0.6, best.z))
+				"sparks": fx.sparks(at, 30, [1.0, 0.78, 0.45], 3.2)
+				"hole": fx.decal(at, cam.global_basis.z)
+				_: fx.explode(at, true)
 		"again": ui.do_again.call(game.stage)
 		"ride": enemies.animals.ride_toggle()
 		"stampede": world.safari.t = Safari.T_STAMPEDE - 0.5
@@ -672,6 +616,6 @@ func command(line: String) -> Dictionary:
 		"ads": guns.ads_held = a[1] == "1"
 		"touch": look_mode = "touch"; guns.look_mode = "touch"; apply_settings(); touch_ui.visible = state == "playing"
 	return {"state": state, "screen": ui.cur, "cut": cut.kind(), "link": ui.last_link, "dlgmsg": ui.dlg_msg.text, "clip": DisplayServer.clipboard_get() if a[0] == "mail" else "", "fade": cut.fade.color.a if cut.fade != null else 0.0, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
-		"colliders": Phys.colliders.size(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
+		"colliders": Phys.colliders.size(), "specks": fx.live(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
 		"gun": guns.cur, "slots": guns.slots, "mag": guns.st().mag, "hp": player.hp, "ads": guns.ads, "fov": cam.fov, "money": Store.save.money, "cleared": Store.save.cleared, "owned": Store.save.owned,
 		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "key": world.ship.key if world.ship != null else false, "doors": world.ship.doors.map(func(d): return d.mode) if world.ship != null else [], "phase": int(game.boss.k.get("phase", -1)) if game.boss != null else -1, "pit": Phys.PIT != null, "sp": game.sp != null, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}

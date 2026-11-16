@@ -146,6 +146,8 @@ SOUNDS = {
     'thump': [T('sine', 140, 60, 0.18, 0.45), N(0.12, 'lowpass', 600, 200, 1, 0.35)],
     'ping': [T('triangle', 2600, 2400, 0.35, 0.22), T('sine', 3900, 3600, 0.25, 0.12, 0.01), N(0.05, 'highpass', 5000, 4000, 1, 0.3)],
     'hiss': [N(1.4, 'highpass', 2600, 5200, 0.7, 0.42), N(0.5, 'bandpass', 900, 300, 1.2, 0.3)],
+    # the heartbeat while infected or poisoned (Sound.heart): two low thumps
+    'heart': [T('sine', 70, 45, 0.12, 0.7), T('sine', 65, 40, 0.12, 0.55, 0.18)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 for name, layers in SOUNDS.items():

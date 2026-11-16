@@ -74,7 +74,7 @@ func hurt(dmg: float, from: Vector3, zone := "body") -> void:
 	var items: Dictionary = Store.save.items
 	# a motorcycle helmet takes one blow to the head for you, then it is gone
 	if zone == "head" and int(items.helmet) > 0:
-		items.helmet = 0; Store.persist(); shake = maxf(shake, 0.3); Snd.play("metal")
+		items.helmet = 0; Store.persist(); shake = maxf(shake, 0.3); Snd.play("ping"); Snd.buzz(60)
 		if say.is_valid(): say.call("오토바이 헬멧이 머리 공격을 막았습니다 · 헬멧이 부서졌습니다")
 		if on_hurt.is_valid(): on_hurt.call(8.0, from)
 		return

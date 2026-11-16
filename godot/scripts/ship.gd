@@ -362,7 +362,8 @@ func break_floor() -> void:
 	Phys.build_nav(); Phys.update_flow(player.pos.x, player.pos.z)
 	if fx:
 		for i in 7: fx.explode(Vector3(REACTOR.x + randf_range(-PYR_OX, PYR_OX) * 0.8, 0.3, REACTOR.z + randf_range(-PYR_OZ, PYR_OZ) * 0.8), i < 2)
-	Snd.play("boom", 1.0, Vector3(REACTOR.x, 0, REACTOR.z)); Snd.play("alarm"); player.shake = maxf(player.shake, 0.9)
+	Snd.play("boom", 1.0, Vector3(REACTOR.x, 0, REACTOR.z)); Snd.play("alarm"); player.shake = maxf(player.shake, 0.9); Snd.buzz(260)
+	if fx: fx.chunks(Vector3(REACTOR.x, 0.5, REACTOR.z), 40, 0.5, "metal")
 	game.say_banner("바닥 붕괴", "메인홀 바닥이 무너져 지하의 역피라미드 계단이 드러났습니다", 3.0)
 
 ## the boss's third phase: every hatch in the hall floor slides open and drones come up out of them, a few at a time

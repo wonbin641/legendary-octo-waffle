@@ -226,7 +226,7 @@ func brave() -> bool: return m != null and tier >= 2
 func fear(e: Enemies.Foe) -> bool:
 	if game.ended or player.invuln > 0.0 or brave() or player.toss_on or game._god(): return false
 	var d := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var l := maxf(d.length(), 0.001)
-	player.fear_x = d.x / l; player.fear_z = d.y / l; player.fear_t = 1.0; player.shake = maxf(player.shake, 0.25)
+	player.fear_x = d.x / l; player.fear_z = d.y / l; player.fear_t = 1.0; player.shake = maxf(player.shake, 0.25); Snd.buzz(80)
 	_feed("호랑이 포효 · 겁에 질려 1초 동안 도망칩니다"); return true
 
 ## a rhino's horn: straight up into the air. caught again on the way down, you go higher than the time before
@@ -236,14 +236,14 @@ func toss(e: Enemies.Foe) -> void:
 	player.jet_end(); player.fear_t = 0.0
 	toss_v = minf(toss_v + 3.6, 26.0) if player.toss_on else 13.0; toss_n = toss_n + 1 if player.toss_on else 1
 	player.toss_on = true; player.vel = Vector3(0, toss_v, 0); player.grounded = false; player.pos.y += 0.05
-	player.shake = maxf(player.shake, 0.45); Snd.play("thud", 1.0, player.pos)
+	player.shake = maxf(player.shake, 0.45); Snd.buzz(140); Snd.play("thud", 1.0, player.pos)
 	_feed("떨어지다 또 받혔습니다 · 더 높이 (%d번째)" % toss_n if toss_n > 1 else "코뿔소 뿔에 받혀 하늘로 날아갑니다")
 
 ## coming down: 50 and a bleeding wound for you. whatever you land on takes 30% of its health (the boss 15%)
 func toss_land() -> void:
 	player.toss_on = false; toss_v = 0.0; toss_n = 0
-	var p := player.pos; Snd.play("thud", 1.0, p); Snd.play("land"); player.shake = maxf(player.shake, 0.6)
-	if fx: fx.smoke(Vector3(p.x, p.y + 0.2, p.z))
+	var p := player.pos; Snd.play("thud", 1.0, p); Snd.play("land"); player.shake = maxf(player.shake, 0.6); Snd.buzz(160)
+	if fx: fx.puff(p + Vector3(0, 0.2, 0), 8, 0.9, 0.8)
 	var n := 0
 	for e in en.list.duplicate():
 		if not e.alive or e.ridden or e.caged or e.downed: continue
@@ -502,7 +502,7 @@ func update(e: Enemies.Foe, dt: float, time: float, dist: float, face_yaw: float
 		var blocked := en._ground_move(e, dirx * sp * B + e.vel.x, dirz * sp * B + e.vel.z, dt)
 		if e.state == "chase": _unstick(e, x0, z0, dirx, dirz, sp, dt)
 		if blocked and e.state == "charge" and smash(e, e.cx, e.cz): blocked = false
-		if blocked and e.state == "charge": e.state = "stun"; e.state_t = 1.1; Snd.play("thud", 1.0, e.pos)
+		if blocked and e.state == "charge": e.state = "stun"; e.state_t = 1.1; Snd.play("thud", 1.0, e.pos); _puff_front(e, 6, 0.4, 0.8)
 		if blocked and e.state == "wander": e.state_t = 0.0
 	if sp > 0.1 and e.state != "roar": _turn(e, face_yaw if (e.state == "chase" and dist < 12.0) else atan2(dirx, dirz), turn, dt)
 	elif e.state == "roar" or (e.angry and dist < 14.0): _turn(e, face_yaw, turn, dt)
@@ -542,7 +542,7 @@ func _buffalo(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face
 	var sp := 0.0; var dx := 0.0; var dz := 0.0; var turn: float = T.turn; var pitch := 0.0
 	if e.bs == "aim":
 		_turn(e, face_yaw, 5.0, dt); pitch = 0.12
-		if e.bt <= 0.0: e.bs = "rush"; e.bt = 6.0; e.cx = tx; e.cz = tz; e.yaw = atan2(tx, tz); e.hit_done = false; Snd.play("roar_" + T.roar, 1.0, e.pos)
+		if e.bt <= 0.0: e.bs = "rush"; e.bt = 6.0; e.cx = tx; e.cz = tz; e.yaw = atan2(tx, tz); e.hit_done = false; Snd.play("roar_" + T.roar, 1.0, e.pos); _puff_at(e.pos, 3, 0.6, 0.6)
 	elif e.bs == "rush":
 		dx = e.cx; dz = e.cz; sp = T.run * 1.15; turn = 16.0; pitch = 0.14
 		var net := Vector2(e.pos.x - e.last_x, e.pos.z - e.last_z).length() if e.has_last else 1.0
@@ -550,6 +550,7 @@ func _buffalo(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face
 		if e.pin_t > 0.3: e.bs = "daze"; e.bt = 1.3; e.pin_t = 0.0
 		var q := quarry(); var rx: float = q.x - e.pos.x; var rz: float = q.z - e.pos.z; var f := rx * dx + rz * dz; var l := absf(rx * dz - rz * dx)
 		if not e.hit_done and f > -e.R and f < nose(e) + q.r + 0.25 and l < e.R + q.r + 0.3 and q.y < e.pos.y + e.H + 0.2: e.hit_done = true; hit(e, "gore")
+		if fx and randf() < dt * 12.0: fx.puff(Vector3(e.pos.x - dx, 0.2, e.pos.z - dz), 1, 0.5, 0.35)
 		if e.bt <= 0.0: e.bs = "daze"; e.bt = 0.8
 	elif e.bs == "daze":
 		pitch = 0.18; e.yaw_off = sin(e.bt * 16.0) * 0.12
@@ -565,7 +566,7 @@ func _buffalo(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face
 		var want := sp * B * dt; var mx := e.pos.x - e.bx0; var mz := e.pos.z - e.bz0; var got := sqrt(mx * mx + mz * mz)
 		if got < want * 0.94 and not smash(e, e.cx, e.cz):
 			if got < want * 0.3:
-				e.bs = "daze"; e.bt = 1.3; Snd.play("thud", 1.0, e.pos)
+				e.bs = "daze"; e.bt = 1.3; Snd.play("thud", 1.0, e.pos); _puff_front(e, 6, 0.5, 0.8)
 				if dist < 20.0: player.shake = maxf(player.shake, 0.12)
 			else: e.cx = mx / got; e.cz = mz / got
 		_turn(e, atan2(e.cx, e.cz), turn, dt)
@@ -617,6 +618,7 @@ func _rhino(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face_y
 	match e.bs:
 		"rush":
 			_turn(e, face_yaw, 1.8, dt); dx = sin(e.yaw); dz = cos(e.yaw); sp = T.run * 1.05; head = 0.3
+			if fx and randf() < dt * 10.0: fx.puff(Vector3(e.pos.x - dx, 0.2, e.pos.z - dz), 1, 0.5, 0.35)
 			if qd < reach + 2.6: e.bs = "brake"; e.bt = 0.4; e.bt_max = 0.4; e.v0 = sp
 			elif e.bt <= 0.0: e.bs = "seek"; e.charge_cd = rnd(1, 2)
 		"brake":
@@ -641,7 +643,7 @@ func _rhino(e: Enemies.Foe, dt: float, dist: float, tx: float, tz: float, face_y
 			if qd < reach + 1.2 and not player.toss_on: e.bs = "brake"; e.bt = 0.25; e.bt_max = 0.25; e.v0 = sp
 			elif e.charge_cd <= 0.0 and e.los and dist > 6.0 and dist < 40.0 and not player.toss_on: e.bs = "rush"; e.bt = 4.0; Snd.play("roar_" + T.roar, 1.0, e.pos)
 	var blocked := _move(e, dx, dz, sp, dt)
-	if blocked and (e.bs == "rush" or e.bs == "brake") and not smash(e, dx, dz): e.bs = "stun"; e.bt = 1.1; Snd.play("thud", 1.0, e.pos)
+	if blocked and (e.bs == "rush" or e.bs == "brake") and not smash(e, dx, dz): e.bs = "stun"; e.bt = 1.1; Snd.play("thud", 1.0, e.pos); _puff_front(e, 6, 0.5, 0.8)
 	if e.bs == "seek":
 		_unstick(e, e.bx0, e.bz0, dx, dz, sp, dt)
 		if sp > 0.1: _turn(e, atan2(dx, dz), T.turn, dt)
@@ -765,8 +767,11 @@ func _siege(e: Enemies.Foe, dt: float, _dist: float) -> void:
 			if e.bt <= 0.0: e.bs = "sram"; e.bt = 2.0
 		elif e.bs == "sram":
 			mx = -slot.nx; mz = -slot.nz; sp = T.run * 0.7; pitch = 0.16; turn = 12.0; has_face = true; face = in_face
+			if fx and randf() < dt * 10.0: fx.puff(Vector3(e.pos.x + slot.nx, 0.2, e.pos.z + slot.nz), 1, 0.55, 0.35)
 			var gap: float = (e.pos.x - slot.x) * slot.nx + (e.pos.z - slot.z) * slot.nz - ns   # how far its nose is from the planks
-			if gap < 0.35: tw.hurt(S.dmg, at); Snd.play("thud", 1.0, at); e.bs = "sgo"; e.sg_cd = rnd(S.cd[0], S.cd[1])
+			if gap < 0.35:
+				tw.hurt(S.dmg, at); Snd.play("thud", 1.0, at); e.bs = "sgo"; e.sg_cd = rnd(S.cd[0], S.cd[1])
+				if fx: fx.puff(Vector3(slot.x, 0.4, slot.z), 3, 0.55, 0.9)
 			elif e.bt <= 0.0: e.bs = "sgo"
 		elif e.bs == "sbite":
 			var u := 1.0 - clampf(e.bt / 0.45, 0.0, 1.0); pitch = 0.1 * (u / 0.6 if u < 0.6 else 1.0 - (u - 0.6) / 0.4); has_face = true; face = in_face
@@ -934,7 +939,7 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 			if k.t > 1.4: set_mode.call("chase"); k.engaged = 0.0
 		"drop":   # minions coming down from the roof
 			move = false; lean = 0.3; en._ground_move(e, 0.0, 0.0, dt)
-			if e.pos.y <= Phys.ground_at(e.pos.x, e.pos.y, e.pos.z, e.R) + 0.01: Snd.play("thud", 1.0, e.pos); set_mode.call("chase")
+			if e.pos.y <= Phys.ground_at(e.pos.x, e.pos.y, e.pos.z, e.R) + 0.01: Snd.play("thud", 1.0, e.pos); set_mode.call("chase"); _puff_at(e.pos, 6, 0.8, 0.8)
 		"chase":
 			var fd3 := Phys.flow_dir(e.pos.x, e.pos.z)
 			if dist < 40.0 and e.los: dirx = tx; dirz = tz
@@ -963,9 +968,10 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 				else: set_mode.call("chase")
 		"windup":
 			move = false; lean = 1.05; _turn(e, face_yaw, 10.0, dt)
-			if k.t >= K.windup: set_mode.call("charge"); k.cx = sin(e.yaw); k.cz = cos(e.yaw)
+			if k.t >= K.windup: set_mode.call("charge"); k.cx = sin(e.yaw); k.cz = cos(e.yaw); _puff_at(e.pos, 3, 0.6 * e.scale, 0.6)
 		"charge":
 			dirx = k.cx; dirz = k.cz; sp = K.charge; turn = 0.0; lean = 0.8
+			if randf() < dt * 14.0: _puff_at(e.pos, 1, 0.5 * e.scale, 0.4)
 			if not k.hit and dist < en.stop_dist(e) + 0.7 and (upright or m != null):
 				k.hit = true
 				if m != null: hurt_mount(K.chargeDmg * e.dmg_mul, e)
@@ -982,15 +988,17 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 			if k.t >= k.rec: set_mode.call("chase"); k.chargeCd = rnd(K.chargeCd[0], K.chargeCd[1])
 		"crouch":   # gathering for the leap
 			move = false; lean = 0.85; _turn(e, atan2(k.tgx - e.pos.x, k.tgz - e.pos.z), 8.0, dt)
-			if k.t >= 0.5: var TT := 1.9; k.vx = (k.tgx - e.pos.x) / TT; k.vz = (k.tgz - e.pos.z) / TT; k.vy = 15.0 * TT / 2.0; k.air = TT; set_mode.call("air"); Snd.play("roar_grunt", 1.0, e.pos)
+			if k.t >= 0.5: var TT := 1.9; k.vx = (k.tgx - e.pos.x) / TT; k.vz = (k.tgz - e.pos.z) / TT; k.vy = 15.0 * TT / 2.0; k.air = TT; set_mode.call("air"); Snd.play("roar_grunt", 1.0, e.pos); _puff_at(e.pos, 8, 1.2 * e.scale, 1.0)
 		"air":
 			move = false; e.pos.x += k.vx * dt; e.pos.z += k.vz * dt; k.vy -= 15.0 * dt; e.pos.y = maxf(0.0, e.pos.y + k.vy * dt); lean = -0.1 if k.t / k.air < 0.62 else 0.5
 			if e.pos.y <= 0.0 and k.vy < 0.0:
 				# the slam: inside the ring you are dead, near it you are thrown
 				e.pos.y = 0.0; unwarn()
 				var dx4 := player.pos.x - e.pos.x; var dz4 := player.pos.z - e.pos.z; var d4 := maxf(sqrt(dx4 * dx4 + dz4 * dz4), 0.01)
-				Snd.play("quake", 1.0, e.pos); player.shake = maxf(player.shake, 0.25 + 0.6 * (1.0 - d4 / 30.0) if d4 < 30.0 else 0.0)
-				if fx: fx.smoke(e.pos + Vector3(0, 0.3, 0))
+				Snd.play("quake", 1.0, e.pos); player.shake = maxf(player.shake, 0.25 + 0.6 * (1.0 - d4 / 30.0) if d4 < 30.0 else 0.0); Snd.buzz(200)
+				if fx:   # a ring of dust round the slam, and splinters
+					for i in 16: var a := i / 16.0 * TAU; fx.puff(Vector3(e.pos.x + cos(a) * SLAM_R * 0.8, 0.3, e.pos.z + sin(a) * SLAM_R * 0.8), 2, 1.2, 1.0)
+					fx.chunks(Vector3(e.pos.x, 0.3, e.pos.z), 10, 0.25, "wood")
 				if d4 < SLAM_R and (m != null or player.pos.y < 2.2 + Phys.ground_at(player.pos.x, player.pos.y, player.pos.z, Player.R)): game.slam(e)   # riding does not save you from this one
 				elif d4 < SLAM_R * 1.9: player.vel.x += dx4 / d4 * 10.0; player.vel.z += dz4 / d4 * 10.0; player.vel.y = 4.0; player.grounded = false
 				var p2 = _kong_free(e.pos.x, e.pos.z, e.R, e.H)
@@ -1015,7 +1023,7 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 		var blocked := en._ground_move(e, dirx * sp + e.vel.x, dirz * sp + e.vel.z, dt)
 		if walking and sp > 0.5: _unstick(e, x0, z0, dirx, dirz, sp, dt)
 		if blocked and (k.mode == "charge" or (e.boss and k.mode == "chase")) and smash(e, dirx, dirz): blocked = false
-		if blocked and k.mode == "charge": set_mode.call("stagger"); k.rec = 0.45 if e.boss else 2.2; Snd.play("thud", 1.0, e.pos)
+		if blocked and k.mode == "charge": set_mode.call("stagger"); k.rec = 0.45 if e.boss else 2.2; Snd.play("thud", 1.0, e.pos); _puff_front(e, 6, 0.6 * e.scale, 0.8)
 		if blocked and k.mode == "clunge": set_mode.call("cidle"); world.lab.rattle(e.cage, e.pos.x + dirx * e.R, e.pos.z + dirz * e.R)
 		if sp > 0.1 and turn > 0.0: _turn(e, face_yaw if (k.mode == "chase" and dist < 14.0) else atan2(dirx, dirz), turn, dt)
 	_gait(e, sp, dt)
@@ -1132,3 +1140,9 @@ static func batchim(w: String) -> bool:
 ## "으로" after a closing consonant other than ㄹ, "로" otherwise
 static func euro(w: String) -> String:
 	var c := w.unicode_at(w.length() - 1) - 0xac00; return "으로" if (c >= 0 and c <= 11171 and c % 28 != 0 and c % 28 != 8) else "로"
+
+## dust where an animal hits something head on, or lands (src/07c_animals.js, 07g_beasts.js, 07f_kong.js)
+func _puff_front(e: Enemies.Foe, n: int, shade: float, size: float) -> void:
+	if fx: fx.puff(Vector3(e.pos.x + sin(e.yaw) * e.R, 1.0, e.pos.z + cos(e.yaw) * e.R), n, shade, size)
+func _puff_at(p: Vector3, n: int, shade: float, size: float) -> void:
+	if fx: fx.puff(Vector3(p.x, 0.3, p.z), n, shade, size)

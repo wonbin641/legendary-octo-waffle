@@ -29,6 +29,7 @@ var cages: Array = []
 var reach = null          # 3-2: the cage the monkey is reaching out to open
 var push_t := -1.0        # ...and how long until his hand comes down on the button
 var player: Player
+var fx: Fx = null
 var game = null           # Game: banners and feed lines
 var monkey: Node3D
 var monkey_mode := "idle"
@@ -44,7 +45,7 @@ var door_open := 0.0
 var _press_at := 1.0
 
 func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
-	seq = S.get("seq", false); var E := HALF
+	seq = S.get("seq", false); var E := HALF; fx = w.fx
 	_bar_mat = Gfx.std(World.lin("8d949c"), 0.38, 0.75)
 	_glass_mat = Gfx.std(Color(0.66, 0.86, 1.0, 0.2), 0.05, 0.3); _glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _glass_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var floor_m := PlaneMesh.new(); floor_m.size = Vector2(2 * E, 2 * E); var fl := MeshInstance3D.new(); fl.mesh = floor_m; fl.material_override = Gfx.std(World.lin("b8bfc5"), 0.55, 0.05); G.add_child(fl)
@@ -97,8 +98,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 			else: c.held = true; c.open_at = INF
 		var st := MeshInstance3D.new(); var sm := PlaneMesh.new(); sm.size = Vector2(c.w - 0.4, c.d - 0.4); st.mesh = sm; st.material_override = straw; st.position = Vector3(c.x, 0.012, c.z); G.add_child(st)
 		for side in ["n", "s", "e", "w"]: c.panels.push_back(_panel(G, c, side))
-		var lb := Label3D.new(); lb.billboard = BaseMaterial3D.BILLBOARD_ENABLED; lb.pixel_size = 0.02; lb.font_size = 64; lb.outline_size = 12; lb.no_depth_test = false
-		lb.position = Vector3(c.x, c.h + (2.6 if c.boss else 2.1), c.z); G.add_child(lb); c.label = lb; c.shown = ""
+		_board(G, c); c.shown = ""
 		cages.push_back(c); _draw(c)
 	# lab furniture in the middle: cover that stays put (outside every cage's fall zone)
 	for q in [[-10.5, 31.5, 0], [10.5, 31.5, 0], [-15.75, 9.0, 1], [15.75, 9.0, 1], [-15.75, -14.0, 1], [15.75, -14.0, 1], [0.0, 38.0, 0], [-22.0, 22.0, 0], [22.0, 22.0, 0]]:
@@ -189,7 +189,7 @@ func open(c: Dictionary) -> void:
 	var left := 0
 	for e in c.animals:
 		if e.alive: left += 1; e.caged = false; e.release_t = randf_range(0.15, 0.9); e.alert = true; e.awake = true   # awake however far away you are, so they really come out
-	var at := Vector3(c.x, c.h, c.z); Snd.play("alarm"); Snd.play("clank", 1.0, at)
+	var at := Vector3(c.x, c.h, c.z); Snd.play("alarm"); Snd.play("clank", 1.0, at); Snd.buzz(60)
 	var nm: String = Animals.ANIMALS[c.type].name
 	if game:
 		if c.boss: game.say_banner("10번 우리 열림", "보스 " + Game.BOSS[3].name + " · 조심하세요", 2.8)
@@ -203,6 +203,11 @@ func _fall(c: Dictionary, dt: float) -> void:
 			var a: float = (PI / 2) * (ft / T) * (ft / T) if ft < T else PI / 2 - 0.13 * absf(sin((ft - T) * 13.0)) * exp(-(ft - T) * 7.0)
 			if ft >= 1.6: a = PI / 2
 			(p.F as Node3D).rotation.x = a
+			if ft >= T and not p.get("dust", false):   # dust along the far edge where the wall slapped down
+				p.dust = true
+				if fx:
+					var yw: float = (p.P as Node3D).rotation.y; var ox := sin(yw); var oz := cos(yw); var tx := cos(yw); var tz := -sin(yw); var pp: Vector3 = (p.P as Node3D).position
+					for k in range(-2, 3): fx.puff(Vector3(pp.x + ox * p.H * 0.8 + tx * k * p.W * 0.22, 0.3, pp.z + oz * p.H * 0.8 + tz * k * p.W * 0.22), 2, 0.75, 0.9)
 			if ft >= T and not c.clang:
 				c.clang = true; Snd.play("clang", 1.0, Vector3(c.x, 0.4, c.z))
 				var d := Vector2(player.pos.x - c.x, player.pos.z - c.z).length()
@@ -241,7 +246,7 @@ func update(dt: float) -> void:
 	t += dt
 	if push_t >= 0.0:   # the monkey's arm is on its way to the button
 		push_t -= dt
-		if push_t < 0.0 and reach != null: reach.held = false; reach.open_at = t + 0.5; reach = null; Snd.play("press")
+		if push_t < 0.0 and reach != null: reach.held = false; reach.open_at = t + 0.5; reach = null; Snd.play("press"); Snd.buzz(40)
 	for c in cages:
 		if c.held:
 			# 3-2: shut until the cage before it is empty (every animal dead or tamed); then the monkey reaches out and pushes his button
@@ -263,14 +268,50 @@ func press() -> void:
 func monkey_press(at: float) -> void:
 	monkey_mode = "press"; monkey_t = 0.0; _press_at = at
 
-## the board over a cage: its number, the animal, the seconds left
+## the countdown board hanging over each cage (src/04g_lab.js display): a dark case on two cables, the same screen on all four sides
+var _case_mat: StandardMaterial3D
+var _bf := {}
+func _board(G: Node3D, c: Dictionary) -> void:
+	if _case_mat == null:
+		_case_mat = StandardMaterial3D.new(); _case_mat.albedo_color = Color("1c2026"); _case_mat.roughness = 0.5; _case_mat.metallic = 0.6
+		_bf = {"mono": load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"), "bold": load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"), "title": load("res://fonts/blackhansans_BlackHanSans-Regular.ttf")}
+	var vp := SubViewport.new(); vp.size = Vector2i(256, 128); vp.disable_3d = true; vp.render_target_update_mode = SubViewport.UPDATE_ONCE; G.add_child(vp)
+	var cv := Control.new(); cv.size = Vector2(256, 128); vp.add_child(cv); cv.draw.connect(func() -> void: _paint(cv, c))
+	var sz: float = 3.2 if c.boss else 2.4; var y: float = c.h + (2.6 if c.boss else 2.1)
+	var root := Node3D.new(); root.position = Vector3(c.x, y, c.z); G.add_child(root)
+	var box := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(sz - 0.01, sz * 0.5 - 0.01, sz - 0.01); box.mesh = bm; box.material_override = _case_mat; root.add_child(box)
+	var face := StandardMaterial3D.new(); face.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; face.albedo_texture = vp.get_texture()
+	for k in 4:
+		var q := MeshInstance3D.new(); var qm := QuadMesh.new(); qm.size = Vector2(sz, sz * 0.5); q.mesh = qm; q.material_override = face
+		q.rotation.y = k * PI / 2.0; q.position = Vector3(sin(k * PI / 2.0), 0, cos(k * PI / 2.0)) * sz / 2.0; root.add_child(q)
+	for sx in [-1.0, 1.0]:   # the cables up to the ceiling
+		var cab := MeshInstance3D.new(); var cm := BoxMesh.new(); var len := CEIL - y - sz * 0.25; cm.size = Vector3(0.05, len, 0.05); cab.mesh = cm; cab.material_override = _case_mat
+		cab.position = Vector3(sx * sz * 0.35, sz * 0.25 + len / 2.0, 0); root.add_child(cab)
+	c.board = {"vp": vp, "cv": cv}
+
+## the board over a cage: its number, the animal, the seconds left (drawn again only when what it shows changes)
 func _draw(c: Dictionary) -> void:
 	var remain: float = maxf(0.0, c.open_at - t); var sec := ceili(remain) if c.open_at != INF else -1
 	var key: String = ("열림" if t - c.opened_t < 4.0 else "—") if c.open else ("잠김" if c.held else ("- -" if not clock else ("%d:%02d" % [sec / 60, sec % 60] if sec >= 60 else str(sec))))
 	if c.shown == key: return
-	c.shown = key; var lb: Label3D = c.label
-	lb.text = "%02d %s\n%s" % [c.n, ("보스 · " if c.boss else "") + Animals.ANIMALS[c.type].name, key]
-	lb.modulate = Color("5ed6b0") if c.open else (Color("8fb8ff") if c.held else (Color("3a4250") if not clock else (Color("ff4b4b") if sec <= 3 else Color("f2a33a"))))
+	c.shown = key; c.sec = sec
+	var b: Dictionary = c.board; (b.cv as Control).queue_redraw(); (b.vp as SubViewport).render_target_update_mode = SubViewport.UPDATE_ONCE
+
+func _paint(cv: Control, c: Dictionary) -> void:
+	var w := 256.0; var h := 128.0; var key: String = c.shown; var sec: int = c.get("sec", -1); var off: bool = not clock and not c.open and not c.held
+	var col := Color("5ed6b0") if c.open else (Color("8fb8ff") if c.held else (Color("3a4250") if off else (Color("ff4b4b") if sec <= 3 else Color("f2a33a"))))
+	cv.draw_rect(Rect2(0, 0, w, h), Color("0a0d12"))
+	cv.draw_rect(Rect2(3, 3, w - 6, h - 6), Color(94 / 255.0, 214 / 255.0, 176 / 255.0, 0.6) if c.open else (Color(1, 75 / 255.0, 75 / 255.0, 0.8) if (sec <= 3 and not off and not c.held) else Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.35)), false, 6.0)
+	var mono: Font = _bf.mono; var bold: Font = _bf.bold; var title: Font = _bf.title; var ink := Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.85)
+	cv.draw_string(mono, Vector2(14, 12 + mono.get_ascent(20)), "%02d" % int(c.n), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, ink)
+	var nm: String = ("보스 · " + str(Animals.ANIMALS[c.type].name)) if c.boss else str(Animals.ANIMALS[c.type].name) + " ×12"
+	cv.draw_string(bold, Vector2(w - 14 - bold.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x, 12 + bold.get_ascent(20)), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, ink)
+	var mid := func(text: String, font: Font, fs: int, y: float) -> void:
+		var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x; cv.draw_string(font, Vector2(w / 2.0 - tw / 2.0, y + (font.get_ascent(fs) - font.get_descent(fs)) / 2.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	if c.open: mid.call(key, title, 58, 80)
+	elif off: mid.call("- -", title, 64, 80)
+	elif c.held: mid.call("잠김", title, 50, 66); mid.call("앞 우리를 비우면 열림", bold, 17, 106)
+	else: mid.call(key, title, 76, 82)
 
 ## things that move whatever the game state is: the monkey, the beacons
 func anim(dt: float, time: float) -> void:

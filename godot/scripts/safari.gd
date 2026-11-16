@@ -214,7 +214,7 @@ func go() -> void:
 		e.angry = true; e.alert = true; e.awake = true
 		if not e.fury: e.fury = true; e.state = "chase"; enemies.animals.wake(e)
 		if e.type != "zebra" and roars < 8 and randf() < 0.25: roars += 1; Snd.play("roar_" + e.T.roar, 1.0, e.pos)
-	Snd.play("quake"); Snd.play("siren"); player.shake = maxf(player.shake, 0.45)
+	Snd.play("quake"); Snd.play("siren"); player.shake = maxf(player.shake, 0.45); Snd.buzz(220)
 	game.say_banner("동물들이 몰려옵니다!", "탑 위에 있으면 동물들은 탑부터 칩니다 · 기린은 목으로 탑 위까지 칩니다" if holds() else "감시탑으로 올라가세요!", 3.4)
 	game.say_feed("습격 시작 · 모든 동물이 감시탑으로")
 
@@ -240,11 +240,13 @@ func player_on() -> bool:
 func hurt(dmg: float, at: Vector3) -> void:
 	if not standing or (game and game.ended) or dmg <= 0.0: return
 	hp = maxf(0.0, hp - dmg); shake = minf(1.0, shake + 0.2 + dmg / 60.0)
-	if fx: fx.chips(at)
+	if fx: fx.chunks(at, 4 if dmg >= 40.0 else 2, 0.12, "wood"); fx.puff(at, 3 if dmg >= 40.0 else 1, 0.55, 0.5)
 	if crack_t <= 0.0:
 		crack_t = 0.12; Snd.play("crack", 1.0, at)
 		if dmg >= 40.0: Snd.play("thud", 1.0, at)
-	if on: player.shake = maxf(player.shake, 0.05 + dmg / 500.0)
+	if on:
+		player.shake = maxf(player.shake, 0.05 + dmg / 500.0)
+		if dmg >= 40.0: Snd.buzz(40)
 	var f: float = hp / TOWER.hp
 	for m: float in [0.75, 0.5, 0.25, 0.1]:
 		if f <= m and not marks.has(m): marks[m] = true; game.say_banner("감시탑 체력 %d%%" % roundi(m * 100), "곧 무너집니다! 탑을 치는 동물부터 잡으세요" if m <= 0.25 else "탑을 공격하는 동물을 쏘세요", 2.0)
@@ -258,7 +260,10 @@ func collapse() -> void:
 	for b in cols: Phys.remove_collider(b)
 	cols.clear(); Phys.build_nav(); Phys.update_flow(player.pos.x, player.pos.z)
 	var c := Vector3(outer.position.x, 1.5, outer.position.z); Snd.play("crack", 1.0, c); Snd.play("quake", 1.0, c); Snd.play("boom", 0.6, c)
-	player.shake = maxf(player.shake, 0.7)
+	if fx:
+		for i in 14: var a := i / 14.0 * TAU; fx.puff(Vector3(outer.position.x + cos(a) * 3.5, 0.5, outer.position.z + sin(a) * 3.5), 2, 0.6, 1.4)
+		fx.chunks(Vector3(outer.position.x, 3, outer.position.z), 18, 0.3, "wood")
+	player.shake = maxf(player.shake, 0.7); Snd.buzz(260)
 	if was:
 		player.grounded = false; player.vel.y = 2.5; player.vel.x += fall_dir * 2.0; player.stun_t = maxf(player.stun_t, 1.0)
 		game.say_banner("감시탑이 무너졌습니다", "땅으로 떨어졌습니다 · 이제 동물들이 나를 노립니다", 3.0)
@@ -274,5 +279,8 @@ func _tower_update(dt: float) -> void:
 	elif fall_t >= 0.0:
 		fall_t += dt; var k := minf(1.0, fall_t / 1.5); var a := k * k * 1.45
 		inner.rotation = Vector3(0, 0, fall_dir * a); inner.position = Vector3(fall_dir * sin(a) * 1.6, -maxf(0.0, fall_t - 1.5) * 1.2, 0)
-		if fall_t > 1.5 and not landed: landed = true; Snd.play("quake", 1.0, Vector3(outer.position.x + fall_dir * 5.0, 0.5, outer.position.z))
+		if fall_t > 1.5 and not landed:
+			landed = true; var lp := Vector3(outer.position.x + fall_dir * 5.0, 0.5, outer.position.z); Snd.play("quake", 1.0, lp)
+			if fx:
+				for i in 10: fx.puff(lp + Vector3(randf_range(-3, 3), -0.1, randf_range(-3, 3)), 2, 0.6, 1.4)
 		if fall_t > 4.0: outer.visible = false; fall_t = -1.0

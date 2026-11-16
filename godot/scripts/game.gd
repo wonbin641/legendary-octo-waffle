@@ -58,6 +58,7 @@ const INJECT_DUR := 1.35
 const CURE_AT := 0.82
 var hint: Callable = Callable()
 var on_flash: Callable = Callable()   # (amount, from): the red flash and the direction of a bite
+var on_pay: Callable = Callable()     # (money): it pops out under the box at the top
 
 func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
@@ -265,7 +266,7 @@ func _god() -> bool:
 
 func bitten(e: Enemies.Foe) -> void:
 	if ended or _god(): return
-	player.shake = maxf(player.shake, 0.35); _say(on_flash, [30.0, e.pos])
+	player.shake = maxf(player.shake, 0.35); _say(on_flash, [30.0, e.pos]); Snd.buzz(90)
 	var d := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var l := maxf(d.length(), 0.001)
 	player.vel.x += d.x / l * 6.0; player.vel.z += d.y / l * 6.0
 	Snd.play("bite")
@@ -276,10 +277,10 @@ func bitten(e: Enemies.Foe) -> void:
 ## stage 2 has no health: a zombie's dash poisons, and the poison kills in 8 seconds unless an antidote goes in, just like a bite
 func poison(e: Enemies.Foe) -> void:
 	if ended or _god(): return
-	Snd.play("bite"); _say(on_flash, [30.0, e.pos]); player.shake = maxf(player.shake, 0.35)
-	if poison_t > 0.0: poison_t = maxf(0.6, poison_t - 1.5); _say(feed, ["또 중독 · 남은 시간이 줄었습니다", 0]); return
+	Snd.play("bite"); Snd.buzz(120); _say(on_flash, [30.0, e.pos]); player.shake = maxf(player.shake, 0.35)
+	if poison_t > 0.0: poison_t = maxf(0.6, poison_t - 1.5); _say(feed, ["또 중독 · 남은 시간이 줄었습니다", 0, true]); return
 	poison_t = 8.0
-	_say(feed, ["중독 · 8초 안에 해독약을 주사하세요", 0])
+	_say(feed, ["중독 · 8초 안에 해독약을 주사하세요", 0, true])
 
 ## a charge that connects knocks you out: the enraged zombie boss for 2 s
 ## an animal you have ridden is tamed: it never fights you again and counts as dealt with, like a kill (but pays nothing)
@@ -318,7 +319,7 @@ func from_save() -> void:
 	for c in world.crates:
 		if not c.dead and (s.crates as Array).has(c.idx):
 			c.dead = true; broke = true; Phys.remove_collider(c.b)
-			if world.crate_mm: world.crate_mm.set_instance_transform(c.idx, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z)))
+			world.hide_crate(c)
 	if broke: Phys.build_nav()
 	kills = s.kills; goal = s.goal; stats = (s.stats as Dictionary).duplicate()
 	Store.save.money = s.money; Store.money_lock = s.money0; Store.persist()
@@ -343,8 +344,8 @@ func stun(e: Enemies.Foe, secs := 2.0, dmg := -1.0) -> void:
 	player.stun_t = maxf(player.stun_t, secs); guns.trigger = false; guns.ads_held = false; guns.reload_t = 0.0
 	var d := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var l := maxf(d.length(), 0.001)
 	player.vel.x += d.x / l * 11.0; player.vel.z += d.y / l * 11.0
-	player.shake = maxf(player.shake, 0.6); Snd.play("ring")
-	_say(feed, ["돌진에 맞아 기절 · %d초" % int(secs), 0])
+	player.shake = maxf(player.shake, 0.6); Snd.play("ring"); Snd.buzz(220)
+	_say(feed, ["돌진에 맞아 기절 · %d초" % int(secs), 0, true])
 
 func cure() -> void:
 	var inf := infected; var poi := poison_t > 0.0
@@ -377,8 +378,9 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((base * 20 if e.boss else (base * 10 if e.T.get("mid", false) else base)) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
 	Store.save.money += pay; stats.earned += pay; Store.persist()
 	Snd.play("kill")
-	if pay > 0: Snd.play("coin")
+	if pay > 0: Snd.play("coin"); _say(on_pay, [pay])
 	if e.boss:
+		_say(feed, ["보스 " + e.name + " 처치", pay, true])
 		_say(banner, ["보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "보물상자가 떨어졌습니다", 3.0])
 		loot.chest(e.pos.x, e.pos.z, 0.0 if e.kong else e.pos.y); boss = null
 		if e.kong: enemies.animals.unwarn()
@@ -389,6 +391,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 				if o.extra: enemies.vanish(o)
 			world.ship.on_down(e)
 	elif e.T.get("mid", false):
+		_say(feed, ["중간 보스 " + e.name + " 처치", pay, true])
 		_say(banner, ["중간 보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "운전실을 장악했습니다", 2.4]); mid = null
 		# the drones it called fall with it (they count, but pay nothing), the bridge door opens
 		var fell := 0
@@ -397,10 +400,11 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 		if fell > 0: say_feed("불러낸 드론 %d대도 함께 떨어졌습니다" % fell)
 		if world.ship != null: world.ship.on_down(e)
 	elif e.bee_fall: pass   # counted in one line above
-	elif e.self_det: _say(feed, ["스파이더 마인이 터졌습니다" if e.type == "mine" else "자폭맨이 터졌습니다", 0])
-	else: _say(feed, [STAGES[stage].label + (" · 머리 명중" if weak else " 처치"), pay])
+	elif e.self_det: _say(feed, ["스파이더 마인이 터졌습니다" if e.type == "mine" else "자폭맨이 터졌습니다", 0, true])
+	elif e.no_pay and e.animal: _say(feed, ["타고 있던 " + str(e.T.name) + ("이" if Animals.batchim(str(e.T.name)) else "가") + " 쓰러졌습니다", 0, true])
+	else: _say(feed, [(str(e.T.name) if e.animal else STAGES[stage].label) + (" · 머리 명중" if weak else " 처치"), pay, weak])
 	var left := goal - kills - calm; var S: Dictionary = STAGES[stage]
-	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "가방 " + Store.won(Store.save.money), 1.8])
+	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "화살표가 남은 적 쪽을 가리킵니다" if (left == 10 and stage != 4) else "가방 " + Store.won(Store.save.money), 1.8])
 	if kills + calm >= goal and goal > 0: finish()
 
 ## a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead

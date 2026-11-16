@@ -204,7 +204,7 @@ func _lab_intro(dt: float, t: float) -> void:
 		# right up to his window in the north wall, looking in at him and his console
 		var k := ease_((t - 2.6) / 3.8)
 		_look_from(Vector3(lerpf(-1.7, -0.9, k), lerpf(W.y0 + 2.6, W.y0 + 2.2, k), lerpf(-H + 4.6, -H + 2.0, k)), Vector3(0.25, W.y0 + 1.3, -H - 3.2))
-		if C.beat == 1 and t > 4.1: C.beat = 2; L.press(); Snd.play("press"); Snd.play("siren")
+		if C.beat == 1 and t > 4.1: C.beat = 2; L.press(); Snd.play("press"); Snd.play("siren"); Snd.buzz(80)
 		if C.beat == 2 and t > 4.6:
 			C.beat = 3; Snd.play("cackle", 1.0, desk)
 			_sub("첫 우리가 5초 뒤 열립니다 · 다음 우리는 앞 우리의 동물을 다 잡아야 원숭이 박사가 엽니다" if L.seq else "우리 10개에 카운트다운이 시작됐습니다 · 10초 뒤 첫 우리가 열립니다")

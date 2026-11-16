@@ -124,7 +124,7 @@ func _melee_strike() -> void:
 	if _melee_target != null:
 		var c = _melee_target; _melee_target = null
 		if c.dead: return
-		var at := Vector3(c.x, c.y + 0.6, c.z); world.damage_crate(c, 60, at); Snd.play("toy_ruler" if toy else "melee", 1.0, at); return
+		var at := Vector3(c.x, c.y + 0.6, c.z); world.damage_crate(c, 60, at); Snd.play("toy_ruler" if toy else "melee", 1.0, at); Snd.buzz(20); return
 	var b := cam.global_basis; var f := -b.z; var o := cam.global_position; var best = null
 	for ab in [[0, 0], [0.16, 0], [-0.16, 0], [0, -0.15], [0, 0.12], [0.3, -0.12], [-0.3, -0.12], [0, -0.32]]:
 		var d: Vector3 = (f + b.x * ab[0] + b.y * ab[1]).normalized()
@@ -136,18 +136,18 @@ func _melee_strike() -> void:
 		elif best == null and s_box != null and s_box.kind == "wood" and s_box.ref != null and s_t < Weapons.MELEE_REACH: best = {"crate": s_box.ref, "t": s_t, "d": d}
 	if best == null: return
 	var hit: Vector3 = o + best.d * best.t
-	if best.has("crate"): world.damage_crate(best.crate, 60, hit); Snd.play("toy_ruler" if toy else "melee", 1.0, hit); return
+	if best.has("crate"): world.damage_crate(best.crate, 60, hit); Snd.play("toy_ruler" if toy else "melee", 1.0, hit); Snd.buzz(20); return
 	var e = best.e; var killed := false
 	if best.bomb and e.alive: enemies.blow_vest(e, best.d); killed = true
 	else: killed = enemies.damage(e, Weapons.MELEE_DMG * (2.0 if best.weak else float(best.mult)), hit, best.d, best.weak)
 	if e.alive and not e.boss: e.vel.x += best.d.x * 4.0; e.vel.z += best.d.z * 4.0   # and a shove
-	_say(hitmark, [killed, best.weak]); Snd.play("melee", 1.0, hit); player.shake = maxf(player.shake, 0.12)
+	_say(hitmark, [killed, best.weak]); Snd.play("melee", 1.0, hit); player.shake = maxf(player.shake, 0.12); Snd.buzz(30)
 
 # ---------- the machine gun's heat: every shot adds 1/240; empty a full box in one go and it overheats ----------
 func _heat_shot(W: Dictionary, s: Dictionary) -> void:
 	s.heat = minf(1.0, s.heat + 1.0 / W.mag); s.cool_t = 0.3
 	if s.mag == 0 and s.heat >= 0.97:
-		s.hot = true; s.hot_t = 0.0; Snd.play("hiss")
+		s.hot = true; s.hot_t = 0.0; Snd.play("hiss"); Snd.buzz(120)
 		_say(banner, ["기관총 과열", "연기가 납니다 · 다른 총으로 바꾼 뒤에 재장전할 수 있습니다", 2.6])
 
 func _heat_update(dt: float) -> void:
@@ -191,7 +191,7 @@ func fire() -> void:
 			var a := randf() * TAU; var rr := sqrt(randf()) * spr
 			var d := (f + right * cos(a) * rr + up * sin(a) * rr).normalized()
 			var s_hit := Phys.raycast_static(o, d, W.range)
-			var s_t := Phys.rh_t; var s_box := Phys.rh_box
+			var s_t := Phys.rh_t; var s_box := Phys.rh_box; var s_n := Phys.rh_n
 			var eh = enemies.raycast(o, d, s_t)
 			if eh != null:
 				var at: Vector3 = o + d * eh.t
@@ -207,6 +207,10 @@ func fire() -> void:
 				var at := o + d * s_t
 				if s_hit and s_box != null and s_box.kind == "wood" and s_box.ref != null: world.damage_crate(s_box.ref, W.dmg, at)
 				if s_hit and k < 4 and s_box != null and s_box.kind == "metal" and randf() < 0.5: Snd.play("metal", 1.0, at)
+				if s_hit and k < 4 and fx and not toy:   # where it struck: sparks (more off metal), a little dust (more off concrete)
+					fx.sparks(at, 6 if (s_box != null and s_box.kind == "metal") else 3, [0.9, 0.7, 0.45] if (s_box != null and s_box.kind == "wood") else [1.0, 0.78, 0.45], 3.2)
+					fx.puff(at, 1, 0.5 if (s_box != null and s_box.kind == "concrete") else 0.3, 0.25)
+				if s_hit and fx and not toy: fx.decal(at, s_n)
 				if toy:
 					if W.get("flame", false):
 						if k == 0 and fx: fx.flame(muz, d)
@@ -217,6 +221,7 @@ func fire() -> void:
 	player.recoil_pitch += rk; player.pitch += rk * 0.55; player.yaw += randf_range(-1, 1) * rk * 0.35
 	kick_z += W.kick; kick_rot += W.kick * 1.6; bloom = minf(bloom + W.bloom, 0.05); flash_t = 0.045
 	Snd.play(("toy_shot_" + cur) if toy else ("shot_" + W.sound))
+	if not toy and fx and ads < 0.5: fx.glow(muz, f * 2.0 + Vector3(0, 0.4, 0), 0.5, 0.05, 0.18, Color(0.35, 0.33, 0.32, 0.35), -0.5, 3.0)   # gun smoke (none down the sights)
 	if toy and fx:
 		if cur == "smg": fx.smoke(muz)
 		if cur == "rocket": for i in 6: fx.spark(muz)

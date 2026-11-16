@@ -34,6 +34,8 @@ var proj: Proj
 var rockets: Array = []    # {p, v, dmg, life, see_t, sees}
 var blasts: Array = []     # mines going off: {at, t}
 var rocket_mm: MultiMeshInstance3D = null
+var _rocket_mesh: CylinderMesh = null
+var _rockets_drawn := 0
 var aim_line: MeshInstance3D = null; var beam: MeshInstance3D = null; var beam_t := 0.0
 var _mats := {}
 
@@ -42,7 +44,8 @@ func rnd(a: float, b: float) -> float: return randf_range(a, b)
 func clear() -> void:
 	rockets.clear(); blasts.clear(); beam_t = 0.0
 	if aim_line != null and is_instance_valid(aim_line): aim_line.visible = false; beam.visible = false
-	if rocket_mm != null and is_instance_valid(rocket_mm): rocket_mm.multimesh.visible_instance_count = 0
+	if rocket_mm != null and is_instance_valid(rocket_mm): rocket_mm.multimesh = null
+	_rockets_drawn = 0
 
 func _mat(key: String, color: Color, glow := false) -> StandardMaterial3D:
 	if not _mats.has(key): _mats[key] = Gfx.unlit(color, false) if glow else Gfx.std(color, 0.42, 0.55)
@@ -227,7 +230,7 @@ func _mine(e: Enemies.Foe, dt: float, dist: float, to: Vector2) -> void:
 		"fall":   # thrown out by the boss: arcing down to the floor
 			e.vy -= 18.0 * dt; e.pos += Vector3(e.vel.x, e.vy, e.vel.z) * dt
 			var gy := Phys.ground_at(e.pos.x, e.pos.y + 0.3, e.pos.z, 0.2)
-			if e.pos.y <= gy and e.vy < 0.0: e.pos.y = gy; k.baseY = gy; e.bs = "arm"; e.bt = 1.0; e.vel = Vector3.ZERO; Snd.play("metal", 1.0, e.pos)
+			if e.pos.y <= gy and e.vy < 0.0: e.pos.y = gy; k.baseY = gy; e.bs = "arm"; e.bt = 1.0; e.vel = Vector3.ZERO; Snd.play("metal", 1.0, e.pos); _puff(e.pos, 2, 0.3, 0.3)
 		"arm":   # landed: blinking while it arms itself
 			e.bt -= dt; _light(e, sin(e.bt * 30.0) > 0.0)
 			if e.bt <= 0.0:
@@ -270,7 +273,7 @@ func _bee_drones(e: Enemies.Foe) -> int:
 		var a := (float(i) / n) * TAU + rnd(-0.3, 0.3); var mn := en.spawn("droneA", e.pos.x + cos(a) * 1.6, e.pos.z + sin(a) * 1.6, {"y": e.pos.y - 0.6, "yaw": e.yaw})
 		mn.from_bee = true; mn.alert = true; mn.awake = true; mn.lod = 0.0; mn.vel = Vector3(cos(a) * 4.0, 0, sin(a) * 4.0)
 	game.goal += n
-	if fx: fx.smoke(Vector3(e.pos.x, e.pos.y - 0.5, e.pos.z))
+	if fx: fx.puff(Vector3(e.pos.x, e.pos.y - 0.5, e.pos.z), 6, 0.7, 0.6)
 	Snd.play("zap", 1.0, e.pos); game.say_feed("황금꿀벌드론이 드론 %d대를 불러냈습니다" % n)
 	return n
 
@@ -300,11 +303,13 @@ func _bee(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float) 
 			var res := Phys.move_xz(e.pos, v.x * sp * dt, v.z * sp * dt, e.R * 0.8, 1.0, 0.0); e.pos = res[0]; e.pos.y = clampf(e.pos.y + v.y * sp * dt, 1.6, Ship.ceil_at(e.pos.x, e.pos.z) - 1.4)
 			var pdx := player.pos.x - e.pos.x; var pdz := player.pos.z - e.pos.z; var py := clampf(e.pos.y, player.pos.y + 0.3, player.pos.y + Player.HEIGHT - 0.2)
 			if not D.hit and Vector3(pdx, e.pos.y - py, pdz).length() < e.R + 0.7:
-				D.hit = true; player.hurt(220.0, e.pos, "body"); Snd.play("thud", 1.0, player.pos); Snd.play("metal", 1.0, player.pos)
+				D.hit = true; player.hurt(220.0, e.pos, "body"); Snd.play("thud", 1.0, player.pos); Snd.play("metal", 1.0, player.pos); Snd.buzz(160)
 				var l := maxf(sqrt(pdx * pdx + pdz * pdz), 0.001); player.vel.x += pdx / l * 13.0; player.vel.z += pdz / l * 13.0; player.vel.y = 4.5; player.grounded = false; player.shake = maxf(player.shake, 0.7)
 			if res[1] or D.hit or D.t > 1.5:
 				D.mode = "rest"; D.t = 0.0
-				if res[1]: Snd.play("thud", 1.0, e.pos); player.shake = maxf(player.shake, 0.25 if dist < 20.0 else 0.0)
+				if res[1]:
+					Snd.play("thud", 1.0, e.pos); player.shake = maxf(player.shake, 0.25 if dist < 20.0 else 0.0)
+					if fx: fx.sparks(e.pos, 14, [1.0, 0.8, 0.4], 4.0)
 			return
 		if D.t > 1.0: k.erase("dash")   # resting after the charge: a sitting target
 		else: return
@@ -355,7 +360,9 @@ func _shed(e: Enemies.Foe) -> void:
 	if k.phase >= 2: return
 	k.mode = "shed"; k.t = 0.0; k.salvo = 0; aim_off()
 	var old: Dictionary = k.shells[k.phase]; k.phase += 1; var nw: Dictionary = k.shells[k.phase]
-	if fx: fx.explode(e.pos, true); fx.explode(e.pos + Vector3(old.R * 0.5, 0, -old.R * 0.3), true)
+	if fx:
+		fx.explode(e.pos, true); fx.explode(e.pos + Vector3(old.R * 0.5, 0, -old.R * 0.3), true); fx.explode(e.pos + Vector3(-old.R * 0.4, old.R * 0.4, 0), true)
+		fx.chunks(e.pos, 26, 0.18 * old.R, "metal")
 	Snd.play("boom", 1.0, e.pos); player.shake = maxf(player.shake, 0.5)
 	(old.g as Node3D).visible = false; (nw.g as Node3D).visible = true
 	e.R = nw.R; e.H = nw.R * 2.0; e.bar_y = nw.R + 0.7; e.parts = shell_parts(nw.R); (k.eye_mat as StandardMaterial3D).albedo_color = Color("1478ff")
@@ -394,7 +401,7 @@ func _fire_laser(e: Enemies.Foe) -> void:
 	var hit := Phys.raycast_static(from, dir, 160.0); var L := Phys.rh_t if hit else 160.0; var end := from + dir * L
 	if hit and Phys.rh_box != null and Phys.rh_box.kind == "wood" and Phys.rh_box.ref is Dictionary: world.damage_crate(Phys.rh_box.ref, 999.0, end)
 	_make_fx(); beam_t = 0.4; beam.visible = true; _lay(beam, from, end, 0.28); Snd.play("boom", 0.5, from)
-	if fx: fx.spark(end)
+	if fx: fx.sparks(end, 14, [1.0, 0.3, 0.2], 4.0)
 	# touching the beam anywhere along its length is the end
 	var a := Vector3(player.pos.x, player.pos.y + 0.2, player.pos.z); var b := Vector3(player.pos.x, player.pos.y + Player.HEIGHT, player.pos.z)
 	if player.invuln <= 0.0 and seg_dist(from, end, a, b) < 0.55: game.laser(e)
@@ -496,14 +503,14 @@ func tick(dt: float) -> void:
 			sh.hatch_q.remove_at(i)
 			if game.boss == null or not game.boss.alive: continue
 			var mn := en.spawn("droneA", q.x + rnd(-0.4, 0.4), q.z + rnd(-0.4, 0.4), {"y": 0.3, "yaw": rnd(0, TAU)})
-			mn.extra = true; mn.alert = true; mn.awake = true; mn.lod = 0.0; Snd.play("zap", 1.0, mn.pos)
+			mn.extra = true; mn.alert = true; mn.awake = true; mn.lod = 0.0; Snd.play("zap", 1.0, mn.pos); _puff(Vector3(q.x, float(q.get("y", 0.0)) + 0.4, q.z), 2, 0.4, 0.5)
 	for i in range(blasts.size() - 1, -1, -1):
 		var b: Dictionary = blasts[i]; b.t -= dt
 		if b.t <= 0.0: blasts.remove_at(i); _blast(b.at)
 	if beam_t > 0.0:
 		beam_t -= dt
 		if beam_t <= 0.0: beam.visible = false
-	if rockets.is_empty() and rocket_mm == null: return
+	if rockets.is_empty() and _rockets_drawn == 0: return
 	var target := Vector3(player.pos.x, player.pos.y + 1.0, player.pos.z); var loud := 0
 	for i in range(rockets.size() - 1, -1, -1):
 		var Rk: Dictionary = rockets[i]; Rk.life -= dt
@@ -514,12 +521,20 @@ func tick(dt: float) -> void:
 		if Rk.sees: vn = vn.lerp(d, minf(1.0, 1.5 * dt)).normalized()
 		Rk.v = vn * sp; var step := sp * dt; var hit := Phys.raycast_static(p, vn, step)
 		p += vn * (Phys.rh_t if hit else step); Rk.p = p
-		if hit or dl < 1.0 or Rk.life <= 0.0 or p.y < Phys.floor_y(p.x, p.z) + 0.05: _rocket_blast(p, Rk.dmg, loud < 4); loud += 1; rockets.remove_at(i)
+		if hit or dl < 1.0 or Rk.life <= 0.0 or p.y < Phys.floor_y(p.x, p.z) + 0.05: _rocket_blast(p, Rk.dmg, loud < 4); loud += 1; rockets.remove_at(i); continue
+		Rk.trail = Rk.get("trail", 0.0) - dt
+		if Rk.trail <= 0.0:
+			Rk.trail = 0.1 if rockets.size() > 40 else 0.04
+			if fx: fx.glow(p, Vector3.ZERO, 0.35, 0.28, 0.06, Color(1, 0.55, 0.25, 0.8))
 	if rocket_mm == null or not is_instance_valid(rocket_mm):
-		var rm := CylinderMesh.new(); rm.top_radius = 0.07; rm.bottom_radius = 0.1; rm.height = 0.6; var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.mesh = rm; mm.instance_count = MAX_ROCKETS
-		rocket_mm = MultiMeshInstance3D.new(); rocket_mm.multimesh = mm; rocket_mm.material_override = Gfx.unlit(Color(1.0, 0.7, 0.4), false); rocket_mm.custom_aabb = AABB(Vector3(-200, -20, -200), Vector3(400, 60, 400)); en.add_child(rocket_mm)
-	var n := 0
-	for Rk in rockets:
-		var dirv: Vector3 = (Rk.v as Vector3).normalized(); var up := Vector3.UP if absf(dirv.y) < 0.99 else Vector3.RIGHT
-		rocket_mm.multimesh.set_instance_transform(n, Transform3D(Basis.looking_at(dirv, up) * Basis(Vector3.RIGHT, PI / 2), Rk.p)); n += 1
-	rocket_mm.multimesh.visible_instance_count = n
+		_rocket_mesh = CylinderMesh.new(); _rocket_mesh.top_radius = 0.07; _rocket_mesh.bottom_radius = 0.1; _rocket_mesh.height = 0.6
+		rocket_mm = MultiMeshInstance3D.new(); rocket_mm.material_override = Gfx.unlit(Color(1.0, 0.7, 0.4), false); rocket_mm.custom_aabb = AABB(Vector3(-200, -20, -200), Vector3(400, 60, 400)); en.add_child(rocket_mm)
+	# a new MultiMesh every frame: one changed in place does not always reach the screen on the web renderer
+	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.mesh = _rocket_mesh; mm.instance_count = rockets.size()
+	for i in rockets.size():
+		var Rk: Dictionary = rockets[i]; var dirv: Vector3 = (Rk.v as Vector3).normalized(); var up := Vector3.UP if absf(dirv.y) < 0.99 else Vector3.RIGHT
+		mm.set_instance_transform(i, Transform3D(Basis.looking_at(dirv, up) * Basis(Vector3.RIGHT, PI / 2), Rk.p))
+	rocket_mm.multimesh = mm; _rockets_drawn = rockets.size()
+
+func _puff(p: Vector3, n: int, shade: float, size: float) -> void:
+	if fx: fx.puff(p, n, shade, size)

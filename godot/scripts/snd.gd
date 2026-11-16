@@ -41,3 +41,8 @@ func loop(name: String, gain: float) -> void:
 	if not p.playing:
 		p.play()
 		if keep_log: played.push_back(name)
+
+## a short buzz of the phone, where the browser game has one (only with the touch controls; nothing elsewhere)
+var touch := false
+func buzz(ms: int) -> void:
+	if touch: Input.vibrate_handheld(ms)

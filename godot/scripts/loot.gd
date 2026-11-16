@@ -3,6 +3,7 @@ extends Node3D
 ## Things lying about: health potions out of crates, and the boss's treasure chest (it opens when you walk up to it).
 
 var player: Player
+var fx: Fx = null
 var take: Callable = Callable()        # (kind) -> bool: was it picked up?
 var open_chest: Callable = Callable()
 var list: Array = []
@@ -26,6 +27,7 @@ func chest(x: float, z: float, y_hint := 0.0) -> void:
 	var y := Phys.ground_at(x, y_hint + 0.6, z, 0.6)
 	g.position = Vector3(x, y, z); g.rotation.y = randf() * TAU
 	chests.push_back({"g": g, "lid": lid, "open": false, "t": 0.0, "x": x, "z": z, "y": y})
+	if fx: fx.sparks(Vector3(x, y + 0.6, z), 30, [1.0, 0.85, 0.4], 4.0)
 
 func update(dt: float) -> void:
 	for i in range(chests.size() - 1, -1, -1):
@@ -33,6 +35,8 @@ func update(dt: float) -> void:
 		if not c.open and Vector2(c.x - player.pos.x, c.z - player.pos.z).length() < 1.9 and absf(player.pos.y - c.y) < 1.8:
 			c.open = true; c.t = 0.0
 			if open_chest.is_valid(): open_chest.call()
+			if fx:
+				for k in 3: fx.sparks(Vector3(c.x, c.y + 0.8, c.z), 20, [1.0, 0.85, 0.4], 5.0)
 		if c.open:
 			(c.lid as Node3D).rotation.x = -minf(1.0, c.t / 0.6) * 1.9
 			if c.t > 8.0: (c.g as Node3D).queue_free(); chests.remove_at(i)

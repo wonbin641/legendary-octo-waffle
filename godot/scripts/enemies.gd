@@ -54,6 +54,7 @@ class Foe:
 	var dash_used := false; var rage := false; var charge_cd := 0.0; var state_t := 0.0; var hit_done := false; var cx := 0.0; var cz := 0.0; var attack_cd := 0.0; var moan_t := 0.0
 	# robots (stage 4)
 	var toy := false   # stage 5
+	var flash_t := 0.0; var glow := ""   # a hit: 0.08 s of orange glow (people and zombies); the raging boss glows red
 	var robot := false; var sealed := false; var from_bee := false; var bee_fall := false; var eye_h := 1.65; var bar_y := -99.0; var boss_guard := false
 	# animals (stages 3, 3-1)
 	var animal := false; var kong := false; var minion := false; var wild := false; var tamed := false; var ridden := false; var caged := false; var glassed := false; var cage := {}
@@ -243,15 +244,21 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool, quiet :=
 	if e.glassed and e.caged: Snd.play("metal", 1.0, _at); return false   # behind bulletproof glass nothing hurts it
 	if e.boss_guard:   # the boss drone: nothing while a shell comes apart, and never past a third of its health at once
 		dmg = robots.guard(e, dmg)
-		if dmg <= 0.0: Snd.play("metal", 1.0, _at); alarm(e); return false
+		if dmg <= 0.0: Snd.play("metal", 1.0, _at); _fx_sparks(_at, 6, [0.6, 0.85, 1.0], 3.0); alarm(e); return false
 	if weak and e.helmet: _knock_helmet(e, dir); return false   # a helmet takes the first shot to the head and flies off
 	# a zombie lying on the ground: one more hit and the body is gone for good
-	if e.downed: Snd.play("squelch", 1.0, e.pos); e.vanish = true; kill(e, weak, dir); return true
+	if e.downed:
+		if fx: fx.puff(_at, 6, 0.9, 0.6); fx.sparks(_at, 10, [0.55, 0.85, 0.4], 3.0)
+		Snd.play("squelch", 1.0, e.pos); e.vanish = true; kill(e, weak, dir); return true
 	e.hp -= dmg
 	if quiet:   # bleeding: no flinch, no shove
 		if e.hp <= 0.0: kill(e, false, dir); return true
 		return false
 	e.flinch = 1.0
+	if not e.animal and not e.robot and not e.toy: e.flash_t = 0.08
+	if fx:
+		fx.sparks(_at, 8 if weak else 4, [0.6, 0.8, 0.45] if e.type == "zombie" else ([1.0, 0.85, 0.45] if e.robot else [0.9, 0.8, 0.7]), 4.0 if e.robot else 2.5)
+		fx.puff(_at, 1, 0.25 if e.type == "zombie" else 0.4, 0.25)
 	var shove := 0.18 if e.type == "soldier" else 0.9   # one piece of plastic: blasts barely move it
 	if not e.boss and not e.ridden: e.vel.x += dir.x * shove; e.vel.z += dir.z * shove
 	if e.toy and e.hp > 0.0: toys.on_hurt(e)
@@ -329,7 +336,7 @@ func _zombie_skill(e: Foe, dt: float, dist: float, to: Vector2) -> bool:
 			if charge:
 				if on_stun.is_valid(): on_stun.call(e)
 			elif on_poison.is_valid(): on_poison.call(e)
-		if charge and fx and randf() < dt * 18.0: fx.smoke(Vector3(e.pos.x, 0.25, e.pos.z))
+		if charge and fx and randf() < dt * 18.0: fx.puff(Vector3(e.pos.x, 0.25, e.pos.z), 1, 0.55, 0.35)
 		if e.state_t <= 0.0 or blocked or e.hit_done: e.state = "move"; e.charge_cd = randf_range(5, 8)
 		return true
 	return false
@@ -371,7 +378,7 @@ func kill(e: Foe, weak: bool, dir) -> void:
 	if e.type == "mine": robots.mine_blast(e.pos, 0.0 if e.self_det else 0.06)   # a spider mine goes off
 	if e.robot:
 		e.vanish = true
-		if fx: fx.explode(Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.5), e.pos.z), e.boss)
+		if fx: var cc := Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.5), e.pos.z); fx.explode(cc, e.boss, [0.6, 0.85, 1.0]); fx.chunks(cc, 18 if e.boss else 8, 0.16 * e.scale, "metal")
 		Snd.play("boom", 1.0 if e.boss else 0.5, e.pos)
 	if dir != null: e.fall_dir = 1.0 if sin(e.yaw) * dir.x + cos(e.yaw) * dir.z > 0.0 else -1.0
 	list.erase(e); dying.push_back(e)
@@ -383,6 +390,21 @@ func kill(e: Foe, weak: bool, dir) -> void:
 func vanish(e: Foe) -> void:
 	if not e.alive: return
 	e.alive = false; e.vanish = true; e.dead_t = 0.0; e.bar.visible = false; list.erase(e); dying.push_back(e)
+	if fx: fx.puff(e.pos, 3, 0.3, 0.4)
+
+func _fx_sparks(p: Vector3, n: int, col: Array, speed: float) -> void:
+	if fx: fx.sparks(p, n, col, speed)
+
+## the glow over a hit enemy's body: drawn on top of its meshes (an overlay), not on the shared material
+var _flash_mat: StandardMaterial3D; var _rage_mat: StandardMaterial3D
+func _glow(e: Foe, kind: String) -> void:
+	if e.glow == kind: return
+	e.glow = kind
+	if _flash_mat == null:
+		_flash_mat = Gfx.unlit(Color(0.6, 0.35, 0.2), false); _flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_rage_mat = Gfx.unlit(Color(0.3, 0.02, 0.01), false); _rage_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	var mat: Material = _flash_mat if kind == "flash" else (_rage_mat if kind == "rage" else null)
+	for n in e.g.find_children("*", "MeshInstance3D", true, false): (n as MeshInstance3D).material_overlay = mat
 
 func splash(c: Vector3, radius: float, dmg: float, skip = null) -> void:
 	for e in list.duplicate():
@@ -416,7 +438,7 @@ func _knock_helmet(e: Foe, dir: Vector3) -> void:
 	e.helmet = false
 	var n := e.helmet_node; e.helmet_node = null; var at := n.global_position; e.upper.remove_child(n); add_child(n); n.global_position = at; n.rotation.y = e.yaw; n.scale = Vector3.ONE * e.scale
 	flying.push_back([n, Vector3(dir.x * 3.0 + randf_range(-1, 1), randf_range(3, 4.5), dir.z * 3.0 + randf_range(-1, 1)), 0.0])
-	Snd.play("ping", 1.0, e.pos); e.flinch = 1.0
+	Snd.play("ping", 1.0, e.pos); e.flinch = 1.0; e.flash_t = 0.05; _fx_sparks(at, 10, [1.0, 0.9, 0.6], 3.5)
 	if hitmark.is_valid(): hitmark.call(false, false)
 	if not helmet_hint and say.is_valid(): helmet_hint = true; say.call("헬멧이 벗겨졌습니다 · 한 번 더 머리를 쏘세요")
 	alarm(e)
@@ -501,7 +523,8 @@ func _fight(e: Foe, dt: float, dist: float) -> bool:
 		"flame":
 			if e.flame_on > 0.0:
 				e.flame_on -= dt; var mz := muzzle_of(e); var fx_ := sin(e.yaw); var fz := cos(e.yaw)
-				if fx: fx.flame(mz, Vector3(fx_, 0.02, fz) * 0.45)
+				if fx:
+					for k in 3: fx.glow(mz, Vector3(fx_ * randf_range(8, 11) + randf_range(-1, 1), randf_range(-0.3, 0.8), fz * randf_range(8, 11) + randf_range(-1, 1)), randf_range(0.45, 0.7), 0.15, randf_range(0.9, 1.4), Color(1, randf_range(0.35, 0.6), 0.1, 0.8), -2.0, 2.2)
 				# you are in the cone: inside 9.5 m and within about 20 degrees of where the nozzle points
 				var c := ((player.pos.x - e.pos.x) * fx_ + (player.pos.z - e.pos.z) * fz) / maxf(dist, 0.001)
 				if dist < 9.5 and c > 0.94 and dy < 2.2:
@@ -603,8 +626,12 @@ func _keep_out(e: Foe) -> void:
 func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
 	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	if _rage_mat != null: _rage_mat.albedo_color = Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01)
 	for e in list:
 		if not e.alive: continue
+		if not e.animal and not e.robot and not e.toy:   # a hit's flash; the raging zombie boss's red
+			if e.flash_t > 0.0: e.flash_t -= dt; _glow(e, "flash")
+			else: _glow(e, "rage" if e.rage else "")
 		e.lod -= dt
 		if e.lod <= 0.0:
 			e.lod = 0.3 + randf() * 0.2; e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length()
