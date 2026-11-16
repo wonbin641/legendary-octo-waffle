@@ -11,7 +11,7 @@ const REVIVE := 3.0   # a zombie that drops gets back up after this long unless 
 # range: starts a fight inside it; near/far: the distance he tries to keep; end: how far the muzzle sits from the shoulder
 const KITS := {
 	"pistol": {"name": "권총", "gun": [[0.045, 0.1, 0.18, 0, -0.66, 0.06, "1d2024"]], "range": 32.0, "near": 8.0, "far": 20.0, "end": 0.62},
-	"deagle": {"name": "데저트 이글", "gun": [[0.06, 0.3, 0.12, 0, -0.78, 0.02, "d9a531"], [0.05, 0.08, 0.07, 0, -0.64, -0.04, "b8861e"]], "range": 34.0, "near": 7.0, "far": 18.0, "end": 0.95},
+	"deagle": {"name": "데저트 이글", "gun": [[0.06, 0.3, 0.12, 0, -0.78, 0.02, "d9a531"], [0.05, 0.08, 0.07, 0, -0.64, -0.04, "b8861e"]], "range": 34.0, "near": 7.0, "far": 18.0, "end": 0.95, "gold": true},
 	"dagger": {"name": "단검", "gun": [[0.04, 0.13, 0.045, 0, -0.66, 0.03, "2a1e16"], [0.035, 0.035, 0.11, 0, -0.73, 0.03, "8a8f98"], [0.018, 0.27, 0.05, 0, -0.88, 0.03, "d6dbe3"]], "range": 60.0, "near": 0.0, "far": 0.0, "end": 0.8, "melee": true, "run": 5.2},
 	"bomber": {"name": "자폭맨", "gun": [], "range": 80.0, "near": 0.0, "far": 0.0, "end": 0.6, "melee": true, "vest": true, "run": 6.2},
 	"saber2": {"name": "쌍광선검", "gun": [[0.05, 0.2, 0.05, 0, -0.7, 0.03, "bfc4cc"]], "range": 60.0, "near": 0.0, "far": 0.0, "end": 0.8, "melee": true, "blade": true, "dual": true, "run": 4.6},
@@ -110,7 +110,7 @@ func _box_mesh(key: String, parts: Array) -> ArrayMesh:
 
 func _part(parent: Node3D, at: Vector3, key: String, parts: Array) -> Node3D:
 	var n := Node3D.new(); n.position = at; parent.add_child(n)
-	var m := MeshInstance3D.new(); m.mesh = _box_mesh(key, parts); m.material_override = _mat; n.add_child(m)
+	var m := MeshInstance3D.new(); m.mesh = _box_mesh(key, parts); m.material_override = _mat; m.set_meta("body", true); n.add_child(m)
 	return n
 
 ## one person: legs, a torso with the head, two arms (the gun in the right hand)
@@ -120,7 +120,8 @@ func _build(e: Foe) -> void:
 	e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; add_child(e.g)
 	var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, pants], [0.16, 0.09, 0.27, 0, -0.88, 0.05, "161616"]]
 	e.leg_l = _part(e.g, Vector3(-0.11, 0.92, 0), "leg", leg); e.leg_r = _part(e.g, Vector3(0.11, 0.92, 0), "leg", leg)
-	var K := e.K; var up := [[0.44, 0.62, 0.26, 0, 0.36, 0, body], [0.22, 0.25, 0.24, 0, 0.8, 0.01, skin], [0.24, 0.08, 0.26, 0, 0.94, 0, pants]]
+	var K := e.K; var up := [[0.44, 0.62, 0.26, 0, 0.36, 0, body], [0.22, 0.25, 0.24, 0, 0.8, 0.01, skin]]
+	if not zombie: up.push_back([0.24, 0.08, 0.26, 0, 0.94, 0, pants])   # hair (a zombie has none: its eyes are added below)
 	if K.get("vest", false): up.append_array([[0.42, 0.28, 0.07, 0, 0.42, 0.15, "5b4a2c"], [0.07, 0.22, 0.05, -0.13, 0.42, 0.2, "8a3a24"], [0.07, 0.22, 0.05, 0, 0.42, 0.2, "8a3a24"], [0.07, 0.22, 0.05, 0.13, 0.42, 0.2, "8a3a24"], [0.36, 0.02, 0.02, 0, 0.53, 0.21, "d8c040"]])
 	if K.get("tank", false): up.append_array([[0.13, 0.46, 0.13, -0.09, 0.42, -0.21, "8a2a1e"], [0.13, 0.46, 0.13, 0.09, 0.42, -0.21, "8a2a1e"], [0.03, 0.3, 0.03, 0.2, 0.3, -0.12, "2a2a2a"]])
 	if K.get("belt", false):
@@ -129,13 +130,19 @@ func _build(e: Foe) -> void:
 	e.upper = _part(e.g, Vector3(0, 0.92, 0), "up" + body + skin + e.kit, up)
 	var arm := [[0.12, 0.62, 0.13, 0, -0.29, 0, body], [0.1, 0.1, 0.1, 0, -0.62, 0, skin]]
 	e.arm_l = _part(e.upper, Vector3(-0.29, 0.6, 0), "arm" + body + skin + ("2" if K.get("dual", false) else ""), arm + ([[0.05, 0.2, 0.05, 0, -0.7, 0.03, "bfc4cc"]] if K.get("dual", false) else []))
-	e.arm_r = _part(e.upper, Vector3(0.29, 0.6, 0), "armg" + body + skin + e.kit, arm + ([] if zombie else K.gun))
-	if K.get("blade", false):   # a glowing blade on the hilt; two red ones for the dual wielders
-		for a in ([e.arm_r, e.arm_l] if K.get("dual", false) else [e.arm_r]):
-			var bl := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.05, 1.15, 0.05); bl.mesh = bm; bl.position = Vector3(0, -1.38, 0.03)
-			var bmat := Gfx.unlit(Color(1.0, 0.45, 0.45) if K.get("dual", false) else Color(0.55, 0.78, 1.0), false); bl.material_override = bmat; a.add_child(bl)
+	var gold: bool = K.get("gold", false)
+	e.arm_r = _part(e.upper, Vector3(0.29, 0.6, 0), "armg" + body + skin + e.kit, arm + ([] if zombie or gold else K.gun))
+	if gold:   # the gold desert eagle: gold-plated metal that gleams, not a yellow tint (the browser game's goldGunMat)
+		var gm := MeshInstance3D.new(); gm.mesh = _box_mesh("goldgun", K.gun); gm.material_override = _gold_gun_mat(); e.arm_r.add_child(gm)
+	if K.get("blade", false):   # a glowing blade on the hilt with a soft halo round it; two red ones for the dual wielders
+		var dual: bool = K.get("dual", false)
+		for a in ([e.arm_r, e.arm_l] if dual else [e.arm_r]):
+			var bl := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.035, 1.15, 0.035); bl.mesh = bm; bl.position = Vector3(0, -1.38, 0.03)
+			bl.material_override = _saber_mat(dual, false); a.add_child(bl)
+			var halo := MeshInstance3D.new(); var hb := BoxMesh.new(); hb.size = Vector3(0.09, 1.22, 0.09); halo.mesh = hb; halo.position = bl.position
+			halo.material_override = _saber_mat(dual, true); halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; a.add_child(halo)
 	if K.get("vest", false):
-		var vl := MeshInstance3D.new(); var vb := BoxMesh.new(); vb.size = Vector3(0.05, 0.05, 0.03); vl.mesh = vb; vl.material_override = Gfx.unlit(Color(1, 0.16, 0.1), false); vl.position = Vector3(0.11, 1.45, 0.215); e.g.add_child(vl); e.vest_light = vl
+		var vl := MeshInstance3D.new(); var vb := BoxMesh.new(); vb.size = Vector3(0.05, 0.05, 0.03); vl.mesh = vb; vl.material_override = Gfx.unlit(World.lin("ff2a1a"), false); vl.position = Vector3(0.11, 1.45, 0.215); e.g.add_child(vl); e.vest_light = vl
 	e.parts = [{"o": Vector3(0, 1.72, 0.01), "r": 0.15, "mult": 1.0, "weak": true, "bomb": false}, {"o": Vector3(0, 1.3, 0), "r": 0.3, "mult": 1.0, "weak": false, "bomb": false},
 		{"o": Vector3(0, 0.95, 0), "r": 0.22, "mult": 0.9, "weak": false, "bomb": false}, {"o": Vector3(0, 0.48, 0), "r": 0.24, "mult": 0.7, "weak": false, "bomb": false}]
 	# the bomb strapped to a bomber's chest: one bullet in it and it goes off
@@ -144,6 +151,26 @@ func _build(e: Foe) -> void:
 	var bg := MeshInstance3D.new(); bg.mesh = _bar_mesh; bg.material_override = _bar_bg; bg.scale = Vector3(0.7, 0.07, 1); e.bar.add_child(bg)
 	e.fill = MeshInstance3D.new(); e.fill.mesh = _bar_mesh; e.fill.material_override = _bar_fill; e.fill.scale = Vector3(0.66, 0.045, 1); e.bar.add_child(e.fill)
 	if zombie: e.fill.material_override = _bar_green
+
+## the browser game's goldGunMat: e2b23c, roughness 0.22, metalness 0.9, a warm glow of 4a3300 at 0.55
+var _gold_mat: StandardMaterial3D
+func _gold_gun_mat() -> StandardMaterial3D:
+	if _gold_mat == null:
+		_gold_mat = Gfx.std(World.lin("e2b23c"), 0.22, 0.9); _gold_mat.emission_enabled = true; _gold_mat.emission = World.lin("4a3300"); _gold_mat.emission_energy_multiplier = 0.55
+	return _gold_mat
+
+## the sabers: the blade a flat light (a8d4ff, or ff8a8a for the dual wielders), the halo added light at 42% (38%) round it
+var _sabers := {}
+func _saber_mat(dual: bool, halo: bool) -> StandardMaterial3D:
+	var k := "%s%s" % [dual, halo]
+	if not _sabers.has(k):
+		var m: StandardMaterial3D
+		if halo:
+			m = Gfx.unlit(World.lin("ff2a3a" if dual else "2a62ff"), true); m.albedo_color.a = 0.38 if dual else 0.42
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+		else: m = Gfx.unlit(World.lin("ff8a8a" if dual else "a8d4ff"), true)
+		_sabers[k] = m
+	return _sabers[k]
 
 func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	var beast: bool = Animals.ANIMALS.has(type)
@@ -309,8 +336,9 @@ func _update_downed(e: Foe, dt: float) -> void:
 func _zombie_skill(e: Foe, dt: float, dist: float, to: Vector2) -> bool:
 	if e.boss and not e.rage and e.hp <= e.max_hp * 0.5:
 		e.rage = true; e.speed *= 1.9; e.charge_cd = 1.6
-		for n in e.g.find_children("*", "MeshInstance3D", true, false):   # it turns red
-			var rm: StandardMaterial3D = _mat.duplicate(); rm.albedo_color = Color(1, 0.4, 0.36); rm.emission_enabled = true; rm.emission = Color(0.3, 0.02, 0.01); (n as MeshInstance3D).material_override = rm
+		var rm: StandardMaterial3D = _mat.duplicate(); rm.albedo_color = World.lin(Color(1, 0.4, 0.36))   # it turns red (the glow pulses on top)
+		for n in e.g.find_children("*", "MeshInstance3D", true, false):
+			if n.has_meta("body"): (n as MeshInstance3D).material_override = rm
 		Snd.play("rage", 1.0, e.pos); player.shake = maxf(player.shake, 0.25)
 		if banner.is_valid(): banner.call(e.name + " 폭주", "빨라지고 가끔 돌진합니다 · 맞으면 2초 기절", 2.4)
 	if not e.boss and not e.dash_used and e.hp > 0.0 and e.hp <= e.max_hp * 0.3 and e.state != "lunge":
@@ -401,10 +429,12 @@ func _glow(e: Foe, kind: String) -> void:
 	if e.glow == kind: return
 	e.glow = kind
 	if _flash_mat == null:
-		_flash_mat = Gfx.unlit(Color(0.6, 0.35, 0.2), false); _flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		_rage_mat = Gfx.unlit(Color(0.3, 0.02, 0.01), false); _rage_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		# the browser game's emissive on the body's material: 0.6, 0.35, 0.2 for a hit; the raging boss's pulsing red
+		_flash_mat = Gfx.unlit(World.lin(Color(0.6, 0.35, 0.2)), false); _flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_rage_mat = Gfx.unlit(World.lin(Color(0.3, 0.02, 0.01)), false); _rage_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	var mat: Material = _flash_mat if kind == "flash" else (_rage_mat if kind == "rage" else null)
-	for n in e.g.find_children("*", "MeshInstance3D", true, false): (n as MeshInstance3D).material_overlay = mat
+	for n in e.g.find_children("*", "MeshInstance3D", true, false):   # the body only: not the gun, a blade, the vest's light or a helmet
+		if n.has_meta("body"): (n as MeshInstance3D).material_overlay = mat
 
 func splash(c: Vector3, radius: float, dmg: float, skip = null) -> void:
 	for e in list.duplicate():
@@ -634,7 +664,7 @@ func _keep_out(e: Foe) -> void:
 func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
 	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
-	if _rage_mat != null: _rage_mat.albedo_color = Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01)
+	if _rage_mat != null: _rage_mat.albedo_color = World.lin(Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01))
 	for e in list:
 		if not e.alive: continue
 		if not e.animal and not e.robot and not e.toy:   # a hit's flash; the raging zombie boss's red

@@ -324,6 +324,9 @@ func _ready() -> void:
 		if absf(w.crates[i].x - s2_V2.crates[i][0]) > 1e-4 or absf(w.crates[i].z - s2_V2.crates[i][1]) > 1e-4: s2_cbad += 1
 	check("stage 2: 15 huts, and every crate where the browser game has it", w.village.huts.size() == int(s2_V2.huts) and s2_cbad == 0 and w.crates.size() == 46, "%d huts %d off" % [w.village.huts.size(), s2_cbad])
 	check("stage 2: zombies, one giant among them", en.list.all(func(e): return e.type == "zombie") and gm.boss != null and gm.boss.max_hp == 2200.0 and gm.boss.scale == 1.7 and en.list[1].max_hp == 180.0 and gm.antidotes == 1)
+	var s2_up: MeshInstance3D = en.list[1].upper.get_child(0); var s2_cols: PackedColorArray = s2_up.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	check("stage 2: a zombie has no hair, only its two pale eyes (the browser game's build: body, head, eyes)",
+		s2_cols.size() == 4 * 24 and s2_cols[2 * 24].is_equal_approx(Color("fff0a0")) and s2_cols[3 * 24].is_equal_approx(Color("fff0a0")) and not s2_cols.has(Color("2c2c2a")))
 	# no health in the village
 	pl.invuln = 0.0; pl.hurt(500, Vector3.ZERO)
 	check("stage 2: nothing takes health away", pl.hp == Player.MAX_HP)
@@ -376,6 +379,11 @@ func _ready() -> void:
 	gm.begin(2); var s2_zb = gm.boss; pl.invuln = 1e9; pl.pos = Vector3(s2_zb.pos.x, 0, s2_zb.pos.z + 12.0); s2_zb.yaw = 0.0
 	var s2_sp0: float = s2_zb.speed; s2_zb.lod = 0.0; en.damage(s2_zb, 1200, s2_zb.pos, s2_zdir, false); en.update(0.02, 0.0)
 	check("stage 2: at half health the boss rages and is 1.9 times as fast", s2_zb.rage and absf(s2_zb.speed - s2_sp0 * 1.9) < 1e-5)
+	var s2_ft: float = s2_zb.flash_t; s2_zb.flash_t = 0.0; en._glow(s2_zb, "rage")   # (as the next frame does once the hit's flash is over)
+	var s2_rm: StandardMaterial3D = (s2_zb.upper.get_child(0) as MeshInstance3D).material_override; var s2_ov: StandardMaterial3D = (s2_zb.upper.get_child(0) as MeshInstance3D).material_overlay
+	check("stage 2: raging it turns red as the browser game's (its colours times 1, 0.4, 0.36, and a red glow that pulses about 0.3)",
+		s2_rm.albedo_color.is_equal_approx(World.lin(Color(1, 0.4, 0.36))) and not s2_rm.emission_enabled and s2_ov != null and s2_ov.blend_mode == BaseMaterial3D.BLEND_MODE_ADD
+		and absf(s2_ov.albedo_color.srgb_to_linear().r - 0.3) <= 0.141 and absf(s2_ov.albedo_color.srgb_to_linear().g - 0.02) < 0.002, s2_ft)
 	pl.invuln = 0.0; var s2_stunned := false
 	for i in 400:
 		pl.pos = Vector3(s2_zb.pos.x, 0, s2_zb.pos.z + 8.0) if s2_zb.state == "move" else pl.pos
@@ -663,6 +671,37 @@ func _ready() -> void:
 		count == {"sniper": 5, "deagle": 9, "bomber": 10, "flame": 3, "rifle": 12, "dagger": 20, "saber": 10, "saber2": 5, "nade": 10, "bat": 15, "lmg": 1} and gm.boss.kit == "lmg" and gm.boss.max_hp == 2600.0, count)
 	var sn = en.list.filter(func(e8): return e8.kit == "sniper")
 	check("1-2: the snipers stand up on container stacks", sn.all(func(e8): return e8.pos.y > 2.0))
+	# 1-2's looks, as the browser game's build: the gold desert eagle in gold metal apart from the arm, the lightsabers' blades in a halo, the vest's red light
+	var vcount9 := func(n: Node3D) -> int: return ((n.get_child(0) as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	var dg9 = en.list.filter(func(e8): return e8.kit == "deagle")[0]
+	var gold9: Array = dg9.arm_r.get_children().filter(func(ch9): return ch9 is MeshInstance3D and ch9.material_override is StandardMaterial3D and ch9.material_override.metallic > 0.5)
+	var gmat9: StandardMaterial3D = gold9[0].material_override if gold9.size() == 1 else null
+	check("1-2: the gold desert eagle is gold metal, not a tint (e2b23c, roughness 0.22, metalness 0.9, a 4a3300 glow at 0.55), apart from the arm's boxes",
+		gmat9 != null and gmat9.albedo_color.is_equal_approx(World.lin("e2b23c")) and absf(gmat9.roughness - 0.22) < 1e-6 and absf(gmat9.metallic - 0.9) < 1e-6 and gmat9.emission_enabled
+		and gmat9.emission.is_equal_approx(World.lin("4a3300")) and absf(gmat9.emission_energy_multiplier - 0.55) < 1e-6 and vcount9.call(dg9.arm_r) == 2 * 24 and not gmat9.vertex_color_use_as_albedo)
+	var blades9 := func(e8) -> Array:
+		var found := []
+		for arm9 in [e8.arm_r, e8.arm_l]:
+			for ch9 in arm9.get_children():
+				if ch9 is MeshInstance3D and ch9.mesh is BoxMesh: found.push_back(ch9)
+		return found
+	var sabre_ok := func(got9: Array, n9: int, core9: String, glow9: String, al9: float) -> bool:
+		if got9.size() != n9 * 2: return false
+		for bx9 in got9:
+			var mt9: StandardMaterial3D = bx9.material_override; var halo9: bool = (bx9.mesh as BoxMesh).size.x > 0.05
+			if not (bx9.mesh as BoxMesh).size.is_equal_approx(Vector3(0.09, 1.22, 0.09) if halo9 else Vector3(0.035, 1.15, 0.035)) or not bx9.position.is_equal_approx(Vector3(0, -1.38, 0.03)): return false
+			if mt9.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED: return false
+			if halo9 and not (mt9.blend_mode == BaseMaterial3D.BLEND_MODE_ADD and mt9.depth_draw_mode == BaseMaterial3D.DEPTH_DRAW_DISABLED and absf(mt9.albedo_color.a - al9) < 1e-6 and Color(mt9.albedo_color, 1.0).is_equal_approx(World.lin(glow9))): return false
+			if not halo9 and not mt9.albedo_color.is_equal_approx(World.lin(core9)): return false
+		return true
+	check("1-2: a lightsaber is a thin blade (a8d4ff) in a halo of added light (2a62ff at 42%); the dual wielders' two are red (ff8a8a in ff2a3a at 38%)",
+		sabre_ok.call(blades9.call(en.list.filter(func(e8): return e8.kit == "saber")[0]), 1, "a8d4ff", "2a62ff", 0.42) and sabre_ok.call(blades9.call(en.list.filter(func(e8): return e8.kit == "saber2")[0]), 2, "ff8a8a", "ff2a3a", 0.38))
+	var vb9 = en.list.filter(func(e8): return e8.kit == "bomber")[0]
+	check("1-2: a bomber's vest light is the browser game's red (ff2a1a)", (vb9.vest_light.material_override as StandardMaterial3D).albedo_color.is_equal_approx(World.lin("ff2a1a")))
+	en._glow(dg9, "flash"); var fl9: StandardMaterial3D = (dg9.arm_r.get_child(0) as MeshInstance3D).material_overlay
+	check("1-2: a hit's flash (the browser game's 0.6, 0.35, 0.2 glow) lights the body, not the gold gun",
+		fl9 != null and fl9.albedo_color.is_equal_approx(World.lin(Color(0.6, 0.35, 0.2))) and gold9[0].material_overlay == null and (dg9.upper.get_child(0) as MeshInstance3D).material_overlay == fl9)
+	en._glow(dg9, "")
 	# a bomber's vest: shot in the bomb it goes off at once and the kill pays; reaching you he blows himself up and pays nothing
 	var bm9 = en.list.filter(func(e8): return e8.kit == "bomber"); var b1 = bm9[0]; var m0: int = Store.save.money; pl.invuln = 1e9
 	var rb9 = en.raycast(en.part_centre(b1, b1.parts[1]) + Vector3(sin(b1.yaw), 0, cos(b1.yaw)) * 4.0, -Vector3(sin(b1.yaw), 0, cos(b1.yaw)), 10.0)

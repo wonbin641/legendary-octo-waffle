@@ -621,7 +621,7 @@ func command(line: String) -> Dictionary:
 		"audit": return {"screen": ui.cur, "issues": ui.audit()}
 		"foe":   # the enemy at this place in the list: where it stands, which way it faces, what it is (for pictures beside the browser game's)
 			var e = enemies.list[int(a[1])] if int(a[1]) < enemies.list.size() else null
-			return {} if e == null else {"pos": [e.pos.x, e.pos.y, e.pos.z], "yaw": e.yaw, "type": e.type, "boss": e.boss, "H": e.H, "R": e.R}
+			return {} if e == null else {"pos": [e.pos.x, e.pos.y, e.pos.z], "yaw": e.yaw, "type": e.type, "kit": e.kit, "boss": e.boss, "H": e.H, "R": e.R}
 		"hudoff":   # pictures without the HUD (and without the gun in hand, unless "hudoff gun")
 			hud.visible = false; view.visible = a.size() > 1 and a[1] == "gun"; touch_ui.visible = false
 		"where":   # where the living ones of a kind are
