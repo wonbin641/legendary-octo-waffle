@@ -31,7 +31,7 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 		var h := r(2.7, 3.5); var rot := Vector3(r(-0.05, 0.05), r(0, 3), r(-0.05, 0.05))
 		sx.push_back(Transform3D(Basis.from_euler(rot).scaled_local(Vector3(1, h, 1)), Vector3(s[0], h / 2, s[1])))
 	var sm := CylinderMesh.new(); sm.top_radius = 0.05; sm.bottom_radius = 0.21; sm.height = 1.0; sm.radial_segments = 7
-	var stake_mm := Gfx.multimesh(sm, sx); stake_mm.material_override = Gfx.std(World.lin("3a2b1d"), 0.95); G.add_child(stake_mm)
+	var stake_mm := Gfx.multimesh(sm, sx); stake_mm.material_override = Gfx.std(World.lin("3a2b1d"), 0.95); G.add_child(stake_mm); MoonShadow.caster(stake_mm)
 	# black forest on the horizon
 	var sil := []
 	for i in 170:
@@ -94,9 +94,9 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 		crown_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(p[3], p[2] * 0.95, p[3])), Vector3(p[0], p[2] * 0.1 + p[2] * 0.95 * 0.55, p[1])))
 		var hue := 0.36 + r(-0.03, 0.03); var lum := r(0.09, 0.14); crown_c.push_back(Color.from_ok_hsl(hue, 0.35, lum * 2.2).srgb_to_linear())
 	var tm := CylinderMesh.new(); tm.top_radius = 0.16; tm.bottom_radius = 0.28; tm.height = 1.0; tm.radial_segments = 6
-	var trunks := Gfx.multimesh(tm, trunk_x); trunks.material_override = Gfx.std(World.lin("3a2a1c"), 0.95); G.add_child(trunks)
+	var trunks := Gfx.multimesh(tm, trunk_x); trunks.material_override = Gfx.std(World.lin("3a2a1c"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
 	var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = 1.0; cm.height = 1.0; cm.radial_segments = 7
-	var crowns := Gfx.multimesh(cm, crown_x, crown_c); var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crowns.material_override = crm; G.add_child(crowns)
+	var crowns := Gfx.multimesh(cm, crown_x, crown_c); var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crowns.material_override = crm; G.add_child(crowns); MoonShadow.caster(crowns)
 
 	# crates: two in every hut first, then the rest out in the village
 	var count := maxi(int(S.crates), inside.size() + 16); var hc := 0; var xs := []; var i := 0; tries = 0
@@ -109,11 +109,10 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 		xs.push_back(Transform3D(Basis(Vector3.UP, randf_range(-0.2, 0.2)), Vector3(x, 0.6, z)))
 		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": 0.0, "dead": false}
 		cr.b = Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood", cr); w.crates.push_back(cr); i += 1
-	var bm := BoxMesh.new(); bm.size = Vector3(1.2, 1.2, 1.2)
-	var mmi := Gfx.multimesh(bm, xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); w.crate_mm = mmi.multimesh; w.crate_mmi = mmi; w.crate_xf = xs.duplicate()
+	var mmi := Gfx.multimesh(Gfx.box(Vector3(1.2, 1.2, 1.2)), xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); MoonShadow.caster(mmi); w.crate_mm = mmi.multimesh; w.crate_mmi = mmi; w.crate_xf = xs.duplicate()
 
 	# everything built of logs, in one mesh
-	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.92; mi.material_override = mat; G.add_child(mi)
+	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.92; mi.material_override = mat; G.add_child(mi); MoonShadow.caster(mi)
 	# fire: flames you can see from afar, and each fire lends one of the six flickering lights
 	for f in fires:
 		var fl := MeshInstance3D.new(); var fc := CylinderMesh.new(); fc.top_radius = 0.0; fc.bottom_radius = 0.45 * f[3]; fc.height = 1.6 * f[3]; fc.radial_segments = 6; fl.mesh = fc

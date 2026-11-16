@@ -15,12 +15,12 @@ var _boom_t := 0.0
 const BOOM_COL := [1.0, 0.55, 0.2]
 
 func _ready() -> void:
-	_tmat = Gfx.unlit(Color(1.0, 0.85, 0.6), false); _tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _tmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_bmat = Gfx.unlit(Color(1.0, 0.62, 0.25), false); _bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_tmat = Gfx.unlit(World.lin(Color(1.0, 0.85, 0.6)), false); _tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _tmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_bmat = Gfx.unlit(World.lin(Color(1.0, 0.62, 0.25)), false); _bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	var dot := _dot_tex()
 	_glow = Pool.new(900, true, dot); add_child(_glow.node)
 	_smoke = Pool.new(260, false, dot); add_child(_smoke.node)
-	_boom = OmniLight3D.new(); _boom.light_color = Color("ff8a3a"); _boom.omni_range = 16.0; _boom.light_energy = 0.0; _boom.visible = false; add_child(_boom)
+	_boom = OmniLight3D.new(); _boom.light_color = World.lin("ff8a3a"); _boom.omni_range = 16.0; _boom.light_energy = 0.0; _boom.visible = false; add_child(_boom)
 
 # ---- the two particle pools (makeSystem): soft round specks that always face the camera; "glow" is added on top (sparks,
 # fire, flashes), "smoke" is laid over (dust, smoke). A full pool gives the oldest place to the newest. Each pool is one mesh
@@ -49,7 +49,8 @@ class Pool:
 			_uv[o] = Vector2(0, 0); _uv[o + 1] = Vector2(1, 0); _uv[o + 2] = Vector2(1, 1); _uv[o + 3] = Vector2(0, 1)
 			_idx[i * 6] = o; _idx[i * 6 + 1] = o + 1; _idx[i * 6 + 2] = o + 2; _idx[i * 6 + 3] = o; _idx[i * 6 + 4] = o + 2; _idx[i * 6 + 5] = o + 3
 
-	func emit(at: Vector3, vel: Vector3, life: float, s0: float, s1: float, col: Color, grav: float, drag: float) -> void:
+	func emit(at: Vector3, vel: Vector3, life: float, s0: float, s1: float, col: Color, grav: float, drag: float, raw := false) -> void:
+		if not raw: col = Fx.shown(col)
 		var s := [life, life, at, vel, s0, s1, col, grav, drag]
 		if p.size() < cap: p.push_back(s)
 		else: p[cursor] = s; cursor = (cursor + 1) % cap
@@ -90,6 +91,19 @@ static func _dot_tex() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 ## one speck of light (FX.glow.emit): where, how fast, how long, width at start and end, colour with alpha, gravity, drag
+## the browser game's specks are drawn by a shader of its own that writes their colour straight to the screen, with no tone
+## mapping: here every material is tone mapped, so a speck gets the colour that tone maps to the one asked for
+## (stage 5's own bits keep theirs). Cached per colour; the stage's exposure is set by World
+static var exposure := 1.15
+static var _shown := {}
+static func shown(c: Color) -> Color:
+	var k := Vector4(c.r, c.g, c.b, exposure)
+	if not _shown.has(k):
+		var t := Vector3(minf(c.r, 0.97), minf(c.g, 0.97), minf(c.b, 0.97))   # tone mapping never quite reaches white
+		var a := Gfx.albedo_of(Gfx.scene_for(t, exposure)); _shown[k] = Color(a.x, a.y, a.z)
+	var r: Color = _shown[k]
+	return Color(r.r, r.g, r.b, c.a)
+
 func glow(at: Vector3, vel: Vector3, life: float, s0: float, s1: float, col: Color, grav := 0.0, drag := 0.0) -> void:
 	_glow.emit(at, vel, life, s0, s1, col, grav, drag)
 
@@ -120,12 +134,12 @@ func explode(at: Vector3, big := true, col: Array = BOOM_COL) -> void:
 ## a lick of flame from a spray can: a small bright ball that runs out along the jet and fades
 func flame(from: Vector3, dir: Vector3) -> void:
 	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 1.0; s.height = 2.0; s.radial_segments = 8; s.rings = 5; m.mesh = s
-	var mat: StandardMaterial3D = _bmat.duplicate(); mat.albedo_color = Color(1.0, randf_range(0.45, 0.8), 0.15); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = from; add_child(m)
+	var mat: StandardMaterial3D = _bmat.duplicate(); mat.albedo_color = World.lin(Color(1.0, randf_range(0.45, 0.8), 0.15)); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = from; add_child(m)
 	_flames.push_back([m, 0.0, dir * randf_range(18.0, 24.0) + Vector3(randf_range(-1, 1), randf_range(-0.5, 1.5), randf_range(-1, 1))])
 
 # the toy room's bits go into the same pools; their sizes are radii (a speck as wide as twice that)
 func _bit(at: Vector3, color: Color, life: float, vel: Vector3, s0: float, s1: float, grav := 0.0, add := true, drag := 0.0) -> void:
-	(_glow if add else _smoke).emit(at, vel, life, s0 * 2.0, s1 * 2.0, color, grav, drag)
+	(_glow if add else _smoke).emit(at, vel, life, s0 * 2.0, s1 * 2.0, color, grav, drag, true)
 
 ## a streak from the muzzle to where the shot went: a foam dart, a jet of water, a band, a tack
 func streak(from: Vector3, to: Vector3, color: Color, width: float, life: float) -> void:
@@ -173,8 +187,8 @@ var _debris: Array = []
 var _wood_mat: StandardMaterial3D; var _metal_mat: StandardMaterial3D
 func chunks(p: Vector3, n: int, size: float, kind: String) -> void:
 	if _wood_mat == null:
-		_wood_mat = StandardMaterial3D.new(); _wood_mat.albedo_color = Color("8a6238"); _wood_mat.roughness = 0.9
-		_metal_mat = StandardMaterial3D.new(); _metal_mat.albedo_color = Color("6a7280"); _metal_mat.roughness = 0.5; _metal_mat.metallic = 0.6
+		_wood_mat = StandardMaterial3D.new(); _wood_mat.albedo_color = World.lin("8a6238"); _wood_mat.roughness = 0.9
+		_metal_mat = StandardMaterial3D.new(); _metal_mat.albedo_color = World.lin("6a7280"); _metal_mat.roughness = 0.5; _metal_mat.metallic = 0.6
 	for i in n:
 		if _debris.size() >= 48: var old: Array = _debris.pop_front(); (old[0] as Node3D).queue_free()
 		var m := MeshInstance3D.new(); var b := BoxMesh.new(); m.mesh = b; m.material_override = _wood_mat if kind == "wood" else _metal_mat

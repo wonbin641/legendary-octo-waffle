@@ -146,7 +146,7 @@ func _panel(G: Node3D, c: Dictionary, side: String) -> Dictionary:
 		"s": P.position = Vector3(c.x, hy, c.z + hd); col = Phys.add_collider(c.x - hw, 0, c.z + hd - T, c.x + hw, H, c.z + hd, "metal")
 		"e": P.position = Vector3(c.x + hw, hy, c.z); P.rotation.y = PI / 2; col = Phys.add_collider(c.x + hw - T, 0, c.z - hd, c.x + hw, H, c.z + hd, "metal")
 		_: P.position = Vector3(c.x - hw, hy, c.z); P.rotation.y = -PI / 2; col = Phys.add_collider(c.x - hw, 0, c.z - hd, c.x - hw + T, H, c.z + hd, "metal")
-	G.add_child(P)
+	G.add_child(P); MoonShadow.caster(P)   # the cage's frame and bars cast the moon's shadow, as there
 	col.grate = true; col.glass = glassy   # bullets and eyes pass between the bars, but not through glass
 	return {"side": side, "P": P, "F": F, "col": col, "fall_t": -1.0, "wob": 0.0, "W": W, "H": H}
 
@@ -163,8 +163,10 @@ func _build_monkey(G: Node3D, at: Vector3) -> void:
 		var am := MeshInstance3D.new(); am.material_override = mat; am.mesh = Gfx.merge_boxes([[0.13, 0.3, 0.13, 0, -0.14, 0, "eef0ec"], [0.09, 0.3, 0.09, 0, -0.42, 0, "4a3122"], [0.1, 0.1, 0.12, 0, -0.6, 0.02, "c9a183"]]); a.add_child(am)
 		if sx < 0: _arm_l = a
 		else: _arm_r = a
+	MoonShadow.caster(monkey)   # the monkey casts the moon's shadow, as there
 
 ## the animals go in their cages: twelve of each kind in a loose grid (three giraffes, two elephants), the boss alone in the last one
+
 func populate(put: Callable, SR: World.Rng, boss_opts: Dictionary) -> void:
 	for c in cages:
 		if c.boss:

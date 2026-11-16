@@ -960,5 +960,65 @@ func _ready() -> void:
 		h_cr.dead and w.crate_mm != h_old and w.crate_mmi.multimesh == w.crate_mm and (w.crate_xf[h_cr.idx] as Transform3D).basis.get_scale().length() < 0.001 and w.crate_mm.instance_count == w.crate_xf.size(),
 		[h_cr.dead, w.crate_mm != h_old, w.crate_xf.size()])
 	gm.begin(1)
+	# ---- E: the browser game's picture ----
+	var e_fit := func(x: float) -> float: return (x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.432951) + 0.238081)
+	check("Godot's ACES draws three.js's curve: exposure e/0.6/1.8 and a white (14.26) at which Godot's divide-by-white is 1",
+		absf(Gfx.exposure(1.15) * 1.8 - 1.15 / 0.6) < 1e-9 and absf(e_fit.call(Gfx.TONE_WHITE * 1.8) - 1.0) < 1e-3, e_fit.call(Gfx.TONE_WHITE * 1.8))
+	var e_ramp := []; var e_ok := true
+	for q: Array in [[0.035, 41.1], [0.2, 145.4], [0.5, 204.2], [1.0, 230.4]]:
+		var dv := Gfx.display(Vector3(q[0], q[0], q[0]), 1.15).x * 255.0; e_ramp.push_back(snappedf(dv, 0.1)); e_ok = e_ok and absf(dv - float(q[1])) < 0.6
+	check("the display curve gives the browser game's grey ramp (0.035, 0.2, 0.5, 1.0 -> 41, 145, 204, 230 of 255)", e_ok, e_ramp)
+	var e_f := Vector3(0.026, 0.033, 0.052); var e_l := Gfx.scene_for(e_f, 1.15); var e_back := Gfx.display(e_l, 1.15)
+	check("the fog: the scene colour mixed in by the fog layer tone maps back to the browser game's fog colour (it mixed fog in after tone mapping)",
+		e_back.distance_to(e_f) < 1e-5 and w.fog_mat.get_shader_parameter("density") == 0.016, [e_back, w.fog_mat.get_shader_parameter("density")])
+	var e_al := Gfx.albedo_of(Vector3(0.01, 0.2, 0.8)); var e_dec := func(v: float) -> float: return v * (v * (v * 0.305306011 + 0.682171111) + 0.012522878)
+	check("colours sent to a shader come back through the compatibility renderer's sRGB decode as asked",
+		absf(e_dec.call(e_al.x) - 0.01) < 1e-6 and absf(e_dec.call(e_al.y) - 0.2) < 1e-6 and absf(e_dec.call(e_al.z) - 0.8) < 1e-6)
+	check("the exposures are the browser game's (3-1 0.82, lab 1.08, night lab 1.02, ship 1.12, others 1.15)",
+		World.STAGE_STYLE[7].exposure == 0.82 and World.STAGE_STYLE[3].exposure == 1.08 and World.STAGE_STYLE[8].exposure == 1.02 and World.STAGE_STYLE[4].exposure == 1.12 and not World.STAGE_STYLE[1].has("exposure"))
+	var e_worst := 0.0
+	for d in [6.0, 10.0, 15.2, 20.0, 24.0]:
+		var nd := pow(d / World.LAMP_RANGE, 4.0); var godot := World.LAMP_K * pow(maxf(1.0 - nd, 0.0), 2.0) * pow(d, -World.LAMP_ATTEN)
+		e_worst = maxf(e_worst, absf(godot - pow(1.0 - d / 30.0, 2.0)))
+	check("a lamp falls off as three.js's point light (1 - d/30)^2 within 0.035 from 6 to 24 m", e_worst < 0.035, snappedf(e_worst, 0.0001))
+	check("the moon lights in the main pass (a shadowed light gets a pass of its own, tone mapped alone); its shadow comes from the shadow picture; moon and lamps gloss as three.js's (1.0 directional, 0.5 point)",
+		not w.moon.shadow_enabled and w.shadow_layer.visible and w.moon_shadow.render_target_update_mode == SubViewport.UPDATE_ALWAYS and absf(w.moon.light_specular - 1.0) < 1e-6 and absf((w.lights[0] as OmniLight3D).light_specular - 0.5) < 1e-6,
+		[w.moon.shadow_enabled, w.shadow_layer.visible, w.moon_shadow.render_target_update_mode, w.moon.light_specular])
+	w.moon_shadow.place(10.3, -5.7, [-30, 50, -20]); var e_tx := MoonShadow.BOX / w.moon_shadow.size.x; var e_cp := w.moon_shadow.cam.global_position
+	check("the shadow box as the browser game's: 80 m across, near 1, far 160, on the player and snapped to its texels",
+		w.moon_shadow.cam.size == 80.0 and w.moon_shadow.cam.near == 1.0 and w.moon_shadow.cam.far == 160.0 and e_cp.distance_to(Vector3(roundf(10.3 / e_tx) * e_tx - 30, 50, roundf(-5.7 / e_tx) * e_tx - 20)) < 1e-4, e_cp)
+	var e_cast := 0; var e_cont := 0; var e_ground_casts := false
+	for n in w.group.get_children():
+		if n is VisualInstance3D and (n as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER): e_cast += 1
+		if n is MultiMeshInstance3D and (n as MultiMeshInstance3D).multimesh.mesh.get_surface_count() == 3: e_cont += 1 if (n as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER) else -1000
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh is PlaneMesh and ((n as MeshInstance3D).mesh as PlaneMesh).size.x >= 240: e_ground_casts = (n as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER)
+	check("what casts the moon's shadow is what the browser game marks: containers, crates, cranes, poles, barriers, not the ground", e_cont > 0 and e_cast >= e_cont + 4 and not e_ground_casts, [e_cast, e_cont])
+	var e_box := Gfx.box(Vector3(2, 3, 4)); var e_uv: PackedVector2Array = e_box.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]; var e_uvok := e_uv.size() == 24
+	for i in e_uv.size(): e_uvok = e_uvok and e_uv[i] == [Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)][i % 4]
+	check("a textured box shows the whole picture on every face, as three.js's BoxGeometry (Godot's BoxMesh shows a sixth)", e_uvok)
+	var e_side: Image = Gfx.side_tex(Color("8c3a2b"), Store.iso_code("BNK", 382794), "BNK", true).get_image(); var e_ink := 0; var e_mark := 0
+	for y in range(14, 44):
+		for x in range(330, 500): var e_c := e_side.get_pixel(x, y); e_ink += 1 if e_c.r > 0.75 and e_c.g > 0.75 else 0
+	for y in range(56, 92):
+		for x in range(18, 110): var e_c := e_side.get_pixel(x, y); e_mark += 1 if e_c.g > 0.5 and e_c.b > 0.45 else 0
+	check("a container's side carries its ISO code, size-type code and owner's mark, as the browser game paints them", e_ink > 150 and e_mark > 150, [e_ink, e_mark])
+	var e_labels := w.group.find_children("*", "Label3D", true, false).size(); var e_07 := false
+	for n in w.group.get_children():
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh is PlaneMesh and ((n as MeshInstance3D).mesh as PlaneMesh).size == Vector2(10, 5) and (n as Node3D).position.distance_to(Vector3(0, 0.014, 1)) < 1e-4: e_07 = true
+	check("the yard's 07 is paint on the ground, lit like it (10 x 5 m at the start), not a floating label", e_07 and e_labels == 0)
+	Fx.exposure = 1.15; var e_sc := Fx.shown(Color(1.0, 0.55, 0.2, 0.7)); var e_sd := Gfx.display(Vector3(e_dec.call(e_sc.r), e_dec.call(e_sc.g), e_dec.call(e_sc.b)), 1.15)
+	check("specks show on screen the colour asked for (the browser game writes theirs with no tone mapping)", e_sd.distance_to(Vector3(0.97, 0.55, 0.2)) < 0.004 and absf(e_sc.a - 0.7) < 1e-6, e_sd)
+	w.set_ao(false); var e_off := not w.ao_layer.visible and w.ao.render_target_update_mode == SubViewport.UPDATE_DISABLED; w.set_ao(true)
+	check("the computer's ambient occlusion can be switched off (phones and stage 5 go without)", e_off and w.ao_layer.visible)
+	w.gfx_fixed = false; w.gfx_level = 4; w.use_ao = true; w.set_ao(true)
+	for i in 81: w.govern(1.0 / 40.0)   # two seconds at 40 a second: one step down, the occlusion stays
+	var e_l1 := [w.gfx_level, w.ao_layer.visible]
+	for i in 81: w.govern(1.0 / 40.0)   # another: level 2, the occlusion goes
+	var e_l2 := [w.gfx_level, w.ao_layer.visible]
+	for i in 3 * 121: w.govern(1.0 / 60.0)   # three good spells: back up to 3, the occlusion returns
+	var e_l3 := [w.gfx_level, w.ao_layer.visible]
+	check("the occlusion follows the browser game's quality ladder: down a step per sagging two seconds, gone below level 3, back after three good spells",
+		e_l1 == [3, true] and e_l2 == [2, false] and e_l3[1] == true and int(e_l3[0]) >= 3, [e_l1, e_l2, e_l3])
+	w.gfx_level = 4; w.use_ao = true; w.set_ao(true)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

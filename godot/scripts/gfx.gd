@@ -13,13 +13,24 @@ static func blend_rect(img: Image, x: int, y: int, w: int, h: int, c: Color) -> 
 		for px in range(maxi(0, x), x1):
 			img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), c.a))
 
+## the browser game's speckle: n squares of a random colour, size*0.5..size*1.5 across, anywhere; a canvas draws them at
+## fractional places with soft edges (each pixel takes the share of it the square covers), so these do too
 static func speckle(img: Image, n: int, colors: Array, size: float) -> void:
 	var w := img.get_width(); var h := img.get_height()
 	for i in n:
 		var c: Color = colors[randi() % colors.size()]
-		var s := int(maxf(1.0, round(randf_range(size * 0.5, size * 1.5))))
-		if c.a >= 1.0: img.fill_rect(Rect2i(randi() % w, randi() % h, s, s), c)
-		else: blend_rect(img, randi() % w, randi() % h, s, s, c)
+		var s := randf_range(size * 0.5, size * 1.5)
+		frect(img, randf() * w, randf() * h, s, s, c)
+
+## a rectangle at fractional coordinates, edges blended by coverage as a canvas fillRect is (clipped at the picture's edge)
+static func frect(img: Image, x0: float, y0: float, rw: float, rh: float, c: Color) -> void:
+	var w := img.get_width(); var h := img.get_height(); var x1 := x0 + rw; var y1 := y0 + rh
+	for py in range(maxi(0, int(floor(y0))), mini(h, int(ceil(y1)))):
+		var cy := minf(y1, py + 1.0) - maxf(y0, float(py))
+		for px in range(maxi(0, int(floor(x0))), mini(w, int(ceil(x1)))):
+			var a := c.a * cy * (minf(x1, px + 1.0) - maxf(x0, float(px)))
+			if a <= 0.0: continue
+			img.set_pixel(px, py, Color(c.r, c.g, c.b, 1) if a >= 0.999 else img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), a))
 
 static func tex(img: Image, mips := true) -> ImageTexture:
 	if mips: img.generate_mipmaps()
@@ -33,7 +44,7 @@ static func glow_tex(inner: Color, outer: Color) -> ImageTexture:
 			var d := Vector2(x - 63.5, y - 63.5).length() / 64.0
 			var c: Color
 			if d < 0.35: c = inner.lerp(outer, d / 0.35)
-			elif d < 1.0: c = outer.lerp(Color(outer.r, outer.g, outer.b, 0), (d - 0.35) / 0.65)
+			elif d < 1.0: c = outer.lerp(Color(0, 0, 0, 0), (d - 0.35) / 0.65)   # as a canvas gradient to rgba(0,0,0,0)
 			else: c = Color(0, 0, 0, 0)
 			img.set_pixel(x, y, c)
 	return tex(img)
@@ -96,19 +107,25 @@ static func crate_tex() -> ImageTexture:
 	speckle(img, 300, [Color(0, 0, 0, 0.2), Color(1, 0.86, 0.63, 0.08)], 2)
 	return tex(img)
 
-## the corrugated long side of a container (the owner's letters are added later, with the menus' fonts)
-static func side_tex(color: Color, long: bool) -> ImageTexture:
+## a container's long side as the browser game paints it (World.sideTex): corrugation, rails, rust running down, grime,
+## and the ISO code, the size-type code and the owner's mark in the same type
+static func side_tex(color: Color, code: String, owner: String, long: bool) -> ImageTexture:
 	var w := 512 if long else 256; var h := 128
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8); img.fill(color)
 	var k := 0; var x := 0.0
 	while x < w:
-		img.fill_rect(Rect2i(int(x), 6, 4 if k % 2 else 3, h - 12), shade(color, 0.76) if k % 2 else shade(color, 1.14)); x += 7.0; k += 1
+		frect(img, x, 6, 3.5, h - 12, shade(color, 0.76) if k % 2 else shade(color, 1.14)); x += 7.0; k += 1
 	var d := shade(color, 0.55)
 	img.fill_rect(Rect2i(0, 0, w, 6), d); img.fill_rect(Rect2i(0, h - 7, w, 7), d); img.fill_rect(Rect2i(0, 0, 5, h), d); img.fill_rect(Rect2i(w - 5, 0, 5, h), d)
 	for i in (14 if long else 7):  # rust running down from the top rail
-		var rx := randi_range(5, w - 5); var rw := randi_range(2, 6); var rl := randf_range(40, 120)
-		for y in range(6, int(minf(rl, 122))): blend_rect(img, rx, y, rw, 1, Color(0.35, 0.157, 0.078, 0.55 * (1.0 - (y - 6) / (rl - 6))))
+		var rx := randf_range(5, w - 5); var rl := randf_range(40, 120); var rw := randf_range(2, 6)
+		for y in range(6, 122): frect(img, rx, y, rw, 1, Color(0.353, 0.157, 0.078, 0.55 * clampf(1.0 - (y + 0.5 - 6.0) / (rl - 6.0), 0.0, 1.0)))
 	speckle(img, 700 if long else 350, [Color(0, 0, 0, 0.18), Color(1, 1, 1, 0.06), Color(0.31, 0.157, 0.078, 0.25)], 2)
+	var mono: FontFile = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"); var title: FontFile = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf")
+	var ink := Color8(240, 236, 226, 235)
+	text(img, code, mono, 14, w - 14, 26, "right", "alphabetic", ink)
+	text(img, "42G1" if long else "22G1", mono, 11, w - 14, 41, "right", "alphabetic", ink)
+	text(img, owner.substr(0, 3), title, 34, 18, 86, "left", "alphabetic", Color8(240, 236, 226, 179))
 	return tex(img)
 
 static func door_tex(color: Color) -> ImageTexture:
@@ -121,6 +138,7 @@ static func door_tex(color: Color) -> ImageTexture:
 	return tex(img)
 
 ## one mesh from many boxes, each [sx, sy, sz, x, y, z] and, if wanted, a colour (hex) as a seventh item (used with vertex colours)
+## boxes merged into one mesh, each with a colour (sRGB, as the browser game's AnimalKit.geoBox decodes its colours)
 static func merge_boxes(parts: Array, _srgb := false) -> ArrayMesh:
 	var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var cols := PackedColorArray(); var idx := PackedInt32Array()
 	for p in parts:
@@ -174,11 +192,179 @@ static func multimesh(mesh: Mesh, xforms: Array, colors := []) -> MultiMeshInsta
 	n.custom_aabb = AABB(Vector3(-400, -20, -400), Vector3(800, 500, 800))  # never culled as a whole, as in the browser game
 	return n
 
-static func points(list: PackedVector3Array, color: Color, size: float, alpha := 1.0) -> MeshInstance3D:
+static func points(list: PackedVector3Array, color: Color, size: float, alpha := 1.0, fog := false) -> MeshInstance3D:
 	var a := []; a.resize(Mesh.ARRAY_MAX); a[Mesh.ARRAY_VERTEX] = list
 	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_POINTS, a)
 	var sh := Shader.new()
-	sh.code = "shader_type spatial; render_mode unshaded, fog_disabled, blend_mix, depth_draw_never; uniform vec4 col : source_color; uniform float size;\nvoid vertex(){ POINT_SIZE = size; }\nvoid fragment(){ ALBEDO = col.rgb; ALPHA = col.a; }"
+	sh.code = "shader_type spatial; render_mode unshaded, " + ("" if fog else "fog_disabled, ") + "blend_mix, depth_draw_never; uniform vec4 col : source_color; uniform float size;\nvoid vertex(){ POINT_SIZE = size; }\nvoid fragment(){ ALBEDO = col.rgb; ALPHA = col.a; }"
 	var mat := ShaderMaterial.new(); mat.shader = sh; mat.set_shader_parameter("col", Color(color.r, color.g, color.b, alpha)); mat.set_shader_parameter("size", size)
 	var n := MeshInstance3D.new(); n.mesh = m; n.material_override = mat; n.custom_aabb = AABB(Vector3(-400, -20, -400), Vector3(800, 500, 800))
 	return n
+
+# ---------------- the browser game's picture: three.js r128 as it drew it ----------------
+# three.js r128 tone maps and sRGB-encodes inside each material and then mixes the fog colour in, as it stands, over that
+# finished colour; its ACES scales by exposure/0.6 and has no white point. Godot's compatibility renderer, with no glow,
+# also tone maps inside each material and writes sRGB, so the same curve comes out with the exposure below and a white
+# that makes Godot's divide-by-white 1. Its own fog mixes before tone mapping, though, so solid things take no Godot fog
+# and World draws the fog over them from the depth buffer instead (the fog layer); see-through things keep Godot's fog,
+# set to the colour that tone maps to the browser game's.
+const TONE_WHITE := 14.26
+const PRIO_SHADOW := -128    # the moon's shadow layer (MoonShadow), first in the see-through pass, straight after the solid world
+const PRIO_FOG := -127       # then the fog layer
+const PRIO_AO := -126        # then the computer's ambient occlusion (AoView), multiplied over the fogged colours as there
+const PRIO_SKY := -125       # then the sky dome and what stands in front of it without fog (skyline, red mast lights)
+const PRIO_BACKDROP := -124
+const MAIN_ONLY := 19        # render layer of the full-screen layers: drawn for the main camera alone
+const IN_HAND := 18          # render layer of the gun in hand: not in the occlusion's depth picture
+
+static func exposure(e: float) -> float:
+	return e / 0.6 / 1.8
+
+## what the browser game shows for a scene colour (three.js r128 ACESFilmic, then sRGB), 0..1 per channel
+static func display(c: Vector3, e: float) -> Vector3:
+	var x := c * (e / 0.6)
+	var a := Vector3(0.59719 * x.x + 0.35458 * x.y + 0.04823 * x.z, 0.07600 * x.x + 0.90834 * x.y + 0.01566 * x.z, 0.02840 * x.x + 0.13383 * x.y + 0.83777 * x.z)
+	var f := Vector3(_rrt(a.x), _rrt(a.y), _rrt(a.z))
+	var o := Vector3(1.60475 * f.x - 0.53108 * f.y - 0.07367 * f.z, -0.10208 * f.x + 1.10813 * f.y - 0.00605 * f.z, -0.00327 * f.x - 0.07276 * f.y + 1.07602 * f.z)
+	return Vector3(_srgb(clampf(o.x, 0, 1)), _srgb(clampf(o.y, 0, 1)), _srgb(clampf(o.z, 0, 1)))
+static func _rrt(v: float) -> float:
+	return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081)
+static func _srgb(c: float) -> float:
+	return 12.92 * c if c <= 0.0031308 else 1.055 * pow(c, 1.0 / 2.4) - 0.055
+
+## the scene colour the browser game shows as F (sRGB): its fog colour, which three.js mixed in after tone mapping, as a
+## colour Godot can mix in before. Newton's method on three channels
+static func scene_for(F: Vector3, e: float) -> Vector3:
+	var L := Vector3(0.02, 0.02, 0.02)
+	for it in 60:
+		var y := display(L, e); var r := y - F
+		if maxf(absf(r.x), maxf(absf(r.y), absf(r.z))) < 1e-7: break
+		var cols: Array[Vector3] = []
+		for k in 3:
+			var d := maxf(L[k] * 1e-4, 1e-7); var L2 := L; L2[k] += d
+			cols.push_back((display(L2, e) - y) / d)
+		var J := Basis(cols[0], cols[1], cols[2])   # columns: d(display)/d(channel)
+		var dx: Vector3 = J.inverse() * (-r)
+		L = Vector3(maxf(1e-6, L.x + dx.x), maxf(1e-6, L.y + dx.y), maxf(1e-6, L.z + dx.z))
+	return L
+
+## the ALBEDO a compatibility-renderer shader turns into the linear colour L: it decodes sRGB with a cubic, not the true curve
+static func albedo_of(L: Vector3) -> Vector3:
+	return Vector3(_poly_inv(L.x), _poly_inv(L.y), _poly_inv(L.z))
+static func _poly_inv(v: float) -> float:
+	var s := pow(maxf(v, 0.0), 1.0 / 2.2)
+	for i in 8:
+		var f := s * (s * (s * 0.305306011 + 0.682171111) + 0.012522878) - v
+		s -= f / (s * (s * 0.915918033 + 1.364342222) + 0.012522878)
+	return maxf(s, 0.0)
+const ALBEDO_GLSL := """
+vec3 albedo_of(vec3 c) {
+	vec3 s = pow(max(c, vec3(0.0)), vec3(0.4545));
+	for (int i = 0; i < 4; i++) {
+		vec3 f = s * (s * (s * 0.305306011 + 0.682171111) + 0.012522878) - c;
+		s -= f / (s * (s * 0.915918033 + 1.364342222) + 0.012522878);
+	}
+	return max(s, vec3(0.0));
+}
+"""
+
+## the browser game's sky dome (a sphere 380 m round the middle, no fog), in scene colours like the original's shader
+static func sky_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = "shader_type spatial;\nrender_mode unshaded, fog_disabled, cull_front, depth_draw_never, shadows_disabled;\n" \
+		+ "uniform vec3 horizon; uniform vec3 zenith; uniform vec3 glow;\nvarying vec3 dir;\n" + ALBEDO_GLSL \
+		+ "void vertex() { dir = VERTEX; }\nvoid fragment() {\n\tfloat h = normalize(dir).y; vec3 c = mix(horizon, zenith, smoothstep(0.0, 0.6, h));\n" \
+		+ "\tc += glow * exp(-max(h, 0.0) * 12.0) * smoothstep(-0.08, 0.0, h);\n\tALBEDO = albedo_of(c); ALPHA = 1.0;\n}\n"
+	return sh
+
+## the fog over solid things, from the depth buffer: three.js r128's FogExp2 on the view depth, mixed over the finished
+## picture. The colour given is the scene colour that tone maps to the fog colour, so the blend lands on it exactly
+static func fog_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = "shader_type spatial;\nrender_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;\n" \
+		+ "uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;\nuniform vec3 col;\nuniform float density;\n" \
+		+ "void vertex() { POSITION = vec4(VERTEX.xy, 0.0, 1.0); }\nvoid fragment() {\n\tfloat d = texture(depth_tex, SCREEN_UV).r;\n" \
+		+ "\tvec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n\tfloat z = -v.z / v.w;\n" \
+		+ "\tALBEDO = col; ALPHA = d <= 0.000001 ? 0.0 : 1.0 - exp(-density * density * z * z);   // (depth is reversed: 0 is nothing drawn)\n}\n"
+	return sh
+
+## three.js's MeshStandardMaterial lights with Lambert's diffuse; and solid things take their fog from World's fog layer
+static func three_like(n: GeometryInstance3D) -> void:
+	if n.material_override: _three_mat(n.material_override)
+	var mesh: Mesh = null
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D; mesh = mi.mesh
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i)
+			if m: _three_mat(m)
+	elif n is MultiMeshInstance3D and (n as MultiMeshInstance3D).multimesh: mesh = (n as MultiMeshInstance3D).multimesh.mesh
+	if mesh:
+		for i in mesh.get_surface_count():
+			var m := mesh.surface_get_material(i)
+			if m: _three_mat(m)
+static func _three_mat(m: Material) -> void:
+	if m is BaseMaterial3D and not m.has_meta("three"):
+		var b := m as BaseMaterial3D; b.set_meta("three", true)
+		b.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+		if b.transparency in [BaseMaterial3D.TRANSPARENCY_DISABLED, BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR, BaseMaterial3D.TRANSPARENCY_ALPHA_HASH] \
+				and b.blend_mode == BaseMaterial3D.BLEND_MODE_MIX:
+			b.disable_fog = true
+	if m.next_pass: _three_mat(m.next_pass)
+
+## something the browser game drew with fog: false that is solid: it goes in after the fog layer, still hidden by the world
+static func backdrop(m: BaseMaterial3D, prio := PRIO_BACKDROP) -> BaseMaterial3D:
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS; m.render_priority = prio; m.disable_fog = true
+	return m
+
+## a box textured as three.js's BoxGeometry is: the whole picture on every face, upright seen from outside (Godot's BoxMesh
+## spreads one picture over all six faces, a sixth each)
+static func box(size: Vector3) -> ArrayMesh:
+	var h := size / 2.0
+	var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var idx := PackedInt32Array()
+	# normal, right (u), up (image top), as three.js lays them out
+	for f: Array in [[Vector3.RIGHT, Vector3.FORWARD, Vector3.UP], [Vector3.LEFT, Vector3.BACK, Vector3.UP], [Vector3.UP, Vector3.RIGHT, Vector3.FORWARD],
+			[Vector3.DOWN, Vector3.RIGHT, Vector3.BACK], [Vector3.BACK, Vector3.RIGHT, Vector3.UP], [Vector3.FORWARD, Vector3.LEFT, Vector3.UP]]:
+		var n: Vector3 = f[0]; var r: Vector3 = f[1]; var t: Vector3 = f[2]
+		var c := n * h; var rr := r * h; var tt := t * h
+		var o := vs.size()
+		vs.append_array([c - rr + tt, c + rr + tt, c - rr - tt, c + rr - tt])
+		for k in 4: ns.push_back(n)
+		uvs.append_array([Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)])
+		idx.append_array([o, o + 1, o + 2, o + 1, o + 3, o + 2])
+	var a := []; a.resize(Mesh.ARRAY_MAX); a[Mesh.ARRAY_VERTEX] = vs; a[Mesh.ARRAY_NORMAL] = ns; a[Mesh.ARRAY_TEX_UV] = uvs; a[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a)
+	return m
+
+## text drawn into a picture as a canvas fillText draws it: the font at px pixels, aligned "left", "center" or "right" on x,
+## y the baseline ("alphabetic") or the middle of the em box ("middle"); glyphs come from the font's own glyph cache
+static func text(img: Image, s: String, font: FontFile, px: int, x: float, y: float, align := "left", baseline := "alphabetic", col := Color.WHITE) -> void:
+	var size := Vector2i(px, 0)
+	var glyphs := []; var width := 0.0
+	for i in s.length():
+		var gi := font.get_glyph_index(px, s.unicode_at(i), 0)
+		font.render_glyph(0, size, gi)
+		glyphs.push_back([gi, width]); width += font.get_glyph_advance(0, px, gi).x
+	var x0 := x - (width if align == "right" else (width / 2.0 if align == "center" else 0.0))
+	var by := y + ((font.get_ascent(px) - font.get_descent(px)) / 2.0 if baseline == "middle" else 0.0)
+	var atlases := {}
+	for g: Array in glyphs:
+		var gi: int = g[0]; var ti := font.get_glyph_texture_idx(0, size, gi)
+		if ti < 0: continue
+		if not atlases.has(ti): atlases[ti] = font.get_texture_image(0, size, ti)
+		var atlas: Image = atlases[ti]
+		if atlas == null: continue
+		var r := font.get_glyph_uv_rect(0, size, gi); var off := font.get_glyph_offset(0, size, gi)
+		var gx := int(round(x0 + float(g[1]) + off.x)); var gy := int(round(by + off.y))
+		for yy in int(r.size.y):
+			var py := gy + yy
+			if py < 0 or py >= img.get_height(): continue
+			for xx in int(r.size.x):
+				var pxx := gx + xx
+				if pxx < 0 or pxx >= img.get_width(): continue
+				var a := atlas.get_pixel(int(r.position.x) + xx, int(r.position.y) + yy).a * col.a
+				if a <= 0.0: continue
+				var under := img.get_pixel(pxx, py)
+				# source-over, as a canvas composites: colour and coverage both
+				var oa := a + under.a * (1.0 - a)
+				var oc := (Color(col.r, col.g, col.b) * a + Color(under.r, under.g, under.b) * under.a * (1.0 - a)) / maxf(oa, 1e-6)
+				img.set_pixel(pxx, py, Color(oc.r, oc.g, oc.b, oa))

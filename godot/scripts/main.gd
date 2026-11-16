@@ -7,6 +7,7 @@ const BASE_FOV := 74.0
 
 var world: World; var fx: Fx; var proj: Proj; var enemies: Enemies; var loot: Loot; var guns: Guns; var game: Game; var ui: Ui
 var cam: Camera3D
+var grade: Grade
 var player := Player.new()
 var state := "menu"
 var time := 0.0
@@ -43,10 +44,15 @@ func _ready() -> void:
 	get_window().content_scale_factor = dpr
 	# the 3D picture is drawn at most at 1.25x (touch) or 1.6x (desktop) of the page's size, as in the browser game
 	get_viewport().scaling_3d_scale = minf(1.0, (1.25 if is_touch else 1.6) / dpr)
+	World.shadow_map_size = 1024 if is_touch else 2048   # the browser game's moon shadow map: 1024 on phones
 	world = World.new(); add_child(world)
+	grade = Grade.new(); add_child(grade); world.grade = grade
 	cam = Camera3D.new(); cam.near = 0.05; cam.far = 460.0; cam.fov = BASE_FOV; cam.rotation_order = EULER_ORDER_YXZ; add_child(cam); cam.make_current()
+	cam.set_cull_mask_value(MoonShadow.ENCODE, false); cam.set_cull_mask_value(AoView.LAYER, false)   # those quads are for their own cameras only
+	world.use_ao = not is_touch   # the browser game's occlusion: computers at its top quality levels, never phones
 	fx = Fx.new(); add_child(fx); world.fx = fx
 	proj = Proj.new(); add_child(proj); enemies = Enemies.new(); add_child(enemies); loot = Loot.new(); add_child(loot)
+	world.caster_roots = [enemies, loot]   # people, animals, robots and what they drop cast the moon's shadow, as there
 	guns = Guns.new(); game = Game.new()
 	guns.player = player; guns.cam = cam; guns.world = world; guns.enemies = enemies; guns.fx = fx; guns.proj = proj
 	guns.hint = hint; guns.banner = banner
@@ -64,7 +70,7 @@ func _ready() -> void:
 	player.say = func(t: String) -> void: feed(t, 0)
 	world.build_stage(1)
 	_build_guns(); _build_hud()
-	cut = Cut.new(); add_child(cut); cut.cam = cam; cut.player = player; cut.game = game; cut.world = world; cut.enemies = enemies; cut.fx = fx
+	cut = Cut.new(); add_child(cut); world.caster_roots.push_back(cut); cut.cam = cam; cut.player = player; cut.game = game; cut.world = world; cut.enemies = enemies; cut.fx = fx
 	cut.build_overlay(hud.get_parent(), f_title, f_mono)
 	ui = Ui.new(); ui.f_title = f_title; ui.f_body = f_body; ui.f_bold = f_bold; ui.f_mono = f_mono; ui.game = game; ui.guns = guns; ui.is_touch = is_touch
 	ui.do_deploy = func() -> void: enter_play(true)
@@ -80,6 +86,8 @@ func _ready() -> void:
 
 func apply_settings() -> void:
 	Snd.touch = look_mode == "touch"
+	grade.visible = look_mode != "touch"   # phones draw without the finishing pass, as the browser game's do
+	if look_mode == "touch" and world.use_ao: world.use_ao = false; world.set_ao(false)
 	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
 	for id in Weapons.ORDER: gm_models.apply_look(id, Custom.setup(id))   # parts and paint
@@ -96,7 +104,7 @@ func _on_resize() -> void:
 const GUN_SHAPE := {"pistol": [0.2, 0.05, 0.035], "shotgun": [0.62, 0.06, 0.05], "rifle": [0.6, 0.065, 0.045], "smg": [0.4, 0.07, 0.045], "sniper": [0.8, 0.055, 0.045],
 	"gl": [0.5, 0.11, 0.09], "lmg": [0.72, 0.09, 0.07], "rocket": [0.85, 0.12, 0.12]}
 func _build_guns() -> void:
-	view = Node3D.new(); cam.add_child(view); _build_needle(cam)
+	view = Node3D.new(); world.hand_root = view; cam.add_child(view); _build_needle(cam)
 	gm_models = GunModels.new(); gm_models.build(view)
 	for id in Weapons.ORDER: gun_models[id] = gm_models.models[id].g
 	for id in Toys.ORDER: var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
@@ -486,6 +494,7 @@ func _cut_step(dt: float) -> void:
 
 var hold := false
 func _process(delta: float) -> void:
+	if not is_touch: world.govern(delta)
 	var dt := minf(delta, 0.05)
 	if state == "playing":
 		if look_mode == "lock":
@@ -610,6 +619,11 @@ func command(line: String) -> Dictionary:
 				"hole": fx.decal(at, cam.global_basis.z)
 				_: fx.explode(at, true)
 		"audit": return {"screen": ui.cur, "issues": ui.audit()}
+		"foe":   # the enemy at this place in the list: where it stands, which way it faces, what it is (for pictures beside the browser game's)
+			var e = enemies.list[int(a[1])] if int(a[1]) < enemies.list.size() else null
+			return {} if e == null else {"pos": [e.pos.x, e.pos.y, e.pos.z], "yaw": e.yaw, "type": e.type, "boss": e.boss, "H": e.H, "R": e.R}
+		"hudoff":   # pictures without the HUD (and without the gun in hand, unless "hudoff gun")
+			hud.visible = false; view.visible = a.size() > 1 and a[1] == "gun"; touch_ui.visible = false
 		"where":   # where the living ones of a kind are
 			var ps := []
 			for e in enemies.list:
@@ -669,6 +683,29 @@ func command(line: String) -> Dictionary:
 		"reload": guns.st().mag = int(a[1]) if a.size() > 1 else 0; guns.start_reload()
 		"cam":   # a free camera for pictures: x y z yaw pitch
 			_set_state("shot"); ui.show_screen(""); cam.fov = base_fov; cam.position = Vector3(float(a[1]), float(a[2]), float(a[3])); cam.rotation = Vector3(float(a[5]), float(a[4]), 0)
+		"shadowinfo":   # the moon's shadow picture: how much of it holds a caster, where its camera is, how many casters there are
+			var ms: MoonShadow = world.moon_shadow; var img := ms.get_texture().get_image(); var near := 0; var tot := 0; var mn := 9.0
+			if img != null:
+				for y in range(0, img.get_height(), 8):
+					for x in range(0, img.get_width(), 8):
+						var c := img.get_pixel(x, y); var d := c.r + c.g / 255.0 + c.b / 65025.0; tot += 1; mn = minf(mn, d)
+						if d < 0.99: near += 1
+			var casters := 0
+			for n in get_tree().root.find_children("*", "VisualInstance3D", true, false):
+				if (n as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER): casters += 1
+			var sm: ShaderMaterial = world.shadow_mat
+			return {"moon_col": str(sm.get_shader_parameter("moon_col")), "hemi_sky": str(sm.get_shader_parameter("hemi_sky")), "exposure": sm.get_shader_parameter("exposure"), "moon_dir": str(sm.get_shader_parameter("moon_dir")), "lamps": str(sm.get_shader_parameter("lamp_pos")), "img": img != null, "near": near, "of": tot, "min": mn, "cam": [ms.cam.global_position.x, ms.cam.global_position.y, ms.cam.global_position.z], "layer": world.shadow_layer.visible, "casters": casters, "update": ms.render_target_update_mode}
+		"gfx":   # "gfx high": the computer's top quality, fixed (with the occlusion), as the browser game's setting; "gfx auto": the ladder
+			world.gfx_fixed = a.size() > 1 and a[1] == "high"
+			if world.gfx_fixed and not is_touch: world.gfx_level = 4; world.use_ao = true; world.set_ao(world.toy == null)
+		"lampsoff":   # the six lamp lights out (for pictures that compare light by light)
+			world.lamp_scale = 0.0
+			for l in world.lights: l.light_energy = 0.0
+		"layer":   # show or hide one of the picture's layers, to see what each does: grade, shadow, fog, sky
+			var n: Node = {"grade": grade, "shadow": world.shadow_layer, "fog": world.fog_layer, "ao": world.ao_layer, "sky": world.get_node("Sky")}.get(a[1])
+			if n != null: n.visible = a[2] == "1"
+		"stand":   # the player stands here (x z), and the six lamp lights go to the lamps nearest, as when walking there
+			player.pos.x = float(a[1]); player.pos.z = float(a[2]); world._lamp_t = 0.0; world.update_world(0.0, 0.0, player.pos.x, player.pos.z)
 		"gun": guns.cur = a[1]; guns.pending = null; guns.switch_t = 0.0; guns.cooldown = 0.0
 		"trigger": guns.trigger = a[1] == "1"; guns.trigger_edge = guns.trigger
 		"ads": guns.ads_held = a[1] == "1"

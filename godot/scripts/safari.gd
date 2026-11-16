@@ -89,9 +89,9 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		tr_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(1, q[2], 1)), Vector3(q[0], q[2] / 2, q[1])))
 		cr_x.push_back(Transform3D(Basis.from_scale(Vector3(q[3], q[3] * 0.26, q[3])), Vector3(q[0], q[2], q[1])))
 	var tm := CylinderMesh.new(); tm.top_radius = 0.18; tm.bottom_radius = 0.3; tm.height = 1.0; tm.radial_segments = 6
-	var trunks := Gfx.multimesh(tm, tr_x); trunks.material_override = Gfx.std(World.lin("5a4636"), 0.95); G.add_child(trunks)
+	var trunks := Gfx.multimesh(tm, tr_x); trunks.material_override = Gfx.std(World.lin("5a4636"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
 	var sm := SphereMesh.new(); sm.radius = 1.0; sm.height = 2.0; sm.radial_segments = 12; sm.rings = 6
-	var crowns := Gfx.multimesh(sm, cr_x); crowns.material_override = Gfx.std(World.lin("4b5a2c"), 0.9); G.add_child(crowns)
+	var crowns := Gfx.multimesh(sm, cr_x); crowns.material_override = Gfx.std(World.lin("4b5a2c"), 0.9); G.add_child(crowns); MoonShadow.caster(crowns)
 	var rocks := []; var c := 0; tries = 0
 	while c < 26 and tries < 600:
 		tries += 1; var cx := R.rng(-165, 165); var cz := R.rng(-165, 165)
@@ -105,7 +105,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		var a := R.next(); var b := R.next() * TAU; var cc := R.next()
 		rk_x.push_back(Transform3D(Basis.from_euler(Vector3(a, b, cc)).scaled_local(Vector3(q[2], q[3], q[2])), Vector3(q[0], q[3] * 0.45, q[1])))
 	var rm := SphereMesh.new(); rm.radius = 1.0; rm.height = 2.0; rm.radial_segments = 6; rm.rings = 3
-	var rim := Gfx.multimesh(rm, rk_x); rim.material_override = Gfx.std(World.lin("8f8374"), 0.92); G.add_child(rim)
+	var rim := Gfx.multimesh(rm, rk_x); rim.material_override = Gfx.std(World.lin("8f8374"), 0.92); G.add_child(rim); MoonShadow.caster(rim)
 	var mounds := []; tries = 0
 	while mounds.size() < 34 and tries < 800:
 		tries += 1; var x := R.rng(-170, 170); var z := R.rng(-170, 170)
@@ -114,7 +114,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	var md_x := []
 	for q in mounds: var ry := R.next() * TAU; md_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(0.95, q[2], 0.95)), Vector3(q[0], q[2] / 2, q[1])))
 	var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = 1.0; cm.height = 1.0; cm.radial_segments = 7
-	var mim := Gfx.multimesh(cm, md_x); mim.material_override = Gfx.std(World.lin("9a5a3a"), 0.95); G.add_child(mim)
+	var mim := Gfx.multimesh(cm, md_x); mim.material_override = Gfx.std(World.lin("9a5a3a"), 0.95); G.add_child(mim); MoonShadow.caster(mim)
 	var bu_x := []
 	for i in 260:
 		var x := R.rng(-172, 172); var z := R.rng(-172, 172); var s := R.rng(0.6, 1.5); var ry := R.next() * TAU
@@ -149,7 +149,7 @@ func _build_tower(G: Node3D, x: float, z: float) -> void:
 		parts.append_array([[2 * H, 0.08, 0.08, 0, y, -H, "5a3f28"], [0.08, 0.08, 2 * H, -H, y, 0, "5a3f28"], [0.08, 0.08, 2 * H, H, y, 0, "5a3f28"], [H - 0.8, 0.08, 0.08, -(H + 0.8) / 2, y, H, "5a3f28"], [H - 0.8, 0.08, 0.08, (H + 0.8) / 2, y, H, "5a3f28"]])
 	parts.push_back([2 * H + 1.6, 0.3, 2 * H + 1.6, 0, 6.85, 0, "8b8f92"])
 	for k in range(1, int(TOWER.steps) + 1): var h: float = k * TOWER.step; var z0: float = H + 0.5 * (TOWER.steps - k); parts.push_back([1.4, h, 0.5, 0, h / 2, z0 + 0.25, "86613e"])
-	var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.9; m.material_override = mat; inner.add_child(m)
+	var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.9; m.material_override = mat; inner.add_child(m); MoonShadow.caster(m)
 	var add := func(minx: float, miny: float, minz: float, maxx: float, maxy: float, maxz: float, grate := false) -> void:
 		var b := Phys.add_collider(x + minx, miny, z + minz, x + maxx, maxy, z + maxz, "wood"); b.grate = grate; b.tower = true; cols.push_back(b)
 	add.call(-Bh, 0.0, -Bh, Bh, 2.0, Bh)

@@ -124,7 +124,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	for D: Dictionary in DOORS:
 		var d := D.duplicate(); var lw: float = (D.z1 - D.z0) / 2
 		for nm in ["a", "b"]:
-			var leaf := MeshInstance3D.new(); var lm := BoxMesh.new(); lm.size = Vector3(0.3, D.h, lw); leaf.mesh = lm; leaf.material_override = dmat; leaf.position = Vector3(D.x, D.h / 2, D.z0 + lw / 2 if nm == "a" else D.z1 - lw / 2); G.add_child(leaf); d[nm] = leaf
+			var leaf := MeshInstance3D.new(); var lm := BoxMesh.new(); lm.size = Vector3(0.3, D.h, lw); leaf.mesh = lm; leaf.material_override = dmat; MoonShadow.caster(leaf); leaf.position = Vector3(D.x, D.h / 2, D.z0 + lw / 2 if nm == "a" else D.z1 - lw / 2); G.add_child(leaf); d[nm] = leaf
 		d.open = 0.0; d.mode = "shut"; d.col = Phys.add_collider(D.x - 0.2, 0, D.z0, D.x + 0.2, D.h, D.z1, "metal"); d.col.door = true; doors.push_back(d)
 		glow.push_back([0.06, 0.1, D.z1 - D.z0 + 0.4, D.x + (0.32 if D.x < 0 else -0.32), D.h + 0.15, -7.5, "f2a33a" if D.room == "bridge" else "5ed6b0"])
 		var lb := Label3D.new(); lb.text = D.name; lb.font_size = 96; lb.pixel_size = 0.012; lb.modulate = Color("f2a33a") if D.room == "bridge" else Color("5ed6b0"); lb.position = Vector3(D.x - D.inward * 0.4, 4.6, -7.5); lb.rotation.y = -D.inward * PI / 2; G.add_child(lb)
@@ -154,7 +154,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	# the key: a gold thing turning slowly on the console
 	key_obj = Node3D.new(); key_obj.position = KEY; G.add_child(key_obj)
 	var km := MeshInstance3D.new(); km.mesh = Gfx.merge_boxes([[0.34, 0.34, 0.08, 0, 0.5, 0, "ffc83a"], [0.16, 0.05, 0.09, 0, 0.3, 0, "ffc83a"], [0.065, 0.3, 0.065, 0, 0.15, 0, "ffc83a"], [0.08, 0.05, 0.05, 0.06, 0.08, 0, "ffc83a"]])
-	var kmat := Gfx.unlit(Color(1.0, 0.82, 0.3), false); km.material_override = kmat; key_obj.add_child(km)
+	var kmat := Gfx.unlit(Color(1.0, 0.82, 0.3), false); km.material_override = kmat; key_obj.add_child(km); MoonShadow.caster(km)
 	var kl := OmniLight3D.new(); kl.light_color = Color(1, 0.8, 0.4); kl.light_energy = 1.5; kl.omni_range = 5.0; kl.position.y = 0.5; key_obj.add_child(kl)
 	# 7. the main hall: the floor (solid round the walkway, panels over the pit that fall in at the boss's second phase), the stepped pit
 	# under it, a stepped dais round the reactor, four pillars, tall cargo to hide behind
@@ -175,11 +175,11 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		band.call(cx0 - st.ax, cz0 - iz, cx0 - ix, cz0 + iz, st.y, col); band.call(cx0 + ix, cz0 - iz, cx0 + st.ax, cz0 + iz, st.y, col)
 	sparts.push_back([2 * pyr_bx, 0.02, 2 * pyr_bz, cx0, PYR_BOTTOM - 0.008, cz0, "1f242d"])
 	var smat := StandardMaterial3D.new(); smat.vertex_color_use_as_albedo = true; smat.roughness = 0.55; smat.metallic = 0.5
-	var step_mesh := MeshInstance3D.new(); step_mesh.mesh = Gfx.merge_boxes(sparts); step_mesh.material_override = smat; step_mesh.visible = false; G.add_child(step_mesh)
+	var step_mesh := MeshInstance3D.new(); step_mesh.mesh = Gfx.merge_boxes(sparts); step_mesh.material_override = smat; step_mesh.visible = false; G.add_child(step_mesh); MoonShadow.caster(step_mesh)
 	var cols := []; var dparts := []
 	for k in DAIS.size():
 		var q: Array = DAIS[k]; cols.push_back(Phys.add_collider(q[0], 0, q[1], q[2], q[4], q[3], "metal")); dparts.push_back([q[2] - q[0], q[4], q[3] - q[1], (q[0] + q[2]) / 2, q[4] / 2, (q[1] + q[3]) / 2, ["2f3542", "353b48", "3d4454"][k]])
-	var dais := MeshInstance3D.new(); dais.mesh = Gfx.merge_boxes(dparts); dais.material_override = smat; G.add_child(dais)
+	var dais := MeshInstance3D.new(); dais.mesh = Gfx.merge_boxes(dparts); dais.material_override = smat; G.add_child(dais); MoonShadow.caster(dais)
 	pit = {"tiles": tiles, "cols": cols, "dais": dais, "steps": step_mesh}
 	Phys.add_collider(REACTOR.x - REACTOR.r, PYR_BOTTOM, REACTOR.z - REACTOR.r, REACTOR.x + REACTOR.r, 16, REACTOR.z + REACTOR.r, "metal")
 	var core := MeshInstance3D.new(); var cm := CylinderMesh.new(); cm.top_radius = 1.2; cm.bottom_radius = 1.2; cm.height = 16.0 - PYR_BOTTOM; core.mesh = cm; core_mat = Gfx.unlit(Color(0.56, 0.85, 1.0), false); core.material_override = core_mat
@@ -203,7 +203,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		var lb2 := MeshInstance3D.new(); lb2.mesh = lid_mesh; lb2.material_override = lid_mat; lb2.position = Vector3(q[0] + 0.6, 0.035, q[1]); G.add_child(lb2)
 		var gq := MeshInstance3D.new(); var gp := PlaneMesh.new(); gp.size = Vector2(2.3, 2.3); gq.mesh = gp; gq.material_override = Gfx.unlit(Color(1.0, 0.29, 0.12), false); gq.position = Vector3(q[0], 0.012, q[1]); gq.visible = false; G.add_child(gq)
 		hatches.push_back({"x": q[0], "z": q[1], "a": la, "b": lb2, "glow": gq, "open": false, "k": 0.0})
-	var sm := MeshInstance3D.new(); sm.mesh = Gfx.merge_boxes(solid); sm.material_override = smat; G.add_child(sm)
+	var sm := MeshInstance3D.new(); sm.mesh = Gfx.merge_boxes(solid); sm.material_override = smat; G.add_child(sm); MoonShadow.caster(sm)
 	air_door = MeshInstance3D.new(); (air_door as MeshInstance3D).mesh = Gfx.merge_boxes([[4.5, 4.5, 0.3, 0, 0, 0, "4a5162"]]); (air_door as MeshInstance3D).material_override = smat
 	air_door.position = Vector3(-41.75, 2.25, DOOR_Z); G.add_child(air_door)
 	var gmesh := MeshInstance3D.new(); gmesh.mesh = Gfx.merge_boxes(glow); var gmat := StandardMaterial3D.new(); gmat.vertex_color_use_as_albedo = true; gmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; gmesh.material_override = gmat; G.add_child(gmesh)
