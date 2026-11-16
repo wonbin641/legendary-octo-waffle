@@ -269,6 +269,8 @@ func refresh_menu() -> void:
 	var n_clear: int = Store.save.cleared.size()
 	strip_r.text = "가방 %s    클리어 %d / %d" % [Store.won(Store.save.money), n_clear, Store.STAGE_ORDER.size()]
 	strip_l.text = "● 7번 야드 관제" + ("  ·  개발자 모드 켜짐" if Store.settings.dev else "")
+	var cxb: Button = rail_btns[4]; var cx_ok := Codex.ready()   # the book opens with your first clear (always in developer mode)
+	if cxb.disabled == cx_ok: cxb.disabled = not cx_ok; cxb.set_meta("label", "도감" if cx_ok else "도감 · 첫 클리어 후"); _layout_menu()
 	var open := Store.stage_open(sel); var st: Array = _status(sel); var best := int(Store.save.best.get("t%d" % sel, 0)); var done: bool = Store.save.cleared.has(sel)
 	d_code.text = "스테이지 " + Store.STAGE_TAG[sel] + "  ·  " + st[1]
 	d_name.text = Game.STAGES[sel].name
@@ -433,7 +435,7 @@ func render_custom() -> void:
 
 # ================= the codex =================
 func _build_codex() -> void:
-	var s := sheet("codex", "도감 · 무기와 적의 모든 수치", "CODEX"); cx_list = s[1]
+	var s := sheet("codex", "도감 · 무기와 적의 모든 수치", "CODEX", 1060.0); cx_list = s[1]
 	var b := btn("돌아가기", "primary", close_sub); b.set_meta("first", true); s[2].add_child(b); s[2].move_child(b, 0)
 
 func _bar_row(name: String, value: String, frac: float) -> Control:
@@ -443,30 +445,60 @@ func _bar_row(name: String, value: String, frac: float) -> Control:
 	var v := lbl(value, f_mono, 11, INK); v.custom_minimum_size = Vector2(92, 0); v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT; h.add_child(v)
 	return h
 
+var cx_st := "all"   # the enemy book's stage filter
+## a card in the books: the name (and a boss badge, the stages), the line under it, the price, the numbers with bars, a note
+func _cx_card(c: Dictionary, stages: bool) -> Control:
+	var locked: bool = c.get("locked", false); var boss: int = int(c.get("boss", 0))
+	var border := Color(STEEL, 0.25) if locked else (Color(ALARM, 0.55) if boss == 1 else (Color(SODIUM, 0.55) if boss == 2 else (Color(SODIUM, 0.45) if c.get("own", false) else LINE)))
+	var bg := Color(ALARM, 0.05) if boss == 1 and not locked else (Color(SODIUM, 0.04) if boss == 2 and not locked else Color(INK, 0.015 if locked else 0.03))
+	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _box(bg, border, 1, 12)); p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var v := vbox(7); p.add_child(v)
+	var top := HFlowContainer.new(); top.add_theme_constant_override("h_separation", 8); v.add_child(top)
+	top.add_child(lbl("???" if locked else str(c.name), f_title, 21, STEEL if locked else INK))
+	if boss > 0 and not locked:
+		var bd := lbl("보스" if boss == 1 else "중간보스", f_mono, 10, Color.WHITE if boss == 1 else NIGHT); var bp := PanelContainer.new(); bp.add_theme_stylebox_override("panel", _box(ALARM if boss == 1 else SODIUM, ALARM if boss == 1 else SODIUM, 0, 2)); bp.add_child(bd); bp.size_flags_vertical = Control.SIZE_SHRINK_CENTER; top.add_child(bp)
+	if stages:
+		for st in c.st:
+			var sp := PanelContainer.new(); sp.add_theme_stylebox_override("panel", _box(Color(0, 0, 0, 0), LINE, 1, 2)); sp.add_child(lbl(str(st), f_mono, 10, INK)); sp.size_flags_vertical = Control.SIZE_SHRINK_CENTER; top.add_child(sp)
+	if locked:
+		var tags: Array = c.st
+		v.add_child(lbl("스테이지 " + " · ".join(tags) + (" 중 하나를" if tags.size() > 1 else Codex.eul(str(tags[0]))) + " 깨면 열립니다", f_body, 12, STEEL, true)); return p
+	if str(c.get("sub", "")) != "": v.add_child(lbl(str(c.sub), f_body, 12, STEEL, true))
+	if str(c.get("tag", "")) != "": v.add_child(lbl(str(c.tag), f_mono, 11, SODIUM, true))
+	var g := GridContainer.new(); g.columns = 2; g.add_theme_constant_override("h_separation", 12); g.add_theme_constant_override("v_separation", 5); v.add_child(g)
+	for r: Array in c.rows:
+		var dt := lbl(str(r[0]), f_mono, 11, STEEL); dt.size_flags_vertical = Control.SIZE_SHRINK_BEGIN; g.add_child(dt)
+		var dd := vbox(4); dd.size_flags_horizontal = Control.SIZE_EXPAND_FILL; dd.add_child(lbl(str(r[1]), f_body, 13, Color("d9dee8"), true))
+		if r.size() > 2:
+			var bar := Control.new(); bar.custom_minimum_size = Vector2(0, 4); var fr := clampf(float(r[2]), 0.03, 1.0)
+			bar.draw.connect(func() -> void: bar.draw_rect(Rect2(Vector2.ZERO, bar.size), Color(INK, 0.12)); bar.draw_rect(Rect2(0, 0, bar.size.x * fr, bar.size.y), SODIUM)); dd.add_child(bar)
+		g.add_child(dd)
+	if str(c.get("note", "")) != "": v.add_child(lbl(str(c.note), f_body, 12, STEEL, true))
+	return p
+
 func render_codex() -> void:
 	clear(cx_list)
-	var tabs := hbox(8); cx_list.add_child(tabs)
-	for t in [["gun", "총기도감"], ["enemy", "적 도감"]]:
-		var b := btn(t[1], "primary" if cx_tab == t[0] else "ghost", func() -> void: cx_tab = t[0]; render_codex()); b.add_theme_font_size_override("font_size", 15); tabs.add_child(b)
-	var seen: bool = Store.settings.dev or not (Store.save.cleared as Array).is_empty()
+	var every := Codex.foes(); var open_n := every.filter(func(e): return Codex.seen(e.st)).size()
+	var tabs := hbox(4); cx_list.add_child(tabs)
+	for t in [["gun", "총기도감"], ["enemy", "적 도감 %d/%d" % [open_n, every.size()]]]:
+		var b := btn(t[1], "primary" if cx_tab == t[0] else "ghost", func() -> void: cx_tab = t[0]; render_codex()); b.add_theme_font_override("font", f_title); b.add_theme_font_size_override("font_size", 20); tabs.add_child(b)
+	var cols := maxi(1, int((minf(1060.0, size.x - 16.0) - 32.0 + 10.0) / 320.0))
+	if cx_tab == "enemy":
+		var chips := HFlowContainer.new(); chips.add_theme_constant_override("h_separation", 6); chips.add_theme_constant_override("v_separation", 6); cx_list.add_child(chips)
+		for ch in Codex.CHIPS:
+			var cb := btn(ch[1] if ch[0] == "all" else "스테이지 " + str(ch[1]), "primary" if cx_st == ch[0] else "small", func() -> void: cx_st = ch[0]; render_codex())
+			cb.add_theme_font_override("font", f_mono); cb.add_theme_font_size_override("font_size", 12); chips.add_child(cb)
+	var grid := GridContainer.new(); grid.columns = cols; grid.add_theme_constant_override("h_separation", 10); grid.add_theme_constant_override("v_separation", 10); cx_list.add_child(grid)
 	if cx_tab == "gun":
-		for id in Weapons.ORDER:
-			var W := Custom.weapon(id); var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.5), LINE, 1, 10)); cx_list.add_child(p)
-			var v := vbox(4); p.add_child(v); var th := hbox(8); v.add_child(th); th.add_child(lbl(W.name, f_title, 18, INK)); th.add_child(lbl(W.model, f_mono, 11, SODIUM)); th.add_child(lbl(W.cls, f_body, 12, STEEL))
-			if not seen: v.add_child(lbl("스테이지 1을 깨면 열립니다", f_bold, 14, SODIUM)); continue
-			var shot: float = W.dmg * W.pellets; var rpm: float = 60.0 / W.rate; var dps: float = shot / W.rate
-			v.add_child(_bar_row("데미지", ("%.1f" % shot) + (" (%d×%s)" % [W.pellets, str(W.dmg)] if W.pellets > 1 else ""), shot / 1000.0 if W.get("rocket", false) else shot / 180.0))
-			v.add_child(_bar_row("연사", "%d발/분" % roundi(rpm), rpm / 1340.0)); v.add_child(_bar_row("DPS", "%d" % roundi(dps), dps / 1700.0)); v.add_child(_bar_row("사거리", "%d m" % int(W.range), W.range / 320.0))
-			v.add_child(lbl("탄창 %d · 총알 %s · 재장전 %.1f초 · 머리 ×%s · 이동 ×%s%s" % [int(W.mag), "무제한" if W.reserve == INF else str(int(W.reserve)), W.reload, str(W.head), str(W.moveMul), " · " + W.note if W.has("note") else ""], f_body, 12, STEEL, true))
-	else:
-		var B: Dictionary = Game.BOSS[1]
-		for c in [{"st": "1", "name": "조직원", "hp": 100, "speed": "3.2~4.0 m/s", "arms": "권총", "dmg": "한 발 9 · 1~3발씩 끊어 쏨", "trait": "부두 곳곳에 미리 자리 잡고 있음 · 보거나 총소리를 들으면 공격", "pay": 1000},
-				{"st": "1", "boss": true, "name": B.name, "hp": B.hp, "speed": "2.9~3.6 m/s", "arms": "권총", "dmg": "한 발 %s · 4발 연사, 쉬는 시간이 짧음" % str(9 * B.dmgMul), "trait": "보스 · 크고 단단함 · 처치하면 보물상자 (총을 영구 소유)", "pay": 20000}]:
-			var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.5), Color(ALARM, 0.6) if c.get("boss", false) else LINE, 1, 10)); cx_list.add_child(p)
-			var v := vbox(4); p.add_child(v); var th := hbox(8); v.add_child(th); th.add_child(lbl(c.name, f_title, 18, INK)); th.add_child(lbl("스테이지 " + c.st, f_mono, 11, SODIUM))
-			if not seen: v.add_child(lbl("스테이지 1을 깨면 열립니다", f_bold, 14, SODIUM)); continue
-			v.add_child(_bar_row("체력", str(int(c.hp)), c.hp / 5200.0)); v.add_child(lbl("속도 %s · 무기 %s · %s" % [c.speed, c.arms, c.dmg], f_body, 12, INK, true)); v.add_child(lbl(c.trait + " · " + Store.won(c.pay), f_body, 12, STEEL, true))
-		cx_list.add_child(lbl("다른 스테이지의 적은 그 스테이지를 Godot판에 옮기면서 들어옵니다", f_body, 12, STEEL, true))
+		for c: Dictionary in Codex.guns(): grid.add_child(_cx_card(c, false))
+		cx_list.add_child(lbl(Codex.INFO_GUN, f_body, 12, STEEL, true)); return
+	for e: Dictionary in every:
+		if cx_st != "all" and not (e.st as Array).has(cx_st): continue
+		if not Codex.seen(e.st): grid.add_child(_cx_card({"locked": true, "st": e.st}, true)); continue
+		var rows := [["체력", e.hp], ["이동속도", e.speed], ["무장", e.arms], ["데미지", e.dmg], ["특징", e.trait], ["스킬", e.skill]]
+		if e.has("pay"): rows.push_back(["처치 보상", Store.won(e.pay)])
+		grid.add_child(_cx_card({"name": e.name, "st": e.st, "boss": e.get("boss", 0), "rows": rows}, true))
+	cx_list.add_child(lbl(Codex.INFO_FOE, f_body, 12, STEEL, true))
 
 # ================= settings and saving =================
 func _build_settings() -> void:

@@ -892,6 +892,25 @@ func _ready() -> void:
 	check("the mail app and Gmail links: to the address when it is one, the code in the body",
 		str(ml.mailto).begins_with("mailto:someone@example.com?subject=") and str(ml.mailto).contains(mcode) and str(ml.gmail).begins_with("https://mail.google.com/mail/?view=cm&fs=1&to=someone%40example.com&su=")
 		and str(mn.mailto).begins_with("mailto:?subject=") and not str(mn.gmail).contains("&to=") and str(mn.gmail).contains("&body="), [ml.mailto.left(60), mn.gmail.left(70)])
+	# ---------------- the codex ----------------
+	var cx_all := Codex.foes(); var cx_by := {}
+	for e in cx_all: cx_by[e.name] = e
+	var cx_fields := cx_all.all(func(e): return e.has("st") and e.has("hp") and e.has("speed") and e.has("arms") and e.has("dmg") and e.has("trait") and e.has("skill"))
+	check("the enemy book: every enemy of the eight stages, 35 cards, each with health, speed, arms, damage, traits and skills", cx_all.size() == 35 and cx_fields, cx_all.size())
+	check("its numbers come from the game's tables, as the browser game writes them",
+		str(cx_by["조직 두목"].dmg).begins_with("한 발 14 ·") and str(cx_by["코뿔소"].dmg).begins_with("떨어질 때 50 +") and str(cx_by["코끼리"].dmg).begins_with("엄니 36 · 돌진 43 +")
+		and str(cx_by["기린"].trait).begins_with("머리를 맞히면 데미지 10배") and int(cx_by["거대 로랜드고릴라"].pay) == 50000 and str(cx_by["최첨단 감시 드론 B-3"].hp) == "9,000 (3페이즈)"
+		and str(cx_by["CCTV 포탑"].dmg) == "한 발 4 · 1발씩, 1~1.6초마다", [cx_by["조직 두목"].dmg, cx_by["코끼리"].dmg, cx_by["CCTV 포탑"].dmg])
+	var cx_g := Codex.guns(); var cx_rk: Dictionary = cx_g[Weapons.ORDER.find("rocket")]; var cx_rkw := Custom.weapon("rocket")
+	var cx_dps := Codex.n(float(cx_rkw.dmg) / (float(cx_rkw.rate) + float(cx_rkw.reload)))
+	check("the gun book: a one-round magazine counts its reload in the DPS, and every gun shows DPS with the reload too", cx_g.size() == 9 and str(cx_rk.rows[2][1]) == cx_dps + " · 재장전 포함 " + cx_dps
+		and str(cx_g[0].rows[2][1]).contains(" · 재장전 포함 ") and cx_g[8].name == "근접 공격", [cx_rk.rows[2][1], cx_dps])
+	var cx_keep: Dictionary = Store.save; var cx_dev: bool = Store.settings.dev; Store.settings.dev = false; Store.save = Store.save0()
+	var cx_none := not Codex.ready() and cx_all.filter(func(e): return Codex.seen(e.st)).is_empty(); Store.save.cleared = [1]
+	var cx_one := Codex.ready() and cx_all.filter(func(e): return Codex.seen(e.st)).size() == 2 and Codex.seen(["3", "3-1", "3-2"]) == false
+	Store.save.cleared = [7]; var cx_safari := Codex.seen(["3", "3-1", "3-2"]) and not Codex.seen(["3", "3-2"])
+	Store.save = cx_keep; Store.settings.dev = cx_dev
+	check("the book opens with the first clear, and each card with a stage it is in", cx_none and cx_one and cx_safari)
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)
