@@ -3,6 +3,29 @@ extends Node
 ## Run: godot --headless --path godot res://tests/run.tscn
 
 var fails := 0
+
+## stands in for a control when the checks draw the tactical map: keeps the round marks and the words
+class MapRec:
+	var circles: Array = []
+	var texts: Array = []
+	func draw_rect(_r: Rect2, _c: Color, _f := true, _w := -1.0, _aa := false) -> void: pass
+	func draw_circle(p: Vector2, r: float, c: Color, _f := true, _w := -1.0, _aa := false) -> void: circles.push_back([p, r, c])
+	func draw_arc(_c: Vector2, _r: float, _a0: float, _a1: float, _n: int, _col: Color, _w := -1.0, _aa := false) -> void: pass
+	func draw_line(_a: Vector2, _b: Vector2, _c: Color, _w := -1.0, _aa := false) -> void: pass
+	func draw_dashed_line(_a: Vector2, _b: Vector2, _c: Color, _w := -1.0, _d := 2.0, _al := true, _aa := false) -> void: pass
+	func draw_polyline(_p: PackedVector2Array, _c: Color, _w := -1.0, _aa := false) -> void: pass
+	func draw_polygon(_p: PackedVector2Array, _c: PackedColorArray, _uv := PackedVector2Array(), _t = null) -> void: pass
+	func draw_colored_polygon(_p: PackedVector2Array, _c: Color, _uv := PackedVector2Array(), _t = null) -> void: pass
+	func draw_string(_f: Font, _p: Vector2, t: String, _a := 0, _w := -1.0, _s := 16, _m := Color.WHITE) -> void: texts.push_back(t)
+	func draw_string_outline(_f: Font, _p: Vector2, _t: String, _a := 0, _w := -1.0, _s := 16, _o := 1, _m := Color.WHITE) -> void: pass
+	## the enemy marks at a 600-pixel map: dots of 3.2, 4.2 and 5.5, the boss's 7
+	func dots() -> int:
+		var n := 0
+		for c: Array in circles:
+			var r: float = c[1]
+			var col: Color = c[2]
+			if (absf(r - 3.2) < 1e-3 or absf(r - 4.2) < 1e-3 or absf(r - 5.5) < 1e-3 or absf(r - 7.0) < 1e-3) and col.a > 0.4 and not col.is_equal_approx(Color(58 / 255.0, 74 / 255.0, 34 / 255.0, 0.85)): n += 1   # (not a tree)
+		return n
 func check(name: String, ok: bool, info = "") -> void:
 	print(("ok   " if ok else "FAIL ") + name + ((" " + str(info)) if str(info) != "" else ""))
 	if not ok: fails += 1
@@ -766,6 +789,36 @@ func _ready() -> void:
 	gm.begin(1); Snd.played.clear(); g.reset(["pistol", "rifle"]); g.cur = "rifle"; g.cooldown = 0.0; pl.reset(0, 6, 0); pl.pitch = 1.2; pl.update(0.0, cam, 0.0); g.trigger = true; simt.call(0.2); g.trigger = false
 	check("outside the toy room the guns sound as before", not g.toy and Snd.played.has("shot_rifle") and not Snd.played.has("toy_shot_rifle"))
 	Snd.keep_log = false
+	# ---------------- the tactical map ----------------
+	var tm := TacMap.new(); tm.game = gm; tm.cam = cam; tm.f_mono = SystemFont.new(); tm.f_bold = SystemFont.new()
+	var map_of := func(st: int) -> MapRec:
+		var rc := MapRec.new(); tm.setup(st); tm.draw(rc, Vector2(600, 600)); return rc
+	var shown_of := func() -> int:
+		return en.list.filter(func(e): return e.alive and not e.ridden and not (e.type == "mine" and (e.bs == "hidden" or e.bs == ""))).size()
+	var map_bad := []
+	for st9 in [1, 6, 5, 2, 3, 7, 8, 4, 9]:
+		gm.begin(st9); var rc9: MapRec = map_of.call(st9)
+		var where9: String = {3: "출입문", 8: "출입문", 4: "에어록"}.get(st9, "내리는 곳")
+		if rc9.dots() != shown_of.call() or not rc9.texts.has("N ↑") or not rc9.texts.has(where9): map_bad.push_back("%d: %d dots / %d, %s" % [st9, rc9.dots(), shown_of.call(), str(rc9.texts.slice(0, 4))])
+	check("the tactical map opens on all nine stages: a mark for every enemy, north, the scale and the drop point", map_bad.is_empty(), map_bad)
+	gm.begin(1); var m_before: int = (map_of.call(1) as MapRec).dots(); var m_one = en.list.filter(func(e): return e.alive and not e.boss)[0]
+	en.damage(m_one, 5000, m_one.pos, Vector3(0, 0, -1), false)
+	check("an enemy shot dead is gone from the map", (map_of.call(1) as MapRec).dots() == m_before - 1, [m_before, (map_of.call(1) as MapRec).dots()])
+	gm.begin(4); tm.setup(4); var m_px := Vector2(300, 300); var m_w := tm.to_world(Vector2(600, 600), m_px)
+	var m_k := 600.0 / (2.0 * (tm.H + TacMap.PAD)); var m_back := Vector2((m_w.x - tm.CX + tm.H + TacMap.PAD) * m_k, (m_w.y - tm.CZ + tm.H + TacMap.PAD) * m_k)
+	check("a point on the map leads back to the ground it shows (the ship's map is centred 19 m east)", m_back.distance_to(m_px) < 1e-3 and absf(m_w.x - 19.0) < 1e-3 and absf(m_w.y) < 1e-3, m_w)
+	gm.begin(3); var m_lab: MapRec = map_of.call(3); var m_cage_tags := m_lab.texts.filter(func(t: String): return t.contains(" ") and t.split(" ")[0].is_valid_int())
+	check("the lab's map: every cage numbered with its animal, and the seconds until it opens", m_cage_tags.size() == 10 and m_lab.texts.has("10초") and m_lab.texts.has("%d초" % ceili(Lab.FIRST + Lab.STEP * 9)), m_cage_tags)
+	gm.begin(8); var m_seq: MapRec = map_of.call(8)
+	check("3-2's map: the cages that wait for the one before them say so", m_seq.texts.filter(func(t: String): return t == "앞 우리를 비우면").size() == 9 and m_seq.texts.has("5초"))
+	gm.begin(7); var m_t0: MapRec = map_of.call(7); w.safari.hp = 5000.0; var m_t1: MapRec = map_of.call(7); w.safari.standing = false; var m_t2: MapRec = map_of.call(7); w.safari.standing = true; w.safari.hp = 10000.0
+	check("3-1's map: the watchtower and how much it has left, and when it is down", m_t0.texts.has("감시탑 100%") and m_t1.texts.has("감시탑 50%") and m_t2.texts.has("감시탑 무너짐"))
+	gm.begin(4); var m_s0: MapRec = map_of.call(4); w.ship.break_floor(); var m_s1: MapRec = map_of.call(4)
+	check("the ship's map: once the hall's floor falls in, the pit's landings and floor are marked with their depths", not m_s0.texts.has("-9m") and m_s1.texts.has("-3m") and m_s1.texts.has("-6m") and m_s1.texts.has("-9m"), m_s1.texts.filter(func(t: String): return t.ends_with("m")))
+	tm.setup(4); var m_l4: Array = tm.legend(true).map(func(it): return it[1]); tm.setup(5); var m_l5: Array = tm.legend(false).map(func(it): return it[1]); tm.setup(9); var m_l9: Array = tm.legend(true).map(func(it): return it[1])
+	check("the legend: each stage's kinds, the drop point to pick on 1-2's briefing, who is after you while you play; the toy room has no boss",
+		m_l4.has("스파이더 마인 (움직일 때만)") and m_l4.has("흰 테두리 · 나를 쫓는 중") and m_l4.has("에어록 · 시작하는 곳") and m_l5.has("내리는 곳 · 지도를 눌러 바꾸기") and not m_l5.has("흰 테두리 · 나를 쫓는 중")
+		and m_l9.has("플라스틱 군인") and m_l9.has("조립 블록 피규어") and not m_l9.has("보스"), [m_l4.size(), m_l5.size(), m_l9])
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

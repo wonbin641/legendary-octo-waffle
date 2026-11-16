@@ -68,8 +68,8 @@ func _ready() -> void:
 		if game.sp != null and game.result != "clear" and stage == game.stage:   # back to the save point, as things were when you took it
 			game.from_save(); ui.show_screen(""); enter_play(); banner("세이브 포인트에서 다시", "처치 %d · 열쇠를 가진 채 운전실에서 시작합니다" % game.kills, 3.0); return
 		state = "brief"; ui.in_stage = false; ui.open_brief(stage)
-	ui.on_settings = apply_settings
-	hud.get_parent().add_child(ui); ui.build()
+	ui.on_settings = apply_settings; ui.do_map = open_map; ui.do_map_close = close_map
+	hud.get_parent().add_child(ui); ui.build(); ui.tac.cam = cam
 	get_viewport().size_changed.connect(_on_resize); _on_resize()
 	apply_settings(); to_menu(); _bridge()
 
@@ -319,7 +319,7 @@ func _ride_act() -> String:
 
 func _touch_rects() -> Dictionary:
 	var s := hud.size; var pad := 150.0
-	return {"pad": Rect2(22, s.y - pad - 22, pad, pad), "pause": Rect2(s.x - 62, 14, 48, 48)}
+	return {"pad": Rect2(22, s.y - pad - 22, pad, pad), "pause": Rect2(s.x - 62, 14, 48, 48), "map": Rect2(s.x - 62, 72, 48, 48)}
 
 ## the round buttons on the right: [centre, radius, label]
 func _touch_buttons() -> Dictionary:
@@ -347,6 +347,8 @@ func _draw_touch() -> void:
 		touch_ui.draw_circle(b[0], b[1], Color(SODIUM, 0.35) if on else Color(NIGHT, 0.35)); touch_ui.draw_arc(b[0], b[1], 0, TAU, 40, SODIUM if on else line, 2.0)
 		touch_ui.draw_string(f_bold, b[0] + Vector2(-b[1], 5), b[2], HORIZONTAL_ALIGNMENT_CENTER, b[1] * 2, 13, INK)
 	var q: Rect2 = r.pause; touch_ui.draw_rect(Rect2(q.position + Vector2(15, 12), Vector2(6, 24)), line); touch_ui.draw_rect(Rect2(q.position + Vector2(27, 12), Vector2(6, 24)), line)
+	var mq: Rect2 = r.map; touch_ui.draw_rect(mq, Color(NIGHT, 0.35)); touch_ui.draw_rect(mq, line, false, 2.0)
+	touch_ui.draw_string(f_bold, Vector2(mq.position.x, mq.get_center().y + 5), "지도", HORIZONTAL_ALIGNMENT_CENTER, mq.size.x, 12, INK)
 
 # ---------------- states ----------------
 func _set_state(s: String) -> void:
@@ -370,7 +372,7 @@ func enter_play() -> void:
 	guns.look_mode = look_mode; apply_settings(); feed_lines.clear(); banner_label.text = ""; banner_sub.text = ""; banner_t = 0.0; ui.in_stage = true
 	_set_state("playing"); request_lock()
 	if game.boss_msg != "": banner("스테이지 " + Store.STAGE_TAG[game.stage], game.boss_msg, 3.5)
-	hint("WASD 이동 · 좌클릭 발사 · 우클릭 조준 · R 재장전 · V 근접" if look_mode != "touch" else "왼쪽 방향 패드로 이동 · 화면을 밀어 조준 · 적이나 상자를 조준하면 저절로 쏩니다", 5.0)
+	hint("1번 우리가 10초 뒤에 열립니다 · 창살 사이로 쏠 수 있습니다" if world.lab != null else ("마우스 이동으로 조준 · Q/E로 회전 · M 키로 지도" if look_mode == "drag" else ("오른쪽 위 지도 버튼으로 적 위치를 볼 수 있습니다" if look_mode == "touch" else "M 키로 작전 지도를 볼 수 있습니다")), 3.5)
 
 func _on_result(kind: String) -> void:
 	_set_state("gameover"); ui.in_stage = false; ui.show_result(kind)
@@ -378,6 +380,21 @@ func _on_result(kind: String) -> void:
 func pause_game(msg := "") -> void:
 	if state != "playing": return
 	_set_state("paused"); ui.pa_note_text = msg; ui.back_stack.clear(); ui.show_screen("pause")
+
+## the tactical map over the paused fight: from play (M, the touch map button) it goes back to play, from the pause back to the pause
+var map_from := ""
+func open_map(from: String) -> void:
+	if from == "play" and state != "playing": return
+	if from == "pause" and state != "paused": return
+	map_from = from; guns.trigger = false
+	if state == "playing": _set_state("paused")
+	ui.back_stack.clear(); ui.open_map(look_mode == "touch")
+
+func close_map() -> void:
+	if ui.cur != "map": return
+	var from := map_from; map_from = ""
+	if from == "pause": ui.show_screen("pause")
+	else: resume_game()
 
 func resume_game() -> void:
 	if state != "paused": return
@@ -402,6 +419,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_X and enemies.animals.m != null: enemies.animals.ride_off(false)
 			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_9: guns.switch_slot(e.physical_keycode - KEY_1)
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
+			if e.physical_keycode == KEY_M: open_map("play")
+		elif state == "paused" and ui.cur == "map" and (e.physical_keycode == KEY_M or e.physical_keycode == KEY_ESCAPE): close_map()
+		elif state == "paused" and ui.cur == "pause" and e.physical_keycode == KEY_M: open_map("pause")
 		elif state == "paused" and ui.cur == "pause" and (e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P): resume_game()
 		elif e.physical_keycode == KEY_ESCAPE and not ui.back_stack.is_empty(): ui.close_sub()
 	if state != "playing": return
@@ -424,6 +444,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		var r := _touch_rects(); var p: Vector2 = e.position   # already in the page's units (the window is scaled by the device pixel ratio)
 		if e.pressed:
 			if (r.pause as Rect2).has_point(p): pause_game(); return
+			if (r.map as Rect2).has_point(p): open_map("play"); return
 			var tb := _touch_buttons(); var hit := ""
 			for k in tb:
 				if p.distance_to(tb[k][0]) <= tb[k][1] + 6.0: hit = k; break
@@ -560,6 +581,8 @@ func command(line: String) -> Dictionary:
 		"brief": state = "brief"; ui.open_brief(int(a[1]))
 		"back": ui.close_sub()
 		"pause": pause_game()
+		"map": open_map(a[1] if a.size() > 1 else "play")
+		"mapclose": close_map()
 		"resume": resume_game()
 		"money": Store.save.money = int(a[1]); Store.persist(); ui.refresh_menu()
 		"dev": Store.settings.dev = a[1] == "1"; Store.settings.god = a.size() > 2 and a[2] == "1"; ui.refresh_menu()

@@ -8,7 +8,7 @@ class Box:
 	var kind: String = "concrete"
 	var ref = null
 	var q: int = 0
-	var door := false; var step := false; var grate := false; var glass := false
+	var door := false; var step := false; var grate := false; var glass := false; var tower := false
 
 var HALF := 66.0
 var colliders: Array[Box] = []

@@ -34,6 +34,12 @@ var cx_tab := "gun"; var cx_list: VBoxContainer
 var set_body: VBoxContainer; var set_msg: Label
 var dlg_title: Label; var dlg_text: Label; var dlg_in: LineEdit; var dlg_msg: Label; var dlg_ok: Button; var dlg_kind := ""
 var br_title: Label; var br_code: Label; var br_map: Control; var br_note: Label; var br_gear: Label; var br_go: Button
+# the tactical map: drawn on the briefing and on its own screen (M, the pause's map button, the touch map button)
+var tac: TacMap
+var br_body: VBoxContainer; var br_box: BoxContainer; var br_side: VBoxContainer; var br_leg_h: HFlowContainer; var br_leg_v: VBoxContainer
+var mp_box: BoxContainer; var mp_map: Control; var mp_side: VBoxContainer; var mp_leg_h: HFlowContainer; var mp_leg_v: VBoxContainer; var mp_code: Label; var mp_hint: Label
+var do_map: Callable; var do_map_close: Callable
+var map_short := false   # a short landscape screen: the map on the left, the rest beside it
 var pa_note: Label; var pa_body: VBoxContainer
 var ov: Dictionary = {}
 
@@ -89,6 +95,7 @@ func sheet(key: String, title: String, code: String, max_w := 760.0) -> Array:
 	return [root, body, foot, msg]
 
 func layout() -> void:
+	_layout_maps()
 	for key in screens:
 		var root: Control = screens[key]
 		if not root.has_meta("panel"): continue
@@ -120,7 +127,8 @@ func close_sub() -> void:
 
 func build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); mouse_filter = Control.MOUSE_FILTER_IGNORE   # (already in the tree: the offsets must be set too)
-	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_brief(); _build_pause(); _build_over()
+	tac = TacMap.new(); tac.game = game; tac.f_mono = f_mono; tac.f_bold = f_bold
+	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_brief(); _build_map(); _build_pause(); _build_over()
 	resized.connect(layout); layout()
 
 # ================= the main menu: the harbour control console =================
@@ -554,21 +562,25 @@ func _dialog_ok() -> void:
 
 # ================= the briefing =================
 func _build_brief() -> void:
-	var s := sheet("brief", "작전 브리핑 · 위에서 본 지도", "스테이지 1", 620.0); var body: VBoxContainer = s[1]; br_code = s[0].get_meta("code")
-	br_title = lbl("", f_title, 36, INK); body.add_child(br_title)
-	br_map = Control.new(); br_map.custom_minimum_size = Vector2(0, 260); body.add_child(br_map); br_map.draw.connect(_draw_map)
+	var s := sheet("brief", "작전 브리핑 · 위에서 본 지도", "스테이지 1", 760.0); br_body = s[1]; br_code = s[0].get_meta("code")
+	br_title = lbl("", f_title, 36, INK); br_body.add_child(br_title)
+	br_box = BoxContainer.new(); br_box.vertical = true; br_box.add_theme_constant_override("separation", 14); br_body.add_child(br_box)
+	br_map = Control.new(); br_map.custom_minimum_size = Vector2(260, 260); br_map.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; br_box.add_child(br_map)
+	br_map.draw.connect(func() -> void: tac.draw(br_map, br_map.size))
 	br_map.gui_input.connect(func(e: InputEvent) -> void:   # 1-2: tap the map to choose where you are put down
 		if game.stage != 5 or not ((e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed)): return
-		var ms := minf(br_map.size.x, br_map.size.y); var half := Phys.HALF + 2.0; var o := Vector2((br_map.size.x - ms) / 2, 0)
-		var d = game.pick_drop((e.position.x - o.x) / ms * 2.0 * half - half, (e.position.y - o.y) / ms * 2.0 * half - half)
+		var at := tac.to_world(br_map.size, e.position); var d = game.pick_drop(at.x, at.y)
+		if d != null: Snd.play("reload1")
 		br_gear_note = "내릴 곳을 바꿨습니다" if d != null else "그곳에는 내릴 수 없습니다 · 빈 땅을 눌러 주세요"; _brief_gear(); br_map.queue_redraw())
-	br_note = lbl("", f_body, 13, INK, true); body.add_child(br_note); br_gear = lbl("", f_body, 13, SODIUM, true); body.add_child(br_gear)
+	br_side = vbox(10); br_box.add_child(br_side)
+	br_leg_h = _flow(); br_side.add_child(br_leg_h); br_leg_v = vbox(6); br_side.add_child(br_leg_v)
+	br_gear = lbl("", f_body, 13, SODIUM, true); br_side.add_child(br_gear); br_note = lbl("", f_body, 13, INK, true); br_side.add_child(br_note)
 	br_go = btn("출동", "primary", func() -> void: _deploy()); br_go.set_meta("first", true)
 	var b1 := btn("상점", "ghost", func() -> void: shop_ctx = sel; open_sub("shop")); var b2 := btn("무기 편성", "ghost", func() -> void: open_sub("loadout")); var b3 := btn("돌아가기", "ghost", func() -> void: do_menu.call())
 	for i in 4: s[2].add_child([br_go, b1, b2, b3][i]); s[2].move_child([br_go, b1, b2, b3][i], i)
 
 func open_brief(stage: int) -> void:
-	sel = stage; game.begin(stage); back_stack.clear(); br_gear_note = ""; show_screen("brief"); _brief_gear()
+	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); br_gear_note = ""; show_screen("brief"); _brief_gear(); _legend(br_leg_h, br_leg_v, false)
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name
 	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else ""); br_map.queue_redraw()
 
@@ -586,25 +598,58 @@ func _deploy() -> void:
 	if game.guns.none: return
 	back_stack.clear(); show_screen(""); do_deploy.call()
 
-## the yard from above: what blocks the way, the crates, where you start, where the enemies stand
-func _draw_map() -> void:
-	var s := minf(br_map.size.x, br_map.size.y); var o := Vector2((br_map.size.x - s) / 2, 0); var half := Phys.HALF + 2.0; var k := s / (2.0 * half)
-	br_map.draw_rect(Rect2(o, Vector2(s, s)), Color(0.04, 0.055, 0.1, 0.9)); br_map.draw_rect(Rect2(o, Vector2(s, s)), LINE, false, 1.0)
-	var at := func(x: float, z: float) -> Vector2: return o + Vector2((x + half) * k, (z + half) * k)
-	for b in Phys.colliders:
-		if b.kind == "wood" and game.stage != 9: continue
-		if game.stage == 9 and b.maxy - b.miny > 30.0: continue   # the room's walls
-		br_map.draw_rect(Rect2(at.call(b.minx, b.minz), Vector2(maxf(1.0, (b.maxx - b.minx) * k), maxf(1.0, (b.maxz - b.minz) * k))), Color(STEEL, 0.75) if b.kind == "metal" else Color(STEEL, 0.4))
-	for c in game.world.crates: br_map.draw_rect(Rect2(at.call(c.x - 0.6, c.z - 0.6), Vector2(2, 2)), Color("b98a55"))
-	for e in game.enemies.list: br_map.draw_circle(at.call(e.pos.x, e.pos.z), 3.5 if e.boss else 1.6, ALARM)
-	var st: Vector2 = at.call(game.world.start.x, game.world.start.z); br_map.draw_circle(st, 4.0, VITAL); br_map.draw_arc(st, 7.0, 0, TAU, 20, VITAL, 1.5)
+# ================= the tactical map =================
+func _flow() -> HFlowContainer:
+	var f := HFlowContainer.new(); f.add_theme_constant_override("h_separation", 14); f.add_theme_constant_override("v_separation", 6); f.alignment = FlowContainer.ALIGNMENT_CENTER
+	f.size_flags_horizontal = Control.SIZE_EXPAND_FILL; return f
+
+## what each mark on the map means: a row of items under the map, or a column beside it on a short screen
+func _legend(h: HFlowContainer, v: VBoxContainer, live: bool) -> void:
+	clear(h); clear(v)
+	for it: Array in tac.legend(live):
+		for box: Container in [h, v]:
+			var row := hbox(6); var ic := Control.new(); ic.custom_minimum_size = Vector2(18, 18); ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			ic.draw.connect(func() -> void: tac.legend_icon(ic, it)); row.add_child(ic); row.add_child(lbl(str(it[1]), f_body, 12, Color("cfd5e0"))); box.add_child(row)
+	h.visible = not map_short; v.visible = map_short
+
+func _build_map() -> void:
+	var s := sheet("map", "작전 지도", "처치 0 / 100", 760.0); var body: VBoxContainer = s[1]; mp_code = s[0].get_meta("code"); mp_hint = s[3]
+	mp_box = BoxContainer.new(); mp_box.vertical = true; mp_box.add_theme_constant_override("separation", 14); body.add_child(mp_box)
+	mp_map = Control.new(); mp_map.custom_minimum_size = Vector2(260, 260); mp_map.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; mp_box.add_child(mp_map)
+	mp_map.draw.connect(func() -> void: tac.draw(mp_map, mp_map.size))
+	mp_side = vbox(10); mp_box.add_child(mp_side); mp_leg_h = _flow(); mp_side.add_child(mp_leg_h); mp_leg_v = vbox(6); mp_side.add_child(mp_leg_v)
+	var b := btn("닫기", "primary", func() -> void: do_map_close.call()); b.set_meta("first", true); s[2].add_child(b); s[2].move_child(b, 0)
+	mp_hint.add_theme_color_override("font_color", STEEL)
+
+## the map screen, over the paused fight
+func open_map(touch: bool) -> void:
+	tac.setup(game.stage); mp_code.text = "스테이지 %s · 처치 %d / %d" % [Store.STAGE_TAG[game.stage], game.kills, game.goal]
+	mp_hint.text = "게임 중 오른쪽 위 지도 버튼으로 다시 열 수 있습니다" if touch else "M 키로 열고 닫기"
+	_legend(mp_leg_h, mp_leg_v, true); show_screen("map"); mp_map.queue_redraw()
+
+## the map's size: under the title on a tall screen, at the left beside everything else on a short landscape one
+func _layout_maps() -> void:
+	if br_box == null: return
+	var short := size.x > size.y and size.y <= 600.0; map_short = short
+	for key in ["brief", "map"]: (screens[key].get_meta("panel") as PanelContainer).set_meta("max_w", 980.0 if short else 760.0)
+	var inner := minf(980.0 if short else 760.0, size.x - 16.0) - 32.0
+	# a short screen: what is left of the height once the sheet's edges, its heading and the button row are taken (16 + 32 + 18 + 20 + 52)
+	var side_b := minf(size.y - 140.0, size.x * 0.56) if short else minf(minf(inner, size.y - 300.0), 620.0)
+	var side_m := minf(size.y - 140.0, size.x * 0.56) if short else minf(minf(inner, size.y - 240.0), 620.0)
+	for q in [[br_box, br_map, maxf(side_b, 140.0), br_leg_h, br_leg_v], [mp_box, mp_map, maxf(side_m, 140.0), mp_leg_h, mp_leg_v]]:
+		var bx: BoxContainer = q[0]; var m: Control = q[1]
+		bx.vertical = not short; m.custom_minimum_size = Vector2(q[2], q[2]); m.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if short else Control.SIZE_SHRINK_CENTER
+		(q[3] as Control).visible = not short; (q[4] as Control).visible = short; m.queue_redraw()
+	var want: Node = br_side if short else br_body
+	if br_title.get_parent() != want: br_title.reparent(want); want.move_child(br_title, 0)
 
 # ================= pause =================
 func _build_pause() -> void:
 	var s := sheet("pause", "작업 지시서 · 단독 작전", "YRD-PAUSE", 560.0); pa_body = s[1]
 	var b := btn("계속하기", "primary", func() -> void: do_resume.call()); b.set_meta("first", true)
+	var bm := btn("지도", "ghost", func() -> void: do_map.call("pause"))
 	var b1 := btn("상점", "ghost", func() -> void: shop_ctx = sel; open_sub("shop")); var b2 := btn("무기 편성", "ghost", func() -> void: open_sub("loadout")); var b3 := btn("작전 포기", "ghost", func() -> void: do_quit.call())
-	for i in 4: s[2].add_child([b, b1, b2, b3][i]); s[2].move_child([b, b1, b2, b3][i], i)
+	for i in 5: s[2].add_child([b, bm, b1, b2, b3][i]); s[2].move_child([b, bm, b1, b2, b3][i], i)
 
 func render_pause() -> void:
 	clear(pa_body); pa_body.add_child(lbl("일시정지", f_title, 48, INK))

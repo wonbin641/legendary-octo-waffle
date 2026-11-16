@@ -36,6 +36,8 @@ var hinted := false
 var landed := false
 var clock := 0.0
 var outer: Node3D; var inner: Node3D
+var roads: Array = []      # the dirt tracks and the acacias, for the map
+var trees: Array = []
 
 func left() -> float: return maxf(0.0, T_STAMPEDE - t)
 func holds() -> bool: return standing and on
@@ -50,6 +52,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	var road := []; var road_b := []
 	for i in 73: var a := (i / 72.0) * TAU; var rr := 98.0 + sin(a * 3.0) * 12.0; road.push_back(Vector2(cos(a) * rr, sin(a) * rr))
 	for i in 25: road_b.push_back(Vector2(sin(i * 0.5) * 8.0, -170.0 + i * 14.2))
+	roads = [road, road_b]
 	var near_road := func(x: float, z: float, d: float) -> bool:
 		for line in [road, road_b]:
 			for p: Vector2 in line:
@@ -75,7 +78,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	var pb := BoxMesh.new(); pb.size = Vector3(0.16, 1.7, 0.16); var pim := Gfx.multimesh(pb, posts); pim.material_override = Gfx.std(World.lin("5a4636"), 0.9); G.add_child(pim)
 	_build_tower(G, 0.0, 0.0)
 	# acacia trees, kopje boulders, termite mounds, bushes
-	var trees := []; var tries := 0
+	trees = []; var tries := 0
 	while trees.size() < 120 and tries < 2000:
 		tries += 1; var x := R.rng(-170, 170); var z := R.rng(-170, 170)
 		if Vector2(x, z - 10).length() < 16 or Vector2(x - WATER.x, z - WATER.z).length() < WATER.r + 8 or near_road.call(x, z, 5.0) or not free.call(x, z, 3.0): continue
@@ -148,7 +151,7 @@ func _build_tower(G: Node3D, x: float, z: float) -> void:
 	for k in range(1, int(TOWER.steps) + 1): var h: float = k * TOWER.step; var z0: float = H + 0.5 * (TOWER.steps - k); parts.push_back([1.4, h, 0.5, 0, h / 2, z0 + 0.25, "86613e"])
 	var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.9; m.material_override = mat; inner.add_child(m)
 	var add := func(minx: float, miny: float, minz: float, maxx: float, maxy: float, maxz: float, grate := false) -> void:
-		var b := Phys.add_collider(x + minx, miny, z + minz, x + maxx, maxy, z + maxz, "wood"); b.grate = grate; cols.push_back(b)
+		var b := Phys.add_collider(x + minx, miny, z + minz, x + maxx, maxy, z + maxz, "wood"); b.grate = grate; b.tower = true; cols.push_back(b)
 	add.call(-Bh, 0.0, -Bh, Bh, 2.0, Bh)
 	add.call(-H, PH - 0.24, -H, H, PH, H)
 	for k in range(1, int(TOWER.steps) + 1): var h2: float = k * TOWER.step; var z1: float = H + 0.5 * (TOWER.steps - k); add.call(-0.7, 0.0, z1, 0.7, h2, z1 + 0.5)
