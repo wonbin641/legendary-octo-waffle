@@ -64,7 +64,7 @@ func build(w: World, group: Node3D) -> void:
 	for i in 14: box(-HALF + i * 10.0, -0.5, -HALF, -HALF + (i + 1) * 10.0 - 0.15, 0.0, HALF, "b98a5a" if i % 2 else "c49766", "wood", false)
 	box(-HALF, -0.6, -HALF, HALF, -0.5, HALF, "6e4f30", "wood", false)
 	for wl in [[-HALF - 1.0, -HALF, -HALF, HALF], [HALF, -HALF, HALF + 1.0, HALF], [-HALF, -HALF - 1.0, HALF, -HALF], [-HALF, HALF, HALF, HALF + 1.0]]:
-		box(wl[0], 0, wl[1], wl[2], 46.0, wl[3], "4caf50"); box(wl[0] - (0.0 if wl[2] - wl[0] > 5 else 0.3), 0, wl[1] - (0.3 if wl[2] - wl[0] > 5 else 0.0), wl[2] + (0.0 if wl[2] - wl[0] > 5 else 0.3), 2.2, wl[3] + (0.3 if wl[2] - wl[0] > 5 else 0.0), "f4f1e8", "concrete", false)
+		box(wl[0], 0, wl[1], wl[2], 46.0, wl[3], "cfe3ea"); box(wl[0] - (0.0 if wl[2] - wl[0] > 5 else 0.3), 0, wl[1] - (0.3 if wl[2] - wl[0] > 5 else 0.0), wl[2] + (0.0 if wl[2] - wl[0] > 5 else 0.3), 2.2, wl[3] + (0.3 if wl[2] - wl[0] > 5 else 0.0), "f4f1e8", "concrete", false)
 	_bed(); _desk(); _bridge(); _south(); _north()
 	# everything boxy in one mesh
 	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts, true); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.75; mi.material_override = mat; G.add_child(mi)
