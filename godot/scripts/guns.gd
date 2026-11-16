@@ -105,7 +105,7 @@ func _auto_crate() -> void:
 	if not player.grounded or player.jet_on: return
 	var o := cam.global_position; var fx_ := -sin(player.yaw); var fz := -cos(player.yaw); var best = null; var bd := Weapons.MELEE_REACH
 	for c in world.crates:
-		if c.dead: continue
+		if c.dead or c.get("wall", false): continue   # crates only, not a brick figure's wall
 		var b: Phys.Box = c.b
 		var q := Vector3(clampf(o.x, b.minx, b.maxx), clampf(o.y, b.miny, b.maxy), clampf(o.z, b.minz, b.maxz)); var d := q.distance_to(o)
 		var dx: float = c.x - player.pos.x; var dz: float = c.z - player.pos.z; var h := maxf(sqrt(dx * dx + dz * dz), 0.0001)
@@ -282,7 +282,7 @@ func update(dt: float) -> void:
 		var reach: float = W.falloff[1] if W.has("falloff") else minf(W.range, 70.0)
 		# a wooden crate under the crosshair too, but only within 12 m (farther off, the shots woke the area and used rented ammo)
 		var wall := Phys.raycast_static(o, f, reach)
-		var crate: bool = wall and Phys.rh_box != null and Phys.rh_box.kind == "wood" and Phys.rh_box.ref != null and not Phys.rh_box.ref.dead and Phys.rh_t <= Weapons.CRATE_AUTO_RANGE
+		var crate: bool = wall and Phys.rh_box != null and Phys.rh_box.kind == "wood" and Phys.rh_box.ref != null and not Phys.rh_box.ref.dead and not Phys.rh_box.ref.get("wall", false) and Phys.rh_t <= Weapons.CRATE_AUTO_RANGE
 		enemies.skip_calm = true
 		var sees: bool = enemies.raycast(o, f, Phys.rh_t) != null or enemies.assist(o, f, 0.035, reach) != null
 		enemies.skip_calm = false

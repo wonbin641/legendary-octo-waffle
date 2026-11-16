@@ -81,7 +81,7 @@ func persist_settings() -> void:
 	_write("settings", settings)
 
 func stage_open(n: int) -> bool:
-	if n == 9: return true   # for now a preview of the map and the toy guns: open to look round
+	if n == 9: return true   # stage 5 is open from the start for now while the Godot version is tried out (on the stage tree it follows 4)
 	return STAGE_TAG.has(n) and (settings.dev or PREREQ[n] == 0 or save.cleared.has(PREREQ[n]) or save.cleared.has(n))
 
 func next_stages(n: int) -> Array:

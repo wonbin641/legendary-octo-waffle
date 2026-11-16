@@ -10,7 +10,7 @@ const STAGES := {
 	3: {"name": "동물 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개 · 10초 뒤 첫 우리가 열리고 15초마다 하나씩 · 얼룩말 → 기린 → 코끼리 순서로 올라탈 수 있음 · 보스 고릴라는 방탄유리 우리에"},
 	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": "넓은 사파리의 동물 100마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다"},
 	8: {"name": "차례 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
-	9: {"name": "장난감 방", "enemy": "toy", "goal": 0, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 지금은 맵과 장난감 무기만 둘러볼 수 있습니다"},
+	9: {"name": "장난감 방", "enemy": "toy", "goal": 100, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 플라스틱 군인 30, 액션 피규어 22, 태엽·RC 유닛 24, 조립 블록 피규어 24"},
 	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 바닥의 스파이더 마인 조심"},
 }
 const BOSS := {
@@ -73,6 +73,7 @@ func layout() -> Array:
 func begin(stage_: int) -> void:
 	stage = stage_
 	var an := enemies.animals; an.player = player; an.game = self; an.world = world; an.fx = fx; player.rider = an; player.on_toss_land = an.toss_land
+	var tf := enemies.toys; tf.player = player; tf.game = self; tf.world = world; tf.fx = fx; tf.proj = proj
 	var rb := enemies.robots; rb.player = player; rb.game = self; rb.world = world; rb.fx = fx; rb.proj = proj
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
 	world.build_stage(stage); calm = 0; sp = null; mid = null
@@ -120,7 +121,6 @@ func set_drop(d: Dictionary) -> void:
 
 ## the same stage always puts the same enemies in the same places
 func populate() -> void:
-	if stage == 9: goal = 0; boss = null; return   # nobody in the toy room yet
 	enemies.helmet_hint = false
 	var SR := World.Rng.new(5150 + stage * 101); var st := world.start; var placed: Array = []; var half := Phys.HALF
 	var ok := func(x: float, z: float, min_start: float, gap: float, rad: float) -> bool:
@@ -140,9 +140,10 @@ func populate() -> void:
 			var o := {"yaw": SR.rng(0, TAU), "y": p.get("y", 0.0)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
-	if world.lab != null or world.safari != null or world.ship != null:
+	if world.lab != null or world.safari != null or world.ship != null or world.toy != null:
 		if world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
+		elif world.toy != null: enemies.toys.populate(put, SR)
 		else:
 			world.safari.populate(put, find, SR)
 			for e in enemies.list:
@@ -369,7 +370,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if ended or e.extra: return
 	kills += 1; stats.kills += 1
 	if e.tamed: calm = maxi(0, calm - 1)   # it was already counted
-	var base := int(e.T.get("money", 1000)) if ((e.animal and not e.minion) or e.robot) else 1000
+	var base := int(e.T.get("money", 1000)) if ((e.animal and not e.minion) or e.robot or e.toy) else 1000
 	if weak: stats.heads += 1
 	# a kill with a shot to the head pays 1.5 times; a boss twenty times; a stage you have already cleared pays nothing
 	# so does a zombie finished off before it ever got back up (the two multiply)
@@ -405,6 +406,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 
 ## a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead
 func on_crate(c: Dictionary) -> void:
+	if c.get("wall", false): return   # a brick figure's little wall: nothing inside
 	loot.drop("anti" if stage == 2 else "hp", c.x, c.z, c.y)
 
 func take_loot(kind: String) -> bool:

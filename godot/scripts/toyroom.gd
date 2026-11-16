@@ -68,8 +68,38 @@ func build(w: World, group: Node3D) -> void:
 	_bed(); _desk(); _bridge(); _south(); _north()
 	# everything boxy in one mesh
 	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts, true); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.75; mi.material_override = mat; G.add_child(mi)
+	_crates()
 	Phys.index_colliders(); Phys.build_nav()
 	world.start = {"x": 0.0, "z": 56.0, "yaw": 0.0}; world.spawns.clear()
+
+## wooden toy boxes with health potions in them, as in every other stage: on the floor, in the blanket's trenches, on the desk and the
+## upper bunk; never on a way up (stairs, ladder, springs, catapults, the ends of the bridge and the tapes), the train's track or the tacks
+const CRATES := 24
+func _crates() -> void:
+	var R := World.Rng.new(77); var placed: Array = []
+	var levels := [[0.5, -62.0, 62.0, -62.0, 62.0, 0.0], [0.7, 12.0, 47.0, -28.0, 28.0, BED_Y], [0.85, -60.0, -24.0, -26.0, 18.0, DESK_Y], [1.0, 12.0, 58.0, -28.0, 28.0, BUNK_Y]]
+	var keep_off := func(x: float, z: float, y: float) -> bool:
+		var near := func(px: float, pz: float, r: float) -> bool: return Vector2(x - px, z - pz).length() < r
+		if y == 0.0:
+			if (x > -2.0 and x < 11.5 and z > 14.0 and z < 26.0) or (x > -41.5 and x < -20.5 and z > 18.5 and z < 29.5): return true   # the blanket and the books, up
+			if near.call(6.0, -22.0, 3.5) or near.call(6.0, 10.0, 3.5) or near.call(-14.0, 30.0, 4.5) or near.call(52.0, 41.0, 4.5) or near.call(-4.0, 46.0, 6.5) or near.call(30.0, 43.0, 5.0): return true
+			if absf(x) > 62.0 or z > 63.5 or absf(z - 36.5) < 2.6 or near.call(0.0, 56.0, 10.0): return true   # the train, and where you come down
+		elif y == BED_Y: return (x < 19.0 and absf(z) < 6.0) or near.call(30.0, 0.0, 3.0)
+		elif y == DESK_Y: return (x > -30.0 and absf(z) < 6.0) or (x > -38.0 and x < -30.0 and z > -28.0 and z < -20.0) or (x > -42.0 and z > 16.0) or near.call(-30.0, -6.0, 4.0)
+		else: return near.call(30.0, 0.0, 4.0) or near.call(45.9, 10.3, 4.0) or (x > 38.0 and z > 24.0)   # where the tape and the catapult put you down, the ladder's top
+		return false
+	world._place_crates(G, CRATES, func() -> Array:
+			var k := R.next(); var L: Array = levels[3]
+			for l in levels:
+				if k < l[0]: L = l; break
+			var x := R.rng(L[1], L[2]); var z := R.rng(L[3], L[4]); return [x, z, L[5]],
+		func(x: float, z: float, y: float) -> bool:
+			var g0 := Phys.ground_at(x, y + 1.0, z, 0.05)
+			if absf(g0 - y) > 0.01 or absf(Phys.ground_at(x, y + 1.0, z, 0.75) - g0) > 0.01: return false   # flat under the whole box
+			if Phys.collide_at(x, y + 0.05, z, 0.7, 1.25) != null or Phys.ceil_at(x, y, z, 0.6, 1.2) < y + 1.3 or keep_off.call(x, z, y): return false
+			for p: Vector3 in placed:
+				if p.distance_to(Vector3(x, y, z)) < 4.0: return false
+			placed.push_back(Vector3(x, y, z)); return true, true)
 
 ## east: the bunk bed. the lower mattress is the main battlefield; under it, a dark crawl space
 func _bed() -> void:

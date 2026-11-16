@@ -7,7 +7,7 @@ const CONT_COLORS := ["8c3a2b", "2c4f7c", "356b45", "c4682a", "7b8288", "2f7a7a"
 const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
 	# stage 5, the toy room: a sunny bedroom, bright and warm
-	9: {"toy": true, "fog": [0.55, 0.62, 0.68], "density": 0.004, "zenith": [0.55, 0.62, 0.68], "glow": [0.0, 0.0, 0.0], "hemi": ["ffffff", "cdb99a", 0.5], "moon": ["fff1d6", 0.62], "lamp": ["ffffff", 0.0], "seed": 77, "crates": 0, "sunOff": [30, 60, 34], "exposure": 0.95},
+	9: {"toy": true, "fog": [0.55, 0.62, 0.68], "density": 0.004, "zenith": [0.55, 0.62, 0.68], "glow": [0.0, 0.0, 0.0], "hemi": ["ffffff", "cdb99a", 0.5], "moon": ["fff1d6", 0.62], "lamp": ["ffffff", 0.0], "seed": 77, "crates": 24, "sunOff": [30, 60, 34], "exposure": 0.95},
 	# 1-2: the same docks later that night, a little colder, laid out differently
 	5: {"fog": [0.024, 0.031, 0.052], "density": 0.016, "zenith": [0.005, 0.008, 0.019], "glow": [0.05, 0.03, 0.03], "hemi": ["5a6c98", "2a2422", 0.6], "moon": ["a8bcff", 0.44], "lamp": ["ffb060", 1.8], "seed": 11, "crates": 40, "singles": 14, "empty": 0.12},
 	# 1-1: the docks again, another night, another layout, mist over the water
@@ -352,7 +352,9 @@ func damage_crate(c: Dictionary, dmg: float, _at: Vector3) -> void:
 	c.hp -= dmg
 	if c.hp > 0.0: return
 	c.dead = true
-	if crate_mm: crate_mm.set_instance_transform(c.idx, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z)))
+	if c.has("node"):   # a brick wall: its own node
+		if is_instance_valid(c.node): (c.node as Node3D).queue_free()
+	elif crate_mm: crate_mm.set_instance_transform(c.idx, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z)))
 	Phys.remove_collider(c.b); Phys.nav_patch(c.b.minx, c.b.minz, c.b.maxx, c.b.maxz)  # just round it, not the whole grid
 	var at := Vector3(c.x, c.y + 0.6, c.z)
 	if fx: fx.chips(at)

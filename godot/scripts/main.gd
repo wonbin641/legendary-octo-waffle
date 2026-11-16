@@ -575,6 +575,19 @@ func command(line: String) -> Dictionary:
 		"part": Custom.set_part(a[1], a[2], a[3]); apply_settings()
 		"cugun": ui.cu_gun = a[1]; ui.render_custom()
 		"bite": game.bitten(enemies.list[0])
+		"lineup":   # stage 5: one of each kind of toy in a row on the carpet, 8 m in front of you
+			var kinds := ["soldier", "figure", "rc", "brick"]
+			for i in 4:
+				var lst: Array = enemies.list.filter(func(e): return e.type == kinds[i])
+				if lst.is_empty(): continue
+				var e = lst[0]; e.pos = Vector3(-4.5 + i * 3.0, 0, 46.0); e.yaw = 0.0; e.vel = Vector3.ZERO; e.k.post = e.pos; e.g.position = e.pos; e.g.rotation.y = 0.0
+			player.pos = Vector3(0, 0, 54); player.yaw = 0.0; player.pitch = -0.08; player.vel = Vector3.ZERO
+		"glide":   # stage 5: an action figure dropped from 12 m in front of you, cape out
+			var fl: Array = enemies.list.filter(func(e): return e.type == "figure")
+			var f = fl[1]; f.pos = Vector3(2, 12, 46); f.vy = 0.0; f.k.glide = true; f.k.jumps = 2; f.alert = true
+		"wall":   # stage 5: the brick figure in the lineup puts up a wall
+			var bl: Array = enemies.list.filter(func(e): return e.type == "brick")
+			enemies.toys._build_wall(bl[0], Vector2(0, 1))
 		"takekey": world.ship.take_key()
 		"hurt": player.invuln = 0.0; player.hurt(float(a[1]), Vector3.ZERO)
 		"again": ui.do_again.call(game.stage)

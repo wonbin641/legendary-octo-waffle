@@ -529,6 +529,98 @@ func _ready() -> void:
 		if s4_rb.rockets.is_empty(): break
 	check("stage 4: a homing rocket finds you: 100 at the centre of the blast", s4_rb.rockets.is_empty() and pl.hp <= Player.MAX_HP - 50.0, pl.hp)
 	gm.sp = null
+	gm.begin(4); var s4_cam = null
+	for e in en.list:
+		if e.type == "cctv": s4_cam = e; break
+	check("stage 4: a ceiling camera shoots from its own lens, not from where a man's gun would be", en.muzzle_of(s4_cam).distance_to(s4_cam.pos) < 0.5, en.muzzle_of(s4_cam) - s4_cam.pos)
+	# ---------------- stage 5: the toy room ----------------
+	gm.begin(9); var s5_tf: ToyFoes = en.toys; pl.invuln = 1e9
+	var s5_kinds := {}
+	for e in en.list: s5_kinds[e.type] = int(s5_kinds.get(e.type, 0)) + 1
+	check("stage 5: a hundred toys: 30 plastic soldiers, 22 action figures, 24 wind-up cars, 24 brick figures", en.list.size() == 100 and gm.goal == 100 and s5_kinds.get("soldier", 0) == 30 and s5_kinds.get("figure", 0) == 22 and s5_kinds.get("rc", 0) == 24 and s5_kinds.get("brick", 0) == 24, s5_kinds)
+	var s5_bad := ""
+	for e in en.list:
+		var gy5 := Phys.ground_at(e.pos.x, e.pos.y + 0.1, e.pos.z, e.R)
+		if absf(gy5 - e.pos.y) > 0.05 or Phys.collide_at(e.pos.x, e.pos.y + 0.05, e.pos.z, e.R, 1.5) != null: s5_bad = "%s %s" % [e.type, str(e.pos)]; break
+	check("stage 5: every toy stands on something and inside nothing", s5_bad == "", s5_bad)
+	var s5_first: Vector3 = en.list[0].pos; var s5_last: Vector3 = en.list[99].pos; gm.begin(9); s5_tf = en.toys
+	check("stage 5: the same toys in the same places every time", en.list[0].pos == s5_first and en.list[99].pos == s5_last)
+	var s5_hi := {"soldier": 0.0, "figure": 0.0}
+	for e in en.list:
+		if s5_hi.has(e.type): s5_hi[e.type] = maxf(s5_hi[e.type], e.pos.y)
+	check("stage 5: soldiers up on the bookshelf, figures up on the wardrobe", s5_hi.soldier >= 19.9 and s5_hi.figure >= 23.9, s5_hi)
+	# plastic soldier: still for 2 s it fades, and aim help reaches only half as far; a hit shows it again; blasts barely move it
+	var s5_s = en.list.filter(func(e): return e.type == "soldier")[0]
+	s5_s.pos = Vector3(2, 0, 50); s5_s.k.post = s5_s.pos; s5_s.alert = false; s5_s.los = false; s5_s.k.reveal = 0.0
+	for i in 25: s5_tf.update(s5_s, 0.1, 50.0, Vector2(50, 0), 0.0)
+	var s5_eye: Vector3 = s5_s.pos + Vector3(20, 1.2, 0)
+	var s5_off := func() -> Vector3:   # just off the body: where the aim help would pull your shot onto it
+		var d0: Vector3 = (en.part_centre(s5_s, s5_s.parts[1]) - s5_eye).normalized(); return d0.rotated(d0.cross(Vector3.UP).normalized(), 0.035)
+	var s5_a1 = en.assist(s5_eye, s5_off.call(), 0.05, 30.0)
+	check("stage 5: a soldier still for 2 s crouches and fades; aim help no longer reaches it from 20 m", s5_tf.camo(s5_s) and float(s5_s.k.alpha) < 0.5 and s5_s.g.scale.y < 0.8 and s5_a1 == null, [s5_s.k.alpha, s5_s.g.scale.y])
+	check("stage 5: crouched, its head is lower too (the hit spheres follow it down)", absf(en.part_centre(s5_s, s5_s.parts[0]).y - s5_s.pos.y - 1.72 * s5_s.g.scale.y) < 0.01)
+	s5_s.vel = Vector3.ZERO; en.damage(s5_s, 1, s5_s.pos, Vector3(1, 0, 0), false)
+	check("stage 5: a hit gives it away (aim help finds it again) and barely shoves it", not s5_tf.camo(s5_s) and en.assist(s5_eye, s5_off.call(), 0.05, 30.0) != null and absf(s5_s.vel.x - 0.18) < 1e-4, s5_s.vel)
+	# action figure: a second jump at the top of the first; coming down a long way it glides on its cape
+	var s5_f = en.list.filter(func(e): return e.type == "figure")[0]
+	s5_f.pos = Vector3(-2, 0, 12); s5_f.vy = 0.0; s5_f.alert = true; s5_f.los = true; s5_f.k.jumps = 0; s5_f.k.glide = false; s5_f.k.jump_cd = 0.0; pl.pos = Vector3(40, 6, 12)
+	var s5_peak := 0.0; var s5_two := false
+	for i in 70:
+		var t5 := Vector2(pl.pos.x - s5_f.pos.x, pl.pos.z - s5_f.pos.z); s5_tf.update(s5_f, 0.02, t5.length(), t5, atan2(t5.x, t5.y)); s5_peak = maxf(s5_peak, s5_f.pos.y)
+		if int(s5_f.k.jumps) == 2: s5_two = true
+	check("stage 5: an action figure jumps twice: higher than one jump can take it", s5_two and s5_peak > 4.5, s5_peak)
+	s5_f.pos = Vector3(-2, 20, 12); s5_f.vy = 0.0; s5_f.k.glide = false; s5_f.k.jumps = 2
+	for i in 50:
+		var t6 := Vector2(pl.pos.x - s5_f.pos.x, pl.pos.z - s5_f.pos.z); s5_tf.update(s5_f, 0.02, t6.length(), t6, atan2(t6.x, t6.y))
+	check("stage 5: falling from high up it spreads its cape: a second's drop is under 3 m (not 9.5)", bool(s5_f.k.glide) and s5_f.pos.y > 17.0, s5_f.pos.y)
+	# wind-up car: faster the longer it runs; it rams; broken, its battery bursts; toys near it shoot faster
+	var s5_r = en.list.filter(func(e): return e.type == "rc")[0]
+	s5_r.pos = Vector3(-30, 0, 48.5); s5_r.yaw = PI / 2; s5_r.vel = Vector3.ZERO; s5_r.k.v = 0.0; s5_r.k.back_t = 0.0; s5_r.alert = true; s5_r.los = true; pl.pos = Vector3(10, 0, 48.5)
+	var s5_x0: float = s5_r.pos.x
+	for i in 150:
+		var t7 := Vector2(pl.pos.x - s5_r.pos.x, pl.pos.z - s5_r.pos.z); s5_tf.update(s5_r, 0.02, t7.length(), t7, atan2(t7.x, t7.y))
+	check("stage 5: a wind-up car picks up speed as it runs (about 9.6 m/s after 3 s)", absf(float(s5_r.k.v) - 9.6) < 0.2 and s5_r.pos.x - s5_x0 > 12.0, [s5_r.k.v, s5_r.pos.x - s5_x0])
+	pl.invuln = 0.0; pl.hp = Player.MAX_HP; s5_r.k.v = 10.0; s5_r.k.back_t = 0.0; pl.pos = Vector3(s5_r.pos.x + 1.4, 0, s5_r.pos.z); s5_r.yaw = PI / 2
+	var t8 := Vector2(pl.pos.x - s5_r.pos.x, pl.pos.z - s5_r.pos.z); s5_tf.update(s5_r, 0.02, t8.length(), t8, atan2(t8.x, t8.y))
+	check("stage 5: at 10 m/s its ram takes about 21", absf((Player.MAX_HP - pl.hp) - 21.0) <= 1.0 and float(s5_r.k.v) == 0.0, Player.MAX_HP - pl.hp)
+	var s5_near = en.list.filter(func(e): return e.type == "soldier")[1]; s5_near.pos = s5_r.pos + Vector3(0, 0, 3.0)
+	check("stage 5: a toy within 8 m of a car shares its battery: it shoots 1.4 times as fast", s5_tf._share(s5_near) == ToyFoes.SHARE_MUL and s5_tf._share(s5_s) == 1.0)
+	pl.hp = Player.MAX_HP; pl.pos = Vector3(s5_r.pos.x + 1.5, 0, s5_r.pos.z); en.damage(s5_r, 999, s5_r.pos, Vector3(0, 0, 1), false)
+	check("stage 5: broken, its battery bursts: sparks for you close by", not s5_r.alive and Player.MAX_HP - pl.hp >= 15.0 and Player.MAX_HP - pl.hp <= 25.0, Player.MAX_HP - pl.hp)
+	pl.invuln = 1e9
+	# brick figure: a brick off at every quarter of its health; a brick picked up goes back on; a quiet moment and it is whole
+	var s5_b = en.list.filter(func(e): return e.type == "brick")[0]
+	s5_b.pos = Vector3(-2, 0, 49); s5_b.alert = true; s5_b.los = true; var s5_n0: int = s5_tf.bricks.size()
+	en.damage(s5_b, 45, s5_b.pos, Vector3(0, 0, 1), false); en.damage(s5_b, 40, s5_b.pos, Vector3(0, 0, 1), false)
+	check("stage 5: a brick figure drops a brick at every quarter of its health lost", s5_tf.bricks.size() == s5_n0 + 2 and s5_b.hp == 75.0, s5_tf.bricks.size() - s5_n0)
+	s5_tf.bricks[s5_n0].pos = s5_b.pos; s5_b.k.quiet = 0.0; pl.pos = Vector3(30, 0, 49)
+	s5_tf.update(s5_b, 0.02, 32.0, Vector2(32, 0), PI / 2)
+	check("stage 5: picking a brick up puts its quarter back", s5_b.hp == 115.0 and s5_tf.bricks.size() == s5_n0 + 1, s5_b.hp)
+	s5_b.k.quiet = 6.0; s5_b.los = false; s5_tf.update(s5_b, 0.02, 32.0, Vector2(32, 0), PI / 2)
+	check("stage 5: out of the fight for 5 s it snaps back together all at once", s5_b.hp == 160.0 and int(s5_b.k.shed) == 0)
+	var s5_c0: int = w.crates.size(); s5_tf._build_wall(s5_b, Vector2(1, 0)); var s5_w = w.crates[w.crates.size() - 1] if w.crates.size() > s5_c0 else null
+	check("stage 5: it puts up a little brick wall towards you, and it stands in the way", s5_w != null and s5_w.wall and Phys.collide_at(s5_w.x, s5_w.y + 0.3, s5_w.z, 0.2, 0.5) == s5_w.b)
+	var s5_l0: int = lt.list.size(); w.damage_crate(s5_w, 60, Vector3(s5_w.x, 0.6, s5_w.z))
+	check("stage 5: shot down it is gone, and nothing falls out of it", s5_w.dead and Phys.collide_at(s5_w.x, s5_w.y + 0.3, s5_w.z, 0.2, 0.5) == null and lt.list.size() == s5_l0)
+	for b in s5_tf.bricks: (b.n as Node3D).queue_free()
+	s5_tf.bricks.clear(); s5_b.pos = Vector3(7.4, 0, 41); s5_b.yaw = PI / 2; s5_b.los = false; s5_b.vel = Vector3.ZERO; pl.pos = Vector3(30, 3, 41)
+	for i in 70:
+		var t9 := Vector2(pl.pos.x - s5_b.pos.x, pl.pos.z - s5_b.pos.z); s5_tf.update(s5_b, 0.02, t9.length(), t9, atan2(t9.x, t9.y))
+	check("stage 5: blocked by a toy block, it climbs straight up the side and onto the top", absf(s5_b.pos.y - 2.0) < 0.05 and s5_b.pos.x > 8.0, s5_b.pos)
+	s5_b.pos = Vector3(9.3, 0, -28.8); var s5_post := s5_tf._climb_top(s5_b, Vector2(1, 0))      # against a bunk bed post (26 m)
+	s5_b.pos = Vector3(-69.3, 0, 40.0); var s5_room := s5_tf._climb_top(s5_b, Vector2(-1, 0))    # against the room's west wall
+	s5_b.pos = Vector3(7.4, 0, 41.0); var s5_blk := s5_tf._climb_top(s5_b, Vector2(1, 0))        # against a toy block (2 m)
+	check("stage 5: it climbs a toy block, but not a bed post or the room's wall", s5_post < 0.0 and s5_room < 0.0 and absf(s5_blk - 2.0) < 1e-4, [s5_post, s5_room, s5_blk])
+	# a fight: on the carpet the toys come and shoot; then all hundred down is a clear
+	gm.begin(9); pl.reset(0.0, 50.0, 0.0); pl.update(0.0, cam, 0.0); pl.invuln = 1e9; var s5_shots := 0   # your eyes (the camera) where you stand
+	for i in 600:
+		en.update(0.02, i * 0.02); pr.update(0.02); gm.update(0.02)
+		if pr.list.size() > 0: s5_shots += 1
+	check("stage 5: within 12 s on the carpet the toys wake, come and shoot", s5_shots > 0 and en.list.filter(func(e): return e.alert).size() >= 10, [s5_shots, en.list.filter(func(e): return e.alert).size()])
+	for e in en.list.duplicate(): en.damage(e, 1e6, e.pos, Vector3(0, 0, 1), false)
+	for i in 120: gm.update(0.02)
+	check("stage 5: all hundred down is a clear", gm.ended and gm.result == "clear" and gm.kills == 100, [gm.kills, gm.result])
+	pr.clear()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var k9 := en.damage(hm, 85, hd9, Vector3(0, 0, -1), true)
@@ -573,7 +665,7 @@ func _ready() -> void:
 	gm.begin(5); check("1-2: the next go starts there again", Vector2(pl.pos.x - d9.x, pl.pos.z - d9.z).length() < 0.01); gm.drop_pick = null
 	# ---------------- stage 5: the toy room ----------------
 	Store.save = Store.save0(); gm.begin(9); var toy: ToyRoom = w.toy
-	check("the toy room: no enemies yet, every toy gun in hand", toy != null and en.list.is_empty() and g.loadout == Toys.ORDER and Store.stage_open(9))
+	check("the toy room: a hundred toys in it, every toy gun in hand", toy != null and en.list.size() == 100 and g.loadout == Toys.ORDER and Store.stage_open(9))
 	var simt := func(sec: float) -> void:
 		for i in roundi(sec * 30): pl.update(1.0 / 30.0, cam, 0.0); toy.update(1.0 / 30.0, pl); g.update(1.0 / 30.0)
 	pl.in_f = 0.0; pl.in_s = 0.0; pl.in_run = false; simt.call(4.0)
