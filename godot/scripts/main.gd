@@ -622,6 +622,9 @@ func command(line: String) -> Dictionary:
 		"map": open_map(a[1] if a.size() > 1 else "play")
 		"mapclose": close_map()
 		"skip": cut.skip()
+		"dialog": ui.open_dialog(a[1])
+		"mailaddr": ui.mail_in.text = a[1] if a.size() > 1 else ""; Store.settings.mailTo = ui.mail_in.text
+		"mail": (ui._copy_mail() if a[1] == "copy" else ui._send_mail(a[1]))
 		"resume": resume_game()
 		"money": Store.save.money = int(a[1]); Store.persist(); ui.refresh_menu()
 		"dev": Store.settings.dev = a[1] == "1"; Store.settings.god = a.size() > 2 and a[2] == "1"; ui.refresh_menu()
@@ -668,7 +671,7 @@ func command(line: String) -> Dictionary:
 		"trigger": guns.trigger = a[1] == "1"; guns.trigger_edge = guns.trigger
 		"ads": guns.ads_held = a[1] == "1"
 		"touch": look_mode = "touch"; guns.look_mode = "touch"; apply_settings(); touch_ui.visible = state == "playing"
-	return {"state": state, "screen": ui.cur, "cut": cut.kind(), "fade": cut.fade.color.a if cut.fade != null else 0.0, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
+	return {"state": state, "screen": ui.cur, "cut": cut.kind(), "link": ui.last_link, "dlgmsg": ui.dlg_msg.text, "clip": DisplayServer.clipboard_get() if a[0] == "mail" else "", "fade": cut.fade.color.a if cut.fade != null else 0.0, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
 		"colliders": Phys.colliders.size(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
 		"gun": guns.cur, "slots": guns.slots, "mag": guns.st().mag, "hp": player.hp, "ads": guns.ads, "fov": cam.fov, "money": Store.save.money, "cleared": Store.save.cleared, "owned": Store.save.owned,
 		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "key": world.ship.key if world.ship != null else false, "doors": world.ship.doors.map(func(d): return d.mode) if world.ship != null else [], "phase": int(game.boss.k.get("phase", -1)) if game.boss != null else -1, "pit": Phys.PIT != null, "sp": game.sp != null, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}

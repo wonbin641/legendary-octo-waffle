@@ -134,3 +134,27 @@ static func dev_hash(t: String) -> int:
 	for ch in "yard07-dev:" + t: h ^= ch.unicode_at(0); h = (h * 16777619) & 0xFFFFFFFF
 	return h
 const DEV_HASH := 0x87114c2b
+
+# ---------------- sending the code by mail (SaveMail in src/08f_meta.js) ----------------
+## the mail's subject and body: the code, when it was saved, the stages cleared and the bag. when: "YYYY-MM-DD HH:MM"
+static func mail_text(save: Dictionary, code: String, when: String) -> Dictionary:
+	var done: Array = Store.STAGE_ORDER.filter(func(st): return (save.cleared as Array).has(st)).map(func(st): return Store.STAGE_TAG[st])
+	var subject := "야르 07 저장 코드 · " + when
+	var body := "\r\n".join(["야르 07 저장 코드", "", code, "", "저장한 때: " + when, "깬 스테이지: " + (", ".join(done) if not done.is_empty() else "없음"), "가방: " + Store.won(save.money), "",
+		"게임 처음 화면의 '불러오기'에 위 코드를 넣으면 이 진행 상황으로 돌아갑니다."])
+	return {"subject": subject, "body": body}
+
+static func now_text() -> String:
+	var d := Time.get_datetime_dict_from_system()
+	return "%04d-%02d-%02d %02d:%02d" % [d.year, d.month, d.day, d.hour, d.minute]
+
+## a written address that looks like one, or "" (an empty or odd address leaves the mail's "to" empty)
+static func mail_addr(a: String) -> String:
+	a = a.strip_edges(); var re := RegEx.new(); re.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+	return a if re.search(a) != null else ""
+
+## the mail app's link and Gmail's compose page, both filled in
+static func mail_links(addr: String, subject: String, body: String) -> Dictionary:
+	var a := mail_addr(addr)
+	return {"mailto": "mailto:" + a.uri_encode().replace("%40", "@") + "?subject=" + subject.uri_encode() + "&body=" + body.uri_encode(),
+		"gmail": "https://mail.google.com/mail/?view=cm&fs=1" + ("&to=" + a.uri_encode() if a != "" else "") + "&su=" + subject.uri_encode() + "&body=" + body.uri_encode()}

@@ -18,7 +18,7 @@ static func save0() -> Dictionary:
 
 func _ready() -> void:
 	var touch: bool = OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
-	settings = {"sens": 1.0, "vol": 0.7, "autoFire": touch, "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8"}
+	settings = {"sens": 1.0, "vol": 0.7, "autoFire": touch, "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8", "mailTo": ""}
 	var s = _read("settings")
 	if s is Dictionary: settings.merge(s, true)
 	save = save0()

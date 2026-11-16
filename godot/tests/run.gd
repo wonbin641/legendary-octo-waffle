@@ -882,6 +882,16 @@ func _ready() -> void:
 		check("the bridge door: a second and a half looking at the gold bee, then locked in with it (%s)" % ("skipped" if c_skip else "watched"),
 			c_kind == "boss" and c_mid == "cut" and D4.mode == "locked" and not bee.sealed and absf(pl.pos.x - (D4.x + D4.inward * 2.4)) < 1e-4 and not ct.active(), [c_kind, c_mid, D4.mode, pl.pos])
 	S4.on_cut = Callable(); Snd.keep_log = false
+	# ---------------- the save code by mail ----------------
+	var ms := Store.save0(); ms.cleared = [1, 6]; ms.money = 119000; var mcode := SaveCode.encode(ms)
+	var mt := SaveCode.mail_text(ms, mcode, "2026-11-16 09:30"); var mlines: PackedStringArray = str(mt.body).split("\r\n")
+	check("the mail: the code, when it was saved, the stages cleared and the bag, as the browser game writes it",
+		mt.subject == "야르 07 저장 코드 · 2026-11-16 09:30" and mlines[0] == "야르 07 저장 코드" and mlines[2] == mcode and mlines[4] == "저장한 때: 2026-11-16 09:30" and mlines[5] == "깬 스테이지: 1, 1-1"
+		and mlines[6] == "가방: 119,000원" and mlines[8].begins_with("게임 처음 화면의 '불러오기'"), mlines)
+	var ml := SaveCode.mail_links(" someone@example.com ", mt.subject, mt.body); var mn := SaveCode.mail_links("not an address", mt.subject, mt.body)
+	check("the mail app and Gmail links: to the address when it is one, the code in the body",
+		str(ml.mailto).begins_with("mailto:someone@example.com?subject=") and str(ml.mailto).contains(mcode) and str(ml.gmail).begins_with("https://mail.google.com/mail/?view=cm&fs=1&to=someone%40example.com&su=")
+		and str(mn.mailto).begins_with("mailto:?subject=") and not str(mn.gmail).contains("&to=") and str(mn.gmail).contains("&body="), [ml.mailto.left(60), mn.gmail.left(70)])
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

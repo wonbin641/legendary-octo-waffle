@@ -519,46 +519,91 @@ func render_settings() -> void:
 		"WASD 이동 · Shift 달리기 · Space 점프 · 마우스 조준 · 좌클릭 발사 · 우클릭 조준 · R 재장전 · V 근접 · 1-7 무기 · 휠 무기 바꾸기 · Esc 일시정지 · 상점 · F3 FPS 표시", f_body, 13, INK, true))
 	set_body.add_child(lbl("버그 제보: ccoo112@naver.com", f_body, 12, STEEL))
 
-# ---------- one small dialog for save, load, reset and the developer password ----------
+# ---------- one small dialog for save, load, reset and the developer password (Dialog and SaveMail in src/08f_meta.js) ----------
+var dlg_cancel: Button; var dlg_head: Label; var mail_box: VBoxContainer; var mail_in: LineEdit; var dlg_code: Label
 func _build_dialog() -> void:
-	var s := sheet("dlg", "", "YRD-SAVE", 560.0); var body: VBoxContainer = s[1]; dlg_msg = s[3]
+	var s := sheet("dlg", "진행 상황", "YRD-SAVE", 560.0); var body: VBoxContainer = s[1]; dlg_msg = s[3]; dlg_head = s[0].get_meta("title")
 	dlg_title = lbl("", f_title, 30, INK); body.add_child(dlg_title); dlg_text = lbl("", f_body, 13, INK, true); body.add_child(dlg_text)
 	dlg_in = LineEdit.new(); dlg_in.custom_minimum_size = Vector2(0, 46); dlg_in.add_theme_font_override("font", f_mono); dlg_in.add_theme_font_size_override("font_size", 15); body.add_child(dlg_in)
 	dlg_in.text_submitted.connect(func(_t: String) -> void: _dialog_ok())
-	dlg_ok = btn("확인", "primary", _dialog_ok); dlg_ok.set_meta("first", true); var c := btn("닫기", "ghost", close_sub)
-	s[2].add_child(dlg_ok); s[2].add_child(c); s[2].move_child(dlg_ok, 0); s[2].move_child(c, 1)
+	# the code to keep: in a box of its own, wrapped, all of it in sight
+	var cb := PanelContainer.new(); cb.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.9), LINE, 1, 12)); body.add_child(cb)
+	dlg_code = lbl("", f_mono, 18, SODIUM, true); dlg_code.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY; cb.add_child(dlg_code); dlg_code.set_meta("box", cb)
+	# the save code by mail: an address (kept on this device only), the mail app, Gmail, or the whole mail copied
+	mail_box = vbox(10); body.add_child(mail_box)
+	mail_box.add_child(lbl("이메일로 보내 두기", f_bold, 13, SODIUM))
+	mail_in = LineEdit.new(); mail_in.custom_minimum_size = Vector2(0, 46); mail_in.placeholder_text = "받을 주소 (내 이메일, 비워 둬도 됨)"; mail_in.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
+	mail_in.add_theme_font_override("font", f_bold); mail_in.add_theme_font_size_override("font_size", 16); mail_box.add_child(mail_in)
+	mail_in.text_changed.connect(func(t: String) -> void: Store.settings.mailTo = t.strip_edges(); Store.persist_settings())
+	var mr := HFlowContainer.new(); mr.add_theme_constant_override("h_separation", 8); mr.add_theme_constant_override("v_separation", 8); mail_box.add_child(mr)
+	mr.add_child(btn("메일 앱으로 보내기", "ghost", func() -> void: _send_mail("mailto")))
+	mr.add_child(btn("Gmail로 보내기", "ghost", func() -> void: _send_mail("gmail")))
+	mr.add_child(btn("메일 내용 복사", "ghost", func() -> void: _copy_mail()))
+	mail_box.add_child(lbl("보내 둔 메일 속 코드를 다른 기기나 다시 설치한 앱의 처음 화면 '불러오기'에 넣으면 이어서 할 수 있습니다. 메일 앱이 열리지 않으면 '메일 내용 복사'로 복사해 직접 보내세요. 주소는 이 기기에만 기억됩니다.", f_body, 12, STEEL, true))
+	dlg_ok = btn("확인", "primary", _dialog_ok); dlg_ok.set_meta("first", true); dlg_cancel = btn("닫기", "ghost", close_sub)
+	s[2].add_child(dlg_ok); s[2].add_child(dlg_cancel); s[2].move_child(dlg_ok, 0); s[2].move_child(dlg_cancel, 1)
+
+## the reset's button is red
+func _danger(b: Button, on: bool) -> void:
+	for st in ["normal", "hover", "pressed"]:
+		var sb := (b.get_theme_stylebox(st) as StyleBoxFlat).duplicate() as StyleBoxFlat
+		sb.bg_color = (ALARM if st == "normal" else ALARM.lightened(0.15)) if on else (SODIUM if st == "normal" else SODIUM.lightened(0.15)); b.add_theme_stylebox_override(st, sb)
 
 func open_dialog(kind: String) -> void:
-	dlg_kind = kind; dlg_msg.text = ""; dlg_in.visible = kind != "reset"; dlg_in.secret = kind == "dev"; dlg_in.editable = kind != "save"; dlg_in.text = ""; dlg_ok.visible = true
+	dlg_kind = kind; dlg_msg.text = ""; dlg_in.visible = kind == "save" or kind == "load" or kind == "dev"; dlg_in.secret = kind == "dev"; dlg_in.editable = kind != "save"; dlg_in.text = ""; dlg_ok.visible = true
+	dlg_in.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER if kind == "dev" else LineEdit.KEYBOARD_TYPE_DEFAULT; mail_box.visible = kind == "save"; _danger(dlg_ok, kind == "reset")
+	dlg_in.visible = kind == "load" or kind == "dev"; (dlg_code.get_meta("box") as Control).visible = kind == "save"
 	match kind:
 		"save":
-			dlg_title.text = "저장"; dlg_in.text = SaveCode.encode(Store.save, Store.money_lock, Store.ivory_lock, Store.own_lock); dlg_ok.text = "복사"
+			dlg_head.text = "진행 상황 저장"; dlg_title.text = "저장 코드"; dlg_code.text = SaveCode.encode(Store.save, Store.money_lock, Store.ivory_lock, Store.own_lock); dlg_ok.text = "코드 복사"; dlg_cancel.text = "닫기"
 			dlg_text.text = "이 코드를 적어 두거나 복사해 두세요. 처음 화면의 불러오기에 넣으면 지금의 돈, 열린 스테이지, 깬 스테이지, 최단 기록, 무기 편성, 가진 총, 아이템과 상아, 총기 커스텀으로 돌아갑니다. 대여 중인 무기는 코드에 들어가지 않습니다."
+			mail_in.text = str(Store.settings.get("mailTo", ""))
 		"load":
-			dlg_title.text = "불러오기"; dlg_ok.text = "확인"; dlg_text.text = "저장 코드를 넣으세요. 지금의 진행 상황은 코드의 것으로 바뀝니다."
+			dlg_head.text = "진행 상황 불러오기"; dlg_title.text = "불러오기"; dlg_ok.text = "불러오기"; dlg_cancel.text = "취소"; dlg_in.placeholder_text = "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXX"
+			dlg_text.text = "저장할 때 받은 코드를 넣으세요. 지금 진행 상황은 코드의 내용으로 바뀌고, 대여 중인 무기는 반납됩니다(대여료는 돌려받지 않습니다)."
 		"reset":
-			dlg_title.text = "초기화"; dlg_ok.text = "확인"
+			dlg_head.text = "진행 상황 초기화"; dlg_title.text = "모두 지울까요?"; dlg_ok.text = "초기화"; dlg_cancel.text = "취소"
 			dlg_text.text = "돈, 열린 스테이지, 깬 기록, 최단 기록, 무기 편성, 대여 중인 무기, 가진 총, 아이템과 상아, 총기 커스텀을 모두 지우고 처음 상태로 돌아갑니다. 되돌릴 수 없으니 필요하면 먼저 저장 코드를 받아 두세요. 설정(감도, 음량, 개발자 모드)은 그대로입니다."
 		"dev":
-			dlg_title.text = "개발자 모드"; dlg_ok.text = "확인"; dlg_text.text = "비밀번호를 넣으세요."
+			dlg_head.text = "개발자 모드"; dlg_title.text = "비밀번호"; dlg_ok.text = "켜기"; dlg_cancel.text = "취소"; dlg_in.placeholder_text = "비밀번호"
+			dlg_text.text = "개발자 모드를 켜려면 비밀번호를 넣으세요. 켜면 모든 스테이지와 모든 총, 아이템을 무료로 쓸 수 있습니다."
 	open_sub("dlg")
-	if dlg_in.visible and kind != "save": dlg_in.grab_focus.call_deferred()
+	if dlg_in.visible: dlg_in.grab_focus.call_deferred()
+
+## the mail: the code, when, the stages cleared and the bag; to the address if one is written
+func mail_now() -> Dictionary:
+	return SaveCode.mail_text(Store.save, dlg_code.text if dlg_kind == "save" else SaveCode.encode(Store.save, Store.money_lock, Store.ivory_lock, Store.own_lock), SaveCode.now_text())
+
+var last_link := ""   # (the checks read which page was opened)
+func _send_mail(how: String) -> void:
+	var m := mail_now(); var links := SaveCode.mail_links(mail_in.text, m.subject, m.body); last_link = links[how]
+	if OS.has_feature("web"): JavaScriptBridge.eval("try{window.open(%s, '_blank', 'noopener')}catch(e){}" % JSON.stringify(last_link))
+	else: OS.shell_open(last_link)
+	dlg_msg.text = "메일 앱을 엽니다 · 열리지 않으면 Gmail이나 메일 내용 복사를 써 주세요" if how == "mailto" else "Gmail 쓰기 창을 엽니다"
+
+func _copy_mail() -> void:
+	var m := mail_now(); var all: String = m.subject + "\n\n" + str(m.body).replace("\r\n", "\n")
+	DisplayServer.clipboard_set(all)
+	if OS.has_feature("web"): JavaScriptBridge.eval("try{navigator.clipboard.writeText(%s)}catch(e){}" % JSON.stringify(all))
+	dlg_msg.text = "메일 내용을 복사했습니다 · 메일에 붙여 넣어 보내세요"
 
 func _dialog_ok() -> void:
 	match dlg_kind:
 		"save":
-			DisplayServer.clipboard_set(dlg_in.text)
-			if OS.has_feature("web"): JavaScriptBridge.eval("try{navigator.clipboard.writeText(%s)}catch(e){}" % JSON.stringify(dlg_in.text))
-			dlg_msg.text = "복사했습니다 · 안 되면 코드를 길게 눌러 복사해 주세요"
+			DisplayServer.clipboard_set(dlg_code.text)
+			if OS.has_feature("web"): JavaScriptBridge.eval("try{navigator.clipboard.writeText(%s)}catch(e){}" % JSON.stringify(dlg_code.text))
+			dlg_msg.text = "복사했습니다"
 		"load":
 			var d = SaveCode.decode(dlg_in.text)
-			if d == null: dlg_msg.text = "코드가 맞지 않습니다 · 다시 확인해 주세요"; Snd.play("empty"); return
-			Store.save = Store.save0(); Store.save.merge(d, true); Store.fix_save(); Store.persist(); Snd.play("buy"); close_sub(); set_msg.text = "불러왔습니다 · 가방 " + Store.won(Store.save.money); on_settings.call()
+			if d == null: dlg_msg.text = "코드가 맞지 않습니다. 글자를 다시 확인해 주세요."; Snd.play("empty"); return
+			Store.save = Store.save0(); Store.save.merge(d, true); Store.fix_save(); Store.persist(); Snd.play("buy"); close_sub()
+			var done: Array = Store.STAGE_ORDER.filter(func(st): return Store.save.cleared.has(st)).map(func(st): return Store.STAGE_TAG[st])
+			set_msg.text = "불러왔습니다 · 가방 " + Store.won(Store.save.money) + " · 깬 스테이지 " + (", ".join(done) if not done.is_empty() else "없음"); on_settings.call()
 		"reset":
-			Store.save = Store.save0(); Store.fix_save(); Store.persist(); close_sub(); set_msg.text = "처음 상태로 돌아갔습니다"; on_settings.call()
+			Store.save = Store.save0(); Store.fix_save(); Store.persist(); Snd.play("reload0"); close_sub(); set_msg.text = "모든 진행 상황을 지웠습니다"; on_settings.call()
 		"dev":
 			if SaveCode.dev_hash(dlg_in.text.strip_edges()) != SaveCode.DEV_HASH: dlg_msg.text = "비밀번호가 틀렸습니다"; Snd.play("empty"); return
-			Store.settings.dev = true; Store.persist_settings(); close_sub(); set_msg.text = "개발자 모드를 켰습니다 · 모든 스테이지와 무기가 열립니다"; render_settings()
+			Store.settings.dev = true; Store.persist_settings(); close_sub(); set_msg.text = "개발자 모드 · 모든 스테이지와 모든 총을 쓸 수 있습니다"; render_settings()
 
 # ================= the briefing =================
 func _build_brief() -> void:
