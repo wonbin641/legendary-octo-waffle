@@ -64,7 +64,7 @@ func build(w: World, group: Node3D) -> void:
 	for i in 14: box(-HALF + i * 10.0, -0.5, -HALF, -HALF + (i + 1) * 10.0 - 0.15, 0.0, HALF, "b98a5a" if i % 2 else "c49766", "wood", false)
 	box(-HALF, -0.6, -HALF, HALF, -0.5, HALF, "6e4f30", "wood", false)
 	for wl in [[-HALF - 1.0, -HALF, -HALF, HALF], [HALF, -HALF, HALF + 1.0, HALF], [-HALF, -HALF - 1.0, HALF, -HALF], [-HALF, HALF, HALF, HALF + 1.0]]:
-		box(wl[0], 0, wl[1], wl[2], 46.0, wl[3], "cfe3ea"); box(wl[0] - (0.0 if wl[2] - wl[0] > 5 else 0.3), 0, wl[1] - (0.3 if wl[2] - wl[0] > 5 else 0.0), wl[2] + (0.0 if wl[2] - wl[0] > 5 else 0.3), 2.2, wl[3] + (0.3 if wl[2] - wl[0] > 5 else 0.0), "f4f1e8", "concrete", false)
+		box(wl[0], 0, wl[1], wl[2], 46.0, wl[3], "4caf50"); box(wl[0] - (0.0 if wl[2] - wl[0] > 5 else 0.3), 0, wl[1] - (0.3 if wl[2] - wl[0] > 5 else 0.0), wl[2] + (0.0 if wl[2] - wl[0] > 5 else 0.3), 2.2, wl[3] + (0.3 if wl[2] - wl[0] > 5 else 0.0), "f4f1e8", "concrete", false)
 	_bed(); _desk(); _bridge(); _south(); _north()
 	# everything boxy in one mesh
 	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts, true); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.75; mi.material_override = mat; G.add_child(mi)
@@ -104,10 +104,10 @@ func _crates() -> void:
 ## east: the bunk bed. the lower mattress is the main battlefield; under it, a dark crawl space
 func _bed() -> void:
 	var x0 := 10.0; var x1 := 62.0; var z0 := -30.0; var z1 := 30.0
-	for p in [[x0, z0], [x1 - 2.4, z0], [x0, z1 - 2.4], [x1 - 2.4, z1 - 2.4]]: box(p[0], 0, p[1], p[0] + 2.4, 26.0, p[1] + 2.4, "e8dcc0", "wood")   # the four posts, floor to top
-	box(x0, 4.4, z0, x1, 5.2, z1, "d9c9a3", "wood"); box(x0 + 0.6, 5.2, z0 + 0.6, x1 - 0.6, BED_Y, z1 - 0.6, "f3f6fb", "bed")   # frame and mattress (walk under it: 4.4 m clear)
+	for p in [[x0, z0], [x1 - 2.4, z0], [x0, z1 - 2.4], [x1 - 2.4, z1 - 2.4]]: box(p[0], 0, p[1], p[0] + 2.4, 26.0, p[1] + 2.4, "a6d96a", "wood")   # the four posts, floor to top
+	box(x0, 4.4, z0, x1, 5.2, z1, "8cc456", "wood"); box(x0 + 0.6, 5.2, z0 + 0.6, x1 - 0.6, BED_Y, z1 - 0.6, "d2efb0", "bed")   # frame and mattress (walk under it: 4.4 m clear)
 	beds.push_back([x0, z0, x1, z1, BED_Y])
-	box(x1, 0, z0, x1 + 1.6, 26.0, z1, "e8dcc0", "wood")   # the headboard, against the east wall
+	box(x1, 0, z0, x1 + 1.6, 26.0, z1, "a6d96a", "wood")   # the headboard, against the east wall
 	# pillows and the teddy bear at the head of the bed: bunkers
 	box(49.0, BED_Y, -26.0, 59.0, BED_Y + 2.6, -8.0, "fdfdfd", "bed"); box(49.0, BED_Y, 8.0, 59.0, BED_Y + 2.6, 26.0, "ffe9a8", "bed")
 	box(51.5, BED_Y, -4.5, 58.5, BED_Y + 5.0, 4.5, "a9743f", "bed"); ball(Vector3(55.0, BED_Y + 7.2, 0), 2.6, "b98146", false)
@@ -120,14 +120,14 @@ func _bed() -> void:
 	# the blanket hangs over the west edge down to the floor: the way up from the carpet
 	stairs(x0 - 14 * 0.75, 0, 20.0, "+x", 14, BED_Y / 14.0, 0.75, 9.0, "6aa3d6", "7fb4e0")   # lowest step out on the floor, the top one against the bed
 	# the upper bunk: its slab, a rail to hide behind, and the ladder up from the mattress
-	box(x0, BUNK_Y - 1.0, z0, x1, BUNK_Y - 0.4, z1, "d9c9a3", "wood"); box(x0 + 0.6, BUNK_Y - 0.4, z0 + 0.6, x1 - 0.6, BUNK_Y, z1 - 0.6, "ffd9e2", "bed"); beds.push_back([x0, z0, x1, z1, BUNK_Y])
-	for r in [[x0, z0, x1, z0 + 0.6], [x0, z1 - 0.6, x0 + 30.0, z1], [x0, z0, x0 + 0.6, -6.0], [x0, 6.0, x0 + 0.6, z1]]: box(r[0], BUNK_Y, r[1], r[2], BUNK_Y + 1.3, r[3], "e8dcc0", "wood")
-	stairs(x1 - 3.0, BED_Y, z1 + 1.7, "-x", 20, (BUNK_Y - BED_Y) / 20.0, 0.9, 3.4, "e8dcc0", "d9c9a3")   # outside the frame on the south side; the rail is open where it arrives
+	box(x0, BUNK_Y - 1.0, z0, x1, BUNK_Y - 0.4, z1, "8cc456", "wood"); box(x0 + 0.6, BUNK_Y - 0.4, z0 + 0.6, x1 - 0.6, BUNK_Y, z1 - 0.6, "ffd9e2", "bed"); beds.push_back([x0, z0, x1, z1, BUNK_Y])
+	for r in [[x0, z0, x1, z0 + 0.6], [x0, z1 - 0.6, x0 + 30.0, z1], [x0, z0, x0 + 0.6, -6.0], [x0, 6.0, x0 + 0.6, z1]]: box(r[0], BUNK_Y, r[1], r[2], BUNK_Y + 1.3, r[3], "a6d96a", "wood")
+	stairs(x1 - 3.0, BED_Y, z1 + 1.7, "-x", 20, (BUNK_Y - BED_Y) / 20.0, 0.9, 3.4, "a6d96a", "8cc456")   # outside the frame on the south side; the rail is open where it arrives
 	box(48.0, BUNK_Y, -24.0, 58.0, BUNK_Y + 2.4, -10.0, "fdfdfd", "bed"); box(20.0, BUNK_Y, 4.0, 22.6, BUNK_Y + 1.8, 22.0, "f7a8bd", "bed"); box(34.0, BUNK_Y, -22.0, 36.6, BUNK_Y + 1.8, -2.0, "f7a8bd", "bed")
 	# springs: by the bed's west corners on the floor (up to the mattress and the desk), and on the mattress (up to the upper bunk)
 	_spring(6.0, -22.0, 0.0, 21.0); _spring(6.0, 10.0, 0.0, 21.0)
 	box(6.0, 0, -35.0, 14.0, BED_Y, -30.0, "f77f00", "wood"); _spring(9.0, -32.5, BED_Y, 21.5)   # a stool at the bed's corner, level with the mattress, with the spring for the upper bunk
-	box(58.0, 4.4, z1, x1, BED_Y, z1 + 3.4, "d9c9a3", "wood")                                    # a bedside shelf: the foot of the ladder
+	box(58.0, 4.4, z1, x1, BED_Y, z1 + 3.4, "8cc456", "wood")                                    # a bedside shelf: the foot of the ladder
 	# under the bed: socks, a slipper, lost balls. dark and close
 	for s in [[18.0, -20.0, 7.0, 2.6, "e85d75"], [30.0, 4.0, 2.6, 8.0, "f2f2f2"], [44.0, -12.0, 8.0, 2.4, "5fbf8f"], [24.0, 18.0, 6.0, 2.4, "f2c14e"], [50.0, 14.0, 2.6, 7.0, "9b7fd1"], [38.0, -24.0, 2.4, 6.0, "f2f2f2"]]:
 		box(s[0], 0, s[1], s[0] + s[2], 1.7, s[1] + s[3], s[4], "bed")

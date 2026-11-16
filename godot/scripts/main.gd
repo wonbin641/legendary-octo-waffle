@@ -86,7 +86,7 @@ func _ready() -> void:
 
 func apply_settings() -> void:
 	Snd.touch = look_mode == "touch"
-	grade.visible = look_mode != "touch"   # phones draw without the finishing pass, as the browser game's do
+	grade.allowed = look_mode != "touch"; grade.visible = grade.allowed and world.toy == null   # phones draw without the finishing pass, as the browser game's do
 	if look_mode == "touch" and world.use_ao: world.use_ao = false; world.set_ao(false)
 	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"

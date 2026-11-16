@@ -1020,5 +1020,8 @@ func _ready() -> void:
 	check("the occlusion follows the browser game's quality ladder: down a step per sagging two seconds, gone below level 3, back after three good spells",
 		e_l1 == [3, true] and e_l2 == [2, false] and e_l3[1] == true and int(e_l3[0]) >= 3, [e_l1, e_l2, e_l3])
 	w.gfx_level = 4; w.use_ao = true; w.set_ao(true)
+	var e_gr := Grade.new(); add_child(e_gr); e_gr.tune(World.STAGE_STYLE[9]); var e_toy := e_gr.visible; e_gr.tune(World.STAGE_STYLE[1]); var e_yard := e_gr.visible
+	e_gr.allowed = false; e_gr.tune(World.STAGE_STYLE[1]); var e_phone := e_gr.visible; e_gr.queue_free()
+	check("the finishing pass: on a computer in the browser game's stages, never in stage 5 (this port's own room keeps its light) nor on phones", not e_toy and e_yard and not e_phone, [e_toy, e_yard, e_phone])
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

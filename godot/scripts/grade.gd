@@ -40,8 +40,12 @@ func _ready() -> void:
 	rect = ColorRect.new(); rect.set_anchors_preset(Control.PRESET_FULL_RECT); rect.mouse_filter = Control.MOUSE_FILTER_IGNORE; rect.material = mat
 	add_child(rect)
 
-## the browser game's Post.tune: daylight and the white lab bloom less and darken the corners less
+var allowed := true   # phones go without (main sets this)
+
+## the browser game's Post.tune: daylight and the white lab bloom less and darken the corners less. Stage 5, this port's
+## own room, keeps the light it was made with: no finishing pass
 func tune(style: Dictionary) -> void:
+	visible = allowed and not style.get("toy", false)
 	var day: bool = style.get("day", false) or style.get("lab", false)
 	mat.set_shader_parameter("threshold", 0.9 if day else 0.76); mat.set_shader_parameter("knee", 0.08 if day else 0.14)
 	mat.set_shader_parameter("strength", 0.3 if day else 0.55); mat.set_shader_parameter("vig", 0.4 if day else 0.6)
