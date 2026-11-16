@@ -64,7 +64,7 @@ func reset(layout: Array) -> void:
 	for id in Weapons.all_ids():
 		wstate[id].mag = Custom.weapon(id).mag; wstate[id].reserve = Custom.weapon(id).reserve
 		wstate[id].heat = 0.0; wstate[id].hot = false; wstate[id].smoke_t = 0.0; wstate[id].cool_t = 0.0
-	since_shot = 9.0; _reload_f = 0.0
+	since_shot = 9.0; _reload_f = 0.0; shots = 0; hits = 0   # the result sheet's accuracy is this stage's alone, as the browser game's
 	cooldown = 0.0; reload_t = 0.0; switch_t = 0.0; pending = null; ads = 0.0; ads_held = false; bloom = 0.0; kick_z = 0.0; kick_rot = 0.0; flash_t = 0.0
 	trigger = false; trigger_edge = false; melee_on = false; melee_t = 0.0; melee_cd = 0.0; _melee_target = null; _pump_t = -1.0; _auto_reload_t = -1.0
 	loadout = layout.duplicate(); slots = loadout.filter(func(x): return x != null); none = slots.is_empty()

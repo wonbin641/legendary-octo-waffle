@@ -237,16 +237,19 @@ func _touch_buttons() -> Dictionary:
 	if player.jet_on: b["down"] = [at.call(200, 96, 60), 30.0, "내려가기"]
 	return b
 
-## the pill buttons low in the middle: the antidote (while infected or poisoned), getting on or the hall's key, getting off
-func _touch_pills() -> Dictionary:
-	var s := hud.size; var p := {}
-	var pill := func(text: String, bottom: float, h: float, pad: float, fs: int) -> Rect2:
-		var w := f_bold.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + pad * 2.0; return Rect2(s.x / 2.0 - w / 2.0, s.y - bottom - h, w, h)
-	if (game.infected or game.poison_t > 0.0) and not game.inject_on:
-		var at := "해독약 사용 (%d)" % game.antidotes if game.antidotes > 0 else "해독약 없음"; p["anti"] = [pill.call(at, 150, 54, 24, 15), at]
-	var key := world.ship != null and world.ship.key_near(); var act := "메인홀 열쇠 줍기" if key else _ride_act()
-	if act != "": p["car"] = [pill.call(act, 16, 50, 26, 15), act]
-	if enemies.animals.m != null and enemies.animals.target != null: p["off"] = [pill.call("내리기", 76, 40, 18, 13), "내리기"]
+## the pill buttons low in the middle: the antidote (while infected or poisoned), getting on or the hall's key, getting off.
+## On a tall screen the round buttons fill the bottom right, so the pills go down the left under the arrows instead
+## (the browser game puts a control deck there). all: every pill with its longest words, to check the layout
+func _touch_pills(all := false) -> Dictionary:
+	var s := hud.size; var p := {}; var tall := s.y > s.x * 1.1; var row := s.y / 2.0 + 78.0 + 24.0
+	var pill := func(text: String, bottom: float, h: float, pad: float, fs: int, tall_y: float) -> Rect2:
+		var w := f_bold.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + pad * 2.0
+		return Rect2(16.0, tall_y, w, h) if tall else Rect2(s.x / 2.0 - w / 2.0, s.y - bottom - h, w, h)
+	if all or ((game.infected or game.poison_t > 0.0) and not game.inject_on):
+		var at := "해독약 사용 (%d)" % game.antidotes if game.antidotes > 0 or all else "해독약 없음"; p["anti"] = [pill.call(at, 150, 54, 24, 15, row), at]
+	var key := world.ship != null and world.ship.key_near(); var act := "메인홀 열쇠 줍기" if key or all else _ride_act()
+	if act != "": p["car"] = [pill.call(act, 16, 50, 26, 15, row + 116.0), act]
+	if all or (enemies.animals.m != null and enemies.animals.target != null): p["off"] = [pill.call("내리기", 76, 40, 18, 13, row + 64.0), "내리기"]
 	return p
 
 func _sbox(bg: Color, line: Color, r: int, bw := 1.5) -> StyleBoxFlat:
@@ -396,7 +399,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		if look_mode != "touch": look_mode = "touch"; is_touch = true; ui.is_touch = true; guns.look_mode = "touch"; apply_settings(); touch_ui.visible = true
 		var r := _touch_rects(); var p: Vector2 = e.position   # already in the page's units (the window is scaled by the device pixel ratio)
 		if e.pressed:
-			if (r.pause as Rect2).has_point(p): pause_game(); return
+			if (r.pause as Rect2).grow(4).has_point(p): pause_game(); return   # drawn 42 px as the browser game's, touched over 50
 			if (r.map as Rect2).has_point(p): open_map("play"); return
 			var tb := _touch_buttons(); var hit := ""
 			for k in tb:
@@ -453,7 +456,13 @@ func _read_keys() -> void:
 	if look_mode != "touch": player.in_up = Input.is_physical_key_pressed(KEY_SPACE); player.in_down = Input.is_physical_key_pressed(KEY_CTRL) or Input.is_physical_key_pressed(KEY_C)
 
 # ---------------- the frame ----------------
+var tick_ms := 0.0   # the frame's own work (not the drawing), averaged, for the performance figures
 func tick(dt: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	_tick(dt)
+	tick_ms = lerpf(tick_ms, (Time.get_ticks_usec() - t0) / 1000.0, 0.1)
+
+func _tick(dt: float) -> void:
 	time += dt
 	_read_keys(); player.update(dt, cam, time)
 	if world.toy: world.toy.update(dt, player)
@@ -600,6 +609,55 @@ func command(line: String) -> Dictionary:
 				"sparks": fx.sparks(at, 30, [1.0, 0.78, 0.45], 3.2)
 				"hole": fx.decal(at, cam.global_basis.z)
 				_: fx.explode(at, true)
+		"audit": return {"screen": ui.cur, "issues": ui.audit()}
+		"where":   # where the living ones of a kind are
+			var ps := []
+			for e in enemies.list:
+				if e.alive and e.type == a[1]: ps.push_back([snappedf(e.pos.x, 0.1), snappedf(e.pos.y, 0.1), snappedf(e.pos.z, 0.1)])
+			return {"at": ps}
+		"bring":   # the nearest living animal of a kind, let out of its cage and stood this far in front of you (or of what you ride)
+			var best = null; var bd := INF
+			for e in enemies.list:
+				if e.alive and e.type == a[1] and not e.ridden and (e.pos as Vector3).distance_to(player.pos) < bd: best = e; bd = (e.pos as Vector3).distance_to(player.pos)
+			if best != null:
+				var mt = enemies.animals.m; var base: Vector3 = mt.pos if mt != null else player.pos
+				var r: float = (mt.R if mt != null else Player.R) + best.R + (float(a[2]) if a.size() > 2 else 0.5); var f := Vector3(-sin(player.yaw), 0, -cos(player.yaw))
+				var x := base.x + f.x * r; var z := base.z + f.z * r
+				best.caged = false; best.pos = Vector3(x, Phys.ground_at(x, base.y + 1.0, z, best.R), z); best.vel = Vector3.ZERO; best.yaw = player.yaw
+		"unseal":   # the ship's drones out from behind their doors (to see them fight without walking the corridor first)
+			for e in enemies.list:
+				if e.robot: e.sealed = false
+		"bosslaser":   # the boss drone starts its laser now: the red eye, the aim, the beam
+			for e in enemies.list:
+				if e.alive and e.type == "bdrone": e.alert = true; e.k.mode = "warn"; e.k.t = 0.0; (e.k.eye_mat as StandardMaterial3D).albedo_color = Color("ff1a10")
+		"robo":   # what the gold drone and the boss drone are doing
+			var out := {}
+			for e in enemies.list:
+				if e.alive and e.type == "gdrone": out["bee"] = (e.k.dash.mode if e.k.has("dash") else "none"); out["bee_at"] = [snappedf(e.pos.x, 0.1), snappedf(e.pos.y, 0.1), snappedf(e.pos.z, 0.1)]
+				if e.alive and e.type == "bdrone": out["boss"] = e.k.get("mode", ""); out["boss_at"] = [snappedf(e.pos.x, 0.1), snappedf(e.pos.y, 0.1), snappedf(e.pos.z, 0.1)]; out["boss_los"] = e.los
+			out["hp"] = player.hp; out["rockets"] = enemies.robots.rockets.size(); out["result"] = game.result
+			return out
+		"tower": world.safari.hurt(float(a[1]), Vector3(world.safari.outer.position.x, 2.0, world.safari.outer.position.z + 2.6))
+		"perf":   # what a frame costs: draw calls and objects drawn, the frame's own work, frames a second
+			return {"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), "objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+				"primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME), "tick_ms": snappedf(tick_ms, 0.01), "process_ms": snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.01),
+				"fps": Performance.get_monitor(Performance.TIME_FPS), "enemies": enemies.list.size(), "specks": fx.live(), "rockets": enemies.robots.rockets.size() if enemies.robots else 0}
+		"rockets":   # the boss's rockets, this many, from a ring round you (10 m out and 3 m up unless said), all coming at you
+			var rr := float(a[2]) if a.size() > 2 else 10.0; var rh := float(a[3]) if a.size() > 3 else 3.0
+			for i in int(a[1]):
+				var ang := TAU * i / float(a[1]); var from := player.pos + Vector3(cos(ang) * rr, rh, sin(ang) * rr)
+				enemies.robots.rocket(from, (player.pos + Vector3(0, 1, 0) - from).normalized(), 60.0, 15.0)
+		"result": _show_result(a[1])
+		"cxtab": ui.cx_tab = a[1]; ui.render_codex()
+		"touchlayout":   # where every touch control lies at this size, with all the pills out: [x, y, w, h], circles as their squares
+			var out := {}; var tr := _touch_rects(); out["pause"] = (tr.pause as Rect2).grow(4); out["map"] = tr.map; out["pad"] = tr.pad
+			var tb := _touch_buttons()
+			for k in tb: out[k] = Rect2(tb[k][0] - Vector2.ONE * tb[k][1], Vector2.ONE * tb[k][1] * 2.0)
+			var pl := _touch_pills(true)
+			for k in pl: out["pill_" + k] = pl[k][0]
+			var res := {"size": [hud.size.x, hud.size.y]}
+			for k in out: var q: Rect2 = out[k]; res[k] = [q.position.x, q.position.y, q.size.x, q.size.y]
+			return res
 		"again": ui.do_again.call(game.stage)
 		"ride": enemies.animals.ride_toggle()
 		"stampede": world.safari.t = Safari.T_STAMPEDE - 0.5

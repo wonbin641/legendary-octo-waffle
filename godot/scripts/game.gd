@@ -321,7 +321,7 @@ func from_save() -> void:
 			c.dead = true; broke = true; Phys.remove_collider(c.b)
 			world.hide_crate(c)
 	if broke: Phys.build_nav()
-	kills = s.kills; goal = s.goal; stats = (s.stats as Dictionary).duplicate()
+	kills = s.kills; goal = s.goal; stats = (s.stats as Dictionary).duplicate(); guns.shots = int(stats.shots); guns.hits = int(stats.hits)
 	Store.save.money = s.money; Store.money_lock = s.money0; Store.persist()
 	for a in s.ammo: guns.wstate[a[0]].mag = a[1]; guns.wstate[a[0]].reserve = a[2]
 	if guns.slots.has(s.cur): guns.switch_to(s.cur)

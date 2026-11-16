@@ -90,8 +90,9 @@ func sheet(key: String, title: String, code: String, max_w := 760.0) -> Array:
 	root.set_meta("title", t); root.set_meta("code", c)
 	var sc := ScrollContainer.new(); sc.size_flags_vertical = Control.SIZE_EXPAND_FILL; sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; v.add_child(sc)
 	var body := vbox(10); sc.add_child(body)
-	var foot := hbox(); v.add_child(foot)
-	var msg := lbl("", f_body, 13, SODIUM, true); foot.add_child(msg)
+	# the buttons along the bottom go on to a second line when they do not fit (the browser game's .actions wrap)
+	var foot := HFlowContainer.new(); foot.add_theme_constant_override("h_separation", 8); foot.add_theme_constant_override("v_separation", 8); v.add_child(foot)
+	var msg := lbl("", f_body, 13, SODIUM, true); msg.custom_minimum_size.x = 200.0; foot.add_child(msg)
 	return [root, body, foot, msg]
 
 func layout() -> void:
@@ -766,3 +767,46 @@ func show_result(kind: String) -> void:
 	var all_done: bool = Store.STAGE_ORDER.all(func(s): return Store.save.cleared.has(s))
 	(ov.best as Label).text = (("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ") if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else "")) + "가방 " + Store.won(Store.save.money)
 	back_stack.clear(); show_screen("over")
+
+## a look over the screen on show (for the checks at five screen sizes): anything off the edge of the screen (outside a
+## scrolling list), anything squeezed below the size its contents need, things to press lying on one another, and things
+## to press smaller than 44 x 44 px. Each line says what and where.
+func audit() -> Array:
+	var out: Array = []; var vp := get_viewport_rect().size
+	var root: Control = screens.get(cur)
+	if root == null: return out
+	var presses: Array = []
+	_audit_walk(root, vp, out, presses, false, Rect2(Vector2.ZERO, vp))
+	for i in presses.size():
+		for j in range(i + 1, presses.size()):
+			var a: Control = presses[i][0]; var b: Control = presses[j][0]
+			if a.is_ancestor_of(b) or b.is_ancestor_of(a): continue
+			var r := (presses[i][1] as Rect2).intersection(presses[j][1])
+			if r.size.x > 2.0 and r.size.y > 2.0: out.push_back("겹침 %s / %s" % [_who(a), _who(b)])
+	return out
+
+# clip: what of the screen the control can show itself in (a scrolling list cuts off what is scrolled away)
+func _audit_walk(c: Control, vp: Vector2, out: Array, presses: Array, scrolled: bool, clip: Rect2) -> void:
+	if not c.is_visible_in_tree(): return
+	var r := c.get_global_rect(); var seen := r.intersection(clip)
+	if not scrolled and r.size.x > 0.5 and r.size.y > 0.5 and (r.position.x < -1.0 or r.position.y < -1.0 or r.end.x > vp.x + 1.0 or r.end.y > vp.y + 1.0):
+		out.push_back("화면 밖 %s %s" % [_who(c), _rs(r)])
+	var m := c.get_combined_minimum_size()
+	if m.x > c.size.x + 1.0 or m.y > c.size.y + 1.0: out.push_back("줄어듦 %s 필요 %dx%d 실제 %dx%d" % [_who(c), m.x, m.y, c.size.x, c.size.y])
+	if (c is BaseButton or c is LineEdit) and seen.size.x > 0.5 and seen.size.y > 0.5:
+		presses.push_back([c, seen])
+		if r.size.x < 44.0 or r.size.y < 44.0: out.push_back("작음 %s %dx%d" % [_who(c), r.size.x, r.size.y])
+	var inner := clip.intersection(r) if (c is ScrollContainer or c.clip_contents) else clip
+	for ch in c.get_children():
+		if ch is Control: _audit_walk(ch, vp, out, presses, scrolled or c is ScrollContainer, inner)
+
+func _who(c: Control) -> String:
+	var t := ""
+	if c is Button: t = (c as Button).text
+	elif c is Label: t = (c as Label).text
+	elif c is LineEdit: t = (c as LineEdit).placeholder_text
+	t = t.replace("\n", " ").strip_edges()
+	return "%s「%s」" % [c.get_class(), t.substr(0, 18)] if t != "" else "%s(%s)" % [c.get_class(), c.name]
+
+func _rs(r: Rect2) -> String:
+	return "[%d,%d %dx%d]" % [r.position.x, r.position.y, r.size.x, r.size.y]

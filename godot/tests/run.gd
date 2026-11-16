@@ -952,6 +952,8 @@ func _ready() -> void:
 		h_ex == [84, 16, true] and h_drawn == [84, 16] and h_full == [900, 260] and not fxn._boom.visible, [h_ex, h_drawn, h_full, fxn._boom.visible])
 	check("bullet holes: the newest 64 stay, each lying flat on the wall it struck", fxn.hole_xf.size() == 64 and fxn._holes.get_surface_count() == 1 and h_hole.basis.z.normalized().dot(Vector3(0, 0, -1)) > 0.99 and h_hole.origin.distance_to(Vector3(0, 1, 4.98)) < 0.001,
 		[fxn.hole_xf.size(), h_hole.basis.z.normalized(), h_hole.origin])
+	g.shots = 40; g.hits = 12; gm.begin(1); gm.update(0.02)
+	check("a new stage counts its shots and hits from nothing (the result's accuracy is that stage's alone)", g.shots == 0 and g.hits == 0 and gm.stats.shots == 0 and gm.stats.hits == 0, [g.shots, g.hits, gm.stats.shots])
 	gm.begin(1); var h_old: MultiMesh = w.crate_mm; var h_cr: Dictionary = w.crates[0]
 	w.damage_crate(h_cr, 9999.0, Vector3(h_cr.x, 0.6, h_cr.z))
 	check("a broken crate leaves the picture: the crates are drawn from a new MultiMesh with that one at no size (on the web one changed in place kept showing it)",
