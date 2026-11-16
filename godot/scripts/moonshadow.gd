@@ -57,6 +57,7 @@ func world_to_clip() -> Projection:
 ## what takes no moon shadow marks its pixels (the stencil), and the shadow layer passes them by: people, animals, robots
 ## and loot, which in the browser game cast shadows but do not receive them. Solid materials only
 const UNSHADOWED := 2   # (the shadow layer's shader names the same number)
+const GRASS := 3        # the savanna's tall grass cards: no shadow on them either, and the occlusion leaves their blades be (AoView names it too)
 static func no_receive(n: Node) -> void:
 	if not (n is GeometryInstance3D): return
 	var g := n as GeometryInstance3D; var mats: Array = [g.material_override]
@@ -71,6 +72,11 @@ static func no_receive(n: Node) -> void:
 			b.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM; b.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
 			b.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; b.stencil_reference = UNSHADOWED
 
+## the browser game's grass tufts take no shadow, and its occlusion pass marks their blades (src/03b_gfx.js tag): both from this mark
+static func grass(m: BaseMaterial3D) -> void:
+	m.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM; m.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
+	m.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; m.stencil_reference = GRASS
+
 static func caster(n: Node, on := true) -> void:
 	if n is VisualInstance3D: (n as VisualInstance3D).set_layer_mask_value(CASTER, on)
 	for c in n.get_children(): caster(c, on)
@@ -82,7 +88,7 @@ static func caster(n: Node, on := true) -> void:
 const LAYER_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;
-stencil_mode read, compare_not_equal, 2;
+stencil_mode read, compare_greater, 2;   // (passes where 2 is greater than the mark: neither no-shadow (2) nor grass (3))
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
 uniform sampler2D shadow_map : filter_nearest;

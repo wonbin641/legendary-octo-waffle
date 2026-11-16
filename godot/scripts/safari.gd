@@ -42,8 +42,95 @@ var trees: Array = []
 func left() -> float: return maxf(0.0, T_STAMPEDE - t)
 func holds() -> bool: return standing and on
 
+# ---- the browser game's canvases for the plain (drawn once, then kept) ----
+static var _tx := {}
+## dry grass: speckles, short strokes, darker patches (512 across, 110 times over the plain)
+static func grass_tex() -> ImageTexture:
+	if not _tx.has("grass"):
+		var img := Image.create(512, 512, false, Image.FORMAT_RGBA8); img.fill(Color("8c874a"))
+		Gfx.speckle(img, 9000, [Color("9a9352"), Color("7f7b42"), Color("a39a58"), Color("75723e"), Color("8a7a48"), Color("6f7a3e")], 2.2)
+		var ink := [Color(70 / 255.0, 64 / 255.0, 30 / 255.0, 0.5), Color(190 / 255.0, 175 / 255.0, 110 / 255.0, 0.45), Color(95 / 255.0, 110 / 255.0, 50 / 255.0, 0.45)]
+		for i in 1400: var x := randf() * 512; var y := randf() * 512; Gfx.fline(img, Vector2(x, y), Vector2(x + randf_range(-3, 3), y - randf_range(4, 9)), ink[randi() % 3])
+		for i in 16: Gfx.fellipse(img, randf() * 512, randf() * 512, randf_range(20, 70), randf_range(10, 40), randf_range(0, 3), Color(110 / 255.0, 85 / 255.0, 50 / 255.0, randf_range(0.08, 0.2)))
+		_tx.grass = Gfx.tex(img)
+	return _tx.grass
+## a dirt track with two wheel ruts along it
+static func dirt_tex() -> ImageTexture:
+	if not _tx.has("dirt"):
+		var img := Image.create(128, 256, false, Image.FORMAT_RGBA8); img.fill(Color("8a6a45")); Gfx.speckle(img, 2500, [Color("94744c"), Color("7c5e3c"), Color("a07e55"), Color("6f5435")], 2)
+		var rut := Color(60 / 255.0, 44 / 255.0, 28 / 255.0, 0.35); Gfx.frect(img, 28, 0, 14, 256, rut); Gfx.frect(img, 86, 0, 14, 256, rut)
+		_tx.dirt = Gfx.tex(img)
+	return _tx.dirt
+## the park's sign
+static func sign_tex() -> ImageTexture:
+	if not _tx.has("sign"):
+		var img := Image.create(512, 256, false, Image.FORMAT_RGBA8); img.fill(Color("e8d9a8")); Gfx.frect(img, 0, 0, 512, 16, Color("6a3a1e")); Gfx.frect(img, 0, 240, 512, 16, Color("6a3a1e"))
+		Gfx.text(img, "제3구역 맹수 사파리", load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"), 62, 256, 112, "center", "alphabetic", Color("3a2412"))
+		Gfx.text(img, "차량 밖으로 나가지 마세요", load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"), 30, 256, 186, "center", "alphabetic", Color("8a1e14"))
+		_tx.sign = Gfx.tex(img)
+	return _tx.sign
+## the tower's boards: eight planks side by side with dark seams, grain and knots (once over each face of a box)
+static func plank_tex() -> ImageTexture:
+	if not _tx.has("plank"):
+		var img := Image.create(256, 256, false, Image.FORMAT_RGBA8); img.fill(Color("7d5b3a"))
+		var cols := [Color("86613e"), Color("74533a"), Color("8c6943"), Color("6e4f33")]
+		for i in 8: Gfx.frect(img, i * 32 + 1, 0, 30, 256, cols[randi() % 4]); Gfx.frect(img, i * 32, 0, 2, 256, Color(30 / 255.0, 18 / 255.0, 8 / 255.0, 0.55))
+		Gfx.speckle(img, 1400, [Color(60 / 255.0, 40 / 255.0, 20 / 255.0, 0.35), Color(150 / 255.0, 110 / 255.0, 70 / 255.0, 0.25)], 2)
+		for i in 16: var kr := randf_range(1.5, 3); Gfx.fellipse(img, randf_range(0, 256), randf_range(0, 256), kr, kr, 0.0, Color(40 / 255.0, 26 / 255.0, 12 / 255.0, 0.6))
+		_tx.plank = Gfx.tex(img)
+	return _tx.plank
+## the tower's name board on its railing
+static func tower_sign_tex() -> ImageTexture:
+	if not _tx.has("tsign"):
+		var img := Image.create(256, 96, false, Image.FORMAT_RGBA8); img.fill(Color("e6d6a6")); Gfx.frect(img, 0, 0, 256, 8, Color("6a3a1e")); Gfx.frect(img, 0, 88, 256, 8, Color("6a3a1e"))
+		Gfx.text(img, "감시탑", load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"), 46, 128, 50, "center", "middle", Color("3a2412"))
+		_tx.tsign = Gfx.tex(img)
+	return _tx.tsign
+## boxes in one mesh, every face textured as three.js's BoxGeometry, its picture scaled (su across, sv up from the bottom).
+## part: [sx, sy, sz, x, y, z, su, sv]
+static func _plank_boxes(parts: Array) -> ArrayMesh:
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for p in parts:
+		var a := Gfx.box(Vector3(p[0], p[1], p[2])).surface_get_arrays(0); var uvs: PackedVector2Array = a[Mesh.ARRAY_TEX_UV]
+		for i in uvs.size(): uvs[i] = Vector2(uvs[i].x * p[6], 1.0 - (1.0 - uvs[i].y) * p[7])
+		a[Mesh.ARRAY_TEX_UV] = uvs; var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a)
+		st.append_from(m, 0, Transform3D(Basis.IDENTITY, Vector3(p[3], p[4], p[5])))
+	return st.commit()
+## tall dry grass: blades curving up from the foot of a see-through card
+static func blade_tex() -> ImageTexture:
+	if not _tx.has("blade"):
+		var img := Image.create(128, 128, false, Image.FORMAT_RGBA8); img.fill(Color(0, 0, 0, 0))
+		var cols := [Color("c7b46a"), Color("a99b55"), Color("d8c47c"), Color("8f8a48"), Color("b8a35e")]
+		for i in 46:
+			var x := randf_range(8, 120); var top := randf_range(10, 60); var c: Color = cols[randi() % 5]; var lw := randf_range(1.5, 3)
+			var p0 := Vector2(x, 128); var p1 := Vector2(x + randf_range(-6, 6), (128 + top) / 2); var p2 := Vector2(x + randf_range(-14, 14), top); var prev := p0
+			for k in range(1, 13):   # (a quadratic curve, as a canvas quadraticCurveTo strokes it)
+				var u := k / 12.0; var q := p0 * (1 - u) * (1 - u) + p1 * 2 * u * (1 - u) + p2 * u * u
+				_blade_seg(img, prev, q, c, lw); prev = q
+		# the clear texels take the blades' mean colour (still clear): the smaller copies a far tuft is drawn from then average
+		# blades with blades, not with black. The browser game's are darkened that way, but there four-sample alpha-to-coverage
+		# blends those edges into the ground; here they came out as near-black flecks
+		var sum := Vector4.ZERO
+		for y in 128:
+			for x in 128: var o := img.get_pixel(x, y); sum += Vector4(o.r * o.a, o.g * o.a, o.b * o.a, o.a)
+		var mean := Color(sum.x / sum.w, sum.y / sum.w, sum.z / sum.w, 0.0)
+		for y in 128:
+			for x in 128:
+				if img.get_pixel(x, y).a == 0.0: img.set_pixel(x, y, mean)
+		_tx.blade = Gfx.tex(img)
+	return _tx.blade
+static func _blade_seg(img: Image, a: Vector2, b: Vector2, c: Color, lw: float) -> void:   # a stroke on a clear picture: the colour itself, its coverage the alpha
+	var ab := b - a; var L2 := maxf(ab.length_squared(), 1e-6); var m := lw / 2.0 + 1.0
+	for py in range(maxi(0, int(floor(minf(a.y, b.y) - m))), mini(128, int(ceil(maxf(a.y, b.y) + m)))):
+		for px in range(maxi(0, int(floor(minf(a.x, b.x) - m))), mini(128, int(ceil(maxf(a.x, b.x) + m)))):
+			var q := Vector2(px + 0.5, py + 0.5); var t := clampf((q - a).dot(ab) / L2, 0.0, 1.0); var cov := clampf(lw / 2.0 + 0.5 - q.distance_to(a + ab * t), 0.0, 1.0)
+			if cov <= 0.0: continue
+			var o := img.get_pixel(px, py); var na := cov + o.a * (1.0 - cov)
+			img.set_pixel(px, py, Color((c.r * cov + o.r * o.a * (1.0 - cov)) / na, (c.g * cov + o.g * o.a * (1.0 - cov)) / na, (c.b * cov + o.b * o.a * (1.0 - cov)) / na, na))
+
 func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
-	var gm := PlaneMesh.new(); gm.size = Vector2(1200, 1200); var ground := MeshInstance3D.new(); ground.mesh = gm; ground.material_override = Gfx.std(World.lin("8c874a"), 0.97); G.add_child(ground)
+	var gm := PlaneMesh.new(); gm.size = Vector2(1200, 1200); var ground := MeshInstance3D.new(); ground.mesh = gm
+	var grm := Gfx.std(Color.WHITE, 0.97, 0.0, grass_tex()); grm.uv1_scale = Vector3(110, 110, 1); ground.material_override = grm; G.add_child(ground)
 	var free := func(x: float, z: float, rad: float) -> bool:
 		for b in Phys.colliders:
 			if x + rad > b.minx and x - rad < b.maxx and z + rad > b.minz and z - rad < b.maxz: return false
@@ -58,14 +145,23 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 			for p: Vector2 in line:
 				if Vector2(p.x - x, p.y - z).length() < d: return true
 		return false
-	var rx := []
+	var rv := PackedVector3Array(); var ruv := PackedVector2Array(); var rn := PackedVector3Array(); var ri := PackedInt32Array()
 	for line in [road, road_b]:
 		for i in line.size() - 1:
-			var p0: Vector2 = line[i]; var p1: Vector2 = line[i + 1]; var len := p0.distance_to(p1)
-			rx.push_back(Transform3D(Basis(Vector3.UP, atan2(p1.x - p0.x, p1.y - p0.y)).scaled_local(Vector3(6, 1, len + 0.6)), Vector3((p0.x + p1.x) / 2, 0.015, (p0.y + p1.y) / 2)))
-	var rq := PlaneMesh.new(); rq.size = Vector2(1, 1); var roads := Gfx.multimesh(rq, rx); roads.material_override = Gfx.std(World.lin("8a6a45"), 0.95); G.add_child(roads)
+			# each piece as the browser game lays it: flat, then turned by -atan2(dx, dz), which tilts it the other way about its
+			# middle (along dx, -dz), so the pieces zigzag apart rather than join up; kept as it looks there
+			var p0: Vector2 = line[i]; var p1: Vector2 = line[i + 1]; var len := p0.distance_to(p1); var d0 := (p1 - p0) / len
+			var d := Vector2(d0.x, -d0.y); var n := Vector2(d0.y, d0.x)
+			var c := (p0 + p1) / 2; var hl := (len + 0.6) / 2; var o := rv.size()
+			for q in [[-1, -1], [1, -1], [-1, 1], [1, 1]]:   # (6 wide, its picture 12 m long: the ruts run along it)
+				var pp: Vector2 = c + n * 3.0 * q[0] + d * hl * q[1]; rv.push_back(Vector3(pp.x, 0.015, pp.y)); ruv.push_back(Vector2((q[0] + 1) / 2.0, (q[1] + 1) / 2.0 * len / 12.0)); rn.push_back(Vector3.UP)
+			if (rv[o + 2] - rv[o]).cross(rv[o + 1] - rv[o]).y > 0.0: ri.append_array([o, o + 1, o + 2, o + 1, o + 3, o + 2])   # (facing up: Godot winds front faces clockwise)
+			else: ri.append_array([o, o + 2, o + 1, o + 1, o + 2, o + 3])
+	var ra := []; ra.resize(Mesh.ARRAY_MAX); ra[Mesh.ARRAY_VERTEX] = rv; ra[Mesh.ARRAY_NORMAL] = rn; ra[Mesh.ARRAY_TEX_UV] = ruv; ra[Mesh.ARRAY_INDEX] = ri
+	var rmesh := ArrayMesh.new(); rmesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, ra)
+	var roads_mi := MeshInstance3D.new(); roads_mi.name = "Roads"; roads_mi.mesh = rmesh; roads_mi.material_override = Gfx.std(Color.WHITE, 0.95, 0.0, dirt_tex()); G.add_child(roads_mi)
 	# the waterhole where hippos wallow
-	var wm := MeshInstance3D.new(); var wc := CylinderMesh.new(); wc.top_radius = WATER.r; wc.bottom_radius = WATER.r; wc.height = 0.02; wm.mesh = wc; wm.material_override = Gfx.std(World.lin("4a6457"), 0.12, 0.15); wm.position = Vector3(WATER.x, 0.05, WATER.z); G.add_child(wm)
+	var wm := MeshInstance3D.new(); wm.name = "Water"; var wc := CylinderMesh.new(); wc.top_radius = WATER.r; wc.bottom_radius = WATER.r; wc.height = 0.02; wm.mesh = wc; wm.material_override = Gfx.std(World.lin("4a6457"), 0.12, 0.15); wm.position = Vector3(WATER.x, 0.05, WATER.z); G.add_child(wm); MoonShadow.no_receive(wm)
 	var mud := MeshInstance3D.new(); var mc := CylinderMesh.new(); mc.top_radius = WATER.r + 7; mc.bottom_radius = WATER.r + 7; mc.height = 0.02; mud.mesh = mc; mud.material_override = Gfx.std(World.lin("6a4a30"), 0.9); mud.position = Vector3(WATER.x, 0.02, WATER.z); G.add_child(mud)
 	# perimeter fence of the safari park
 	var E := 178.0
@@ -75,8 +171,16 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	while ft <= E:
 		for q in [[ft, -E], [ft, E], [-E, ft], [E, ft]]: posts.push_back(Transform3D(Basis.IDENTITY, Vector3(q[0], 0.85, q[1])))
 		ft += 6.0
-	var pb := BoxMesh.new(); pb.size = Vector3(0.16, 1.7, 0.16); var pim := Gfx.multimesh(pb, posts); pim.material_override = Gfx.std(World.lin("5a4636"), 0.9); G.add_child(pim)
+	var pb := BoxMesh.new(); pb.size = Vector3(0.16, 1.7, 0.16); var pim := Gfx.multimesh(pb, posts); pim.name = "Posts"; pim.material_override = Gfx.std(World.lin("5a4636"), 0.9); G.add_child(pim); MoonShadow.no_receive(pim)
+	var wire := []
+	for y: float in [0.7, 1.4]: wire.append_array([[2 * E, 0.03, 0.03, 0, y, -E], [2 * E, 0.03, 0.03, 0, y, E], [0.03, 0.03, 2 * E, -E, y, 0], [0.03, 0.03, 2 * E, E, y, 0]])
+	var wire_mi := MeshInstance3D.new(); wire_mi.name = "Wire"; wire_mi.mesh = Gfx.merge_boxes(wire); wire_mi.material_override = Gfx.unlit(World.lin("3a3a36")); G.add_child(wire_mi); MoonShadow.no_receive(wire_mi)
 	_build_tower(G, 0.0, 0.0)
+	var wood := Gfx.std(World.lin("7a5a3a"), 0.9)   # the park's sign, by where you start
+	var sg := Node3D.new(); sg.position = Vector3(-9, 0, 13); sg.rotation.y = 0.35; G.add_child(sg)
+	var board := MeshInstance3D.new(); board.name = "Sign"; board.mesh = Gfx.box(Vector3(3.2, 1.6, 0.1)); board.material_override = wood; board.position.y = 2.2; sg.add_child(board); MoonShadow.caster(board); MoonShadow.no_receive(board)
+	var face := MeshInstance3D.new(); face.name = "SignFace"; var fq := QuadMesh.new(); fq.size = Vector2(3.2, 1.6); face.mesh = fq; face.material_override = Gfx.std(Color.WHITE, 0.8, 0.0, sign_tex()); face.position = Vector3(0, 2.2, 0.051); sg.add_child(face); MoonShadow.no_receive(face)
+	var sposts := MeshInstance3D.new(); sposts.name = "SignPosts"; sposts.mesh = Gfx.merge_boxes([[0.14, 2.2, 0.14, -1.3, 1.1, 0], [0.14, 2.2, 0.14, 1.3, 1.1, 0]]); sposts.material_override = wood; sg.add_child(sposts); MoonShadow.no_receive(sposts)
 	# acacia trees, kopje boulders, termite mounds, bushes
 	trees = []; var tries := 0
 	while trees.size() < 120 and tries < 2000:
@@ -87,11 +191,10 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	for q in trees:
 		var ry := R.next() * TAU
 		tr_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(1, q[2], 1)), Vector3(q[0], q[2] / 2, q[1])))
-		cr_x.push_back(Transform3D(Basis.from_scale(Vector3(q[3], q[3] * 0.26, q[3])), Vector3(q[0], q[2], q[1])))
-	var tm := CylinderMesh.new(); tm.top_radius = 0.18; tm.bottom_radius = 0.3; tm.height = 1.0; tm.radial_segments = 6
-	var trunks := Gfx.multimesh(tm, tr_x); trunks.material_override = Gfx.std(World.lin("5a4636"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
-	var sm := SphereMesh.new(); sm.radius = 1.0; sm.height = 2.0; sm.radial_segments = 12; sm.rings = 6
-	var crowns := Gfx.multimesh(sm, cr_x); crowns.material_override = Gfx.std(World.lin("4b5a2c"), 0.9); G.add_child(crowns); MoonShadow.caster(crowns)
+		cr_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(q[3], q[3] * 0.26, q[3])), Vector3(q[0], q[2], q[1])))
+	var tm := CylinderMesh.new(); tm.top_radius = 0.18; tm.bottom_radius = 0.3; tm.height = 1.0; tm.radial_segments = 6; tm.rings = 0
+	var trunks := MeshInstance3D.new(); trunks.mesh = Gfx.bake(tm, tr_x); trunks.material_override = Gfx.std(World.lin("5a4636"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
+	var crowns := MeshInstance3D.new(); crowns.mesh = Gfx.bake(Gfx.arrays_mesh(Gfx.three_sphere(12, 6), 2.0), cr_x); crowns.material_override = Gfx.std(World.lin("4b5a2c"), 0.9); G.add_child(crowns); MoonShadow.caster(crowns)
 	var rocks := []; var c := 0; tries = 0
 	while c < 26 and tries < 600:
 		tries += 1; var cx := R.rng(-165, 165); var cz := R.rng(-165, 165)
@@ -103,31 +206,41 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	var rk_x := []
 	for q in rocks:
 		var a := R.next(); var b := R.next() * TAU; var cc := R.next()
-		rk_x.push_back(Transform3D(Basis.from_euler(Vector3(a, b, cc)).scaled_local(Vector3(q[2], q[3], q[2])), Vector3(q[0], q[3] * 0.45, q[1])))
-	var rm := SphereMesh.new(); rm.radius = 1.0; rm.height = 2.0; rm.radial_segments = 6; rm.rings = 3
-	var rim := Gfx.multimesh(rm, rk_x); rim.material_override = Gfx.std(World.lin("8f8374"), 0.92); G.add_child(rim); MoonShadow.caster(rim)
+		rk_x.push_back(Transform3D(Basis.from_euler(Vector3(a, b, cc), EULER_ORDER_XYZ).scaled_local(Vector3(q[2], q[3], q[2])), Vector3(q[0], q[3] * 0.45, q[1])))
+	var rim := MeshInstance3D.new(); rim.mesh = Gfx.bake_flat(Gfx.dodeca_tris(), rk_x); rim.material_override = Gfx.std(World.lin("8f8374"), 0.92); G.add_child(rim); MoonShadow.caster(rim)
 	var mounds := []; tries = 0
 	while mounds.size() < 34 and tries < 800:
 		tries += 1; var x := R.rng(-170, 170); var z := R.rng(-170, 170)
 		if Vector2(x, z - 10).length() < 14 or near_road.call(x, z, 4.0) or Vector2(x - WATER.x, z - WATER.z).length() < WATER.r + 6 or not free.call(x, z, 2.0): continue
 		var h := R.rng(1.8, 3.2); mounds.push_back([x, z, h]); Phys.add_collider(x - 0.7, 0, z - 0.7, x + 0.7, h, z + 0.7, "concrete")
 	var md_x := []
-	for q in mounds: var ry := R.next() * TAU; md_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(0.95, q[2], 0.95)), Vector3(q[0], q[2] / 2, q[1])))
-	var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = 1.0; cm.height = 1.0; cm.radial_segments = 7
-	var mim := Gfx.multimesh(cm, md_x); mim.material_override = Gfx.std(World.lin("9a5a3a"), 0.95); G.add_child(mim); MoonShadow.caster(mim)
+	for q in mounds: var ry := R.next() * TAU; md_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(0.95, q[2], 0.95)), Vector3(q[0], 0, q[1])))
+	var mim := MeshInstance3D.new(); mim.mesh = Gfx.bake_flat(Gfx.cone_tris(7, 1.0, 1.0, 0.0), md_x); mim.material_override = Gfx.std(World.lin("9a5a3a"), 0.95); G.add_child(mim); MoonShadow.caster(mim)
 	var bu_x := []
 	for i in 260:
 		var x := R.rng(-172, 172); var z := R.rng(-172, 172); var s := R.rng(0.6, 1.5); var ry := R.next() * TAU
 		bu_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(s * 1.4, s * 0.75, s * 1.2)), Vector3(x, s * 0.35, z)))
-	var bm := SphereMesh.new(); bm.radius = 1.0; bm.height = 2.0; bm.radial_segments = 8; bm.rings = 5
-	var bim := Gfx.multimesh(bm, bu_x); bim.material_override = Gfx.std(World.lin("55632f"), 0.95); G.add_child(bim)
-	# tall dry grass tufts: the numbers are drawn as in the browser game, every fourth one is drawn
+	var bim := MeshInstance3D.new(); bim.mesh = Gfx.bake(Gfx.arrays_mesh(Gfx.three_sphere(8, 5), 2.0), bu_x); bim.material_override = Gfx.std(World.lin("55632f"), 0.95); G.add_child(bim)
+	# tall dry grass tufts: three crossed cards each, the blades cut out of a picture
 	var tu_x := []
 	for i in 3200:
 		var x := R.rng(-176, 176); var z := R.rng(-176, 176); var s := R.rng(0.7, 1.5); var ry := R.next() * TAU; var sy := s * R.rng(0.8, 1.3)
-		if i % 4 == 0: tu_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(s * 0.5, sy, s * 0.5)), Vector3(x, sy / 2, z)))
-	var gm2 := CylinderMesh.new(); gm2.top_radius = 0.0; gm2.bottom_radius = 0.6; gm2.height = 1.0; gm2.radial_segments = 4
-	var tim := Gfx.multimesh(gm2, tu_x); tim.material_override = Gfx.std(World.lin("b8a35e"), 0.95); G.add_child(tim)
+		tu_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(s, sy, s)), Vector3(x, 0, z)))
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 3:
+		var cq := QuadMesh.new(); cq.size = Vector2(1.4, 1.0); st.append_from(cq, 0, Transform3D(Basis(Vector3.UP, k * PI / 3.0), Vector3(0, 0.5, 0)))
+	var tim := Gfx.multimesh(st.commit(), tu_x); var tum := Gfx.std(Color.WHITE, 0.95, 0.0, blade_tex()); tum.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR; tum.alpha_scissor_threshold = 0.3
+	# no shadow falls on it, and the occlusion passes it by: the browser game's occlusion draws the cards into its depth picture
+	# but leaves their blades unshaded and lets them shade the ground only a little (0.3); here they stay out of that picture
+	# (seen by the main camera alone) and their marked pixels are left out when it is laid over
+	tum.cull_mode = BaseMaterial3D.CULL_DISABLED; tum.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE; tum.alpha_antialiasing_edge = 0.0; MoonShadow.grass(tum); tim.layers = 1 << (Gfx.MAIN_ONLY - 1); tim.name = "Tufts"; tim.material_override = tum; tim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; G.add_child(tim)
+	# far hills fading into the haze
+	var hills := PackedVector3Array()
+	for i in 30:
+		var a := (i / 30.0) * TAU + randf_range(-0.08, 0.08); var rr := randf_range(290, 350); var hr := randf_range(50, 110); var hh := randf_range(18, 52)
+		var hx := Transform3D(Basis(Vector3.UP, randf_range(0, TAU)).scaled_local(Vector3(1, 1, randf_range(0.6, 1))), Vector3(cos(a) * rr, hh / 2 - 2, sin(a) * rr))
+		hills.append_array(hx * Gfx.cone_tris(9, hr, hh, -hh / 2))
+	var hill_mi := MeshInstance3D.new(); hill_mi.name = "Hills"; hill_mi.mesh = Gfx.bake_flat(hills, [Transform3D.IDENTITY]); hill_mi.material_override = Gfx.std(World.lin("75683f"), 1.0); G.add_child(hill_mi); MoonShadow.no_receive(hill_mi)
 	# supply crates scattered over the plain; three of them up on the tower
 	var up := [[-1.85, -1.85], [1.85, -1.85], [-1.85, 1.85]]
 	w._place_crates(G, int(S.get("crates", 46)) + 3, func() -> Array:
@@ -140,16 +253,56 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 func _build_tower(G: Node3D, x: float, z: float) -> void:
 	var PH: float = TOWER.ph; var H: float = TOWER.half; var Bh: float = TOWER.base
 	outer = Node3D.new(); outer.position = Vector3(x, 0, z); G.add_child(outer); inner = Node3D.new(); outer.add_child(inner)
-	var parts := [[2 * Bh, 2.0, 2 * Bh, 0, 1.0, 0, "7d5b3a"], [2 * H, 0.24, 2 * H, 0, PH - 0.12, 0, "7d5b3a"]]
+	var NS := int(TOWER.steps); var SH: float = TOWER.step
+	# planks: the skirt (its picture 2.5 times across, 0.8 up), the platform (twice each way), the eight solid steps (0.6, 1.4)
+	var pl := [[2 * Bh, 2.0, 2 * Bh, 0.0, 1.0, 0.0, 2.5, 0.8], [2 * H, 0.24, 2 * H, 0.0, PH - 0.12, 0.0, 2.0, 2.0]]
+	for k in range(1, NS + 1): var h: float = k * SH; var z0: float = H + 0.5 * (NS - k); pl.push_back([1.4, h, 0.5, 0.0, h / 2, z0 + 0.25, 0.6, 1.4])
+	# beams: the frame (corner legs, a sill round the skirt's top, joists under the platform), cross braces on each side,
+	# the railing (open to the south where the steps come up), the roof's four poles, and the steps' stringers, handrails and posts
+	var beams := []
+	var at := func(sx: float, sy: float, sz: float, px: float, py: float, pz: float, b := Basis.IDENTITY) -> void: beams.push_back([Vector3(sx, sy, sz), Transform3D(b, Vector3(px, py, pz))])
 	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			parts.push_back([0.42, PH - 1.9, 0.42, sx * (H - 0.2), 1.9 + (PH - 1.9) / 2 - 0.12, sz * (H - 0.2), "5a3f28"]); parts.push_back([0.14, 6.7 - PH, 0.14, sx * (H - 0.12), PH + (6.7 - PH) / 2, sz * (H - 0.12), "5a3f28"])
-	for q in [[-H, -H], [H, -H], [-H, H], [H, H], [0.0, -H], [-H, 0.0], [H, 0.0], [-0.8, H], [0.8, H]]: parts.push_back([0.12, 1.1, 0.12, q[0], PH + 0.55, q[1], "5a3f28"])
+		for sz in [-1.0, 1.0]: at.call(0.42, PH - 1.9, 0.42, sx * (H - 0.2), 1.9 + (PH - 1.9) / 2 - 0.12, sz * (H - 0.2))
+	at.call(2 * Bh + 0.12, 0.16, 0.16, 0.0, 2.06, Bh); at.call(2 * Bh + 0.12, 0.16, 0.16, 0.0, 2.06, -Bh); at.call(0.16, 0.16, 2 * Bh + 0.12, Bh, 2.06, 0.0); at.call(0.16, 0.16, 2 * Bh + 0.12, -Bh, 2.06, 0.0)
+	at.call(2 * H + 0.2, 0.22, 0.22, 0.0, PH - 0.35, H); at.call(2 * H + 0.2, 0.22, 0.22, 0.0, PH - 0.35, -H); at.call(0.22, 0.22, 2 * H + 0.2, H, PH - 0.35, 0.0); at.call(0.22, 0.22, 2 * H + 0.2, -H, PH - 0.35, 0.0)
+	var brace := func(ax: float, az: float, bx2: float, bz: float, y0: float, y1: float) -> void:   # (a box from one end to the other, turned as three.js's lookAt and a quarter turn about x)
+		var a := Vector3(ax, y0, az); var b := Vector3(bx2, y1, bz); var dv := (b - a).normalized(); var xa := Vector3.UP.cross(dv).normalized()
+		at.call(0.14, a.distance_to(b), 0.14, (ax + bx2) / 2, (y0 + y1) / 2, (az + bz) / 2, Basis(xa, dv, xa.cross(dv)))
+	var e := H - 0.2
+	for s in [-1.0, 1.0]:
+		brace.call(-e, s * e, e, s * e, 2.1, PH - 0.4); brace.call(e, s * e, -e, s * e, 2.1, PH - 0.4); brace.call(s * e, -e, s * e, e, 2.1, PH - 0.4); brace.call(s * e, e, s * e, -e, 2.1, PH - 0.4)
+	for q in [[-H, -H], [H, -H], [-H, H], [H, H], [0.0, -H], [-H, 0.0], [H, 0.0], [-0.8, H], [0.8, H]]: at.call(0.12, 1.1, 0.12, q[0], PH + 0.55, q[1])
 	for y in [PH + 0.55, PH + 1.05]:
-		parts.append_array([[2 * H, 0.08, 0.08, 0, y, -H, "5a3f28"], [0.08, 0.08, 2 * H, -H, y, 0, "5a3f28"], [0.08, 0.08, 2 * H, H, y, 0, "5a3f28"], [H - 0.8, 0.08, 0.08, -(H + 0.8) / 2, y, H, "5a3f28"], [H - 0.8, 0.08, 0.08, (H + 0.8) / 2, y, H, "5a3f28"]])
-	parts.push_back([2 * H + 1.6, 0.3, 2 * H + 1.6, 0, 6.85, 0, "8b8f92"])
-	for k in range(1, int(TOWER.steps) + 1): var h: float = k * TOWER.step; var z0: float = H + 0.5 * (TOWER.steps - k); parts.push_back([1.4, h, 0.5, 0, h / 2, z0 + 0.25, "86613e"])
-	var m := MeshInstance3D.new(); m.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.9; m.material_override = mat; inner.add_child(m); MoonShadow.caster(m)
+		at.call(2 * H, 0.08, 0.08, 0.0, y, -H); at.call(0.08, 0.08, 2 * H, -H, y, 0.0); at.call(0.08, 0.08, 2 * H, H, y, 0.0)
+		at.call(H - 0.8, 0.08, 0.08, -(H + 0.8) / 2, y, H); at.call(H - 0.8, 0.08, 0.08, (H + 0.8) / 2, y, H)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]: at.call(0.14, 6.7 - PH, 0.14, sx * (H - 0.12), PH + (6.7 - PH) / 2, sz * (H - 0.12))
+	var run := 0.5 * NS; var ang := atan2(PH, run); var slen := Vector2(PH, run).length()
+	for sx in [-0.78, 0.78]:
+		at.call(0.1, 0.3, slen, sx, PH / 2 - 0.05, H + run / 2, Basis(Vector3.RIGHT, ang)); at.call(0.07, 0.07, slen, sx, PH / 2 + 1.0, H + run / 2, Basis(Vector3.RIGHT, ang))
+		for k in 3: at.call(0.08, 1.0, 0.08, sx, PH * (k / 2.0) + 0.5, H + run - k * run / 2 - 0.1)
+	var pm := MeshInstance3D.new(); pm.name = "Planks"; pm.mesh = _plank_boxes(pl); pm.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, plank_tex()); inner.add_child(pm)
+	var bst := SurfaceTool.new(); bst.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for q in beams: var bb := BoxMesh.new(); bb.size = q[0]; bst.append_from(bb, 0, q[1])
+	var bm := MeshInstance3D.new(); bm.name = "Beams"; bm.mesh = bst.commit(); bm.material_override = Gfx.std(World.lin("5a3f28"), 0.92); inner.add_child(bm)
+	# the roof: a tin pyramid open underneath, shaded round as three.js's ConeGeometry(H * 1.55, 1.3, 4) is (its normals lean
+	# out at the corners, each face's tip taking the next corner's)
+	var rv := PackedVector3Array(); var rn := PackedVector3Array(); var rr := H * 1.55; var slope := rr / 1.3; var ap := Vector3(0, 8.0, 0)
+	for k in 4:
+		var t0 := k * PI / 2 + PI / 4; var t1 := t0 + PI / 2
+		var b0 := Vector3(rr * sin(t0), 6.7, rr * cos(t0)); var b1 := Vector3(rr * sin(t1), 6.7, rr * cos(t1))
+		var n0 := Vector3(sin(t0), slope, cos(t0)).normalized(); var n1 := Vector3(sin(t1), slope, cos(t1)).normalized()
+		if (ap - b0).cross(b1 - b0).dot(Vector3(sin(t0 + PI / 4), 1.0, cos(t0 + PI / 4))) > 0.0: rv.append_array([b0, b1, ap])   # (outside the front face: Godot winds them clockwise)
+		else: rv.append_array([b0, ap, b1])
+		rn.append_array([n0, n1, n1])
+	var ra := []; ra.resize(Mesh.ARRAY_MAX); ra[Mesh.ARRAY_VERTEX] = rv; ra[Mesh.ARRAY_NORMAL] = rn
+	var rmesh := ArrayMesh.new(); rmesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, ra)
+	var tin := Gfx.std(World.lin("8b8f92"), 0.55, 0.55); tin.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var roof := MeshInstance3D.new(); roof.name = "Roof"; roof.mesh = rmesh; roof.material_override = tin; inner.add_child(roof)
+	for n: Node in [pm, bm, roof]: MoonShadow.caster(n)
+	# a sign on the railing (no shadow either way)
+	var sgn := MeshInstance3D.new(); sgn.name = "TowerSign"; var sq := QuadMesh.new(); sq.size = Vector2(1.5, 0.56); sgn.mesh = sq; sgn.material_override = Gfx.std(Color.WHITE, 0.8, 0.0, tower_sign_tex())
+	sgn.position = Vector3(-1.7, PH + 0.8, H + 0.07); inner.add_child(sgn); MoonShadow.no_receive(sgn)
 	var add := func(minx: float, miny: float, minz: float, maxx: float, maxy: float, maxz: float, grate := false) -> void:
 		var b := Phys.add_collider(x + minx, miny, z + minz, x + maxx, maxy, z + maxz, "wood"); b.grate = grate; b.tower = true; cols.push_back(b)
 	add.call(-Bh, 0.0, -Bh, Bh, 2.0, Bh)

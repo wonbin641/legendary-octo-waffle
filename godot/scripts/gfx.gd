@@ -245,11 +245,13 @@ static func _unit_box() -> Array:
 	if _ubox.is_empty():
 		var a := box(Vector3.ONE).surface_get_arrays(0); _ubox = [a[Mesh.ARRAY_VERTEX], a[Mesh.ARRAY_NORMAL], a[Mesh.ARRAY_TEX_UV], a[Mesh.ARRAY_INDEX]]
 	return _ubox
-static var _usph: Array = []
-## three.js's SphereGeometry(0.5, 10, 7): its vertices, normals, texture coordinates (v counted from the top here) and faces
-static func _unit_sphere() -> Array:
-	if _usph.is_empty():
-		var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var idx := PackedInt32Array(); var W := 10; var H := 7
+static func _unit_sphere() -> Array: return three_sphere(10, 7)
+static var _spheres := {}
+## three.js's SphereGeometry(0.5, w, h): its vertices, normals, texture coordinates (v counted from the top here) and faces
+static func three_sphere(W: int, H: int) -> Array:
+	var key := Vector2i(W, H)
+	if not _spheres.has(key):
+		var vs := PackedVector3Array(); var ns := PackedVector3Array(); var uvs := PackedVector2Array(); var idx := PackedInt32Array()
 		for iy in H + 1:
 			var v := float(iy) / H; var uo := 0.5 / W if iy == 0 else (-0.5 / W if iy == H else 0.0)
 			for ix in W + 1:
@@ -261,8 +263,54 @@ static func _unit_sphere() -> Array:
 				var a := iy * (W + 1) + ix + 1; var b := iy * (W + 1) + ix; var c := (iy + 1) * (W + 1) + ix; var d := (iy + 1) * (W + 1) + ix + 1
 				if iy != 0: idx.append_array([a, d, b])        # (three.js winds these the other way round)
 				if iy != H - 1: idx.append_array([b, d, c])
-		_usph = [vs, ns, uvs, idx]
-	return _usph
+		_spheres[key] = [vs, ns, uvs, idx]
+	return _spheres[key]
+## a mesh from [vertices, normals, uvs, indices], each vertex scaled by k
+static func arrays_mesh(a: Array, k := 1.0) -> ArrayMesh:
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	var vs: PackedVector3Array = a[0]
+	if k != 1.0: vs = Transform3D(Basis.from_scale(Vector3.ONE * k), Vector3.ZERO) * vs
+	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_NORMAL] = a[1]; arr[Mesh.ARRAY_TEX_UV] = a[2]; arr[Mesh.ARRAY_INDEX] = a[3]
+	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr); return m
+
+## triangles (three points each) turned so that their front faces point away from an inner point (Godot winds front faces clockwise)
+static func _outward(tris: PackedVector3Array, inner: Vector3) -> PackedVector3Array:
+	for i in range(0, tris.size(), 3):
+		var c := (tris[i] + tris[i + 1] + tris[i + 2]) / 3.0
+		if (tris[i + 2] - tris[i]).cross(tris[i + 1] - tris[i]).dot(c - inner) < 0.0: var t := tris[i + 1]; tris[i + 1] = tris[i + 2]; tris[i + 2] = t
+	return tris
+## three.js's DodecahedronGeometry(1, 0) as triangles: twelve flat pentagons
+static func dodeca_tris() -> PackedVector3Array:
+	var t := (1.0 + sqrt(5.0)) / 2.0; var r := 1.0 / t; var V: Array[Vector3] = []
+	for q in [[-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [-1, 1, 1], [1, -1, -1], [1, -1, 1], [1, 1, -1], [1, 1, 1], [0, -r, -t], [0, -r, t], [0, r, -t], [0, r, t],
+			[-r, -t, 0], [-r, t, 0], [r, -t, 0], [r, t, 0], [-t, 0, -r], [t, 0, -r], [-t, 0, r], [t, 0, r]]: V.push_back(Vector3(q[0], q[1], q[2]).normalized())
+	var out := PackedVector3Array()
+	for q in [[0, 1, t], [0, 1, -t], [0, -1, t], [0, -1, -t], [1, t, 0], [1, -t, 0], [-1, t, 0], [-1, -t, 0], [t, 0, 1], [t, 0, -1], [-t, 0, 1], [-t, 0, -1]]:
+		var n := Vector3(q[0], q[1], q[2]).normalized(); var face := V.duplicate(); face.sort_custom(func(a, b): return a.dot(n) > b.dot(n)); face = face.slice(0, 5)
+		var c := Vector3.ZERO
+		for p in face: c += p / 5.0
+		var u: Vector3 = (face[0] - c).normalized(); var w: Vector3 = n.cross(u)
+		face.sort_custom(func(a, b): return atan2((a - c).dot(w), (a - c).dot(u)) < atan2((b - c).dot(w), (b - c).dot(u)))
+		for k in 3: out.append_array([face[0], face[k + 1], face[k + 2]])
+	return _outward(out, Vector3.ZERO)
+## three.js's ConeGeometry(r, h, seg) as triangles, its foot at y0 (a bottom cap, no top)
+static func cone_tris(seg: int, r: float, h: float, y0: float) -> PackedVector3Array:
+	var out := PackedVector3Array(); var apex := Vector3(0, y0 + h, 0); var foot := Vector3(0, y0, 0)
+	for i in seg:
+		var a0 := float(i) / seg * TAU; var a1 := float(i + 1) / seg * TAU
+		var p0 := Vector3(r * sin(a0), y0, r * cos(a0)); var p1 := Vector3(r * sin(a1), y0, r * cos(a1))
+		out.append_array([apex, p0, p1, foot, p1, p0])
+	return _outward(out, Vector3(0, y0 + h * 0.25, 0))
+## flat-shaded copies baked into one mesh: triangles moved by each transform, every face its own normal (three.js's flatShading)
+static func bake_flat(tris: PackedVector3Array, xforms: Array) -> ArrayMesh:
+	var vs := PackedVector3Array(); var ns := PackedVector3Array()
+	for xf: Transform3D in xforms:
+		var tv: PackedVector3Array = xf * tris
+		for i in range(0, tv.size(), 3):
+			var n := (tv[i + 2] - tv[i]).cross(tv[i + 1] - tv[i]).normalized()
+			vs.append_array([tv[i], tv[i + 1], tv[i + 2]]); ns.append_array([n, n, n])
+	var arr := []; arr.resize(Mesh.ARRAY_MAX); arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_NORMAL] = ns
+	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr); return m
 
 static func box3(sx: float, sy: float, sz: float) -> ArrayMesh:
 	var m := ArrayMesh.new()

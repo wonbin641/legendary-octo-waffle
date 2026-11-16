@@ -332,7 +332,8 @@ func _ready() -> void:
 	w._flush_fresh(); w.caster_roots = s2_roots
 	check("people, animals and robots take no moon shadow: their solid materials write the stencil the shadow layer passes by (see-through ones do not)",
 		s2_pm.stencil_mode == BaseMaterial3D.STENCIL_MODE_CUSTOM and s2_pm.stencil_reference == MoonShadow.UNSHADOWED and (s2_pm.stencil_flags & BaseMaterial3D.STENCIL_FLAG_WRITE) != 0
-		and s2_gm9.stencil_mode == BaseMaterial3D.STENCIL_MODE_DISABLED and MoonShadow.LAYER_SHADER.contains("stencil_mode read, compare_not_equal, %d;" % MoonShadow.UNSHADOWED))
+		and s2_gm9.stencil_mode == BaseMaterial3D.STENCIL_MODE_DISABLED and MoonShadow.LAYER_SHADER.contains("stencil_mode read, compare_greater, %d;" % MoonShadow.UNSHADOWED)
+		and MoonShadow.GRASS > MoonShadow.UNSHADOWED)   # (the layer draws only where the mark is below 2: neither people's 2 nor the savanna grass's 3)
 	s2_probe.queue_free(); s2_glass.queue_free()
 	var s2_up: MeshInstance3D = en.list[1].upper.get_child(0); var s2_cols: PackedColorArray = s2_up.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 	check("stage 2: a zombie has no hair, only its two pale eyes (the browser game's build: body, head, eyes)",
@@ -1144,5 +1145,69 @@ func _ready() -> void:
 	var e_gr := Grade.new(); add_child(e_gr); e_gr.tune(World.STAGE_STYLE[9]); var e_toy := e_gr.visible; e_gr.tune(World.STAGE_STYLE[1]); var e_yard := e_gr.visible
 	e_gr.allowed = false; e_gr.tune(World.STAGE_STYLE[1]); var e_phone := e_gr.visible; e_gr.queue_free()
 	check("the finishing pass: on a computer in the browser game's stages, never in stage 5 (this port's own room keeps its light) nor on phones", not e_toy and e_yard and not e_phone, [e_toy, e_yard, e_phone])
+	# ---- E 3-1: the savanna by day, as the browser game draws it ----
+	gm.begin(7); var sv := func(nm: String) -> Node: return w.group.find_child(nm, true, false)
+	var sv_cam := Camera3D.new(); add_child(sv_cam); sv_cam.position = Vector3(5, 2, 7); sv_cam.current = true; w._process(0.0)
+	var sv_sm := w.sun_spr.material_override as StandardMaterial3D; var sv_off: Array = World.STAGE_STYLE[7].sunOff
+	var sv_want := Vector3(5, 2, 7) + Vector3(sv_off[0], sv_off[1], sv_off[2]).normalized() * 330.0
+	check("3-1: a low sun, a glow 70 across with no fog and no depth, kept 330 m out along the sunlight from the camera",
+		w.sun_spr.visible and (w.sun_spr.mesh as QuadMesh).size == Vector2(70, 70) and sv_sm.billboard_mode == BaseMaterial3D.BILLBOARD_ENABLED and sv_sm.disable_fog
+		and sv_sm.depth_draw_mode == BaseMaterial3D.DEPTH_DRAW_DISABLED and w.sun_spr.global_position.distance_to(sv_want) < 1e-3, w.sun_spr.global_position)
+	sv_cam.queue_free()
+	var sv_tu: MultiMeshInstance3D = sv.call("Tufts"); var sv_tm := sv_tu.material_override as StandardMaterial3D
+	check("3-1: 3200 tufts of three crossed cards, both sides drawn, cut out at 0.3 with alpha to coverage, casting no shadow",
+		sv_tu.multimesh.instance_count == 3200 and sv_tu.multimesh.mesh.get_faces().size() == 18 and sv_tm.cull_mode == BaseMaterial3D.CULL_DISABLED
+		and sv_tm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR and is_equal_approx(sv_tm.alpha_scissor_threshold, 0.3)
+		and sv_tm.alpha_antialiasing_mode == BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE and not sv_tu.get_layer_mask_value(MoonShadow.CASTER))
+	check("3-1: no moon shadow on the tufts and no occlusion on their blades: marked (3), kept out of the occlusion's picture, and both layers pass them by",
+		sv_tm.stencil_mode == BaseMaterial3D.STENCIL_MODE_CUSTOM and sv_tm.stencil_reference == MoonShadow.GRASS and (sv_tu.layers & w.ao.cam.cull_mask) == 0
+		and sv_tu.layers == 1 << (Gfx.MAIN_ONLY - 1) and AoView.APPLY_SHADER.contains("stencil_mode read, compare_not_equal, 3;")
+		and MoonShadow.LAYER_SHADER.contains("stencil_mode read, compare_greater, 2;") and MoonShadow.GRASS == 3 and MoonShadow.UNSHADOWED == 2)
+	check("the occlusion is blurred seven texels each way along depth, as the browser game's two seven-tap passes", AoView.APPLY_SHADER.contains("for (int i = -3; i <= 3; i++)") and AoView.APPLY_SHADER.contains("for (int j = -3; j <= 3; j++)"))
+	var sv_bl := Safari.blade_tex().get_image(); var sv_clear := 0; var sv_dark := 0
+	for sv_y in 128:
+		for sv_x in 128:
+			var sv_c := sv_bl.get_pixel(sv_x, sv_y)
+			if sv_c.a == 0.0: sv_clear += 1; sv_dark += 1 if sv_c.r < 0.3 else 0
+	check("3-1: the blades' picture is clear between the blades, its clear texels the blades' own colour (a far tuft is not darkened toward black)", sv_clear > 4000 and sv_dark == 0, [sv_clear, sv_dark])
+	var sv_rd: MeshInstance3D = sv.call("Roads"); var sv_rv: PackedVector3Array = sv_rd.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var sv_p0 := Vector2(0, -170); var sv_p1 := Vector2(sin(0.5) * 8.0, -170.0 + 14.2); var sv_len := sv_p0.distance_to(sv_p1); var sv_d0 := (sv_p1 - sv_p0) / sv_len
+	var sv_mid := (sv_p0 + sv_p1) / 2; var sv_d := Vector2(sv_d0.x, -sv_d0.y); var sv_nn := Vector2(sv_d0.y, sv_d0.x); var sv_hl := (sv_len + 0.6) / 2
+	var sv_road_ok := sv_rv.size() == (72 + 24) * 4
+	for sv_q in [[-1, -1], [1, -1], [-1, 1], [1, 1]]:
+		var sv_pp: Vector2 = sv_mid + sv_nn * 3.0 * sv_q[0] + sv_d * sv_hl * sv_q[1]; var sv_found := false
+		for sv_k in range(72 * 4, 72 * 4 + 4): sv_found = sv_found or sv_rv[sv_k].distance_to(Vector3(sv_pp.x, 0.015, sv_pp.y)) < 1e-4
+		sv_road_ok = sv_road_ok and sv_found
+	check("3-1: the dirt tracks: 96 pieces 6 m wide, each laid as the browser game lays it (tilted the other way about its middle, so they zigzag)", sv_road_ok)
+	var sv_nr := []
+	for sv_name in ["Hills", "Posts", "Wire", "Water", "Sign", "SignFace", "SignPosts", "TowerSign"]:
+		var sv_m := (sv.call(sv_name) as GeometryInstance3D).material_override as BaseMaterial3D
+		if not (sv_m.stencil_reference == MoonShadow.UNSHADOWED and sv_m.stencil_flags == BaseMaterial3D.STENCIL_FLAG_WRITE): sv_nr.push_back(sv_name)
+	check("3-1: what takes no shadow there takes none here: the far hills, the fence, the waterhole, the park's sign and the tower's", sv_nr.is_empty(), sv_nr)
+	var sv_pk: MeshInstance3D = sv.call("Planks"); var sv_bm: MeshInstance3D = sv.call("Beams"); var sv_rf: MeshInstance3D = sv.call("Roof"); var sv_ts: MeshInstance3D = sv.call("TowerSign")
+	var sv_t1 := SurfaceTool.new(); sv_t1.begin(Mesh.PRIMITIVE_TRIANGLES); sv_t1.append_from(Gfx.box(Vector3.ONE), 0, Transform3D.IDENTITY); var sv_per_p: int = sv_t1.commit().surface_get_array_len(0)
+	var sv_t2 := SurfaceTool.new(); sv_t2.begin(Mesh.PRIMITIVE_TRIANGLES); sv_t2.append_from(BoxMesh.new(), 0, Transform3D.IDENTITY); var sv_per_b: int = sv_t2.commit().surface_get_array_len(0)
+	var sv_uv: PackedVector2Array = sv_pk.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]; var sv_umax := 0.0
+	for sv_k in sv_per_p: sv_umax = maxf(sv_umax, sv_uv[sv_k].x)
+	var sv_bb := sv_bm.mesh.get_aabb()
+	check("3-1: the tower in planks (skirt, platform, eight steps; the picture 2.5 times round the skirt) and 53 beams (legs, sill, joists, braces, railing, roof poles, stringers, handrails, posts)",
+		sv_pk.mesh.surface_get_array_len(0) == 10 * sv_per_p and is_equal_approx(sv_umax, 2.5) and (sv_pk.material_override as StandardMaterial3D).albedo_texture == Safari.plank_tex()
+		and sv_bm.mesh.surface_get_array_len(0) == 53 * sv_per_b and absf(sv_bb.end.z - 6.70) < 0.02 and absf(sv_bb.end.y - 6.7) < 1e-3,
+		[sv_pk.mesh.surface_get_array_len(0) / sv_per_p, sv_umax, sv_bm.mesh.surface_get_array_len(0) / float(sv_per_b), sv_bb])
+	var sv_ra: Array = sv_rf.mesh.surface_get_arrays(0); var sv_rp: PackedVector3Array = sv_ra[Mesh.ARRAY_VERTEX]; var sv_rn: PackedVector3Array = sv_ra[Mesh.ARRAY_NORMAL]
+	var sv_tin := sv_rf.material_override as StandardMaterial3D; var sv_roof_ok := sv_rp.size() == 12; var sv_cr := 2.6 * 1.55 * sqrt(0.5)
+	for sv_k in sv_rp.size():
+		var sv_v := sv_rp[sv_k]
+		sv_roof_ok = sv_roof_ok and sv_rn[sv_k].y > 0.9 and (absf(sv_v.y - 8.0) < 1e-4 or (absf(sv_v.y - 6.7) < 1e-4 and absf(absf(sv_v.x) - sv_cr) < 1e-3 and absf(absf(sv_v.z) - sv_cr) < 1e-3))
+	check("3-1: its roof a tin pyramid (four faces, open underneath, square to the tower, shaded round as three.js's cone), both sides drawn",
+		sv_roof_ok and sv_tin.cull_mode == BaseMaterial3D.CULL_DISABLED and is_equal_approx(sv_tin.metallic, 0.55) and is_equal_approx(sv_tin.roughness, 0.55))
+	check("3-1: the tower casts the moon's shadow (planks, beams, roof); its name board, up on the railing, casts none",
+		sv_pk.get_layer_mask_value(MoonShadow.CASTER) and sv_bm.get_layer_mask_value(MoonShadow.CASTER) and sv_rf.get_layer_mask_value(MoonShadow.CASTER)
+		and not sv_ts.get_layer_mask_value(MoonShadow.CASTER) and (sv_ts.mesh as QuadMesh).size == Vector2(1.5, 0.56) and sv_ts.position.distance_to(Vector3(-1.7, 3.84 + 0.8, 2.6 + 0.07)) < 1e-4
+		and Safari.plank_tex().get_width() == 256 and Safari.tower_sign_tex().get_height() == 96)
+	check("textures are filtered 16 times across slopes on a computer and 8 times on a phone, as the browser game's MAX_ANISO",
+		ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level") == 4 and ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level.mobile", 0) == 3)
+	gm.begin(1); var sv_night := not w.sun_spr.visible; gm.begin(7); gm.begin(9); var sv_toyroom := not w.sun_spr.visible; gm.begin(1)
+	check("the sun is for the day: gone again by night, and not in stage 5's room", sv_night and sv_toyroom)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

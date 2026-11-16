@@ -78,10 +78,11 @@ func tune(style: Dictionary) -> float:
 	return 0.85 if day else 0.9   # how strongly it is multiplied in
 
 ## the layer that lays it over the main picture: blurred along depth (as the browser game's two seven-tap passes, here a
-## five-by-five) and multiplied into the finished colours
+## seven-by-seven) and multiplied into the finished colours
 const APPLY_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mul, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;
+stencil_mode read, compare_not_equal, 3;   // (the savanna's grass blades, MoonShadow.GRASS, are left unshaded as there)
 uniform sampler2D ao_tex : filter_nearest;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform vec2 ao_texel; uniform float strength = 0.9; uniform float flip = 0.0; uniform float exposure = 1.0;   // (screen to screen: the same way up)
@@ -105,11 +106,15 @@ float apply(vec2 suv, mat4 ipm) {
 	if (-v.z / v.w < near_skip) return 1.0;   // the gun in hand: drawn after the occlusion in the browser game
 	vec2 uv = vec2(suv.x, mix(suv.y, 1.0 - suv.y, flip));
 	vec3 c0 = texture(ao_tex, uv).rgb; float zc = dist_of(c0);
+	// seven texels each way, as the browser game's two seven-tap passes; each tap weighed by how far its texel's middle is
+	// from this pixel, which stands in for the smooth (linear) enlarging of its half-size picture after them
+	vec2 p = uv / ao_texel; vec2 k0 = floor(p);
 	float sum = 0.0, ws = 0.0;
-	for (int i = -2; i <= 2; i++) {
-		for (int j = -2; j <= 2; j++) {
-			vec3 c = texture(ao_tex, uv + vec2(float(i), float(j)) * ao_texel).rgb;
-			float w = exp(-float(i * i + j * j) / 8.0) * max(0.0, 1.0 - abs(dist_of(c) - zc) / (0.04 * zc + 0.08));
+	for (int i = -3; i <= 3; i++) {
+		for (int j = -3; j <= 3; j++) {
+			vec2 k = k0 + vec2(float(i), float(j)) + 0.5; vec2 dk = k - p;
+			vec3 c = texture(ao_tex, k * ao_texel).rgb;
+			float w = exp(-dot(dk, dk) / 8.0) * max(0.0, 1.0 - abs(dist_of(c) - zc) / (0.04 * zc + 0.08));
 			sum += c.r * w; ws += w;
 		}
 	}

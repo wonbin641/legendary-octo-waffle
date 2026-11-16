@@ -141,6 +141,9 @@ func _ready() -> void:
 	_build_backdrop()
 
 func _process(_dt: float) -> void:
+	if sun_spr.visible:
+		var sc := get_viewport().get_camera_3d(); var so: Array = style.get("sunOff", [-30, 50, -20])
+		if sc: sun_spr.global_position = sc.global_position + Vector3(so[0], so[1], so[2]).normalized() * 330.0
 	if ao_layer.visible:
 		var c := get_viewport().get_camera_3d()
 		if c: ao.follow(c, get_viewport().get_visible_rect().size)
@@ -201,10 +204,15 @@ static func rgb(a: Array) -> Color:
 # ---- sky, skyline, the ship at the quay: built once ----
 var _port: Array[Node3D] = []   # the harbour backdrop: skyline, its windows, water, the ship (only at the docks)
 var moon_spr: MeshInstance3D
+var sun_spr: MeshInstance3D   # the low sun of 3-1: a glow 70 across, kept 330 m off along the sunlight from wherever you look
 
 static func is_yard(n: int) -> bool: return n == 1 or n == 5 or n == 6
 
 func _build_backdrop() -> void:
+	var sunq := QuadMesh.new(); sunq.size = Vector2(70, 70); var sunm := StandardMaterial3D.new(); sunm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sunm.albedo_texture = Gfx.glow_tex(Color(1, 244 / 255.0, 214 / 255.0, 1), Color(1, 190 / 255.0, 110 / 255.0, 0.35)); sunm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	sunm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; sunm.disable_fog = true; sunm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	sun_spr = MeshInstance3D.new(); sun_spr.mesh = sunq; sun_spr.material_override = sunm; sun_spr.visible = false; sun_spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(sun_spr)
 	var night := Node3D.new(); night.name = "Night"; add_child(night)
 	# the skyline, its lit windows, the stars and the moon take no fog in the browser game: drawn after the fog layer
 	var sil_a := Gfx.backdrop(Gfx.unlit(lin(Color(0.007, 0.009, 0.017)), false)); var sil_b := Gfx.backdrop(Gfx.unlit(lin(Color(0.011, 0.014, 0.026)), false))
@@ -292,6 +300,7 @@ func build_stage(stage: int) -> void:
 	for l in lights: l.light_color = lin(S.lamp[0]); l.light_energy = 0.0; l.set_meta("on", false)
 	_lamp_t = 0.0
 	(get_node("Night") as Node3D).visible = not S.get("toy", false)
+	sun_spr.visible = S.get("day", false)
 	if S.get("toy", false):
 		# stage 5 is this port's own room, not the browser game's: it keeps the light it was made with
 		env.tonemap_white = 1.0; env.tonemap_exposure = e; fog_mat.set_shader_parameter("density", 0.0)
