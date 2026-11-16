@@ -19,7 +19,7 @@ CFG=$(grep -o 'const GODOT_CONFIG = {.*};' "$OUT/index.html")
 cat > "$ART/index.html" <<HTML
 <title>Yarr 07 Godot</title>
 <style>
-:root { --night: #0d1220; --ink: #ece6d8; --sodium: #f2a33a; }
+:root { --night: #0d1220; --ink: #ece6d8; --sodium: #f2a33a; color-scheme: dark; }
 html, body { margin: 0; height: 100%; background: var(--night); color: var(--ink); font: 14px system-ui, sans-serif; overflow: hidden; }
 canvas { display: block; width: 100vw; height: 100vh; outline: none; }
 #st { position: fixed; left: 16px; right: 16px; bottom: 16px; color: var(--sodium); }
