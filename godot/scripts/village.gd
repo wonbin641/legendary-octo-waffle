@@ -13,13 +13,17 @@ var parts: Array = []     # boxes for one mesh: [sx, sy, sz, x, y, z, colour, (r
 var fires: Array = []     # [x, y, z, power]
 var huts: Array = []
 var pines: Array = []
+var crown_colors: Array = []   # each pine's crown colour, outer forest too (as stored: screen colours)
 
 func r(a: float, b: float) -> float: return R.rng(a, b)
 func pick(a: Array) -> String: return a[int(floor(R.next() * a.size()))]
 
 func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	R = rng
-	var gm := PlaneMesh.new(); gm.size = Vector2(260, 260); var ground := MeshInstance3D.new(); ground.mesh = gm; ground.material_override = Gfx.std(World.lin("25261b"), 1.0); G.add_child(ground)
+	# ground: trampled earth and dark grass (the browser game's canvas, 24 times each way)
+	if _dirt == null: _dirt = Gfx.dirt_tex()
+	var gm := PlaneMesh.new(); gm.size = Vector2(260, 260); var ground := MeshInstance3D.new(); ground.mesh = gm
+	var grm := Gfx.std(Color.WHITE, 1.0, 0.0, _dirt); grm.uv1_scale = Vector3(24, 24, 1); ground.material_override = grm; G.add_child(ground)
 	# the edge of the village: a palisade of sharpened logs
 	var E := 67.0
 	for q in [[0.0, -E - 0.6, 2 * E + 2, 1.2], [0.0, E + 0.6, 2 * E + 2, 1.2], [-E - 0.6, 0.0, 1.2, 2 * E + 2], [E + 0.6, 0.0, 1.2, 2 * E + 2]]:
@@ -30,15 +34,15 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	for s in stakes:
 		var h := r(2.7, 3.5); var rot := Vector3(r(-0.05, 0.05), r(0, 3), r(-0.05, 0.05))
 		sx.push_back(Transform3D(Basis.from_euler(rot).scaled_local(Vector3(1, h, 1)), Vector3(s[0], h / 2, s[1])))
-	var sm := CylinderMesh.new(); sm.top_radius = 0.05; sm.bottom_radius = 0.21; sm.height = 1.0; sm.radial_segments = 7
-	var stake_mm := Gfx.multimesh(sm, sx); stake_mm.material_override = Gfx.std(World.lin("3a2b1d"), 0.95); G.add_child(stake_mm); MoonShadow.caster(stake_mm)
+	var sm := CylinderMesh.new(); sm.top_radius = 0.05; sm.bottom_radius = 0.21; sm.height = 1.0; sm.radial_segments = 7; sm.rings = 0
+	var stake_mi := MeshInstance3D.new(); stake_mi.mesh = Gfx.bake(sm, sx); stake_mi.material_override = Gfx.std(World.lin("3a2b1d"), 0.95); G.add_child(stake_mi); MoonShadow.caster(stake_mi)
 	# black forest on the horizon
 	var sil := []
 	for i in 170:
 		var a := (i / 170.0) * TAU + r(-0.02, 0.02); var d := r(140, 190); var h := r(16, 34)
 		sil.push_back(Transform3D(Basis.from_scale(Vector3(h * 0.32, h, h * 0.32)), Vector3(cos(a) * d, h / 2 - 1, sin(a) * d)))
 	var cone := CylinderMesh.new(); cone.top_radius = 0.0; cone.bottom_radius = 1.0; cone.height = 1.0; cone.radial_segments = 6
-	var silm := Gfx.multimesh(cone, sil); silm.material_override = Gfx.unlit(World.lin(Color(0.006, 0.008, 0.012)), false); G.add_child(silm)
+	var silm := Gfx.multimesh(cone, sil); silm.material_override = Gfx.backdrop(Gfx.unlit(World.lin(Color(0.006, 0.008, 0.012)), false)); G.add_child(silm)   # (no fog, as there)
 
 	# where the huts go: an inner ring round the plaza and an outer ring, doors turned towards the middle, some burning, two in ruins
 	var inside := []; var spots := []
@@ -91,12 +95,13 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	for p in all:
 		trunk_x.push_back(Transform3D(Basis.from_scale(Vector3(1, p[2] * 0.4, 1)), Vector3(p[0], p[2] * 0.2, p[1])))
 		var ry := R.next() * 3.0
-		crown_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(p[3], p[2] * 0.95, p[3])), Vector3(p[0], p[2] * 0.1 + p[2] * 0.95 * 0.55, p[1])))
-		var hue := 0.36 + r(-0.03, 0.03); var lum := r(0.09, 0.14); crown_c.push_back(Color.from_ok_hsl(hue, 0.35, lum * 2.2).srgb_to_linear())
-	var tm := CylinderMesh.new(); tm.top_radius = 0.16; tm.bottom_radius = 0.28; tm.height = 1.0; tm.radial_segments = 6
-	var trunks := Gfx.multimesh(tm, trunk_x); trunks.material_override = Gfx.std(World.lin("3a2a1c"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
-	var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = 1.0; cm.height = 1.0; cm.radial_segments = 7
-	var crowns := Gfx.multimesh(cm, crown_x, crown_c); var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crowns.material_override = crm; G.add_child(crowns); MoonShadow.caster(crowns)
+		crown_x.push_back(Transform3D(Basis(Vector3.UP, ry).scaled_local(Vector3(p[3], p[2] * 0.95, p[3])), Vector3(p[0], p[2] * 0.1, p[1])))
+		var hue := 0.36 + r(-0.03, 0.03); var lum := r(0.09, 0.14); crown_c.push_back(Gfx.hsl(hue, 0.35, lum))   # (three.js: setHSL, then to linear; Godot reads a vertex colour as a screen colour)
+	crown_colors = crown_c
+	var tm := CylinderMesh.new(); tm.top_radius = 0.16; tm.bottom_radius = 0.28; tm.height = 1.0; tm.radial_segments = 6; tm.rings = 0
+	var trunks := MeshInstance3D.new(); trunks.mesh = Gfx.bake(tm, trunk_x); trunks.material_override = Gfx.std(World.lin("3a2a1c"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
+	var crowns := MeshInstance3D.new(); crowns.mesh = Gfx.bake(crown_mesh(), crown_x, crown_c); crowns.name = "Crowns"
+	var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crowns.material_override = crm; G.add_child(crowns); MoonShadow.caster(crowns)
 
 	# crates: two in every hut first, then the rest out in the village
 	var count := maxi(int(S.crates), inside.size() + 16); var hc := 0; var xs := []; var i := 0; tries = 0
@@ -113,14 +118,107 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 
 	# everything built of logs, in one mesh
 	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.92; mi.material_override = mat; G.add_child(mi); MoonShadow.caster(mi)
-	# fire: flames you can see from afar, and each fire lends one of the six flickering lights
-	for f in fires:
-		var fl := MeshInstance3D.new(); var fc := CylinderMesh.new(); fc.top_radius = 0.0; fc.bottom_radius = 0.45 * f[3]; fc.height = 1.6 * f[3]; fc.radial_segments = 6; fl.mesh = fc
-		var fm := Gfx.unlit(Color(1.0, 0.55, 0.14, 0.85), false); fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; fl.material_override = fm
-		fl.position = Vector3(f[0], f[1] + 0.7 * f[3], f[2]); fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; G.add_child(fl); w.flames.push_back(fl)
-		w.lamps.push_back({"x": f[0], "y": f[1] + 0.9 + f[3] * 0.3, "z": f[2]})
+	# fire: flames, sparks and smoke drawn as camera-facing cards; each fire also lends one of the six flickering lights
+	w.fire_mats = build_fires(G, fires, float(S.density), Gfx.exposure(float(S.get("exposure", 1.15))))
+	for f in fires: w.lamps.push_back({"x": f[0], "y": f[1] + 0.9 + f[3] * 0.3, "z": f[2]})
 	Phys.index_colliders(); Phys.build_nav()
 	w.start = {"x": 0.0, "z": 8.0, "yaw": 0.0}; w.spawns.clear()
+
+static var _dirt: ImageTexture   # made once, the first time the village is built
+
+## a pine's crown: three cones stacked (the browser game's crownGeo), its foot at 0
+static func crown_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for q in [[1.0, 0.62, 0.42], [0.78, 0.5, 0.7], [0.5, 0.36, 0.92]]:
+		var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = q[0]; cm.height = q[1]; cm.radial_segments = 7; cm.rings = 0; cm.cap_top = false
+		st.append_from(cm, 0, Transform3D(Basis.IDENTITY, Vector3(0, q[2], 0)))
+	return st.commit()
+
+## flames, embers and smoke as cards turned to the camera, one draw each, moved entirely on the GPU (the browser game's
+## buildFires). Its shaders write their colours untoned, so these turn them back through the tone mapping first
+const FIRE_SHADER := """
+shader_type spatial;
+render_mode unshaded, %s, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled, skip_vertex_transform;
+uniform float ft; uniform float rise; uniform float life = 1.0; uniform float spread; uniform float fogD; uniform float exposure = 1.0;
+varying vec2 vUv; varying float vSeed; varying float vK; varying float vFog;
+%s
+%s
+void vertex() {
+	vUv = UV; vSeed = CUSTOM0.z;
+	float k = rise > 0.0 ? fract(ft / life + vSeed) : 0.0; vK = k;
+	vec3 p = VERTEX + vec3(sin(vSeed * 41.0 + ft * 1.3) * spread * k, k * rise, cos(vSeed * 23.0 + ft * 1.1) * spread * k);
+	vec4 mv = MODELVIEW_MATRIX * vec4(p, 1.0);
+	float s = rise > 0.0 ? (0.6 + k * 1.6) : 1.0;
+	mv.xy += (UV - 0.5) * CUSTOM0.xy * s; mv.y += CUSTOM0.y * 0.5 * (rise > 0.0 ? 0.0 : 1.0);
+	vFog = exp(-pow(fogD * length(mv.xyz), 2.0));
+	VERTEX = mv.xyz;
+}
+%s
+void fragment() {
+	vec4 o = shade(vUv, vSeed, vK, vFog);
+	if (o.a < 0.0) discard;
+	ALBEDO = albedo_of(unshow(clamp(o.rgb, 0.0, 1.0))); ALPHA = clamp(o.a, 0.0, 1.0);
+}
+"""
+const FLAME_FS := """
+vec4 shade(vec2 p, float seed, float k, float fogv) {
+	float w = sin(p.y * 7.0 + ft * 9.0 + seed * 6.28) * 0.07 * p.y;
+	float x = (p.x - 0.5 + w) / (0.44 * (1.0 - p.y * 0.8) + 0.03);
+	float tip = 1.0 - smoothstep(0.5 + 0.28 * sin(ft * 6.0 + seed * 9.0), 1.0, p.y);
+	float a = (1.0 - smoothstep(0.55, 1.0, abs(x))) * tip * smoothstep(0.0, 0.1, p.y);
+	if (a < 0.02) return vec4(0.0, 0.0, 0.0, -1.0);
+	float core = (1.0 - abs(x)) * (1.0 - p.y);
+	vec3 c = mix(vec3(0.9, 0.18, 0.03), vec3(1.0, 0.62, 0.16), smoothstep(0.05, 0.5, core));
+	c = mix(c, vec3(1.0, 0.92, 0.7), smoothstep(0.55, 0.95, core));
+	return vec4(c * a * 1.5 * fogv, a);
+}
+"""
+const EMBER_FS := """
+vec4 shade(vec2 p, float seed, float k, float fogv) {
+	float d = length(p - vec2(0.5)) * 2.0; float a = (1.0 - smoothstep(0.2, 1.0, d)) * (1.0 - k);
+	if (a < 0.02) return vec4(0.0, 0.0, 0.0, -1.0);
+	return vec4(vec3(1.0, 0.55, 0.15) * a * 1.6 * fogv, a);
+}
+"""
+const SMOKE_FS := """
+vec4 shade(vec2 p, float seed, float k, float fogv) {
+	float d = length(p - vec2(0.5)) * 2.0; float a = (1.0 - smoothstep(0.3, 1.0, d)) * smoothstep(0.0, 0.15, k) * (1.0 - k) * 0.42;
+	if (a < 0.01) return vec4(0.0, 0.0, 0.0, -1.0);
+	return vec4(vec3(0.07, 0.07, 0.075) * (0.6 + 0.4 * fogv), a * (0.4 + 0.6 * fogv));
+}
+"""
+
+## the cards round each fire [x, y, z, power]; returns the three layers' materials (World sets their time each frame)
+static func build_fires(G: Node3D, list: Array, density: float, exposure: float) -> Array:
+	var flames := []; var embers := []; var smoke := []
+	for f in list:
+		var x: float = f[0]; var y: float = f[1]; var z: float = f[2]; var p: float = f[3]
+		for i in roundi(4 + p * 4):
+			var s := randf_range(0.6, 1.1) * p; flames.push_back([x + randf_range(-0.45, 0.45) * p, y - 0.1, z + randf_range(-0.45, 0.45) * p, s * 0.7, s * 1.25, randf()])
+		for i in roundi(6 + p * 8): embers.push_back([x + randf_range(-0.4, 0.4) * p, y + 0.2, z + randf_range(-0.4, 0.4) * p, 0.07, 0.07, randf()])
+		for i in roundi(5 + p * 5): smoke.push_back([x + randf_range(-0.3, 0.3), y + 0.8 * p, z + randf_range(-0.3, 0.3), 1.4 * p, 1.4 * p, randf()])
+	return [_fire_layer(G, smoke, SMOKE_FS, false, {"rise": 9.0, "life": 6.5, "spread": 2.2}, 2, density, exposure),
+		_fire_layer(G, flames, FLAME_FS, true, {}, 3, density, exposure),
+		_fire_layer(G, embers, EMBER_FS, true, {"rise": 5.0, "life": 2.2, "spread": 1.4}, 4, density, exposure)]
+
+static func _fire_layer(G: Node3D, list: Array, fs: String, add: bool, opts: Dictionary, order: int, density: float, exposure: float) -> ShaderMaterial:
+	var vs := PackedVector3Array(); var uvs := PackedVector2Array(); var cu := PackedFloat32Array(); var idx := PackedInt32Array()
+	for i in list.size():
+		var it: Array = list[i]
+		for c in [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]:   # (uv as three.js's plane: v = 1 at the top)
+			vs.push_back(Vector3(it[0], it[1], it[2])); uvs.push_back(c); cu.append_array([it[3], it[4], it[5], 0.0])
+		var b := i * 4; idx.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_TEX_UV] = uvs; arr[Mesh.ARRAY_CUSTOM0] = cu; arr[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new(); mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	var sh := Shader.new(); sh.code = FIRE_SHADER % ["blend_add" if add else "blend_mix", Gfx.ALBEDO_GLSL, Gfx.UNSHOW_GLSL, fs]
+	var mat := ShaderMaterial.new(); mat.shader = sh; mat.render_priority = order
+	mat.set_shader_parameter("rise", float(opts.get("rise", 0.0))); mat.set_shader_parameter("life", float(opts.get("life", 1.0))); mat.set_shader_parameter("spread", float(opts.get("spread", 0.0)))
+	mat.set_shader_parameter("fogD", density); mat.set_shader_parameter("exposure", exposure)
+	var mi := MeshInstance3D.new(); mi.mesh = mesh; mi.material_override = mat; mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.custom_aabb = AABB(Vector3(-400, -20, -400), Vector3(800, 500, 800))   # never culled, as in the browser game
+	G.add_child(mi)
+	return mat
 
 static func _jsround(v: float) -> float:   # Math.round: halves go up
 	return floor(v + 0.5)

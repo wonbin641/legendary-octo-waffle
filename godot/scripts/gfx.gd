@@ -32,6 +32,42 @@ static func frect(img: Image, x0: float, y0: float, rw: float, rh: float, c: Col
 			if a <= 0.0: continue
 			img.set_pixel(px, py, Color(c.r, c.g, c.b, 1) if a >= 0.999 else img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), a))
 
+## a filled ellipse turned by rot (a canvas ellipse() and fill()), its edge blended over about a pixel
+static func fellipse(img: Image, cx: float, cy: float, rx: float, ry: float, rot: float, c: Color) -> void:
+	var w := img.get_width(); var h := img.get_height(); var co := cos(rot); var si := sin(rot)
+	var ex := sqrt(rx * rx * co * co + ry * ry * si * si) + 1.0; var ey := sqrt(rx * rx * si * si + ry * ry * co * co) + 1.0
+	var m := minf(rx, ry)
+	for py in range(maxi(0, int(floor(cy - ey))), mini(h, int(ceil(cy + ey)))):
+		for px in range(maxi(0, int(floor(cx - ex))), mini(w, int(ceil(cx + ex)))):
+			var dx := px + 0.5 - cx; var dy := py + 0.5 - cy
+			var u := (dx * co + dy * si) / rx; var v := (-dx * si + dy * co) / ry
+			var a := c.a * clampf((1.0 - sqrt(u * u + v * v)) * m + 0.5, 0.0, 1.0)
+			if a > 0.0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), a))
+
+## a line one pixel wide from a to b (a canvas stroke() with lineWidth 1), each pixel taking the share of it the line covers
+static func fline(img: Image, a: Vector2, b: Vector2, c: Color) -> void:
+	var w := img.get_width(); var h := img.get_height(); var ab := b - a; var L2 := maxf(ab.length_squared(), 1e-6)
+	for py in range(maxi(0, int(floor(minf(a.y, b.y) - 1.0))), mini(h, int(ceil(maxf(a.y, b.y) + 1.0)))):
+		for px in range(maxi(0, int(floor(minf(a.x, b.x) - 1.0))), mini(w, int(ceil(maxf(a.x, b.x) + 1.0)))):
+			var q := Vector2(px + 0.5, py + 0.5); var t := clampf((q - a).dot(ab) / L2, 0.0, 1.0)
+			var cov := clampf(1.0 - q.distance_to(a + ab * t), 0.0, 1.0) * c.a
+			if cov > 0.0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), cov))
+
+## three.js's Color.setHSL (hue, saturation and lightness, 0 to 1)
+static func hsl(hh: float, ss: float, ll: float) -> Color:
+	hh = fposmod(hh, 1.0); ss = clampf(ss, 0.0, 1.0); ll = clampf(ll, 0.0, 1.0)
+	if ss == 0.0: return Color(ll, ll, ll)
+	var p := ll * (1.0 + ss) if ll <= 0.5 else ll + ss - ll * ss
+	var q := 2.0 * ll - p
+	return Color(_hue2rgb(q, p, hh + 1.0 / 3.0), _hue2rgb(q, p, hh), _hue2rgb(q, p, hh - 1.0 / 3.0))
+static func _hue2rgb(p: float, q: float, t: float) -> float:
+	if t < 0.0: t += 1.0
+	if t > 1.0: t -= 1.0
+	if t < 1.0 / 6.0: return p + (q - p) * 6.0 * t
+	if t < 0.5: return q
+	if t < 2.0 / 3.0: return p + (q - p) * 6.0 * (2.0 / 3.0 - t)
+	return p
+
 static func tex(img: Image, mips := true) -> ImageTexture:
 	if mips: img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
@@ -85,6 +121,19 @@ static func asphalt_tex() -> ImageTexture:
 				var v := p.lerp(q, s / 25.0)
 				if v.x >= 0 and v.y >= 0 and v.x < 512 and v.y < 512: img.set_pixel(int(v.x), int(v.y), img.get_pixel(int(v.x), int(v.y)).lerp(Color(0.047, 0.05, 0.063), 0.7))
 			p = q
+	return tex(img)
+
+## stage 2's ground, the browser game's canvas: trampled earth, patches greener and browner, short strokes of grass
+static func dirt_tex() -> ImageTexture:
+	var img := Image.create(512, 512, false, Image.FORMAT_RGBA8); img.fill(Color("25261b"))
+	speckle(img, 9000, [Color("2e2d21"), Color("201f16"), Color("2a3121"), Color("1c2317"), Color("33301f")], 2.2)
+	for i in 18:
+		var pc := Color8(38, 52, 30) if i % 2 else Color8(60, 48, 32)
+		fellipse(img, randf() * 512, randf() * 512, randf_range(20, 80), randf_range(10, 50), randf_range(0, 3), Color(pc, randf_range(0.15, 0.35)))
+	var blades := [Color(45 / 255.0, 64 / 255.0, 32 / 255.0, 0.55), Color(72 / 255.0, 82 / 255.0, 46 / 255.0, 0.4), Color(28 / 255.0, 38 / 255.0, 20 / 255.0, 0.6)]
+	for i in 1600:
+		var x := randf() * 512; var y := randf() * 512
+		fline(img, Vector2(x, y), Vector2(x + randf_range(-2, 2), y - randf_range(3, 7)), blades[randi() % 3])
 	return tex(img)
 
 static func concrete_tex() -> ImageTexture:
@@ -192,6 +241,31 @@ static func multimesh(mesh: Mesh, xforms: Array, colors := []) -> MultiMeshInsta
 	n.custom_aabb = AABB(Vector3(-400, -20, -400), Vector3(800, 500, 800))  # never culled as a whole, as in the browser game
 	return n
 
+## copies of one mesh baked into a single mesh (one draw, like a multimesh), each with its own transform and, if given,
+## its own colour (as merge_boxes stores them: screen colours). A multimesh would draw the same, but Godot turns an
+## instance's normals by its plain matrix, so a cone stretched tall (a pine, a stake) would light as if it faced the sky;
+## three.js turns them by the inverse transpose, and so do these
+static func bake(mesh: Mesh, xforms: Array, colors := []) -> ArrayMesh:
+	var src := mesh.surface_get_arrays(0)
+	var sv: PackedVector3Array = src[Mesh.ARRAY_VERTEX]; var sn: PackedVector3Array = src[Mesh.ARRAY_NORMAL]; var si: PackedInt32Array = src[Mesh.ARRAY_INDEX]
+	var vs := PackedVector3Array(); var ns := PackedVector3Array(); var cs := PackedColorArray(); var idx := PackedInt32Array()
+	for k in xforms.size():
+		var xf: Transform3D = xforms[k]; var off := vs.size()
+		vs.append_array(xf * sv)
+		var nb: PackedVector3Array = Transform3D(xf.basis.inverse().transposed(), Vector3.ZERO) * sn
+		for i in nb.size(): nb[i] = nb[i].normalized()
+		ns.append_array(nb)
+		if not colors.is_empty():
+			var ca := PackedColorArray(); ca.resize(sv.size()); ca.fill(colors[k]); cs.append_array(ca)
+		var ia := si.duplicate()
+		for i in ia.size(): ia[i] += off
+		idx.append_array(ia)
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_NORMAL] = ns; arr[Mesh.ARRAY_INDEX] = idx
+	if not colors.is_empty(): arr[Mesh.ARRAY_COLOR] = cs
+	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
+
 static func points(list: PackedVector3Array, color: Color, size: float, alpha := 1.0, fog := false) -> MeshInstance3D:
 	var a := []; a.resize(Mesh.ARRAY_MAX); a[Mesh.ARRAY_VERTEX] = list
 	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_POINTS, a)
@@ -244,7 +318,10 @@ static func scene_for(F: Vector3, e: float) -> Vector3:
 			var d := maxf(L[k] * 1e-4, 1e-7); var L2 := L; L2[k] += d
 			cols.push_back((display(L2, e) - y) / d)
 		var J := Basis(cols[0], cols[1], cols[2])   # columns: d(display)/d(channel)
-		var dx: Vector3 = J.inverse() * (-r)
+		var dx := Vector3.ZERO
+		if absf(J.determinant()) > 1e-12: dx = J.inverse() * (-r)
+		else:   # a channel pinned at black or white (a colour past what the screen shows): step each channel on its own
+			for k in 3: dx[k] = -r[k] / J[k][k] if absf(J[k][k]) > 1e-9 else 0.0
 		L = Vector3(maxf(1e-6, L.x + dx.x), maxf(1e-6, L.y + dx.y), maxf(1e-6, L.z + dx.z))
 	return L
 
@@ -257,6 +334,20 @@ static func _poly_inv(v: float) -> float:
 		var f := s * (s * (s * 0.305306011 + 0.682171111) + 0.012522878) - v
 		s -= f / (s * (s * 0.915918033 + 1.364342222) + 0.012522878)
 	return maxf(s, 0.0)
+## the scene colour Godot's tone mapping and encoding turn into the screen colour s (needs a uniform float exposure): for
+## shaders that write what a three.js ShaderMaterial writes, untoned. (AoView's layer carries its own copy.)
+const UNSHOW_GLSL := """
+const float FA = 0.0245786; const float FB = 0.000090537; const float FC = 0.983729; const float FD = 0.432951; const float FE = 0.238081;
+const mat3 RRT = mat3(vec3(0.59719 * 1.8, 0.35458 * 1.8, 0.04823 * 1.8), vec3(0.07600 * 1.8, 0.90834 * 1.8, 0.01566 * 1.8), vec3(0.02840 * 1.8, 0.13383 * 1.8, 0.83777 * 1.8));
+const mat3 ODT = mat3(vec3(1.60475, -0.53108, -0.07367), vec3(-0.10208, 1.10813, -0.00605), vec3(-0.00327, -0.07276, 1.07602));
+vec3 unshow(vec3 s) {
+	vec3 t = pow((max(s, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)) * inverse(ODT);
+	t = min(t, vec3(1.0));
+	vec3 a = FC * t - 1.0, b = FD * t - FA, c = FE * t + FB;
+	vec3 v = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
+	return max(v * inverse(RRT), vec3(0.0)) / exposure;
+}
+"""
 const ALBEDO_GLSL := """
 vec3 albedo_of(vec3 c) {
 	vec3 s = pow(max(c, vec3(0.0)), vec3(0.4545));

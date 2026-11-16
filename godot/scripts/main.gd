@@ -698,6 +698,7 @@ func command(line: String) -> Dictionary:
 		"gfx":   # "gfx high": the computer's top quality, fixed (with the occlusion), as the browser game's setting; "gfx auto": the ladder
 			world.gfx_fixed = a.size() > 1 and a[1] == "high"
 			if world.gfx_fixed and not is_touch: world.gfx_level = 4; world.use_ao = true; world.set_ao(world.toy == null)
+		"steady": world.steady = a[1] == "1"   # pictures: lamps and fires at their mean brightness
 		"lampsoff":   # the six lamp lights out (for pictures that compare light by light)
 			world.lamp_scale = 0.0
 			for l in world.lights: l.light_energy = 0.0
@@ -705,7 +706,7 @@ func command(line: String) -> Dictionary:
 			var n: Node = {"grade": grade, "shadow": world.shadow_layer, "fog": world.fog_layer, "ao": world.ao_layer, "sky": world.get_node("Sky")}.get(a[1])
 			if n != null: n.visible = a[2] == "1"
 		"stand":   # the player stands here (x z), and the six lamp lights go to the lamps nearest, as when walking there
-			player.pos.x = float(a[1]); player.pos.z = float(a[2]); world._lamp_t = 0.0; world.update_world(0.0, 0.0, player.pos.x, player.pos.z)
+			player.pos.x = float(a[1]); player.pos.z = float(a[2]); world._lamp_t = 0.0; world.update_world(0.0, 0.0, player.pos.x, player.pos.z); enemies.sight_all()
 		"gun": guns.cur = a[1]; guns.pending = null; guns.switch_t = 0.0; guns.cooldown = 0.0
 		"trigger": guns.trigger = a[1] == "1"; guns.trigger_edge = guns.trigger
 		"ads": guns.ads_held = a[1] == "1"

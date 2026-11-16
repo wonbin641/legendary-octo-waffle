@@ -661,6 +661,13 @@ func _keep_out(e: Foe) -> void:
 	# whatever you could not give (a wall behind you), the enemy gives
 	e.pos = Phys.move_xz(e.pos, moved.x - wx, moved.z - wz, e.R, e.H, 0.0)[0]
 
+## after a jump (pictures from a free camera): who is in sight of where you now stand, at once rather than within half a second
+func sight_all() -> void:
+	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	for e in list:
+		e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length(); e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0)
+		if not e.g.visible: e.bar.visible = false
+
 func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
 	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)

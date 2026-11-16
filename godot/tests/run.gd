@@ -393,6 +393,42 @@ func _ready() -> void:
 	pl.in_f = 1.0; var s2_before2 := pl.pos; pl.vel = Vector3.ZERO; pl.update(0.02, null, 0.0)
 	check("stage 2: knocked out, you cannot walk", pl.pos.distance_to(s2_before2) < 0.01)
 	pl.in_f = 0.0; pl.stun_t = 0.0
+	# stage 2's looks, as the browser game's village
+	check("stage 2: no harbour behind the village (skyline, water, the ship), no blinking mast, and a bigger moon (92 to the docks' 62)",
+		w._port.size() == 8 and w._port.all(func(n9): return not n9.visible) and w.blink.is_empty() and (w.moon_spr.mesh as QuadMesh).size == Vector2(92, 92))
+	var s2_ground: MeshInstance3D = null; var s2_sil: MultiMeshInstance3D = null; var s2_crowns: MeshInstance3D = null; var s2_cards := {}
+	for n9 in w.group.get_children():
+		if n9 is MeshInstance3D and (n9 as MeshInstance3D).mesh is PlaneMesh and ((n9 as MeshInstance3D).mesh as PlaneMesh).size == Vector2(260, 260): s2_ground = n9
+		if n9 is MultiMeshInstance3D and (n9 as MultiMeshInstance3D).multimesh.instance_count == 170: s2_sil = n9
+		if n9 is MeshInstance3D and n9.name == "Crowns": s2_crowns = n9
+		if n9 is MeshInstance3D and (n9 as MeshInstance3D).material_override is ShaderMaterial and w.fire_mats.has((n9 as MeshInstance3D).material_override): s2_cards[(n9 as MeshInstance3D).material_override] = n9
+	var s2_gm: StandardMaterial3D = s2_ground.material_override if s2_ground else null
+	check("stage 2: the ground is the browser game's earth-and-grass picture, 24 times each way, roughness 1",
+		s2_gm != null and s2_gm.albedo_texture != null and s2_gm.uv1_scale == Vector3(24, 24, 1) and s2_gm.roughness == 1.0)
+	var s2_sm: StandardMaterial3D = s2_sil.material_override if s2_sil else null
+	check("stage 2: the black forest on the horizon takes no fog (drawn after the fog layer)", s2_sm != null and s2_sm.render_priority == Gfx.PRIO_BACKDROP and s2_sm.disable_fog)
+	var s2_cab: AABB = Village.crown_mesh().get_aabb(); var s2_cc: Array = w.village.crown_colors; var s2_hsl_ok := s2_cc.size() == 95 + 150
+	for cc9: Color in s2_cc:
+		var mx := maxf(cc9.r, maxf(cc9.g, cc9.b)); var mn := minf(cc9.r, minf(cc9.g, cc9.b)); var ll := (mx + mn) / 2.0
+		if absf((mx - mn) / (1.0 - absf(2.0 * ll - 1.0)) - 0.35) > 0.002 or ll < 0.0899 or ll > 0.1401 or cc9.g <= cc9.r: s2_hsl_ok = false
+	check("stage 2: a pine's crown is three cones stacked (0.11 to 1.10 of its height), green as the browser game's (HSL: saturation 0.35, lightness 0.09 to 0.14)",
+		absf(s2_cab.position.y - 0.11) < 1e-3 and absf(s2_cab.end.y - 1.10) < 1e-3 and absf(s2_cab.size.x - 1.95) < 0.01 and s2_hsl_ok, [s2_cab, s2_hsl_ok])
+	var s2_cn: PackedVector3Array = s2_crowns.mesh.surface_get_arrays(0)[Mesh.ARRAY_NORMAL] if s2_crowns else PackedVector3Array(); var s2_upn := 0
+	for nn9 in s2_cn: if nn9.y > 0.9: s2_upn += 1
+	check("stage 2: the crowns, stretched tall, light as three.js lights them (their slopes face out, not up at the sky)",
+		s2_crowns != null and s2_cn.size() > 0 and s2_upn == 0 and (s2_crowns.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray).size() == s2_cn.size(), s2_upn)
+	var s2_want := [0, 0, 0]
+	for f9 in w.village.fires: s2_want[0] += roundi(5 + f9[3] * 5); s2_want[1] += roundi(4 + f9[3] * 4); s2_want[2] += roundi(6 + f9[3] * 8)
+	var s2_fire_ok := w.fire_mats.size() == 3 and s2_cards.size() == 3
+	if s2_fire_ok:
+		for k9 in 3:
+			var fm9: ShaderMaterial = w.fire_mats[k9]; var verts: int = ((s2_cards[fm9] as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+			var want9: Array = [[9.0, 6.5, 2.2, "blend_mix", 2], [0.0, 1.0, 0.0, "blend_add", 3], [5.0, 2.2, 1.4, "blend_add", 4]][k9]
+			if verts != s2_want[k9] * 4 or absf(fm9.get_shader_parameter("rise") - want9[0]) > 1e-6 or absf(fm9.get_shader_parameter("life") - want9[1]) > 1e-6 or absf(fm9.get_shader_parameter("spread") - want9[2]) > 1e-6 \
+					or not fm9.shader.code.contains(want9[3]) or fm9.render_priority != want9[4] or absf(fm9.get_shader_parameter("fogD") - 0.019) > 1e-6: s2_fire_ok = false
+	check("stage 2: each fire is the browser game's cards: smoke (5 + 5p, rising 9 m over 6.5 s), flames (4 + 4p, added light), embers (6 + 8p, rising 5 m over 2.2 s)", s2_fire_ok, s2_want)
+	gm.begin(1)
+	check("stage 1: the harbour is back behind the yard, the mast blinks, the moon is the docks' size", w._port.all(func(n9): return n9.visible) and not w.blink.is_empty() and (w.moon_spr.mesh as QuadMesh).size == Vector2(62, 62) and w.fire_mats.is_empty())
 	# ---------------- stage 3: the lab ----------------
 	gm.begin(3); var lab: Lab = w.lab; var an: Animals = en.animals; pl.invuln = 0.0
 	check("stage 3: 90 animals in ten cages, the giant gorilla in the last", en.list.size() == 90 and gm.goal == 90 and gm.boss != null and gm.boss.max_hp == 5200.0 and gm.boss.scale == 3.0 and lab.cages[5].animals.size() == 3 and lab.cages[8].animals.size() == 2)
@@ -1050,6 +1086,8 @@ func _ready() -> void:
 	check("the yard's 07 is paint on the ground, lit like it (10 x 5 m at the start), not a floating label", e_07 and e_labels == 0)
 	Fx.exposure = 1.15; var e_sc := Fx.shown(Color(1.0, 0.55, 0.2, 0.7)); var e_sd := Gfx.display(Vector3(e_dec.call(e_sc.r), e_dec.call(e_sc.g), e_dec.call(e_sc.b)), 1.15)
 	check("specks show on screen the colour asked for (the browser game writes theirs with no tone mapping)", e_sd.distance_to(Vector3(0.97, 0.55, 0.2)) < 0.004 and absf(e_sc.a - 0.7) < 1e-6, e_sd)
+	Fx.exposure = 1.12; var e_so := Fx.shown(Color(1.0, 0.3, 0.05)); var e_sod := Gfx.display(Vector3(e_dec.call(e_so.r), e_dec.call(e_so.g), e_dec.call(e_so.b)), 1.12); Fx.exposure = 1.15
+	check("a speck redder than the screen can show (a robot's burning bits) still comes out nearest to it", absf(e_sod.x - 0.97) < 0.003 and absf(e_sod.y - 0.3) < 0.003 and absf(e_sod.z - 0.05) < 0.04, e_sod)
 	w.set_ao(false); var e_off := not w.ao_layer.visible and w.ao.render_target_update_mode == SubViewport.UPDATE_DISABLED; w.set_ao(true)
 	check("the computer's ambient occlusion can be switched off (phones and stage 5 go without)", e_off and w.ao_layer.visible)
 	w.gfx_fixed = false; w.gfx_level = 4; w.use_ao = true; w.set_ao(true)

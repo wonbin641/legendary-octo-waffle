@@ -84,7 +84,8 @@ var village: Village = null
 var lab: Lab = null
 var ship: Ship = null
 var safari: Safari = null
-var flames: Array = []   # stage 5's room and its gimmicks
+var steady := false   # pictures beside the browser game's: lamps and fires at their mean brightness, no flicker
+var fire_mats: Array = []   # the village's flames, embers and smoke (their time is set each frame)
 var _backdrop_blink: Array = []
 var _tex := {}
 
@@ -198,6 +199,11 @@ static func rgb(a: Array) -> Color:
 	return Color(a[0], a[1], a[2])
 
 # ---- sky, skyline, the ship at the quay: built once ----
+var _port: Array[Node3D] = []   # the harbour backdrop: skyline, its windows, water, the ship (only at the docks)
+var moon_spr: MeshInstance3D
+
+static func is_yard(n: int) -> bool: return n == 1 or n == 5 or n == 6
+
 func _build_backdrop() -> void:
 	var night := Node3D.new(); night.name = "Night"; add_child(night)
 	# the skyline, its lit windows, the stars and the moon take no fog in the browser game: drawn after the fog layer
@@ -214,8 +220,8 @@ func _build_backdrop() -> void:
 		for k in int(h / 4):
 			if randf() < 0.3: win.push_back(Vector3(pos.x + randf_range(-w / 2, w / 2) * 0.8, randf_range(1, h - 2), pos.z + randf_range(-3, 3)))
 	for pair in [[st_a, sil_a], [st_b, sil_b]]:
-		var mi := MeshInstance3D.new(); mi.mesh = pair[0].commit(); mi.material_override = pair[1]; night.add_child(mi)
-	night.add_child(Gfx.points(win, lin("ffc27a"), 2.0))
+		var mi := MeshInstance3D.new(); mi.mesh = pair[0].commit(); mi.material_override = pair[1]; night.add_child(mi); _port.push_back(mi)
+	var wins := Gfx.points(win, lin("ffc27a"), 2.0); night.add_child(wins); _port.push_back(wins)
 	var stars := PackedVector3Array()
 	for i in 600:
 		var a := randf() * TAU; var e := randf_range(0.12, 1.4)
@@ -224,12 +230,12 @@ func _build_backdrop() -> void:
 	var mq := QuadMesh.new(); mq.size = Vector2(62, 62)
 	var mm := StandardMaterial3D.new(); mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mm.albedo_texture = Gfx.moon_tex(); mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; mm.disable_fog = true; mm.no_depth_test = false
-	var ms := MeshInstance3D.new(); ms.mesh = mq; ms.material_override = mm; ms.position = Vector3(-130, 160, -160); night.add_child(ms)
+	var ms := MeshInstance3D.new(); ms.mesh = mq; ms.material_override = mm; ms.position = Vector3(-130, 160, -160); night.add_child(ms); moon_spr = ms
 	# water and a container ship moored beyond the quay (east side)
 	var wp := PlaneMesh.new(); wp.size = Vector2(260, 420)
-	var water := MeshInstance3D.new(); water.mesh = wp; water.material_override = Gfx.std(lin("0a1626"), 0.25, 0.2); water.position = Vector3(197, -2.4, 0); night.add_child(water)
+	var water := MeshInstance3D.new(); water.mesh = wp; water.material_override = Gfx.std(lin("0a1626"), 0.25, 0.2); water.position = Vector3(197, -2.4, 0); night.add_child(water); _port.push_back(water)
 	var hull := MeshInstance3D.new(); hull.mesh = Gfx.merge_boxes([[32, 15, 230, 0, 5, 0], [26, 4, 20, 0, 4, 118], [24, 26, 18, 0, 25, 88], [18, 8, 12, 0, 42, 88]])
-	hull.material_override = Gfx.std(lin("2a1f22"), 0.8, 0.3); hull.position = Vector3(96, 0, 0); night.add_child(hull)
+	hull.material_override = Gfx.std(lin("2a1f22"), 0.8, 0.3); hull.position = Vector3(96, 0, 0); night.add_child(hull); _port.push_back(hull)
 	var xf := []; var cols := []
 	var z := -100.0
 	while z < 75 and xf.size() < 360:
@@ -238,20 +244,20 @@ func _build_backdrop() -> void:
 			for k in 2 + randi() % 4:
 				if xf.size() >= 360: break
 				xf.push_back(Transform3D(Basis.IDENTITY, Vector3(96 + x, 13.8 + k * 2.6, z)))
-				var c := Color(CONT_COLORS[randi() % 8]); cols.push_back(Color(c.r * 0.7, c.g * 0.7, c.b * 0.7))
+				var c := Color(CONT_COLORS[randi() % 8]); cols.push_back(lin(Color(c.r * 0.7, c.g * 0.7, c.b * 0.7)))   # (an instance colour is read as a screen colour)
 			x += 2.5
 		z += 12.6
 	var bm2 := BoxMesh.new(); bm2.size = Vector3(2.44, 2.59, 12.19)
-	var deck := Gfx.multimesh(bm2, xf, cols); var dm := Gfx.std(lin("5a3a34"), 0.7); dm.vertex_color_use_as_albedo = true; deck.material_override = dm; night.add_child(deck)
+	var deck := Gfx.multimesh(bm2, xf, cols); var dm := Gfx.std(lin("5a3a34"), 0.7); dm.vertex_color_use_as_albedo = true; deck.material_override = dm; night.add_child(deck); _port.push_back(deck)
 	var bw := PackedVector3Array()
 	for i in 80: bw.push_back(Vector3(96 + randf_range(-12, 12), randf_range(14, 36), 79 - randf_range(0, 0.5)))
-	night.add_child(Gfx.points(bw, lin("fff0c8"), 2.2, 1.0, true))   # the ship's windows do take fog
+	var bwp := Gfx.points(bw, lin("fff0c8"), 2.2, 1.0, true); night.add_child(bwp); _port.push_back(bwp)   # the ship's windows do take fog
 	var mast := MeshInstance3D.new(); var sm := SphereMesh.new(); sm.radius = 0.7; sm.height = 1.4; sm.radial_segments = 8; sm.rings = 6
-	mast.mesh = sm; mast.material_override = Gfx.backdrop(Gfx.unlit(lin("ff3a3a"), false)); mast.position = Vector3(96, 47, 88); night.add_child(mast); _backdrop_blink.push_back(mast)
+	mast.mesh = sm; mast.material_override = Gfx.backdrop(Gfx.unlit(lin("ff3a3a"), false)); mast.position = Vector3(96, 47, 88); night.add_child(mast); _backdrop_blink.push_back(mast); _port.push_back(mast)
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; toy = null; village = null; lab = null; safari = null; ship = null; flames.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; toy = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -294,6 +300,10 @@ func build_stage(stage: int) -> void:
 		moon.shadow_enabled = true; shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED; set_ao(false)
 		toy = ToyRoom.new(); toy.build(self, G); return
 	(get_node("Night") as Node3D).visible = not S.get("day", false) and not S.get("indoor", false)
+	# the harbour skyline and ship only belong to the docks; the village gets the stars and a bigger moon
+	for p in _port: p.visible = is_yard(stage)
+	(moon_spr.mesh as QuadMesh).size = Vector2.ONE * (92.0 if stage == 2 else 62.0)   # (a billboard keeps no node scale)
+	if not is_yard(stage): blink.clear()
 	if S.get("ship", false): Phys.set_world_size(166.0); Phys.set_nav(334, 1.0); ship = Ship.new(); ship.build(self, G, S, R); return
 	if S.get("lab", false): Phys.set_world_size(Lab.HALF + 1); Phys.set_nav(int(2 * Lab.HALF + 8), 1.0); lab = Lab.new(); lab.build(self, G, S, R); return
 	if S.get("savanna", false): Phys.set_world_size(178.0); Phys.set_nav(180, 2.0); safari = Safari.new(); safari.build(self, G, S, R); return
@@ -515,9 +525,8 @@ func update_world(dt: float, t: float, px: float, pz: float) -> void:
 			if i < near.size(): lights[i].position = Vector3(near[i].x, near[i].y, near[i].z)
 	for i in lights.size():
 		var k: float = style.lamp[1] if lights[i].get_meta("on", false) else 0.0
-		if style.get("flicker", false) and k > 0.0: k *= (0.2 if sin(t * 17.0 + i * 5.3) > 0.94 else 1.0) * (0.85 + 0.15 * sin(t * 2.7 + i))
-		if style.get("fire", false) and k > 0.0: k *= 0.72 + 0.18 * sin(t * 13.0 + i * 2.1) + 0.1 * sin(t * 29.0 + i * 5.7)
+		if style.get("flicker", false) and k > 0.0: k *= 0.85 if steady else (0.2 if sin(t * 17.0 + i * 5.3) > 0.94 else 1.0) * (0.85 + 0.15 * sin(t * 2.7 + i))
+		if style.get("fire", false) and k > 0.0: k *= 0.72 if steady else 0.72 + 0.18 * sin(t * 13.0 + i * 2.1) + 0.1 * sin(t * 29.0 + i * 5.7)
 		lights[i].light_energy = k * LAMP_K * lamp_scale
-	if style.get("fire", false):   # the fires flicker
-		for i in flames.size(): (flames[i] as Node3D).scale = Vector3(1.0 + 0.12 * sin(t * 11.0 + i), 1.0 + 0.2 * sin(t * 17.0 + i * 3.1), 1.0 + 0.12 * cos(t * 9.0 + i))
+	for m in fire_mats: (m as ShaderMaterial).set_shader_parameter("ft", t)   # the fires burn on
 	for i in blink.size(): blink[i].visible = fmod(t + i * 0.3, 1.8) < 0.25
