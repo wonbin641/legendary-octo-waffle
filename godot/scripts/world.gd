@@ -179,7 +179,7 @@ func set_ao(on: bool) -> void:
 
 func _on_node_added(n: Node) -> void:
 	if n is GeometryInstance3D:
-		if _fresh.is_empty(): RenderingServer.frame_pre_draw.connect(_flush_fresh, CONNECT_ONE_SHOT)
+		if not RenderingServer.frame_pre_draw.is_connected(_flush_fresh): RenderingServer.frame_pre_draw.connect(_flush_fresh, CONNECT_ONE_SHOT)
 		_fresh.push_back(n)
 ## right before each frame is drawn, everything added since gets three.js's material rules (its materials are set by then)
 func _flush_fresh() -> void:
@@ -188,7 +188,7 @@ func _flush_fresh() -> void:
 		Gfx.three_like(n)
 		var a: Node = n.get_parent()
 		while a != null:
-			if a in caster_roots: MoonShadow.caster(n); break
+			if a in caster_roots: MoonShadow.caster(n); MoonShadow.no_receive(n); break
 			if a == hand_root: (n as VisualInstance3D).layers = 1 << (Gfx.IN_HAND - 1); break
 			a = a.get_parent()
 	_fresh.clear()

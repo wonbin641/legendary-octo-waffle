@@ -324,6 +324,16 @@ func _ready() -> void:
 		if absf(w.crates[i].x - s2_V2.crates[i][0]) > 1e-4 or absf(w.crates[i].z - s2_V2.crates[i][1]) > 1e-4: s2_cbad += 1
 	check("stage 2: 15 huts, and every crate where the browser game has it", w.village.huts.size() == int(s2_V2.huts) and s2_cbad == 0 and w.crates.size() == 46, "%d huts %d off" % [w.village.huts.size(), s2_cbad])
 	check("stage 2: zombies, one giant among them", en.list.all(func(e): return e.type == "zombie") and gm.boss != null and gm.boss.max_hp == 2200.0 and gm.boss.scale == 1.7 and en.list[1].max_hp == 180.0 and gm.antidotes == 1)
+	check("stage 2: a zombie stoops from the moment it is put down, asleep or not (the browser game's spawn: 0.28 forward)", en.list.all(func(z9): return absf(z9.upper.rotation.x - 0.28) < 1e-6))
+	# people, animals, robots and loot take no moon shadow, as in the browser game: their solid materials mark the stencil
+	var s2_probe := MeshInstance3D.new(); s2_probe.mesh = BoxMesh.new(); var s2_pm := StandardMaterial3D.new(); s2_probe.material_override = s2_pm; en.add_child(s2_probe)
+	var s2_glass := MeshInstance3D.new(); s2_glass.mesh = BoxMesh.new(); var s2_gm9 := StandardMaterial3D.new(); s2_gm9.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; s2_glass.material_override = s2_gm9; en.add_child(s2_glass)
+	var s2_roots: Array = w.caster_roots; w.caster_roots = [en]   # (as the game sets them: what is under the enemies)
+	w._flush_fresh(); w.caster_roots = s2_roots
+	check("people, animals and robots take no moon shadow: their solid materials write the stencil the shadow layer passes by (see-through ones do not)",
+		s2_pm.stencil_mode == BaseMaterial3D.STENCIL_MODE_CUSTOM and s2_pm.stencil_reference == MoonShadow.UNSHADOWED and (s2_pm.stencil_flags & BaseMaterial3D.STENCIL_FLAG_WRITE) != 0
+		and s2_gm9.stencil_mode == BaseMaterial3D.STENCIL_MODE_DISABLED and MoonShadow.LAYER_SHADER.contains("stencil_mode read, compare_not_equal, %d;" % MoonShadow.UNSHADOWED))
+	s2_probe.queue_free(); s2_glass.queue_free()
 	var s2_up: MeshInstance3D = en.list[1].upper.get_child(0); var s2_cols: PackedColorArray = s2_up.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 	check("stage 2: a zombie has no hair, only its two pale eyes (the browser game's build: body, head, eyes)",
 		s2_cols.size() == 4 * 24 and s2_cols[2 * 24].is_equal_approx(Color("fff0a0")) and s2_cols[3 * 24].is_equal_approx(Color("fff0a0")) and not s2_cols.has(Color("2c2c2a")))

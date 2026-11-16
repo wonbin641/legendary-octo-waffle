@@ -207,6 +207,7 @@ func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	if not bot and not tk and not beast: e.muzzle = Vector3(0.2, 1.42, e.K.end)   # robots and toys carry their own
 	if type != "zombie" and e.K.has("run"): e.speed = maxf(e.speed, e.K.run * 0.9)   # melee men close the distance quickly even before they see you
 	e.g.position = e.pos; e.g.rotation = Vector3(0, e.yaw, 0); e.g.scale = Vector3.ONE * sc
+	if type == "zombie": e.upper.rotation = Vector3(0.28, 0, 0)   # a zombie stoops from the start, asleep or not (as the browser game's spawn)
 	if e.boss: e.bar.scale = Vector3.ONE * 1.6
 	if beast: animals.init(e)
 	list.push_back(e)
