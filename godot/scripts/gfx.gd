@@ -65,6 +65,23 @@ static func fpoly(img: Image, pts: PackedVector2Array, c: Color) -> void:
 					if Geometry2D.is_point_in_polygon(Vector2(px + (sx + 0.5) / 4.0, py + (sy + 0.5) / 4.0), pts): n += 1
 			if n > 0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(c.r, c.g, c.b, 1), c.a * n / 16.0))
 
+## a filled triangle, its edges blended by how far each pixel's middle is inside them (a canvas path of three points and fill())
+static func ftri(img: Image, a: Vector2, b: Vector2, c: Vector2, col: Color) -> void:
+	if (b - a).cross(c - a) < 0.0: var t := b; b = c; c = t   # (one winding, so inside is the same side of every edge)
+	var w := img.get_width(); var h := img.get_height(); var lo := a.min(b).min(c); var hi := a.max(b).max(c)
+	var e := [[a, b], [b, c], [c, a]]; var nrm := []
+	for q in e: var d: Vector2 = q[1] - q[0]; nrm.push_back(Vector2(-d.y, d.x).normalized())
+	for py in range(maxi(0, int(floor(lo.y))), mini(h, int(ceil(hi.y)) + 1)):
+		for px in range(maxi(0, int(floor(lo.x))), mini(w, int(ceil(hi.x)) + 1)):
+			var p := Vector2(px + 0.5, py + 0.5); var m := 1e9
+			for k in 3: m = minf(m, (p - (e[k][0] as Vector2)).dot(nrm[k]))
+			var cov := clampf(m + 0.5, 0.0, 1.0) * col.a
+			if cov > 0.0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(Color(col.r, col.g, col.b, 1), cov))
+## a canvas strokeRect: four bands lw wide centred on the rectangle's edges, square at the corners
+static func srect(img: Image, x: float, y: float, w: float, h: float, col: Color, lw: float) -> void:
+	frect(img, x - lw / 2, y - lw / 2, w + lw, lw, col); frect(img, x - lw / 2, y + h - lw / 2, w + lw, lw, col)
+	frect(img, x - lw / 2, y + lw / 2, lw, h - lw, col); frect(img, x + w - lw / 2, y + lw / 2, lw, h - lw, col)
+
 ## three.js's Color.setHSL (hue, saturation and lightness, 0 to 1)
 static func hsl(hh: float, ss: float, ll: float) -> Color:
 	hh = fposmod(hh, 1.0); ss = clampf(ss, 0.0, 1.0); ll = clampf(ll, 0.0, 1.0)
@@ -334,6 +351,9 @@ static func std(color: Color, rough: float, metal := 0.0, map: Texture2D = null)
 
 static func unlit(color: Color, fog := true) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new(); m.albedo_color = color; m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; m.disable_fog = not fog
+	# three.js's MeshBasicMaterial takes no shadow (it takes no light to lose): marked, so the moon's shadow layer passes it by
+	m.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM; m.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
+	m.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; m.stencil_reference = MoonShadow.UNSHADOWED
 	return m
 
 static func multimesh(mesh: Mesh, xforms: Array, colors := []) -> MultiMeshInstance3D:
@@ -566,13 +586,16 @@ static func box(size: Vector3) -> ArrayMesh:
 
 ## text drawn into a picture as a canvas fillText draws it: the font at px pixels, aligned "left", "center" or "right" on x,
 ## y the baseline ("alphabetic") or the middle of the em box ("middle"); glyphs come from the font's own glyph cache
-static func text(img: Image, s: String, font: FontFile, px: int, x: float, y: float, align := "left", baseline := "alphabetic", col := Color.WHITE) -> void:
-	var size := Vector2i(px, 0)
+static func text(img: Image, s: String, font: FontFile, px: int, x: float, y: float, align := "left", baseline := "alphabetic", col := Color.WHITE, outline := 0, outline_col := Color.BLACK) -> void:
+	if outline > 0: _text(img, s, font, px, x, y, align, baseline, outline_col, outline)   # (stroked first, as a strokeText then fillText)
+	_text(img, s, font, px, x, y, align, baseline, col, 0)
+static func _text(img: Image, s: String, font: FontFile, px: int, x: float, y: float, align: String, baseline: String, col: Color, outline: int) -> void:
+	var size := Vector2i(px, outline)
 	var glyphs := []; var width := 0.0
 	for i in s.length():
 		var gi := font.get_glyph_index(px, s.unicode_at(i), 0)
 		font.render_glyph(0, size, gi)
-		glyphs.push_back([gi, width]); width += font.get_glyph_advance(0, px, gi).x
+		glyphs.push_back([gi, width]); width += font.get_glyph_advance(0, px, gi).x   # (an outline does not move the pen)
 	var x0 := x - (width if align == "right" else (width / 2.0 if align == "center" else 0.0))
 	var by := y + ((font.get_ascent(px) - font.get_descent(px)) / 2.0 if baseline == "middle" else 0.0)
 	var atlases := {}

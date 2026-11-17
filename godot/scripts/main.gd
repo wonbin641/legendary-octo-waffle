@@ -643,7 +643,7 @@ func command(line: String) -> Dictionary:
 				if e.robot: e.sealed = false
 		"bosslaser":   # the boss drone starts its laser now: the red eye, the aim, the beam
 			for e in enemies.list:
-				if e.alive and e.type == "bdrone": e.alert = true; e.k.mode = "warn"; e.k.t = 0.0; (e.k.eye_mat as StandardMaterial3D).albedo_color = Color("ff1a10")
+				if e.alive and e.type == "bdrone": e.alert = true; e.k.mode = "warn"; e.k.t = 0.0; enemies.robots.eye_tint(e, true)
 		"robo":   # what the gold drone and the boss drone are doing
 			var out := {}
 			for e in enemies.list:

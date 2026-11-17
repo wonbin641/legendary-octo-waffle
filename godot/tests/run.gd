@@ -1209,5 +1209,78 @@ func _ready() -> void:
 		ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level") == 4 and ProjectSettings.get_setting("rendering/textures/default_filters/anisotropic_filtering_level.mobile", 0) == 3)
 	gm.begin(1); var sv_night := not w.sun_spr.visible; gm.begin(7); gm.begin(9); var sv_toyroom := not w.sun_spr.visible; gm.begin(1)
 	check("the sun is for the day: gone again by night, and not in stage 5's room", sv_night and sv_toyroom)
+	# ---- E 4: the ship and its crew, as the browser game draws them ----
+	gm.begin(4); var e4_find := func(nm: String) -> Node: return w.group.find_child(nm, true, false)
+	var e4_w := []
+	for t: ImageTexture in [Ship.plate_tex(), Ship.hall_tex(), Ship.panel_tex(), Ship.grate_tex(), Ship.carpet_tex(), Ship.ceil_tex(), Ship.step_tex(), Ship.space_tex(0.62), Ship.airlock_tex(), Ship.door_tex(), Ship.shaft_tex()]: e4_w.push_back(t.get_width())
+	var e4_pn := Ship.panel_tex().get_image(); var e4_yl := e4_pn.get_pixel(128, 249); var e4_sp := Ship.space_tex(0.62).get_image(); var e4_pl := e4_sp.get_pixel(int(1024 * 0.62), 250)
+	check("4: the ship's pictures at the browser game's sizes, the wall panels with their yellow line near the foot, space with a blue planet rising",
+		e4_w == [512, 512, 256, 128, 256, 256, 256, 1024, 256, 256, 4] and e4_yl.r > e4_yl.b + 0.1 and e4_yl.g > e4_yl.b and e4_pl.b > 0.45 and e4_pl.b > e4_pl.r and Ship.grate_tex().get_image().get_pixel(1, 1).is_equal_approx(Color("4a5260")), [e4_w, e4_yl, e4_pl])
+	var e4_sg := Ship.sign_tex("운전실", "up", Color("f2a33a")).get_image(); var e4_or := 0
+	for e4_y in range(70, 260, 3):
+		for e4_x in range(100, 640, 3): var e4_c := e4_sg.get_pixel(e4_x, e4_y); e4_or += 1 if e4_c.r > 0.8 and e4_c.g > 0.5 and e4_c.b < 0.4 else 0
+	var e4_ar := e4_sg.get_pixel(836, 110); var e4_fr := e4_sg.get_pixel(20, 160)
+	check("4: the signs in the browser game's letters (its own six-letter font), framed, with a block arrow", e4_or > 400 and e4_ar.r > 0.8 and e4_ar.b < 0.4 and e4_fr.r > 0.8 and e4_fr.b < 0.4, [e4_or, e4_ar, e4_fr])
+	var e4_wm: MeshInstance3D = e4_find.call("Walls"); var e4_wa: Array = e4_wm.mesh.surface_get_arrays(0); var e4_uv_ok := true
+	for e4_i in range(0, (e4_wa[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), 97):
+		var e4_v: Vector3 = e4_wa[Mesh.ARRAY_VERTEX][e4_i]; var e4_n: Vector3 = e4_wa[Mesh.ARRAY_NORMAL][e4_i]; var e4_u: Vector2 = e4_wa[Mesh.ARRAY_TEX_UV][e4_i]
+		var e4_want := Vector2(e4_v.z, e4_v.y) if absf(e4_n.x) > 0.5 else (Vector2(e4_v.x, e4_v.z) if absf(e4_n.y) > 0.5 else Vector2(e4_v.x, e4_v.y))
+		e4_uv_ok = e4_uv_ok and e4_u.distance_to(Vector2(e4_want.x / 3.0, 1.0 - e4_want.y / 3.0)) < 1e-4
+	var e4_fc: MeshInstance3D = e4_find.call("Floor_corr")
+	check("4: walls in panels laid by the metre (3 m a picture on every face, as uvBox), the corridor's floor in plates, the passage's a grating, the bridge carpeted",
+		e4_uv_ok and (e4_wm.material_override as StandardMaterial3D).albedo_texture == Ship.panel_tex() and (e4_fc.material_override as StandardMaterial3D).albedo_texture == Ship.plate_tex()
+		and ((e4_find.call("Floor_pass") as MeshInstance3D).material_override as StandardMaterial3D).albedo_texture == Ship.grate_tex() and ((e4_find.call("Floor_bridge") as MeshInstance3D).material_override as StandardMaterial3D).albedo_texture == Ship.carpet_tex())
+	var e4_pm: MeshInstance3D = e4_find.call("Pipes"); var e4_pmat := e4_pm.material_override as StandardMaterial3D; var e4_gl: MeshInstance3D = e4_find.call("Glow")
+	check("4: pipes along the passage and the corridor, the bridge's railings with posts (from x -107.4), rings up the reactor down into its pit (steel, no shadow on them); the glowing strips unlit and unshadowed",
+		absf(e4_pm.mesh.get_aabb().position.x + 107.44) < 0.01 and absf(e4_pm.mesh.get_aabb().end.x - 121.72) < 0.01 and absf(e4_pm.mesh.get_aabb().position.y + 7.1) < 0.02 and e4_pmat.albedo_color.is_equal_approx(World.lin("59627a")) and is_equal_approx(e4_pmat.roughness, 0.45) and is_equal_approx(e4_pmat.metallic, 0.6)
+		and e4_pmat.stencil_reference == MoonShadow.UNSHADOWED and (e4_gl.material_override as StandardMaterial3D).shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED and (e4_gl.material_override as StandardMaterial3D).stencil_reference == MoonShadow.UNSHADOWED,
+		e4_pm.mesh.get_aabb())
+	var e4_bw: MeshInstance3D = e4_find.call("BridgeWindow"); var e4_hw: MeshInstance3D = e4_find.call("HallWindow"); var e4_signs := 0
+	for e4_n2 in w.group.find_children("*", "MeshInstance3D", true, false):
+		var e4_q = (e4_n2 as MeshInstance3D).mesh
+		if e4_q is QuadMesh and ((e4_q as QuadMesh).size.is_equal_approx(Vector2(4.3, 4.3 * 0.3125)) or (e4_q as QuadMesh).size.is_equal_approx(Vector2(4.4, 4.4 * 0.3125))): e4_signs += 1
+	check("4: windows onto space on the bridge (27 x 11) and the hall (56 x 7), four signs (two at the junction, one hung before each door), five red lamps blinking in the passage",
+		(e4_bw.mesh as QuadMesh).size == Vector2(27, 11) and (e4_hw.mesh as QuadMesh).size == Vector2(56, 7) and (e4_bw.material_override as StandardMaterial3D).albedo_texture == Ship.space_tex(0.62) and e4_signs == 4 and w.blink.size() == 5, [e4_signs, w.blink.size()])
+	var e4_sh: Ship = w.ship; e4_sh.update(0.01, 0.3); var e4_k := 0.85 + 0.15 * sin(4.3 * 0.3); var e4_ry0: float = e4_sh.ring.rotation.y; e4_sh.update(0.5, 0.8)
+	var e4_rt: TorusMesh = (e4_sh.ring as MeshInstance3D).mesh
+	check("4: the bridge's screens flicker, the ring over the reactor (12 m round) turns slowly, the key is a gold bow and shaft with an added glow",
+		e4_sh.screens_mat.albedo_color.is_equal_approx(World.lin(Color(0.85 + 0.15 * sin(4.3 * 0.8), 0.85 + 0.15 * sin(4.3 * 0.8), 0.85 + 0.15 * sin(4.3 * 0.8)))) and e4_k > 0.0
+		and is_equal_approx(e4_sh.ring.rotation.y - e4_ry0, 0.5 * 0.35) and is_equal_approx(e4_rt.outer_radius, 12.22) and e4_sh.ring.position.distance_to(Vector3(120, 15.6, -6)) < 1e-4
+		and e4_sh.key_obj.get_child(0).mesh is TorusMesh and (e4_sh.key_glow.material_override as StandardMaterial3D).blend_mode == BaseMaterial3D.BLEND_MODE_ADD)
+	var e4_hide := true
+	for e4_n3: Node3D in e4_sh.pit.show: e4_hide = e4_hide and not e4_n3.visible
+	e4_sh.break_floor(); var e4_show := not (e4_sh.pit.dais as Node3D).visible and not (e4_sh.pit.dais_glow as Node3D).visible
+	for e4_n3: Node3D in e4_sh.pit.show: e4_show = e4_show and e4_n3.visible
+	e4_sh.open_hatches(); e4_sh.update(1.0, 2.0); var e4_h0: Dictionary = e4_sh.hatches[0]
+	check("4: the pit's steps, landings, their lights and its floor show only when the hall's floor breaks (the dais and its lights go); open hatches stand up a column of red light",
+		e4_hide and e4_show and (e4_h0.shaft as Node3D).visible and (e4_h0.shaft as Node3D).scale.y > 0.5 and ((e4_h0.shaft as MeshInstance3D).mesh as CylinderMesh).cap_top == false and e4_sh.hatches.size() == 8)
+	# the crew
+	var q4_t := {}
+	for q4_e in en.list:
+		if not q4_t.has(q4_e.type): q4_t[q4_e.type] = q4_e
+	var q4_body := 0; var q4_kit_ok := true
+	for q4_n in (q4_t.patrol.g as Node3D).find_children("*", "MeshInstance3D", true, false):
+		if q4_n.has_meta("body"): q4_body += 1; var q4_m := (q4_n as MeshInstance3D).material_override as StandardMaterial3D; q4_kit_ok = q4_kit_ok and is_equal_approx(q4_m.roughness, 0.42) and is_equal_approx(q4_m.metallic, 0.55)
+	check("4: the robots' plating as the browser game's (roughness 0.42, metalness 0.55), and it shows the hit flash", q4_body == 5 and q4_kit_ok, q4_body)
+	var q4_d = q4_t.droneA; var q4_ro: Node3D = q4_d.k.rotors[0]; var q4_ry := q4_ro.rotation.y; en.robots.update(q4_d, 0.1, 80.0, Vector2(1, 0), 0.0)
+	var q4_m2 = q4_t.mine; en.robots.update(q4_m2, 0.1, 80.0, Vector2(1, 0), 0.0)
+	check("4: the little drone's four propellers turn (and it flies level when it has not seen you); the spider mine's six legs lie folded while it is buried",
+		q4_d.k.rotors.size() == 4 and is_equal_approx(q4_ro.rotation.y - q4_ry, 4.2) and is_equal_approx(q4_d.g.rotation.x, 0.08) and q4_m2.k.cl.size() == 6 and is_equal_approx((q4_m2.k.cl[0] as Node3D).rotation.z, -0.75))
+	var q4_b = q4_t.gdrone; en.robots.update(q4_b, 0.05, 80.0, Vector2(1, 0), 0.0); var q4_w0: Node3D = q4_b.k.wings[0].g
+	var q4_gold: ShaderMaterial = null
+	for q4_n in (q4_b.g as Node3D).get_children():
+		if q4_n is MeshInstance3D and (q4_n as MeshInstance3D).material_override is ShaderMaterial and is_equal_approx(float((q4_n as MeshInstance3D).material_override.get_shader_parameter("metal")), 1.0): q4_gold = (q4_n as MeshInstance3D).material_override; break
+	var q4_ee: Vector3 = (q4_b.k.bee_eye as ShaderMaterial).get_shader_parameter("emis")
+	check("4: the golden bee: polished gold that reflects the browser game's studio sky, four wings beating, its eyes dark until it charges (spawning clears their glow)",
+		q4_gold != null and is_equal_approx(float(q4_gold.get_shader_parameter("rough")), 0.14) and q4_gold.shader.code.contains("vec3 studio(") and q4_b.k.wings.size() == 4 and absf(q4_w0.rotation.z) > 0.01 and q4_ee == Vector3.ZERO)
+	var q4_bs = q4_t.bdrone; var q4_s0: Dictionary = q4_bs.k.shells[0]; var q4_ball: MeshInstance3D = (q4_s0.g as Node3D).get_child(0); var q4_zmax := -99.0
+	for q4_v: Vector3 in q4_ball.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]: q4_zmax = maxf(q4_zmax, q4_v.z)
+	en.robots.eye_tint(q4_bs, true); var q4_red: Vector3 = (q4_bs.k.eye_mat as ShaderMaterial).get_shader_parameter("mul"); var q4_rg := (q4_bs.k.eye_glow as StandardMaterial3D).albedo_color; en.robots.eye_tint(q4_bs, false)
+	check("4: the boss: three shells (5, 3 and 1.5 m) open at the front for the eye, white plating with its seams; the eye blue, red before it fires, its glow with it",
+		q4_bs.k.shells.size() == 3 and (q4_bs.k.shells[1].g as Node3D).visible == false and absf(q4_zmax - 2.5 * cos(asin(0.46))) < 1e-3
+		and (q4_ball.material_override as ShaderMaterial).get_shader_parameter("map") == BotLook.shell_tex() and q4_red.is_equal_approx(Vector3(1.0, 26 / 255.0, 16 / 255.0)) and q4_rg.is_equal_approx(Color(World.lin("ff3a2a"), 0.34)),
+		[q4_zmax, q4_red])
+	check("the shiny robots take no moon shadow either (their own shader writes the mark)", BotLook.SHINE.contains("stencil_mode write, compare_always, 2;") and Gfx.unlit(Color.WHITE).stencil_reference == MoonShadow.UNSHADOWED)
+	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

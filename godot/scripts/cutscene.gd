@@ -295,7 +295,10 @@ func _boss_intro(dt: float, t: float) -> void:
 	var face := atan2(cam.global_position.x - e.pos.x, cam.global_position.z - e.pos.z); var dy: float = face - C.yaw0; dy = atan2(sin(dy), cos(dy))
 	e.yaw = C.yaw0 + dy * ease_(clampf((t - 0.5) / 0.8, 0, 1)); e.g.position = e.pos; e.g.rotation.y = e.yaw
 	if e.k.has("shells"): e.g.rotation.z = sin(t * 2.0) * 0.05
-	if e.type == "gdrone": e.g.rotation.z = sin(t * 2.6) * 0.06
+	if e.type == "gdrone":   # the bee beating its wings, its eyes glowing brighter as it turns to you
+		e.g.rotation.z = sin(t * 2.6) * 0.06; e.k.spin = float(e.k.get("spin", 0.0)) + dt; var wf := sin(float(e.k.spin) * 48.0)
+		for W in e.k.get("wings", []): (W.g as Node3D).rotation.z = W.sx * (0.18 + wf * 0.42)
+		if e.k.has("bee_eye"): (e.k.bee_eye as ShaderMaterial).set_shader_parameter("emis", Vector3(0.25 + 0.9 * k, 0.05 + 0.15 * k, 0.0))
 	var cp: Vector3 = (C.cam0 as Vector3).lerp(C.cam1, k); cp.y += sin(t * 9.0) * 0.01
 	_look_from(cp, e.pos)
 	if t >= C.dur: finish()
