@@ -1450,6 +1450,176 @@ func _ready() -> void:
 	en.set_far(d10_a, true); ct.start_boss_intro({"x": 0.0, "inward": 1.0, "z0": 0.0, "z1": 1.0, "title": "", "tone": "bee"}, d10_a, Callable()); var d10_cut := not d10_a.is_far and d10_a.upper.visible and not d10_a.far.visible; ct.skip()
 	check("D10: a striped beast's baked mesh keeps its picture (the same material, the parts' picture coordinates); a boss intro shows the drone whole", d10_zok and d10_cut)
 	w.caster_roots = d10_roots
+	# ---------------- quicker, with the same answers as the browser game's own ways of finding them (kept below as _ref_*) ----------------
+	gm.begin(1); seed(21)
+	var sp_n: int = Phys.nav_n; var sp_P: int = Phys._np; var sp_bad := 0; var sp_ways := 0; var sp_reached := 0
+	var sp_blk := -1; var sp_cs: float = Phys.nav_cs; var sp_off: float = Phys.nav_off
+	for sp_c in range(sp_n + 1, sp_n * sp_n - sp_n - 1):   # a blocked cell beside an open one (as beside a container)
+		if Phys.nav_blocked[sp_c] == 1 and Phys.nav_blocked[sp_c + 1] == 0 and sp_c % sp_n < sp_n - 1: sp_blk = sp_c; break
+	var sp_starts := [Vector2(pl.pos.x, pl.pos.z), Vector2(-40, 25), Vector2(55, -50), Vector2(((sp_blk % sp_n) + 0.5) * sp_cs - sp_off, ((sp_blk / sp_n) + 0.5) * sp_cs - sp_off)]
+	for sp_s: Vector2 in sp_starts:   # (the last stands in a blocked cell, as you can beside a wall)
+		var sp_ref := _ref_flow(sp_s.x, sp_s.y)
+		Phys.flow_start(sp_s.x, sp_s.y)
+		var sp_slices := 0
+		while not Phys.flow_step(0): sp_slices += 1   # a slice at a time
+		var sp_cells := 0
+		for sp_j in sp_n:
+			for sp_i in sp_n:
+				if maxi(sp_ref[sp_j * sp_n + sp_i], -1) != maxi(Phys.nav_dist[(sp_j + 1) * sp_P + sp_i + 1], -1): sp_bad += 1
+				if sp_ref[sp_j * sp_n + sp_i] >= 0: sp_cells += 1
+		sp_reached += sp_cells
+		for sp_k in 400:
+			var sp_x := randf_range(-sp_off - 2, sp_off + 2); var sp_z := randf_range(-sp_off - 2, sp_off + 2)
+			if _ref_flow_dir(sp_ref, sp_x, sp_z) != Phys.flow_dir(sp_x, sp_z): sp_ways += 1
+		if sp_cells > 2048 and sp_slices < 2: sp_bad += 1   # (a big search really went in slices; one shut in a small space ends at once)
+	check("the enemies' way to you: the same steps from every cell and the same way at every point as the browser game's search, four starts (one in a blocked cell), searched a slice at a time",
+		sp_bad == 0 and sp_ways == 0 and sp_reached > 3 * 10000 and sp_blk > 0, [sp_bad, sp_ways, sp_reached])
+	var sep_bad := 0; var sep_moved := 0
+	for sep_t in 4:
+		var sep_c := Vector2(pl.pos.x + randf_range(-15, 15), pl.pos.z + randf_range(-15, 15)); var sep_r: float = [3.0, 6.0, 14.0, 40.0][sep_t]
+		for sep_e in en.list: sep_e.pos = Vector3(sep_c.x + randf_range(-sep_r, sep_r), sep_e.pos.y, sep_c.y + randf_range(-sep_r, sep_r)); sep_e.awake = randf() < 0.8
+		en.list[1].downed = true
+		var sep_at := en.list.map(func(fo): return fo.pos)
+		_ref_separate(en.list); var sep_want := en.list.map(func(fo): return fo.pos)
+		for sep_i in en.list.size(): en.list[sep_i].pos = sep_at[sep_i]
+		en._separate()
+		for sep_i in en.list.size():
+			if en.list[sep_i].pos != sep_want[sep_i]: sep_bad += 1
+			if sep_want[sep_i] != sep_at[sep_i]: sep_moved += 1
+		en.list[1].downed = false
+	check("bodies pushed apart pair by pair exactly as the browser game's loop over every pair, on four crowds (the awake and the not, one lying down)", sep_bad == 0 and sep_moved > 100, [sep_bad, sep_moved])
+	var ph_bad := [0, 0, 0, 0]; var ph_hits := [0, 0]
+	for ph_k in 3000:
+		var ph_b: Phys.Box = Phys.colliders[randi() % Phys.colliders.size()]
+		var ph_x := randf_range(ph_b.minx - 2, ph_b.maxx + 2); var ph_z := randf_range(ph_b.minz - 2, ph_b.maxz + 2); var ph_y := randf_range(-1, ph_b.maxy + 1)
+		var ph_r := randf_range(0.1, 2.5); var ph_h := randf_range(0.3, 4.0)
+		var ph_cref = _ref_collide(ph_x, ph_y, ph_z, ph_r, ph_h)
+		if ph_cref != Phys.collide_at(ph_x, ph_y, ph_z, ph_r, ph_h): ph_bad[0] += 1
+		if ph_cref != null: ph_hits[0] += 1
+		if _ref_ground(ph_x, ph_y, ph_z, ph_r) != Phys.ground_at(ph_x, ph_y, ph_z, ph_r): ph_bad[1] += 1
+		if _ref_ceil(ph_x, ph_y, ph_z, ph_r, ph_h) != Phys.ceil_at(ph_x, ph_y, ph_z, ph_r, ph_h): ph_bad[2] += 1
+		var ph_dv := Vector3(randf_range(-1, 1), randf_range(-0.5, 0.3), randf_range(-1, 1)) if ph_k % 5 != 0 else Vector3(randf_range(-1, 1), 0, 0)
+		if ph_dv.length() < 0.01: continue
+		var ph_o := Vector3(ph_x, randf_range(0.2, 6.0), ph_z); ph_dv = ph_dv.normalized(); var ph_mt := randf_range(1, 80)
+		var ph_href := _ref_ray(ph_o, ph_dv, ph_mt); var ph_hnew := Phys.raycast_static(ph_o, ph_dv, ph_mt)
+		if ph_href: ph_hits[1] += 1
+		if ph_href != ph_hnew or _rr_t != Phys.rh_t or (ph_href and (_rr_n != Phys.rh_n or _rr_box != Phys.rh_box)): ph_bad[3] += 1
+	check("bumping into boxes, the ground and ceiling under and over you, and rays: the same answers as the browser game's (3000 of each)", ph_bad == [0, 0, 0, 0] and ph_hits[0] > 500 and ph_hits[1] > 1000, [ph_bad, ph_hits])
+	w._gv = {"acc": 0.0, "n": 0, "good": 0, "t": 0.0, "up_at": -1e9, "hold": 0.0}; w.gfx_mode = "auto"; w.gfx_apply(0); var un_seen := []
+	for un_k in 3:
+		for un_i in 81: w.govern(1.0 / 40.0)   # two seconds under 50 a second, at level 0
+		un_seen.push_back([w.gfx_level, w.gfx_under])
+	for un_i in 3 * 121: w.govern(1.0 / 60.0)   # three good spells: a step back
+	un_seen.push_back([w.gfx_level, w.gfx_under])
+	for un_i in 6 * 121: w.govern(1.0 / 60.0)   # six more: level 0 whole again, then level 1
+	un_seen.push_back([w.gfx_level, w.gfx_under])
+	w.gfx_apply(0); w.gfx_set_under(2); w.gfx_set_mode("high"); var un_high := [w.gfx_level, w.gfx_under]
+	for un_i in 3 * 81: w.govern(1.0 / 20.0)
+	un_high.append_array([w.gfx_level, w.gfx_under]); w.gfx_mode = "auto"; w.gfx_apply(4)
+	check("below level 0 (자동): the picture three quarters, then three fifths of level 0's size while the frame rate still sags; back a step per three good spells before the ladder climbs; never on 최고 화질",
+		un_seen == [[0, 1], [0, 2], [0, 2], [0, 1], [1, 0]] and un_high == [4, 0, 4, 0] and World.UNDER_SHARE == [1.0, 0.75, 0.6], [un_seen, un_high])
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)
+
+# ---------------- the browser game's own ways (src/04b_physics.js, src/07b_ai.js), as this port had them line for line: the
+# quicker ones in the game must give the same answers ----------------
+const _REF_DIRS := [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+func _ref_flow(px: float, pz: float) -> PackedInt32Array:
+	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)
+	var blk := Phys.nav_blocked; var s := Phys.nav_i(pz) * n + Phys.nav_i(px); var head := 0; var tail := 0
+	q[tail] = s; tail += 1; dist[s] = 0
+	while head < tail:
+		var c := q[head]; head += 1
+		var i := c % n; var j := c / n; var d := dist[c] + 1
+		for k in 8:
+			var di: int = _REF_DIRS[k][0]; var dj: int = _REF_DIRS[k][1]; var ni := i + di; var nj := j + dj
+			if ni < 0 or nj < 0 or ni >= n or nj >= n: continue
+			var nc := nj * n + ni
+			if dist[nc] != -1 or blk[nc] != 0: continue
+			if di != 0 and dj != 0 and (blk[j * n + ni] != 0 or blk[nj * n + i] != 0): continue
+			dist[nc] = d; q[tail] = nc; tail += 1
+	return dist
+func _ref_flow_dir(dist: PackedInt32Array, x: float, z: float) -> Vector2:
+	var n: int = Phys.nav_n; var i := Phys.nav_i(x); var j := Phys.nav_i(z); var blk := Phys.nav_blocked
+	var bd := dist[j * n + i]
+	if bd < 0: bd = 1000000000
+	var bi := -1; var bj := -1
+	for k in 8:
+		var di: int = _REF_DIRS[k][0]; var dj: int = _REF_DIRS[k][1]; var ni := i + di; var nj := j + dj
+		if ni < 0 or nj < 0 or ni >= n or nj >= n: continue
+		var d := dist[nj * n + ni]
+		if d < 0 or d >= bd: continue
+		if di != 0 and dj != 0 and (blk[j * n + ni] != 0 or blk[nj * n + i] != 0): continue
+		bd = d; bi = ni; bj = nj
+	if bi < 0: return Vector2.ZERO
+	return Vector2((bi + 0.5) * Phys.nav_cs - Phys.nav_off - x, (bj + 0.5) * Phys.nav_cs - Phys.nav_off - z).normalized()
+func _ref_separate(list: Array) -> void:
+	for i in list.size():
+		var a = list[i]
+		for j in range(i + 1, list.size()):
+			var b = list[j]
+			if (not a.awake and not b.awake) or a.downed or b.downed or a.fly or b.fly: continue
+			var dx: float = b.pos.x - a.pos.x; var dz: float = b.pos.z - a.pos.z
+			if absf(dx) > 5.0 or absf(dz) > 5.0: continue
+			var d := sqrt(dx * dx + dz * dz); var m: float = a.R + b.R + 0.1
+			if d < m and d > 0.001:
+				var push := (m - d) * 0.5
+				a.pos = Phys.move_xz(a.pos, -dx / d * push, -dz / d * push, a.R, a.H, 0.0)[0]; b.pos = Phys.move_xz(b.pos, dx / d * push, dz / d * push, b.R, b.H, 0.0)[0]
+func _ref_near(minx: float, minz: float, maxx: float, maxz: float) -> Array:
+	var out := []; Phys.qstamp += 1; var st: int = Phys.qstamp
+	for i in range(Phys._ci(minx), Phys._ci(maxx) + 1):
+		for j in range(Phys._ci(minz), Phys._ci(maxz) + 1):
+			for b in Phys.cells[j * Phys.SPN + i]:
+				if b.q != st: b.q = st; out.push_back(b)
+	return out
+func _ref_collide(x: float, y: float, z: float, r: float, h: float):
+	for b in _ref_near(x - r, z - r, x + r, z + r):
+		if x + r <= b.minx or x - r >= b.maxx or z + r <= b.minz or z - r >= b.maxz: continue
+		if y + h <= b.miny or y >= b.maxy - 0.001: continue
+		return b
+	return null
+func _ref_ground(x: float, y: float, z: float, r: float) -> float:
+	var g := Phys.floor_y(x, z)
+	for b in _ref_near(x - r, z - r, x + r, z + r):
+		if x + r <= b.minx or x - r >= b.maxx or z + r <= b.minz or z - r >= b.maxz: continue
+		if b.maxy <= y + 0.06 and b.maxy > g: g = b.maxy
+	return g
+func _ref_ceil(x: float, y: float, z: float, r: float, h: float) -> float:
+	var c := INF
+	for b in _ref_near(x - r, z - r, x + r, z + r):
+		if x + r <= b.minx or x - r >= b.maxx or z + r <= b.minz or z - r >= b.maxz: continue
+		if b.miny >= y + h - 0.05 and b.miny < c: c = b.miny
+	return c
+var _rr_t := 0.0; var _rr_n := Vector3.ZERO; var _rr_box = null
+func _ref_ray(o: Vector3, d: Vector3, max_t: float) -> bool:
+	var best := max_t; var hit := false
+	if d.y < -1e-6:
+		var fy := 0.0
+		if Phys.PIT != null:
+			var t0 := -o.y / d.y; var hx := o.x + d.x * t0; var hz := o.z + d.z * t0
+			if o.y < 0.0 or (hx > Phys.PIT.x0 and hx < Phys.PIT.x1 and hz > Phys.PIT.z0 and hz < Phys.PIT.z1): fy = Phys.PIT.y
+		var tg := (fy - o.y) / d.y
+		if tg >= 0.0 and tg < best: best = tg; _rr_n = Vector3.UP; _rr_box = null; hit = true
+	var ex := o.x + d.x * best; var ez := o.z + d.z * best
+	for b in _ref_near(minf(o.x, ex), minf(o.z, ez), maxf(o.x, ex), maxf(o.z, ez)):
+		if b.grate and not b.glass: continue
+		var t0 := 0.0; var t1 := best; var ax := -1; var sg := 0.0
+		var lo := [b.minx, b.miny, b.minz]; var hi := [b.maxx, b.maxy, b.maxz]
+		var miss := false
+		for k in 3:
+			var ok: float = o[k]; var dk: float = d[k]
+			if absf(dk) < 1e-9:
+				if ok < lo[k] or ok > hi[k]: miss = true; break
+			else:
+				var ta: float = (lo[k] - ok) / dk; var tb: float = (hi[k] - ok) / dk; var s := -1.0
+				if ta > tb: var q := ta; ta = tb; tb = q; s = 1.0
+				if ta > t0: t0 = ta; ax = k; sg = s
+				if tb < t1: t1 = tb
+				if t0 > t1: miss = true; break
+		if miss: continue
+		if t0 < best:
+			best = t0; hit = true; _rr_box = b
+			_rr_n = Vector3(sg if ax == 0 else 0.0, sg if ax == 1 else 0.0, sg if ax == 2 else 0.0)
+	_rr_t = best
+	return hit

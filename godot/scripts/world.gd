@@ -171,11 +171,21 @@ var gfx_mode := "auto"   # the setting: "auto", "high" or "fast"
 var gfx_soft := false    # drawn by the CPU, not a graphics card
 var gfx_level := 4
 var on_level: Callable = Callable()   # main: what a level asks of the picture itself (pixel ratio, finishing pass)
+## below the ladder's lowest, on 자동 or 프레임 우선: a frame rate level 0 still cannot carry draws the picture smaller (one
+## step: three quarters of level 0's size, two: three fifths), without the 4x smoothing, and gets it back, a step per three
+## good spells, before the ladder climbs. Not the browser game's (its ladder ends at level 0): Godot draws the same scene in
+## more passes, and a computer that cannot carry them is better off with a softer picture than a juddering one
+const UNDER_SHARE := [1.0, 0.75, 0.6]
+var gfx_under := 0
+var on_under: Callable = Callable()   # main: the picture's size and smoothing again
+func gfx_set_under(u: int) -> void:
+	gfx_under = clampi(u, 0, UNDER_SHARE.size() - 1)
+	if on_under.is_valid(): on_under.call(gfx_under)
 var _gv := {"acc": 0.0, "n": 0, "good": 0, "t": 0.0, "up_at": -1e9, "hold": 0.0}
 func gfx_max() -> int:
 	return 4 if gfx_mode == "high" else (0 if gfx_soft else (1 if gfx_mode == "fast" else 4))
 func gfx_apply(l: int) -> void:
-	gfx_level = clampi(l, 0, gfx_max()); var L: Dictionary = GFX_LEVELS[gfx_level]
+	gfx_level = clampi(l, 0, gfx_max()); var L: Dictionary = GFX_LEVELS[gfx_level]; gfx_under = 0
 	set_shadow_size(int(L.shadow)); use_ao = L.ao; set_ao(use_ao and toy == null)
 	if on_level.is_valid(): on_level.call(L)
 	Store.save_level(gfx_level)
@@ -194,9 +204,14 @@ func govern(delta: float) -> void:
 	if avg > 1.0 / 50.0 and gfx_level > 0:
 		if G.t - G.up_at < 10.0: G.hold = G.t + 60.0   # the last step up did not hold: stay put for a while
 		gfx_apply(gfx_level - (2 if avg > 1.0 / 30.0 and gfx_level > 1 else 1)); G.good = 0
-	elif avg < 1.0 / 57.0 and gfx_level < gfx_max():
+	elif avg > 1.0 / 50.0 and gfx_under < UNDER_SHARE.size() - 1:   # (at level 0 already: below it)
+		gfx_set_under(gfx_under + 1); G.good = 0
+	elif avg < 1.0 / 57.0 and (gfx_under > 0 or gfx_level < gfx_max()):
 		G.good += 1
-		if G.good >= 3 and G.t > G.hold: gfx_apply(gfx_level + 1); G.good = 0; G.up_at = G.t
+		if G.good >= 3 and G.t > G.hold:
+			G.good = 0
+			if gfx_under > 0: gfx_set_under(gfx_under - 1)
+			else: gfx_apply(gfx_level + 1); G.up_at = G.t
 	else: G.good = 0
 
 ## the moon's shadow picture at this many texels a side (the browser game's shadowSize)

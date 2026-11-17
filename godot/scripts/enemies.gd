@@ -31,6 +31,7 @@ const BURST := {"pistol": [1, 3, 0.32, 9.0, 1.1, 2.3], "deagle": [1, 1, 0.3, 45.
 const JACKETS := ["2b3440", "3d4a33", "4a3b30", "2e2e34", "5a5248", "283a4a", "47302e"]
 const SKIN := ["c99a7a", "a8775a", "e0b895", "7d5a44"]
 const KEEP_PAD := 0.14
+const NEAR9 := [-1025, -1024, -1023, -1, 0, 1, 1023, 1024, 1025]   # a 10 m square's key and its eight neighbours'
 const FAR_SHOT := {"deagle": "far_deagle", "smg": "far_smg", "rifle": "far_rifle", "lmg": "far_rifle", "shotgun": "far_shotgun", "sniper": "far_sniper"}
 const ACT_R := {1: 55.0, 6: 55.0, 5: 55.0, 2: 45.0, 3: 95.0, 8: 95.0, 7: 95.0, 4: 55.0}
 const VIS_R := {1: 85.0, 6: 85.0, 5: 85.0, 2: 72.0, 3: 165.0, 8: 165.0, 7: 150.0, 4: 90.0}
@@ -450,6 +451,39 @@ func _glow(e: Foe, kind: String) -> void:
 	for n in e.g.find_children("*", "MeshInstance3D", true, false):   # the body only: not the gun, a blade, the vest's light or a helmet
 		if n.has_meta("body"): (n as MeshInstance3D).material_overlay = mat
 
+## bodies do not stand inside each other: each pair in the browser game's order, but only those whose 10 m squares touch and
+## with someone awake in them (it passes over a pair more than 5 m apart either way, or with nobody awake, and nobody is
+## shoved 5 m in one frame), not all five thousand
+func _separate() -> void:
+	var count := list.size(); var squares := {}; var sq_key := PackedInt32Array(); sq_key.resize(count)
+	for i in count:
+		var a := list[i]
+		if a.downed or a.fly: sq_key[i] = -1; continue
+		var k := (floori(a.pos.x * 0.1) + 512) * 1024 + floori(a.pos.z * 0.1) + 512; sq_key[i] = k
+		if squares.has(k): (squares[k] as Array).push_back(i)
+		else: squares[k] = [i]
+	# a pair counts only with someone awake in it: gather them round the awake, then go through them in the old order
+	var pairs := PackedInt32Array()
+	for i in count:
+		var ka := sq_key[i]
+		if ka < 0 or not list[i].awake: continue
+		for dk: int in NEAR9:
+			var cell = squares.get(ka + dk)
+			if cell == null: continue
+			for j: int in cell:
+				if j > i: pairs.push_back(i * count + j)
+				elif j < i and not list[j].awake: pairs.push_back(j * count + i)   # (two awake: the first one's turn adds it)
+	if pairs.is_empty(): return
+	pairs.sort()
+	for pk in pairs:
+		var a := list[pk / count]; var b := list[pk % count]
+		var dx := b.pos.x - a.pos.x; var dz := b.pos.z - a.pos.z
+		if absf(dx) > 5.0 or absf(dz) > 5.0: continue
+		var d := sqrt(dx * dx + dz * dz); var m := a.R + b.R + 0.1
+		if d < m and d > 0.001:
+			var push := (m - d) * 0.5
+			a.pos = Phys.move_xz(a.pos, -dx / d * push, -dz / d * push, a.R, a.H, 0.0)[0]; b.pos = Phys.move_xz(b.pos, dx / d * push, dz / d * push, b.R, b.H, 0.0)[0]
+
 ## the browser game's bakeFar: far away an enemy is drawn as one mesh in the pose it was built in, instead of five or more
 ## moving parts. As there, only the parts coloured by their vertices go in (not a gun's gold, a blade or the vest's light),
 ## all drawn with the body's material, so a hit's flash still shows. The same build makes the same mesh, so it is kept
@@ -850,18 +884,7 @@ func update(dt: float, _time: float) -> void:
 		if e.hp < e.max_hp:
 			e.bar.visible = e.g.visible; e.bar.position = Vector3(e.pos.x, e.pos.y + e.H + 0.4 * e.scale, e.pos.z)
 			var f := clampf(e.hp / e.max_hp, 0.0, 1.0); e.fill.scale.x = 0.66 * f; e.fill.position.x = -0.33 * (1.0 - f)
-	# bodies do not stand inside each other
-	for i in list.size():
-		var a := list[i]
-		for j in range(i + 1, list.size()):
-			var b := list[j]
-			if (not a.awake and not b.awake) or a.downed or b.downed or a.fly or b.fly: continue
-			var dx := b.pos.x - a.pos.x; var dz := b.pos.z - a.pos.z
-			if absf(dx) > 5.0 or absf(dz) > 5.0: continue
-			var d := sqrt(dx * dx + dz * dz); var m := a.R + b.R + 0.1
-			if d < m and d > 0.001:
-				var push := (m - d) * 0.5
-				a.pos = Phys.move_xz(a.pos, -dx / d * push, -dz / d * push, a.R, a.H, 0.0)[0]; b.pos = Phys.move_xz(b.pos, dx / d * push, dz / d * push, b.R, b.H, 0.0)[0]
+	_separate()
 	for e in list:
 		if e.alive and e.awake and not e.downed and animals.m == null and e.ghost_t <= 0.0: _keep_out(e)   # riding, the animal under you does the shoving
 	if animals.m != null and animals.m.alive: animals.seat()

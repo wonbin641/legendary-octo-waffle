@@ -77,11 +77,18 @@ func occupied(minx: float, minz: float, maxx: float, maxz: float, m: float) -> b
 		if maxx + m > b.minx and minx - m < b.maxx and maxz + m > b.minz and minz - m < b.maxz: return true
 	return false
 
+## (this and ground_at and ceil_at walk the index's cells themselves, in query_near's order, rather than gather a list first)
 func collide_at(x: float, y: float, z: float, r: float, h: float) -> Box:
-	for b in query_near(x - r, z - r, x + r, z + r):
-		if x + r <= b.minx or x - r >= b.maxx or z + r <= b.minz or z - r >= b.maxz: continue
-		if y + h <= b.miny or y >= b.maxy - 0.001: continue
-		return b
+	qstamp += 1; var st := qstamp
+	var x0 := x - r; var x1 := x + r; var z0 := z - r; var z1 := z + r; var top := y + h
+	for i in range(_ci(x0), _ci(x1) + 1):
+		for j in range(_ci(z0), _ci(z1) + 1):
+			for b: Box in cells[j * SPN + i]:
+				if b.q == st: continue
+				b.q = st
+				if x1 <= b.minx or x0 >= b.maxx or z1 <= b.minz or z0 >= b.maxz: continue
+				if top <= b.miny or y >= b.maxy - 0.001: continue
+				return b
 	return null
 
 ## p is a Vector3 held by the caller; returns [new_p, blocked]
@@ -103,16 +110,28 @@ func move_xz(p: Vector3, dx: float, dz: float, r: float, h: float, step_h: float
 
 func ground_at(x: float, y: float, z: float, r: float) -> float:
 	var g := floor_y(x, z)
-	for b in query_near(x - r, z - r, x + r, z + r):
-		if x + r <= b.minx or x - r >= b.maxx or z + r <= b.minz or z - r >= b.maxz: continue
-		if b.maxy <= y + 0.06 and b.maxy > g: g = b.maxy
+	qstamp += 1; var st := qstamp
+	var x0 := x - r; var x1 := x + r; var z0 := z - r; var z1 := z + r; var lim := y + 0.06
+	for i in range(_ci(x0), _ci(x1) + 1):
+		for j in range(_ci(z0), _ci(z1) + 1):
+			for b: Box in cells[j * SPN + i]:
+				if b.q == st: continue
+				b.q = st
+				if x1 <= b.minx or x0 >= b.maxx or z1 <= b.minz or z0 >= b.maxz: continue
+				if b.maxy <= lim and b.maxy > g: g = b.maxy
 	return g
 
 func ceil_at(x: float, y: float, z: float, r: float, h: float) -> float:
 	var c := INF
-	for b in query_near(x - r, z - r, x + r, z + r):
-		if x + r <= b.minx or x - r >= b.maxx or z + r <= b.minz or z - r >= b.maxz: continue
-		if b.miny >= y + h - 0.05 and b.miny < c: c = b.miny
+	qstamp += 1; var st := qstamp
+	var x0 := x - r; var x1 := x + r; var z0 := z - r; var z1 := z + r; var lim := y + h - 0.05
+	for i in range(_ci(x0), _ci(x1) + 1):
+		for j in range(_ci(z0), _ci(z1) + 1):
+			for b: Box in cells[j * SPN + i]:
+				if b.q == st: continue
+				b.q = st
+				if x1 <= b.minx or x0 >= b.maxx or z1 <= b.minz or z0 >= b.maxz: continue
+				if b.miny >= lim and b.miny < c: c = b.miny
 	return c
 
 # ray vs static boxes and the ground; the result is left in these
@@ -129,22 +148,35 @@ func raycast_static(o: Vector3, d: Vector3, max_t: float) -> bool:
 		var tg := (fy - o.y) / d.y
 		if tg >= 0.0 and tg < best: best = tg; rh_n = Vector3.UP; rh_box = null; hit = true
 	var ex := o.x + d.x * best; var ez := o.z + d.z * best
+	# each box's three slabs in turn, x then y then z (written out: no lists made for each box)
+	var ox := o.x; var oy := o.y; var oz := o.z; var dx := d.x; var dy := d.y; var dz := d.z
 	for b in query_near(minf(o.x, ex), minf(o.z, ez), maxf(o.x, ex), maxf(o.z, ez)):
 		if b.grate and not b.glass: continue
 		var t0 := 0.0; var t1 := best; var ax := -1; var sg := 0.0
-		var lo := [b.minx, b.miny, b.minz]; var hi := [b.maxx, b.maxy, b.maxz]
-		var miss := false
-		for k in 3:
-			var ok: float = o[k]; var dk: float = d[k]
-			if absf(dk) < 1e-9:
-				if ok < lo[k] or ok > hi[k]: miss = true; break
-			else:
-				var ta: float = (lo[k] - ok) / dk; var tb: float = (hi[k] - ok) / dk; var s := -1.0
-				if ta > tb: var q := ta; ta = tb; tb = q; s = 1.0
-				if ta > t0: t0 = ta; ax = k; sg = s
-				if tb < t1: t1 = tb
-				if t0 > t1: miss = true; break
-		if miss: continue
+		if absf(dx) < 1e-9:
+			if ox < b.minx or ox > b.maxx: continue
+		else:
+			var ta: float = (b.minx - ox) / dx; var tb: float = (b.maxx - ox) / dx; var s := -1.0
+			if ta > tb: var q := ta; ta = tb; tb = q; s = 1.0
+			if ta > t0: t0 = ta; ax = 0; sg = s
+			if tb < t1: t1 = tb
+			if t0 > t1: continue
+		if absf(dy) < 1e-9:
+			if oy < b.miny or oy > b.maxy: continue
+		else:
+			var ta: float = (b.miny - oy) / dy; var tb: float = (b.maxy - oy) / dy; var s := -1.0
+			if ta > tb: var q := ta; ta = tb; tb = q; s = 1.0
+			if ta > t0: t0 = ta; ax = 1; sg = s
+			if tb < t1: t1 = tb
+			if t0 > t1: continue
+		if absf(dz) < 1e-9:
+			if oz < b.minz or oz > b.maxz: continue
+		else:
+			var ta: float = (b.minz - oz) / dz; var tb: float = (b.maxz - oz) / dz; var s := -1.0
+			if ta > tb: var q := ta; ta = tb; tb = q; s = 1.0
+			if ta > t0: t0 = ta; ax = 2; sg = s
+			if tb < t1: t1 = tb
+			if t0 > t1: continue
 		if t0 < best:
 			best = t0; hit = true; rh_box = b
 			rh_n = Vector3(sg if ax == 0 else 0.0, sg if ax == 1 else 0.0, sg if ax == 2 else 0.0)
@@ -161,12 +193,16 @@ var nav_n := 140
 var nav_off := 70.0
 var nav_cs := 1.0
 var nav_blocked := PackedByteArray()
+# the flow field's own grids are a cell wider all round, the ring blocked, so its search needs no checks for the edges
+# (the same field as searching nav_blocked itself; nav_dist[(j + 1) * _np + i + 1] is cell (i, j)'s steps to the player)
 var nav_dist := PackedInt32Array()
+var _np := 0                          # their width: nav_n + 2
+var _pblk := PackedByteArray()        # nav_blocked inside the ring
+var _pdist0 := PackedInt32Array()     # the field a search starts from: -1 open, -2 blocked (the ring too)
 var _bfs := PackedInt32Array()
-const DIRS := [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
 
 func set_nav(n: int, cs: float) -> void:
-	nav_n = n; nav_cs = cs; nav_off = (n * cs) / 2.0; _bfs.resize(n * n)
+	nav_n = n; nav_cs = cs; nav_off = (n * cs) / 2.0
 
 func nav_i(v: float) -> int:
 	return clampi(floori((v + nav_off) / nav_cs), 0, nav_n - 1)
@@ -191,9 +227,24 @@ func _nav_apply_mask(i0: int, j0: int, i1: int, j1: int) -> void:
 func build_nav() -> void:
 	var n := nav_n
 	nav_blocked = PackedByteArray(); nav_blocked.resize(n * n)
-	nav_dist = PackedInt32Array(); nav_dist.resize(n * n); nav_dist.fill(-1)
 	for b in colliders: _nav_mark(b, 0, 0, n - 1, n - 1)
 	_nav_apply_mask(0, 0, n - 1, n - 1)
+	_pad_nav()
+
+## the flow field's grids from nav_blocked: it inside a ring of blocked cells, the field empty
+func _pad_nav() -> void:
+	var n := nav_n; var P := n + 2; _np = P
+	var ring := PackedByteArray(); ring.resize(P); ring.fill(1)
+	var out := ring.duplicate()
+	for j in n: out.append(1); out.append_array(nav_blocked.slice(j * n, j * n + n)); out.append(1)
+	out.append_array(ring); _pblk = out
+	var d0 := PackedInt32Array(); d0.resize(P * P); d0.fill(-2)
+	for j in n:
+		var row := j * n; var at := (j + 1) * P + 1
+		for i in n:
+			if nav_blocked[row + i] == 0: d0[at + i] = -1
+	_pdist0 = d0
+	nav_dist = PackedInt32Array(); nav_dist.resize(P * P); nav_dist.fill(-1); _bfs.resize(P * P); flow_busy = false
 
 ## something small went (a crate broke): redo only the cells round where it stood
 func nav_patch(minx: float, minz: float, maxx: float, maxz: float) -> void:
@@ -205,36 +256,85 @@ func nav_patch(minx: float, minz: float, maxx: float, maxz: float) -> void:
 	for b in query_near(i0 * nav_cs - nav_off - 1.0, j0 * nav_cs - nav_off - 1.0, (i1 + 1) * nav_cs - nav_off + 1.0, (j1 + 1) * nav_cs - nav_off + 1.0):
 		_nav_mark(b, i0, j0, i1, j1)
 	_nav_apply_mask(i0, j0, i1, j1)
+	if _np != nav_n + 2: _pad_nav(); return
+	for j in range(j0, j1 + 1):
+		for i in range(i0, i1 + 1):
+			var b := nav_blocked[j * nav_n + i]; var at := (j + 1) * _np + i + 1; _pblk[at] = b; _pdist0[at] = -2 if b != 0 else -1
+	flow_busy = false   # (a search under way was looking at the grid as it was)
 
+## the whole search now (the game's own every 0.3 s goes by flow_start and flow_step)
 func update_flow(px: float, pz: float) -> void:
-	var n := nav_n
-	nav_dist.fill(-1)
-	var s := nav_i(pz) * n + nav_i(px)
-	var head := 0; var tail := 0
-	_bfs[tail] = s; tail += 1; nav_dist[s] = 0
+	flow_start(px, pz); flow_step(-1)
+
+# a search under way: its field and queue, how far it has got, and the player's cell it started from
+var flow_busy := false
+var _fd := PackedInt32Array(); var _fh := 0; var _ft := 0; var _fle := 0; var _fdd := 0; var _fs := 0; var _fsb := false
+
+## a breadth-first search from the player's cell, layer by layer: four sides, then the four corners, a corner only past two
+## open sides. The cells start at -1 when open and -2 when blocked (the player's own cell, if blocked, holds -3 till the end:
+## done, and still blocked for the corners), so one look at a side says both whether to step there and whether it is open.
+## Written out, on locals: the same field as a loop over the eight ways, several times quicker in GDScript
+func flow_start(px: float, pz: float) -> void:
+	var P := _np
+	if P == 0: flow_busy = false; return
+	_fd = _pdist0.duplicate()
+	_fs = (nav_i(pz) + 1) * P + nav_i(px) + 1; _fsb = _fd[_fs] == -2
+	_fd[_fs] = -3 if _fsb else 0
+	_bfs[0] = _fs; _fh = 0; _ft = 1; _fle = 1; _fdd = 1; flow_busy = true
+
+## carry the search on for at most this many microseconds (-1: to its end); when it ends the field is the new one. True when done
+func flow_step(budget_usec: int) -> bool:
+	if not flow_busy: return true
+	var P := _np; var dist := _fd; var q := _bfs; _fd = PackedInt32Array(); _bfs = PackedInt32Array()   # (sole owners: no copies)
+	var head := _fh; var tail := _ft; var layer_end := _fle; var d := _fdd
+	var up := P + 1; var um := P - 1
+	var stop := Time.get_ticks_usec() + budget_usec if budget_usec >= 0 else 0
 	while head < tail:
-		var c := _bfs[head]; head += 1
-		var i := c % n; var j := c / n; var d := nav_dist[c] + 1
-		for k in 8:
-			var di: int = DIRS[k][0]; var dj: int = DIRS[k][1]; var ni := i + di; var nj := j + dj
-			if ni < 0 or nj < 0 or ni >= n or nj >= n: continue
-			var nc := nj * n + ni
-			if nav_dist[nc] != -1 or nav_blocked[nc] != 0: continue
-			if di != 0 and dj != 0 and (nav_blocked[j * n + ni] != 0 or nav_blocked[nj * n + i] != 0): continue
-			nav_dist[nc] = d; _bfs[tail] = nc; tail += 1
+		if head == layer_end: layer_end = tail; d += 1
+		if stop != 0 and (head & 511) == 0 and head > _fh and Time.get_ticks_usec() > stop: break
+		var c: int = q[head]; head += 1
+		var r: int = dist[c + 1]; var l: int = dist[c - 1]; var dn: int = dist[c + P]; var u: int = dist[c - P]
+		if r == -1: dist[c + 1] = d; q[tail] = c + 1; tail += 1
+		if l == -1: dist[c - 1] = d; q[tail] = c - 1; tail += 1
+		if dn == -1: dist[c + P] = d; q[tail] = c + P; tail += 1
+		if u == -1: dist[c - P] = d; q[tail] = c - P; tail += 1
+		if r >= -1:
+			if dn >= -1 and dist[c + up] == -1: dist[c + up] = d; q[tail] = c + up; tail += 1
+			if u >= -1 and dist[c - um] == -1: dist[c - um] = d; q[tail] = c - um; tail += 1
+		if l >= -1:
+			if dn >= -1 and dist[c + um] == -1: dist[c + um] = d; q[tail] = c + um; tail += 1
+			if u >= -1 and dist[c - up] == -1: dist[c - up] = d; q[tail] = c - up; tail += 1
+	_bfs = q
+	if head < tail: _fd = dist; _fh = head; _ft = tail; _fle = layer_end; _fdd = d; return false
+	if _fsb: dist[_fs] = 0
+	nav_dist = dist; flow_busy = false
+	return true
 
 ## the way to walk from (x, z) toward the player, or Vector2.ZERO when there is none
 func flow_dir(x: float, z: float) -> Vector2:
-	var n := nav_n; var i := nav_i(x); var j := nav_i(z)
-	var bd := nav_dist[j * n + i]
+	var P := _np
+	if P == 0: return Vector2.ZERO
+	var c := (nav_i(z) + 1) * P + nav_i(x) + 1; var dist := nav_dist; var blk := _pblk
+	var bd: int = dist[c]
 	if bd < 0: bd = 1000000000
-	var bi := -1; var bj := -1
-	for k in 8:
-		var di: int = DIRS[k][0]; var dj: int = DIRS[k][1]; var ni := i + di; var nj := j + dj
-		if ni < 0 or nj < 0 or ni >= n or nj >= n: continue
-		var d := nav_dist[nj * n + ni]
-		if d < 0 or d >= bd: continue
-		if di != 0 and dj != 0 and (nav_blocked[j * n + ni] != 0 or nav_blocked[nj * n + i] != 0): continue
-		bd = d; bi = ni; bj = nj
-	if bi < 0: return Vector2.ZERO
+	# the nearest of the eight to the player, the first of equals in this order: right, left, down, up, then the corners
+	# (a corner only past two open sides)
+	var bk := 0; var d: int = dist[c + 1]
+	if d >= 0 and d < bd: bd = d; bk = 1
+	d = dist[c - 1]
+	if d >= 0 and d < bd: bd = d; bk = -1
+	d = dist[c + P]
+	if d >= 0 and d < bd: bd = d; bk = P
+	d = dist[c - P]
+	if d >= 0 and d < bd: bd = d; bk = -P
+	d = dist[c + P + 1]
+	if d >= 0 and d < bd and blk[c + 1] == 0 and blk[c + P] == 0: bd = d; bk = P + 1
+	d = dist[c - P + 1]
+	if d >= 0 and d < bd and blk[c + 1] == 0 and blk[c - P] == 0: bd = d; bk = 1 - P
+	d = dist[c + P - 1]
+	if d >= 0 and d < bd and blk[c - 1] == 0 and blk[c + P] == 0: bd = d; bk = P - 1
+	d = dist[c - P - 1]
+	if d >= 0 and d < bd and blk[c - 1] == 0 and blk[c - P] == 0: bd = d; bk = -P - 1
+	if bk == 0: return Vector2.ZERO
+	var nc := c + bk; var bi := nc % P - 1; var bj := nc / P - 1
 	return Vector2((bi + 0.5) * nav_cs - nav_off - x, (bj + 0.5) * nav_cs - nav_off - z).normalized()

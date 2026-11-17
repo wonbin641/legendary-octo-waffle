@@ -57,7 +57,7 @@ func _ready() -> void:
 	picture.follow = cam
 	cam.set_cull_mask_value(MoonShadow.ENCODE, false); cam.set_cull_mask_value(AoView.LAYER, false)   # those quads are for their own cameras only
 	world.use_ao = not is_touch   # the browser game's occlusion: computers at its top quality levels, never phones
-	world.on_level = _on_level
+	world.on_level = _on_level; world.on_under = func(_u: int) -> void: _on_level(World.GFX_LEVELS[world.gfx_level])
 	if not is_touch:   # the computer's quality ladder, as the browser game's Gfx.init
 		world.gfx_soft = gpu_soft(gpu_name); world.gfx_mode = str(Store.settings.gfx); world.gfx_init(Store.level_saved())
 	fx = Fx.new(); add_child(fx); world.fx = fx
@@ -93,6 +93,14 @@ func _ready() -> void:
 	hud.get_parent().add_child(ui); ui.build(); ui.tac.cam = cam
 	get_viewport().size_changed.connect(_on_resize); _on_resize()
 	apply_settings(); to_menu(); _bridge()
+	if OS.get_cmdline_user_args().has("--smoke"): _smoke.call_deferred()
+
+## a check of a built copy of the game (... --headless -- --smoke): every stage started and played two seconds, then out
+func _smoke() -> void:
+	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "9"]:
+		command("start " + st); command("sim 2")
+		print("smoke: stage %s %s, %d enemies" % [Store.STAGE_TAG.get(int(st), st), state, enemies.list.size()])
+	to_menu(); print("smoke: ok"); get_tree().quit(0)
 
 func apply_settings() -> void:
 	Snd.touch = look_mode == "touch"
@@ -224,7 +232,8 @@ func _build_hud() -> void:
 ## the finishing pass runs (the moon's shadow picture, the occlusion and the enemies' shadow reach World and Enemies set)
 func _on_level(L: Dictionary) -> void:
 	if is_touch: return
-	picture.share = minf(float(L.pr), dpr) / dpr
+	var u := world.gfx_under   # (below level 0: smaller still, unsmoothed)
+	picture.share = minf(float(L.pr), dpr) / dpr * float(World.UNDER_SHARE[u]); picture.set_msaa(Viewport.MSAA_4X if u == 0 else Viewport.MSAA_DISABLED)
 	grade.level_post = L.post; grade.visible = grade.allowed and grade.level_post and world.toy == null
 
 ## the graphics card's name as the browser game reads it (WEBGL_debug_renderer_info), and whether it is a software one
@@ -258,9 +267,12 @@ func _perf_frame(dt: float, cpu_ms: float) -> void:
 	_pf.frames = 0; _pf.acc = 0.0; _pf.cpu = 0.0; _pf.worst = 0.0
 	var s := hud.size; var tall := s.y > s.x * 1.1
 	perf_box.reset_size(); perf_box.position = Vector2(12, 70) if tall else Vector2(12, s.y - 12.0 - perf_box.size.y)
+## the level's name for the readout, and how far below level 0 (낮음 −1, 낮음 −2)
+func level_name() -> String:
+	return str(World.GFX_LEVELS[world.gfx_level].name) + (" −%d" % world.gfx_under if world.gfx_under > 0 else "")
 func perf_text(fps: float, ms: float, worst_ms: float, cpu_ms: float) -> String:
 	var rs := picture.render_size()
-	return perf_format(fps, ms, worst_ms, cpu_ms, is_touch, str(World.GFX_LEVELS[world.gfx_level].name), world.gfx_mode, rs.x, rs.y, dpr * picture.share,
+	return perf_format(fps, ms, worst_ms, cpu_ms, is_touch, level_name(), world.gfx_mode, rs.x, rs.y, dpr * picture.share,
 		grade.visible, world.ao_layer.visible, world.moon_shadow.size.x, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)), gpu_name)
 ## the four lines, word for word as the browser game's
@@ -437,6 +449,11 @@ func request_lock() -> void:
 
 # ---------------- input ----------------
 func _unhandled_input(e: InputEvent) -> void:
+	# on a computer (the browser has its own): F11 or Alt+Enter between a window and the whole screen
+	if e is InputEventKey and e.pressed and not e.echo and not OS.has_feature("web") and (e.physical_keycode == KEY_F11 or (e.alt_pressed and e.physical_keycode in [KEY_ENTER, KEY_KP_ENTER])):
+		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+		get_viewport().set_input_as_handled(); return
 	if state == "cutscene":
 		if (e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_SPACE, KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_E]) or (e is InputEventMouseButton and e.pressed) or (e is InputEventScreenTouch and e.pressed): cut.skip()
 		return
@@ -775,7 +792,7 @@ func command(line: String) -> Dictionary:
 			var gm2: String = a[1] if a.size() > 1 and a[1] in ["high", "fast", "auto"] else "auto"
 			Store.settings.gfx = gm2   # (for pictures and checks: not kept, as the browser game's harness sets its own)
 			if not is_touch: world.gfx_set_mode(gm2)
-			return {"level": world.gfx_level, "name": World.GFX_LEVELS[world.gfx_level].name, "mode": world.gfx_mode, "soft": world.gfx_soft, "scale": picture.share, "size": [picture.render_size().x, picture.render_size().y],
+			return {"level": world.gfx_level, "under": world.gfx_under, "name": level_name(), "mode": world.gfx_mode, "soft": world.gfx_soft, "scale": picture.share, "size": [picture.render_size().x, picture.render_size().y],
 				"post": grade.visible, "ao": world.ao_layer.visible, "shadow": world.moon_shadow.size.x, "msaa": picture.scene_vp.msaa_3d}
 		"steady": world.steady = a[1] == "1"   # pictures: lamps and fires at their mean brightness
 		"lampsoff":   # the six lamp lights out (for pictures that compare light by light)
