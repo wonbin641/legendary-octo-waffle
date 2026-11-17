@@ -367,7 +367,7 @@ func go() -> void:
 		e.angry = true; e.alert = true; e.awake = true
 		if not e.fury: e.fury = true; e.state = "chase"; enemies.animals.wake(e)
 		if e.type != "zebra" and roars < 8 and randf() < 0.25: roars += 1; Snd.play("roar_" + e.T.roar, 1.0, e.pos)
-	Snd.play("quake"); Snd.play("siren"); player.shake = maxf(player.shake, 0.45); Snd.buzz(220)
+	Snd.play("quake", 1.0, player.pos); Snd.play("siren"); player.shake = maxf(player.shake, 0.45); Snd.buzz(220)
 	game.say_banner("동물들이 몰려옵니다!", "탑 위에 있으면 동물들은 탑부터 칩니다 · 기린은 목으로 탑 위까지 칩니다" if holds() else "감시탑으로 올라가세요!", 3.4)
 	game.say_feed("습격 시작 · 모든 동물이 감시탑으로")
 
@@ -412,7 +412,7 @@ func collapse() -> void:
 	standing = false; on = false; fall_t = 0.0; fall_dir = 1.0 if randf() < 0.5 else -1.0
 	for b in cols: Phys.remove_collider(b)
 	cols.clear(); Phys.build_nav(); Phys.update_flow(player.pos.x, player.pos.z)
-	var c := Vector3(outer.position.x, 1.5, outer.position.z); Snd.play("crack", 1.0, c); Snd.play("quake", 1.0, c); Snd.play("boom", 0.6, c)
+	var c := Vector3(outer.position.x, 1.5, outer.position.z); Snd.play("crack", 1.0, c); Snd.play("quake", 1.0, c); Snd.play("boom_small", 1.0, c)
 	if fx:
 		for i in 14: var a := i / 14.0 * TAU; fx.puff(Vector3(outer.position.x + cos(a) * 3.5, 0.5, outer.position.z + sin(a) * 3.5), 2, 0.6, 1.4)
 		fx.chunks(Vector3(outer.position.x, 3, outer.position.z), 18, 0.3, "wood")

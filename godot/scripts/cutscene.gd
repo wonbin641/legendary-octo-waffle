@@ -374,7 +374,7 @@ func _wash(_dt: float) -> void:
 		var a := randf() * TAU; var rr := randf_range(2.0, 7.0)
 		fx.puff(Vector3(heli.position.x + cos(a) * rr, 0.3, heli.position.z + sin(a) * rr), 1, 0.6 if world.style.get("day", false) else 0.4, 1.2)
 	if pool.visible: pool.position = Vector3(heli.position.x + C.fx * 3.0, 0.04, heli.position.z + C.fz * 3.0); pool_mat.albedo_color.a = clampf(1.0 - agl / 40.0, 0, 1)
-	Snd.loop("rotor", clampf(1.0 - heli.position.distance_to(cam.global_position) / 140.0, 0.05, 1.0) * 0.55)
+	Snd.loop("rotor", clampf(1.0 - heli.position.distance_to(cam.global_position) / 140.0, 0.05, 1.0))   # (the rotor's own 0.55 is in its take)
 
 func _overlay(dt: float) -> void:
 	cap_t += dt; card_t += dt

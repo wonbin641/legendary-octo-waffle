@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Godot판의 효과음(godot/sounds/*.wav)을 만듭니다. 브라우저판은 WebAudio로 그때그때 합성하는데(src/03_core.js의 Sound),
-같은 조합법(걸러 낸 잡음 + 미끄러지는 음)을 여기서 미리 계산해 파일로 둡니다. 파이썬 표준 라이브러리만 씁니다."""
+"""스테이지 5(Godot판에만 있는 장난감 방)의 효과음(godot/sounds/toy_*.wav)을 만듭니다. 파이썬 표준 라이브러리만 씁니다.
+브라우저판에 있는 소리는 브라우저판 자신의 코드로 tools/render_sounds.js가 만듭니다. 여기 남은 브라우저판 소리의 조합은 예전에 손으로
+옮긴 것이라 쓰지 않고, 장난감 소리만 파일로 씁니다."""
 import math, os, random, struct, sys, wave
 SR = 22050
 random.seed(7)
@@ -151,6 +152,7 @@ SOUNDS = {
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 for name, layers in SOUNDS.items():
+    if not name.startswith('toy_'): continue   # (the browser game's own come from tools/render_sounds.js)
     n = max(int(d * SR) + len(s) for d, s in layers); mix = [0.0] * n
     for d, s in layers:
         o = int(d * SR)
@@ -158,19 +160,4 @@ for name, layers in SOUNDS.items():
     # the browser game runs everything through a compressor; here a soft limit keeps the loud ones from clipping
     data = b''.join(struct.pack('<h', int(max(-1.0, min(1.0, math.tanh(v * 0.55))) * 32000)) for v in mix)
     with wave.open(os.path.join(out_dir, name + '.wav'), 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(data)
-# the helicopter's rotor (Sound.rotor in src/03_core.js): white noise through a 420 Hz low-pass, chopped 11.5 times a second, with a thin
-# 1650 Hz whine. Two seconds that loop without a seam: 23 chops, 3300 whine cycles, and the filter run twice round the same noise so it
-# starts where it ends. The game loops it and sets its level by how near the helicopter is.
-def rotor():
-    n = int(2.0 * SR); rnd = random.Random(11); src = [rnd.uniform(-1, 1) for _ in range(n)]
-    w = 2 * math.pi * 420 / SR; al = math.sin(w) / (2 * 0.8); c = math.cos(w); a0 = 1 + al
-    b0, b1, b2, a1, a2 = (1 - c) / 2 / a0, (1 - c) / a0, (1 - c) / 2 / a0, -2 * c / a0, (1 - al) / a0
-    x1 = x2 = y1 = y2 = 0.0; low = [0.0] * n
-    for _ in range(2):
-        for i in range(n):
-            x = src[i]; y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2, x1, y2, y1 = x1, x, y1, y; low[i] = y
-    peak = max(abs(v) for v in low) or 1.0
-    return [low[i] / peak * 0.9 * (0.5 + 0.5 * math.sin(2 * math.pi * 11.5 * i / SR)) + 0.03 * math.sin(2 * math.pi * 1650 * i / SR) for i in range(n)]
-data = b''.join(struct.pack('<h', int(max(-1.0, min(1.0, v)) * 32000)) for v in rotor())
-with wave.open(os.path.join(out_dir, 'rotor.wav'), 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(data)
-print(len(SOUNDS) + 1, 'sounds')
+print(sum(1 for n in SOUNDS if n.startswith('toy_')), 'toy sounds')

@@ -276,7 +276,7 @@ func _patrol(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: floa
 	var T := e.T; var k := e.k
 	if not e.alert and e.los and dist < T.sight:
 		var a := face_yaw - e.yaw; a = atan2(sin(a), cos(a))
-		if absf(a) < 1.3 or dist < 6.0: en.alarm(e); call_near(e, 16.0); Snd.play("zap", 1.0, e.pos)
+		if absf(a) < 1.3 or dist < 6.0: en.alarm(e); call_near(e, 16.0); Snd.play("zap_turret", 1.0, e.pos)
 	if not e.alert:
 		var sp := 0.0
 		if k.has("wp"):
@@ -354,12 +354,12 @@ func _mine(e: Enemies.Foe, dt: float, dist: float, to: Vector2) -> void:
 		"arm":   # landed: blinking while it arms itself
 			e.bt -= dt; _light(e, "ff3020" if sin(e.bt * 30.0) > 0.0 else "401010")
 			if e.bt <= 0.0:
-				if dist < 9.0: e.bs = "wake"; e.bt = 0.3; Snd.play("beep", 1.0, e.pos)
+				if dist < 9.0: e.bs = "wake"; e.bt = 0.3; Snd.play("chirp", 1.0, e.pos)
 				else: e.bs = "hidden"; _light(e, "401010")
 			_mine_legs(e, dt, 0.0)
 		"hidden":
 			e.pos.y = float(k.baseY) - 0.16
-			if dist < T.sight and (e.los or dist < 3.5) and absf(player.pos.y - float(k.baseY)) < 2.5: e.bs = "wake"; e.bt = 0.3; Snd.play("beep", 1.0, e.pos)
+			if dist < T.sight and (e.los or dist < 3.5) and absf(player.pos.y - float(k.baseY)) < 2.5: e.bs = "wake"; e.bt = 0.3; Snd.play("chirp", 1.0, e.pos)
 			_mine_legs(e, dt, 0.0)
 		"wake":
 			e.bt -= dt; e.pos.y = float(k.baseY) - 0.16 * maxf(0.0, e.bt / 0.3); _light(e, "ff2a1a")
@@ -375,7 +375,7 @@ func mine_blast(at: Vector3, delay: float) -> void: blasts.push_back({"at": Vect
 
 func _blast(c: Vector3) -> void:
 	if fx: fx.explode(c, false)
-	Snd.play("boom", 0.6, c); en.noise(c, 30.0)
+	Snd.play("boom_small", 1.0, c); en.noise(c, 30.0)
 	var d := Vector3(c.x - player.pos.x, c.y - (player.pos.y + 0.9), c.z - player.pos.z).length()
 	player.shake = maxf(player.shake, clampf(0.6 - d * 0.05, 0.0, 0.6))
 	if d < 3.5 and Phys.line_of_sight(c, Vector3(player.pos.x, player.pos.y + 1.0, player.pos.z)): player.hurt(100.0 if d < 2.0 else roundf(100.0 * (1.0 - (d - 2.0) / 1.5)), c, "body")
@@ -396,7 +396,7 @@ func _bee_drones(e: Enemies.Foe) -> int:
 		mn.from_bee = true; mn.alert = true; mn.awake = true; mn.lod = 0.0; mn.vel = Vector3(cos(a) * 4.0, 0, sin(a) * 4.0)
 	game.goal += n
 	if fx: fx.puff(Vector3(e.pos.x, e.pos.y - 0.5, e.pos.z), 6, 0.7, 0.6)
-	Snd.play("zap", 1.0, e.pos); game.say_feed("황금꿀벌드론이 드론 %d대를 불러냈습니다" % n)
+	Snd.play("spawn", 1.0, e.pos); game.say_feed("황금꿀벌드론이 드론 %d대를 불러냈습니다" % n)
 	return n
 
 func _bee_eye(e: Enemies.Foe, c: Color) -> void:   # three.js's emissive on the bee's eyes (linear)
@@ -458,7 +458,7 @@ func _bee(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float) 
 		k.skillT = rnd(2.6, 3.4) if e.rage else rnd(4, 5.5); var last: String = k.get("last", "")
 		var want := "dash" if (last == "call" or not e.los) else ("call" if last == "dash" else ("call" if randf() < 0.5 else "dash"))
 		if want == "call" and _bee_drones(e) > 0: k.last = "call"
-		elif e.los and dist > 4.0: k.last = "dash"; k.dash = {"mode": "wind", "t": 0.0, "at": Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z), "hit": false, "v": Vector3.ZERO}; Snd.play("rage", 0.6, e.pos)
+		elif e.los and dist > 4.0: k.last = "dash"; k.dash = {"mode": "wind", "t": 0.0, "at": Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z), "hit": false, "v": Vector3.ZERO}; Snd.play("charge", 1.0, e.pos); Snd.play("rage", 0.6, e.pos)
 
 # ---------------- the boss drone ----------------
 func _eye(e: Enemies.Foe) -> Vector3:
@@ -533,7 +533,7 @@ func _fire_laser(e: Enemies.Foe) -> void:
 	var k := e.k; var from := _eye(e); var dir: Vector3 = (k.aim - from).normalized()
 	var hit := Phys.raycast_static(from, dir, 160.0); var L := Phys.rh_t if hit else 160.0; var end := from + dir * L
 	if hit and Phys.rh_box != null and Phys.rh_box.kind == "wood" and Phys.rh_box.ref is Dictionary: world.damage_crate(Phys.rh_box.ref, 999.0, end)
-	_make_fx(); beam_t = 0.4; beam.visible = true; beam_core.visible = true; _lay(beam, from, end, 0.28); _lay(beam_core, from, end, 0.09); Snd.play("boom", 0.5, from)
+	_make_fx(); beam_t = 0.4; beam.visible = true; beam_core.visible = true; _lay(beam, from, end, 0.28); _lay(beam_core, from, end, 0.09); Snd.play("beam", 1.0, from)
 	if fx: fx.sparks(end, 14, [1.0, 0.3, 0.2], 4.0)
 	# touching the beam anywhere along its length is the end
 	var a := Vector3(player.pos.x, player.pos.y + 0.2, player.pos.z); var b := Vector3(player.pos.x, player.pos.y + Player.HEIGHT, player.pos.z)
@@ -544,6 +544,7 @@ func _launch(e: Enemies.Foe) -> void:
 	var from := Vector3(e.pos.x + cy * sx * e.R * 0.95, e.pos.y + e.R * 0.2, e.pos.z - sy * sx * e.R * 0.95)
 	var dir := Vector3(cy * sx * 0.7 + sy * 0.5 + rnd(-0.4, 0.4), 0.5 + rnd(0, 0.6), -sy * sx * 0.7 + cy * 0.5 + rnd(-0.4, 0.4))
 	rocket(from, dir, 100.0, 13.0 if k.phase == 2 else 15.0)
+	if int(k.salvo) % 6 == 0: Snd.play("rocket_pod", 1.0, e.pos)   # (every sixth leaving its pod, as the browser game's bossLaunch)
 
 func _boss(e: Enemies.Foe, dt: float, dist: float, face_yaw: float) -> void:
 	if not e.k.has("phase"): e.k.merge({"phase": 0, "mode": "idle", "t": 0.0, "cd": 2.5, "last": "", "goalT": 0.0, "v": Vector3.ZERO, "aim": Vector3.ZERO, "salvo": 0, "salvoT": 0.0, "gapT": 0.0})
@@ -585,7 +586,7 @@ func _boss(e: Enemies.Foe, dt: float, dist: float, face_yaw: float) -> void:
 		k.salvoT -= dt
 		while k.salvo > 0 and k.salvoT <= 0.0: k.salvo -= 1; k.salvoT += maxf(k.gapT, 0.0001); _launch(e)
 	if k.mode == "warn":   # the eye is red and it keeps moving; in three seconds the red line comes out, with the siren
-		if k.t >= LASER_WARN: k.mode = "charge"; k.t = 0.0; k.aim = Vector3(player.pos.x, player.pos.y + 1.1, player.pos.z); Snd.play("siren")
+		if k.t >= LASER_WARN: k.mode = "charge"; k.t = 0.0; k.aim = Vector3(player.pos.x, player.pos.y + 1.1, player.pos.z); Snd.play("laser_siren%d" % (int(k.phase) + 1))   # the laser-lock wail, its phase's charge + 0.25 s long (siren2)
 		return
 	if k.mode == "charge":
 		# the aim drifts after you and holds still for the last quarter second
@@ -607,7 +608,7 @@ func _boss(e: Enemies.Foe, dt: float, dist: float, face_yaw: float) -> void:
 		var opts: Array = ["laser", "rockets", "mines"].filter(func(s): return s != k.last and (s == "mines" or e.los))
 		var s: String = opts[randi() % opts.size()] if not opts.is_empty() else "mines"; k.last = s
 		if s == "laser": k.mode = "warn"; k.t = 0.0; eye_tint(e, true)   # red eye first: 3 s, then the aim
-		elif s == "rockets": k.salvo = P.rockets; k.gapT = P.win / P.rockets if P.rockets > 1 else 0.0; k.salvoT = 0.0; Snd.play("shot_rocket", 1.0, e.pos)
+		elif s == "rockets": k.salvo = P.rockets; k.gapT = P.win / P.rockets if P.rockets > 1 else 0.0; k.salvoT = 0.0; Snd.play("rocket_pod", 1.0, e.pos)
 		else: _drop_mines(e, P.mines)
 		k.cd = rnd(P.gap[0], P.gap[1]) + (P.charge + LASER_WARN if s == "laser" else 0.0)
 
@@ -619,7 +620,7 @@ func rocket(from: Vector3, dir: Vector3, dmg: float, speed: float) -> void:
 
 func _rocket_blast(c: Vector3, dmg: float, loud: bool) -> void:
 	if fx: fx.explode(c, false)
-	if loud: Snd.play("boom", 0.6, c)
+	if loud: Snd.play("boom_small", 1.0, c)
 	var d := Vector3(c.x - player.pos.x, c.y - (player.pos.y + 0.9), c.z - player.pos.z).length()
 	player.shake = maxf(player.shake, clampf(0.4 - d * 0.03, 0.0, 0.4))
 	if d < 3.0 and Phys.line_of_sight(c, Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z)): player.hurt(dmg if d < 1.2 else dmg * (1.0 - (d - 1.2) / 1.8 * 0.7), c, "body")
@@ -637,7 +638,7 @@ func tick(dt: float) -> void:
 			sh.hatch_q.remove_at(i)
 			if game.boss == null or not game.boss.alive: continue
 			var mn := en.spawn("droneA", q.x + rnd(-0.4, 0.4), q.z + rnd(-0.4, 0.4), {"y": 0.3, "yaw": rnd(0, TAU)})
-			mn.extra = true; mn.alert = true; mn.awake = true; mn.lod = 0.0; Snd.play("zap", 1.0, mn.pos); _puff(Vector3(q.x, float(q.get("y", 0.0)) + 0.4, q.z), 2, 0.4, 0.5)
+			mn.extra = true; mn.alert = true; mn.awake = true; mn.lod = 0.0; Snd.play("zap_drone", 1.0, mn.pos); _puff(Vector3(q.x, float(q.get("y", 0.0)) + 0.4, q.z), 2, 0.4, 0.5)
 	for i in range(blasts.size() - 1, -1, -1):
 		var b: Dictionary = blasts[i]; b.t -= dt
 		if b.t <= 0.0: blasts.remove_at(i); _blast(b.at)

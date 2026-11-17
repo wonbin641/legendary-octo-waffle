@@ -141,7 +141,7 @@ func _melee_strike() -> void:
 	if best.bomb and e.alive: enemies.blow_vest(e, best.d); killed = true
 	else: killed = enemies.damage(e, Weapons.MELEE_DMG * (2.0 if best.weak else float(best.mult)), hit, best.d, best.weak)
 	if e.alive and not e.boss: e.vel.x += best.d.x * 4.0; e.vel.z += best.d.z * 4.0   # and a shove
-	_say(hitmark, [killed, best.weak]); Snd.play("melee", 1.0, hit); player.shake = maxf(player.shake, 0.12); Snd.buzz(30)
+	_say(hitmark, [killed, best.weak]); Snd.play("melee_metal" if e.robot else "melee", 1.0, hit); player.shake = maxf(player.shake, 0.12); Snd.buzz(30)
 
 # ---------- the machine gun's heat: every shot adds 1/240; empty a full box in one go and it overheats ----------
 func _heat_shot(W: Dictionary, s: Dictionary) -> void:

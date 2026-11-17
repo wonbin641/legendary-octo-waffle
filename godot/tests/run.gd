@@ -1357,6 +1357,37 @@ func _ready() -> void:
 		and (q4_ball.material_override as ShaderMaterial).get_shader_parameter("map") == BotLook.shell_tex() and q4_red.is_equal_approx(Vector3(1.0, 26 / 255.0, 16 / 255.0)) and q4_rg.is_equal_approx(Color(World.lin("ff3a2a"), 0.34)),
 		[q4_zmax, q4_red])
 	check("the shiny robots take no moon shadow either (their own shader writes the mark)", BotLook.SHINE.contains("stencil_mode write, compare_always, 2;") and Gfx.unlit(Color.WHITE).stencil_reference == MoonShadow.UNSHADOWED)
+	# ---------------- sounds: the browser game's own, made by its own code, mixed as it mixes them ----------------
+	var sd_rifle := Snd.takes("shot_rifle"); var sd_coin := Snd.takes("coin"); var sd_toy := Snd.takes("toy_boom")
+	var sd_p0 := Snd.pan_as_web(0.0); var sd_p8 := Snd.pan_as_web(0.8)
+	var sd_l := (1.0 - sd_p8.x) * sd_p8.y; var sd_r := (1.0 + sd_p8.x) * sd_p8.y   # (what Godot's panner then gives each ear)
+	var sd_lis := Snd.listener; var sd_yaw := Snd.listener_yaw
+	Snd.listener = Vector3.ZERO; Snd.listener_yaw = 0.0; var sd_a := Snd.place(Vector3(5, 0, 0)); var sd_b := Snd.place(Vector3(-20, 0, 0))
+	Snd.listener_yaw = PI / 2.0; var sd_c := Snd.place(Vector3(0, 0, -4)); Snd.listener = sd_lis; Snd.listener_yaw = sd_yaw
+	var sd_comp := AudioServer.get_bus_effect(AudioServer.get_bus_index("Mix"), 0) as AudioEffectCompressor
+	check("sounds: the browser game's own takes (four of one it varies each time, one of one it never does), panned as its StereoPanner (equal power) and quietened with distance as its spatial(), through its master compressor as measured",
+		sd_rifle.size() == 4 and sd_coin.size() == 1 and sd_toy.size() == 1 and (sd_rifle[0] as AudioStreamWAV).mix_rate == 44100
+		and absf(sd_p0.x) < 1e-6 and absf(sd_p0.y - sqrt(0.5)) < 1e-5 and absf(sd_l - cos(0.45 * PI)) < 1e-5 and absf(sd_r - sin(0.45 * PI)) < 1e-5
+		and is_equal_approx(sd_a.x, 1.0) and absf(sd_a.y - 5.0 / 7.0) < 1e-5 and absf(sd_b.x - 1.6 / 2.8) < 1e-5 and is_equal_approx(sd_b.y, -0.8) and absf(sd_c.y - 4.0 / 6.0) < 1e-5
+		and sd_comp != null and is_equal_approx(sd_comp.threshold, -5.6) and is_equal_approx(sd_comp.ratio, 1.3) and is_equal_approx(sd_comp.gain, 0.74)
+		and AudioServer.get_bus_send(AudioServer.get_bus_index("Voice0")) == "Mix" and AudioServer.get_bus_effect(AudioServer.get_bus_index("Voice0"), 0) is AudioEffectPanner,
+		[sd_rifle.size(), sd_coin.size(), sd_p8, sd_a, sd_b, sd_c])
+	var sd_vol := Snd.volume; Snd.volume = 0.7
+	Snd.jet(0.8); var sd_j1 := Snd._jet; Snd.jet(0.45, 1.0); var sd_j2 := Snd._jet; Snd.jet(0.85, 0.08); var sd_j3 := Snd._jet
+	var sd_jl: AudioStreamWAV = (Snd._loops["jet_hi"] as AudioStreamPlayer).stream; Snd.jet(0.0); var sd_j4 := Snd._jet; Snd.volume = sd_vol
+	var sd_rot: AudioStreamWAV = load("res://sounds/rotor.wav")
+	check("sounds: the jetpack as the browser game's jet (0.8 lit, 0.45 hovering, 0.85 climbing, eased a tenth of a second), from its two takes, each looping whole (3 s; the rotor 6 s)",
+		sd_j1.is_equal_approx(Vector2(0.0, 0.8 / 0.85)) and sd_j2.is_equal_approx(Vector2(1.0, 0.0)) and absf(sd_j3.y - (1.0 - exp(-1.0))) < 1e-4 and sd_j4 == Vector2.ZERO
+		and Snd.takes("jet_lo").size() == 1 and Snd.takes("jet_hi").size() == 1 and sd_jl.loop_mode == AudioStreamWAV.LOOP_FORWARD and sd_jl.loop_end == 3 * 44100
+		and roundi(sd_rot.get_length() * sd_rot.mix_rate) == 6 * 44100 and not (Snd._loops["jet_hi"] as AudioStreamPlayer).playing, [sd_j1, sd_j2, sd_j3, sd_jl.loop_end])
+	Snd.keep_log = true; Snd.played.clear(); en.damage(q4_t.patrol, 1.0, q4_t.patrol.pos, Vector3(0, 0, 1), false); var sd_metal := Snd.played.has("metal")
+	var sd_was := [q4_bs.k.duplicate(), q4_bs.pos, q4_bs.yaw, (q4_bs.g as Node3D).rotation, q4_bs.alert]
+	if not q4_bs.k.has("phase"): en.robots._boss(q4_bs, 0.0, 999.0, 0.0)   # (its fight's state, as its first update makes it)
+	Snd.played.clear(); q4_bs.k.mode = "warn"; q4_bs.k.t = Robots.LASER_WARN; q4_bs.k.phase = 0; en.robots._boss(q4_bs, 0.001, 20.0, 0.0); var sd_lock := Snd.played.duplicate(); Snd.keep_log = false
+	q4_bs.k = sd_was[0]; q4_bs.pos = sd_was[1]; q4_bs.yaw = sd_was[2]; (q4_bs.g as Node3D).rotation = sd_was[3]; q4_bs.alert = sd_was[4]; en.robots.aim_off()
+	check("sounds where the browser game plays them: a robot rings of metal when hit; the boss's laser lock wails for its phase (siren2, 3.25 s); each enemy gun its own far voice",
+		sd_metal and sd_lock.has("laser_siren1") and not sd_lock.has("siren") and Enemies.FAR_SHOT == {"deagle": "far_deagle", "smg": "far_smg", "rifle": "far_rifle", "lmg": "far_rifle", "shotgun": "far_shotgun", "sniper": "far_sniper"},
+		[sd_metal, sd_lock])
 	# ---------------- D10: far away one baked mesh (the browser game's bakeFar and setFar); the moon's shadow as there ----------------
 	check("D10: the ship's crew is drawn baked far away, all but the boss drone (as there), the bake drawn with the plating's material",
 		q4_bs.far == null and q4_bs.no_far and q4_t.patrol.far != null and q4_t.patrol.far.material_override == en.robots._kit() and q4_t.cctv.far != null and q4_t.gdrone.far != null and q4_t.mine.far != null)

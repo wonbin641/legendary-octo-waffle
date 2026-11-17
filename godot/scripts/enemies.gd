@@ -31,6 +31,7 @@ const BURST := {"pistol": [1, 3, 0.32, 9.0, 1.1, 2.3], "deagle": [1, 1, 0.3, 45.
 const JACKETS := ["2b3440", "3d4a33", "4a3b30", "2e2e34", "5a5248", "283a4a", "47302e"]
 const SKIN := ["c99a7a", "a8775a", "e0b895", "7d5a44"]
 const KEEP_PAD := 0.14
+const FAR_SHOT := {"deagle": "far_deagle", "smg": "far_smg", "rifle": "far_rifle", "lmg": "far_rifle", "shotgun": "far_shotgun", "sniper": "far_sniper"}
 const ACT_R := {1: 55.0, 6: 55.0, 5: 55.0, 2: 45.0, 3: 95.0, 8: 95.0, 7: 95.0, 4: 55.0}
 const VIS_R := {1: 85.0, 6: 85.0, 5: 85.0, 2: 72.0, 3: 165.0, 8: 165.0, 7: 150.0, 4: 90.0}
 
@@ -294,6 +295,7 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool, quiet :=
 		if e.hp <= 0.0: kill(e, false, dir); return true
 		return false
 	e.flinch = 1.0
+	if e.robot: Snd.play("metal", 1.0, _at)   # (as the browser game's damage: a robot rings of metal when it is hit)
 	if not e.robot and not e.toy: e.flash_t = 0.08   # (a beast shows it only while you ride it, as there)
 	if fx:
 		fx.sparks(_at, 8 if weak else 4, [0.6, 0.8, 0.45] if e.type == "zombie" else ([1.0, 0.85, 0.45] if e.robot else [0.9, 0.8, 0.7]), 4.0 if e.robot else 2.5)
@@ -419,11 +421,11 @@ func kill(e: Foe, weak: bool, dir) -> void:
 	if e.robot:
 		e.vanish = true
 		if fx: var cc := Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.5), e.pos.z); fx.explode(cc, e.boss, [0.6, 0.85, 1.0]); fx.chunks(cc, 18 if e.boss else 8, 0.16 * e.scale, "metal")
-		Snd.play("boom", 1.0 if e.boss else 0.5, e.pos)
+		Snd.play("boom" if e.boss else "boom_small", 1.0, Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.5), e.pos.z))
 	if dir != null: e.fall_dir = 1.0 if sin(e.yaw) * dir.x + cos(e.yaw) * dir.z > 0.0 else -1.0
 	list.erase(e); dying.push_back(e)
 	Snd.play("thud", 1.0, e.pos)
-	if e.boss: Snd.play("boom", 0.6, e.pos)
+	if e.boss: Snd.play("boom_small", 1.0, e.pos)
 	if on_kill.is_valid(): on_kill.call(e, weak)
 
 ## gone without a kill: the boss's leftover mines and drones when it dies, or whoever was already dead at the save point
@@ -649,7 +651,7 @@ func _fight(e: Foe, dt: float, dist: float) -> bool:
 				e.aim_t -= dt; var mz := muzzle_of(e); var aim := Vector3(player.pos.x + player.vel.x * dist / 400.0, player.pos.y + 1.58, player.pos.z + player.vel.z * dist / 400.0)   # snipers go for the head
 				var L := mz.distance_to(aim)
 				if L > 0.5: e.laser.look_at_from_position((mz + aim) / 2, aim, Vector3.UP); e.laser.scale = Vector3(1, 1, L); e.laser.visible = true
-				if e.aim_t <= 0.0: e.laser.visible = false; proj.bullet(mz, aim, 160.0, 140.0 * m, 0.05 + player.speed_xz * 0.12); Snd.play("shot_far", 1.2, mz); e.fire_t = randf_range(2.4, 3.4)
+				if e.aim_t <= 0.0: e.laser.visible = false; proj.bullet(mz, aim, 160.0, 140.0 * m, 0.05 + player.speed_xz * 0.12); Snd.play("far_sniper", 1.2, mz); e.fire_t = randf_range(2.4, 3.4)
 				return true
 			if e.fire_t <= 0.0: e.aim_t = 1.3
 			return false
@@ -672,7 +674,7 @@ func _fight(e: Foe, dt: float, dist: float) -> bool:
 			if kit == "shotgun":
 				for k in 7: proj.bullet(mz, aim, 70.0, G[3] * m, 0.9 + dist * 0.05)
 			else: proj.bullet(mz, aim, 95.0 if kit == "deagle" else 80.0, G[3] * m, (0.2 if kit == "deagle" else (0.55 if kit == "smg" else 0.35)) + dist * 0.028 + player.speed_xz * 0.08 - (0.15 if e.boss else 0.0))
-			Snd.play("shot_far", 1.0, mz)
+			Snd.play(FAR_SHOT.get(kit, "shot_far"), 1.0, mz)   # each gun its own voice at a distance (the browser game's farShot)
 		return true
 	if e.fire_t <= 0.0: e.burst = 4 if (e.boss and kit == "pistol") else randi_range(G[0], G[1]); e.burst_t = 0.0; e.fire_t = randf_range(G[4], G[5]) * (0.7 if e.boss else 1.0)
 	return false

@@ -66,7 +66,7 @@ func _ready() -> void:
 	guns = Guns.new(); game = Game.new()
 	guns.player = player; guns.cam = cam; guns.world = world; guns.enemies = enemies; guns.fx = fx; guns.proj = proj
 	guns.hint = hint; guns.banner = banner
-	guns.hitmark = func(killed: bool, head: bool) -> void: hudd.hitmark(killed, head); Snd.play("headshot" if head else "hit")
+	guns.hitmark = func(killed: bool, head: bool) -> void: hudd.hitmark(killed, head); Snd.play(("headshot_kill" if killed else "headshot") if head else "hit")
 	proj.player = player; proj.world = world; proj.enemies = enemies; proj.fx = fx; proj.hitmark = guns.hitmark
 	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player; loot.fx = fx; enemies.fx = fx; enemies.hitmark = guns.hitmark; enemies.say = func(t: String) -> void: feed(t, 0)
 	game.world = world; game.player = player; game.enemies = enemies; game.guns = guns; game.proj = proj; game.loot = loot; game.fx = fx
@@ -559,7 +559,7 @@ func _cut_step(dt: float) -> void:
 	time += dt; cut.update(dt); fx.update(dt); world.update_world(dt, time, cam.global_position.x, cam.global_position.z)
 	if world.lab != null: world.lab.anim(dt, time)
 	if world.ship != null: world.ship.anim_door(dt)
-	Snd.listener = cam.global_position
+	Snd.listener = cam.global_position; Snd.listener_yaw = cam.rotation.y
 
 var hold := false
 func _process(delta: float) -> void:
@@ -578,7 +578,7 @@ func _process(delta: float) -> void:
 					else: pause_game("마우스 잠금을 다시 켜지 못했습니다. 잠시 후 계속하기를 눌러 주세요.")
 			elif ever_locked and lock_wait < 0.0: pause_game()  # Esc let the pointer go
 		if state == "playing" and not hold:
-			tick(dt); _pose_gun(dt); Snd.listener = cam.global_position
+			tick(dt); _pose_gun(dt); Snd.listener = cam.global_position; Snd.listener_yaw = cam.rotation.y
 			hudd.update(dt); hud.queue_redraw()
 			if touch_ui.visible: touch_ui.queue_redraw()   # the pills come and go with what is happening
 	elif state == "cutscene":
@@ -674,6 +674,11 @@ func command(line: String) -> Dictionary:
 			enemies.toys._build_wall(bl[0], Vector2(0, 1))
 		"takekey": world.ship.take_key()
 		"hurt": player.invuln = 0.0; player.hurt(float(a[1]), Vector3.ZERO)
+		"loop": Snd.loop(a[1], float(a[2]))   # a sound that keeps going (rotor, jet_lo, jet_hi) at this level, stopped at 0
+		"sound":   # a sound by name, without a place, or this far to the right (x) and ahead (-z) of the camera: "sound boom 6 0"
+			var at = cam.global_transform * Vector3(float(a[2]), 0.0, float(a[3])) if a.size() > 3 else null
+			Snd.play(a[1], 1.0, at)
+			return {"web_mix": Snd._web != null, "playback": ProjectSettings.get_setting_with_override("audio/general/default_playback_type"), "pan": Snd.place(at).y if at != null else 0.0}
 		"hold": hold = a[1] == "1"   # the clock stands still between bridge steps (for pictures of things that last a split second)
 		"boom": # pictures of the effects: a blast (or dust, sparks, a bullet hole) this many metres in front of the camera
 			var at := cam.global_position - cam.global_basis.z * (float(a[2]) if a.size() > 2 else 8.0)
