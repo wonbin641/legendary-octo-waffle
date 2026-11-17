@@ -62,7 +62,7 @@ func shell_parts(R: float) -> Array: return [_part(Vector3.ZERO, R), _part(Vecto
 
 # ---- the browser game's buildShipBot: the same parts, colours and materials ----
 func _kit() -> StandardMaterial3D:   # the plating: vertex colours on a semi-metal (three.js roughness 0.42, metalness 0.55)
-	if not _mats.has("kit"): var m := StandardMaterial3D.new(); m.vertex_color_use_as_albedo = true; m.roughness = 0.42; m.metallic = 0.55; _mats.kit = m
+	if not _mats.has("kit"): var m := StandardMaterial3D.new(); m.vertex_color_use_as_albedo = true; m.vertex_color_is_srgb = true; m.roughness = 0.42; m.metallic = 0.55; _mats.kit = m
 	return _mats.kit
 func _basic(hex: String) -> StandardMaterial3D:   # a MeshBasicMaterial: lit by nothing, tone mapped
 	if not _mats.has("b" + hex): _mats["b" + hex] = Gfx.unlit(World.lin(hex))

@@ -105,7 +105,7 @@ var _bar_fill: StandardMaterial3D
 var _bar_mesh: QuadMesh
 
 func _ready() -> void:
-	_mat = StandardMaterial3D.new(); _mat.vertex_color_use_as_albedo = true; _mat.roughness = 0.85
+	_mat = StandardMaterial3D.new(); _mat.vertex_color_use_as_albedo = true; _mat.vertex_color_is_srgb = true; _mat.roughness = 0.85
 	_bar_bg = Gfx.unlit(Color(0.05, 0.06, 0.09), false); _bar_bg.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; _bar_bg.billboard_keep_scale = true
 	_bar_fill = Gfx.unlit(Color("ff5260"), false); _bar_fill.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; _bar_fill.billboard_keep_scale = true; _bar_fill.no_depth_test = false
 	_bar_green = _bar_fill.duplicate(); _bar_green.albedo_color = Color("9be88f"); _bar_amber = _bar_fill.duplicate(); _bar_amber.albedo_color = Color("f2a33a")
@@ -569,7 +569,7 @@ func _helmet() -> Node3D:
 		[0.28, 0.13, 0.03, 0, 0.825, 0.18, "3a4d60"], [0.26, 0.018, 0.034, 0, 0.885, 0.183, "c2d2e2"], [0.2, 0.012, 0.034, -0.02, 0.79, 0.183, "7f94a8"], [0.3, 0.03, 0.05, 0, 0.9, 0.17, blk],
 		[0.02, 0.06, 0.06, -0.173, 0.83, 0.07, "3a3d42"], [0.02, 0.06, 0.06, 0.173, 0.83, 0.07, "3a3d42"], [0.09, 0.03, 0.07, 0, 1.06, 0.07, dk],
 		[0.3, 0.05, 0.3, 0, 0.655, 0, "121316"]])
-	if _helmet_mat == null: _helmet_mat = StandardMaterial3D.new(); _helmet_mat.vertex_color_use_as_albedo = true; _helmet_mat.roughness = 0.18; _helmet_mat.metallic = 0.35
+	if _helmet_mat == null: _helmet_mat = StandardMaterial3D.new(); _helmet_mat.vertex_color_use_as_albedo = true; _helmet_mat.vertex_color_is_srgb = true; _helmet_mat.roughness = 0.18; _helmet_mat.metallic = 0.35
 	m.material_override = _helmet_mat; n.add_child(m)
 	return n
 var _helmet_mat: StandardMaterial3D

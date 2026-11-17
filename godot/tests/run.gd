@@ -1505,7 +1505,11 @@ func _ready() -> void:
 		if ph_href: ph_hits[1] += 1
 		if ph_href != ph_hnew or _rr_t != Phys.rh_t or (ph_href and (_rr_n != Phys.rh_n or _rr_box != Phys.rh_box)): ph_bad[3] += 1
 	check("bumping into boxes, the ground and ceiling under and over you, and rays: the same answers as the browser game's (3000 of each)", ph_bad == [0, 0, 0, 0] and ph_hits[0] > 500 and ph_hits[1] > 1000, [ph_bad, ph_hits])
-	w._gv = {"acc": 0.0, "n": 0, "good": 0, "t": 0.0, "up_at": -1e9, "hold": 0.0}; w.gfx_mode = "auto"; w.gfx_apply(0); var un_seen := []
+	w._gv = {"acc": 0.0, "n": 0, "good": 0, "t": 0.0, "up_at": -1e9, "hold": 0.0}; w.gfx_mode = "auto"; w.gfx_apply(0)
+	for un_i in 3 * 81: w.govern(1.0 / 40.0)   # the computer's game: never below level 0, and 자동 starts at the top
+	var un_desk := [w.gfx_level, w.gfx_under]; w.gfx_init(-1); un_desk.push_back(w.gfx_level); w.gfx_init(3); un_desk.push_back(w.gfx_level)
+	w.web = true; w.gfx_init(-1); un_desk.push_back(w.gfx_level); w.gfx_init(3); un_desk.push_back(w.gfx_level); w.gfx_set_mode("auto"); un_desk.push_back(w.gfx_level)
+	w._gv = {"acc": 0.0, "n": 0, "good": 0, "t": 0.0, "up_at": -1e9, "hold": 0.0}; w.gfx_apply(0); var un_seen := []
 	for un_k in 3:
 		for un_i in 81: w.govern(1.0 / 40.0)   # two seconds under 50 a second, at level 0
 		un_seen.push_back([w.gfx_level, w.gfx_under])
@@ -1515,9 +1519,9 @@ func _ready() -> void:
 	un_seen.push_back([w.gfx_level, w.gfx_under])
 	w.gfx_apply(0); w.gfx_set_under(2); w.gfx_set_mode("high"); var un_high := [w.gfx_level, w.gfx_under]
 	for un_i in 3 * 81: w.govern(1.0 / 20.0)
-	un_high.append_array([w.gfx_level, w.gfx_under]); w.gfx_mode = "auto"; w.gfx_apply(4)
-	check("below level 0 (자동): the picture three quarters, then three fifths of level 0's size while the frame rate still sags; back a step per three good spells before the ladder climbs; never on 최고 화질",
-		un_seen == [[0, 1], [0, 2], [0, 2], [0, 1], [1, 0]] and un_high == [4, 0, 4, 0] and World.UNDER_SHARE == [1.0, 0.75, 0.6], [un_seen, un_high])
+	un_high.append_array([w.gfx_level, w.gfx_under]); w.web = false; w.gfx_mode = "auto"; w.gfx_apply(4)
+	check("the web is the taster: 자동 starts at level 0 there (the computer's game at the top, or where it settled) and only there goes below it: the picture three quarters, then three fifths of level 0's size while the frame rate still sags, back a step per three good spells before the ladder climbs; never on 최고 화질",
+		un_desk == [0, 0, 4, 3, 0, 0, 0] and un_seen == [[0, 1], [0, 2], [0, 2], [0, 1], [1, 0]] and un_high == [4, 0, 4, 0] and World.UNDER_SHARE == [1.0, 0.75, 0.6], [un_desk, un_seen, un_high])
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

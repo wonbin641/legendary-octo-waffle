@@ -41,7 +41,7 @@ static func merge(parts: Array) -> ArrayMesh:
 	return st.commit()
 
 static func _vmat(rough: float, metal := 0.0) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new(); m.vertex_color_use_as_albedo = true; m.roughness = rough; m.metallic = metal; return m
+	var m := StandardMaterial3D.new(); m.vertex_color_use_as_albedo = true; m.vertex_color_is_srgb = true; m.roughness = rough; m.metallic = metal; return m
 
 func _ready() -> void:
 	# a utility helicopter, its door open on one side, built from panels so the cabin reads from inside too

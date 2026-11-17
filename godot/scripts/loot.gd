@@ -22,7 +22,7 @@ func chest(x: float, z: float, y_hint := 0.0) -> void:
 	var body := MeshInstance3D.new(); body.mesh = Gfx.merge_boxes([[1.1, 0.6, 0.75, 0, 0.3, 0, "6b4423"], [1.14, 0.62, 0.08, 0, 0.3, 0.2, "d9a531"], [1.14, 0.62, 0.08, 0, 0.3, -0.2, "d9a531"]]); g.add_child(body)
 	var lid := Node3D.new(); lid.position = Vector3(0, 0.6, -0.375); g.add_child(lid)
 	var lm := MeshInstance3D.new(); lm.mesh = Gfx.merge_boxes([[1.1, 0.28, 0.75, 0, 0.14, 0.375, "6b4423"], [1.14, 0.3, 0.08, 0, 0.14, 0.575, "d9a531"], [0.16, 0.2, 0.06, 0, 0.02, 0.77, "d9a531"]]); lid.add_child(lm)
-	var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.6; body.material_override = mat; lm.material_override = mat
+	var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.vertex_color_is_srgb = true; mat.roughness = 0.6; body.material_override = mat; lm.material_override = mat
 	var l := OmniLight3D.new(); l.light_color = Color(1, 0.8, 0.4); l.light_energy = 2.0; l.omni_range = 6.0; l.position.y = 1.0; g.add_child(l)
 	var y := Phys.ground_at(x, y_hint + 0.6, z, 0.6)
 	g.position = Vector3(x, y, z); g.rotation.y = randf() * TAU

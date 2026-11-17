@@ -61,7 +61,7 @@ void fragment() {
 ## a shiny material: three.js colour (hex), roughness, metalness, envMapIntensity, an optional map and emissive (linear, scaled)
 static func shine(hex: String, rough: float, metal: float, env_k: float, map: Texture2D = null, emis := Color(0, 0, 0), two_sided := false) -> ShaderMaterial:
 	var key := "two" if two_sided else "one"
-	if not _shaders.has(key): var sh := Shader.new(); sh.code = SHINE % [", cull_disabled" if two_sided else "", Gfx.ALBEDO_GLSL]; _shaders[key] = sh
+	if not _shaders.has(key): var sh := Shader.new(); sh.code = SHINE % [(", cull_disabled" if two_sided else "") + (", shadows_disabled" if Gfx.fplus else ""), Gfx.ALBEDO_GLSL]; _shaders[key] = sh
 	var m := ShaderMaterial.new(); m.shader = _shaders[key]; var c := Color(hex)
 	m.set_shader_parameter("col", Vector3(c.r, c.g, c.b)); m.set_shader_parameter("rough", rough); m.set_shader_parameter("metal", metal); m.set_shader_parameter("env_k", env_k)
 	m.set_shader_parameter("emis", Vector3(emis.r, emis.g, emis.b))

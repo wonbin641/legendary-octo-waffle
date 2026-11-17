@@ -241,8 +241,8 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		steps.push_back({"k": k, "ax": ax, "az": az, "y": -0.375 * k, "w": sw, "land": L > 0.0}); ax -= sw; az -= sw
 	pyr_bx = ax; pyr_bz = az
 	var solid := []; var glow := []
-	var kit_mat := StandardMaterial3D.new(); kit_mat.vertex_color_use_as_albedo = true; kit_mat.roughness = 0.5; kit_mat.metallic = 0.45   # (vertex colours, as AnimalKit merges)
-	var glow_mat := StandardMaterial3D.new(); glow_mat.vertex_color_use_as_albedo = true; glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED   # (MeshBasicMaterial: no light, no shadow)
+	var kit_mat := StandardMaterial3D.new(); kit_mat.vertex_color_use_as_albedo = true; kit_mat.vertex_color_is_srgb = true; kit_mat.roughness = 0.5; kit_mat.metallic = 0.45   # (vertex colours, as AnimalKit merges)
+	var glow_mat := StandardMaterial3D.new(); glow_mat.vertex_color_use_as_albedo = true; glow_mat.vertex_color_is_srgb = true; glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED   # (MeshBasicMaterial: no light, no shadow)
 	var box := func(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, col: String) -> void:
 		Phys.add_collider(x0, y0, z0, x1, y1, z1, "metal"); solid.push_back([x1 - x0, y1 - y0, z1 - z0, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, col])
 	# 1. the floor plan into a half-metre grid: every cell knows the ceiling over it (0 = outside the ship)
@@ -390,7 +390,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		for cz: float in [BR.z0 + 0.4, BR.z1 - 0.4]: box.call(cx - 1.4, GY, cz - 0.3, cx + 1.4, GY + 1.1, cz + 0.3, "2c3240"); screens.push_back([2.4, 0.9, 0.05, cx, GY + 2.1, cz + (0.3 if cz < 0 else -0.3), "3fd0ff"])
 	for cz: float in [-19.0, -11.0, -4.0, 4.0]: box.call(BR.x1 - 0.7, GY, cz - 1.4, BR.x1 - 0.1, GY + 1.1, cz + 1.4, "2c3240"); screens.push_back([0.05, 0.9, 2.4, BR.x1 - 0.4, GY + 2.1, cz, "3fd0ff"])
 	screens.push_back([0.06, 2.6, 9.0, BR.x1 - 0.05, 12.0, -7.5, "3fd0ff"])
-	var scr := MeshInstance3D.new(); scr.name = "Screens"; scr.mesh = Gfx.merge_boxes(screens); screens_mat = StandardMaterial3D.new(); screens_mat.vertex_color_use_as_albedo = true
+	var scr := MeshInstance3D.new(); scr.name = "Screens"; scr.mesh = Gfx.merge_boxes(screens); screens_mat = StandardMaterial3D.new(); screens_mat.vertex_color_use_as_albedo = true; screens_mat.vertex_color_is_srgb = true
 	screens_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; scr.material_override = screens_mat; G.add_child(scr); MoonShadow.no_receive(scr)
 	var bx_ := -120.0
 	while bx_ <= -95.0:

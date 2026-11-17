@@ -71,11 +71,13 @@ static func no_receive(n: Node) -> void:
 			var b := m as BaseMaterial3D
 			b.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM; b.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
 			b.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; b.stencil_reference = UNSHADOWED
+			if Gfx.fplus: b.disable_receive_shadows = true   # (Forward+ draws the moon's own shadow: the same rule, said to it)
 
 ## the browser game's grass tufts take no shadow, and its occlusion pass marks their blades (src/03b_gfx.js tag): both from this mark
 static func grass(m: BaseMaterial3D) -> void:
 	m.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM; m.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
 	m.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; m.stencil_reference = GRASS
+	if Gfx.fplus: m.disable_receive_shadows = true
 
 static func caster(n: Node, on := true) -> void:
 	if n is VisualInstance3D: (n as VisualInstance3D).set_layer_mask_value(CASTER, on)
@@ -115,7 +117,7 @@ vec3 unshow(vec3 s) {
 }
 vec3 view_at(vec2 uv, mat4 ipm) {
 	float d = texture(depth_tex, uv).r;
-	vec4 v = ipm * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+	vec4 v = ipm * vec4(uv * 2.0 - 1.0, ndc_z(d), 1.0);
 	return v.xyz / v.w;
 }
 float stored(vec2 uv) { return dot(texture(shadow_map, vec2(uv.x, mix(uv.y, 1.0 - uv.y, flip))).rgb, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0)); }

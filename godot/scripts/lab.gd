@@ -288,7 +288,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 			sup.material_override = Gfx.std(World.lin(["c9b48a", "8fa3b8", "e8e8e0", "6f8a6a"][randi() % 4]), 0.8)
 			sup.position = Vector3(q[0] + randf_range(-2.6, 2.6), 0.34 + floorf(k / 3.0) * 0.9 + 0.2, q[1] + randf_range(-0.2, 0.2)); G.add_child(sup)
 		Phys.add_collider(q[0] - 3, 0, q[1] - 0.6, q[0] + 3, 2.6, q[1] + 0.6, "metal")
-	var wm := MeshInstance3D.new(); wm.mesh = Gfx.merge_boxes(walls); var wmat := StandardMaterial3D.new(); wmat.vertex_color_use_as_albedo = true; wmat.roughness = 0.7; wm.material_override = wmat; G.add_child(wm)
+	var wm := MeshInstance3D.new(); wm.mesh = Gfx.merge_boxes(walls); var wmat := StandardMaterial3D.new(); wmat.vertex_color_use_as_albedo = true; wmat.vertex_color_is_srgb = true; wmat.roughness = 0.7; wm.material_override = wmat; G.add_child(wm)
 	var frame := MeshInstance3D.new(); frame.mesh = Gfx.merge_boxes([[10, 0.8, 0.8, 0, 7.4, 0], [0.8, 7.4, 0.8, -4.6, 3.7, 0], [0.8, 7.4, 0.8, 4.6, 3.7, 0]]); frame.material_override = Gfx.std(World.lin("30363c"), 0.5, 0.6)
 	frame.position = Vector3(0, 0, E - 0.3); G.add_child(frame)
 	var dm := _tex_box(Vector3(8.4, 7.0, 0.4), door_tex(), 0.55, 1, 1, 0, 0, 0.5); dm.position = Vector3(0, 3.5, E - 0.15); G.add_child(dm); door = dm
@@ -330,7 +330,7 @@ func _panel(G: Node3D, c: Dictionary, side: String) -> Dictionary:
 var _mk_body: Node3D; var _mk_head: Node3D; var _leg_l: Node3D; var _leg_r: Node3D; var _mk_base_y := 0.0; var _mode_t := 3.0
 func _build_monkey(G: Node3D, at: Vector3) -> void:
 	var fur := "4a3122"; var skin := "c9a183"; var coat := "eef0ec"
-	var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.8
+	var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.vertex_color_is_srgb = true; mat.roughness = 0.8
 	var mesh := func(parent: Node3D, list: Array, m: Material = null) -> void:
 		var x := MeshInstance3D.new(); x.mesh = Gfx.merge_boxes(list); x.material_override = m if m else mat; parent.add_child(x)
 	monkey = Node3D.new(); monkey.position = at; monkey.scale = Vector3.ONE * 1.6; G.add_child(monkey); _mk_base_y = at.y

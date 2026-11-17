@@ -408,6 +408,10 @@ static func points(list: PackedVector3Array, color: Color, size: float, alpha :=
 # and World draws the fog over them from the depth buffer instead (the fog layer); see-through things keep Godot's fog,
 # set to the colour that tone maps to the browser game's.
 const TONE_WHITE := 14.26
+## the computer's game draws with Forward+ (Vulkan or D3D12) and the web's with the compatibility renderer, which the
+## colour work above was fitted to. Forward+ blends everything in linear light and tone maps once at the end: what this
+## file and the layers do differently there hangs on this (set by main at start from the renderer in use; false in tests)
+static var fplus := false
 const PRIO_SHADOW := -128    # the moon's shadow layer (MoonShadow), first in the see-through pass, straight after the solid world
 const PRIO_FOG := -127       # then the fog layer
 const PRIO_AO := 126         # the computer's ambient occlusion (AoView): multiplied over everything drawn, see-through things too, as the
@@ -454,6 +458,7 @@ static func scene_for(F: Vector3, e: float) -> Vector3:
 
 ## the ALBEDO a compatibility-renderer shader turns into the linear colour L: it decodes sRGB with a cubic, not the true curve
 static func albedo_of(L: Vector3) -> Vector3:
+	if fplus: return L   # (Forward+ takes ALBEDO as it is)
 	return Vector3(_poly_inv(L.x), _poly_inv(L.y), _poly_inv(L.z))
 static func _poly_inv(v: float) -> float:
 	var s := pow(maxf(v, 0.0), 1.0 / 2.2)
@@ -510,12 +515,24 @@ static func untoned(mul: Color, map: Texture2D = null, exposure := 1.0, opacity 
 
 const ALBEDO_GLSL := """
 vec3 albedo_of(vec3 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 	vec3 s = pow(max(c, vec3(0.0)), vec3(0.4545));
 	for (int i = 0; i < 4; i++) {
 		vec3 f = s * (s * (s * 0.305306011 + 0.682171111) + 0.012522878) - c;
 		s -= f / (s * (s * 0.915918033 + 1.364342222) + 0.012522878);
 	}
 	return max(s, vec3(0.0));
+#else
+	return max(c, vec3(0.0));   // (Forward+ takes ALBEDO as it is)
+#endif
+}
+// a depth buffer value as the z of normalized device coordinates: -1..1 in OpenGL, 0..1 in Vulkan and D3D12
+float ndc_z(float d) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	return d * 2.0 - 1.0;
+#else
+	return d;
+#endif
 }
 """
 
@@ -532,12 +549,43 @@ static func sky_shader() -> Shader:
 ## picture. The colour given is the scene colour that tone maps to the fog colour, so the blend lands on it exactly
 static func fog_shader() -> Shader:
 	var sh := Shader.new()
-	sh.code = "shader_type spatial;\nrender_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;\n" \
-		+ "uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;\nuniform vec3 col;\nuniform float density;\n" \
-		+ "void vertex() { POSITION = vec4(VERTEX.xy, 0.0, 1.0); }\nvoid fragment() {\n\tfloat d = texture(depth_tex, SCREEN_UV).r;\n" \
-		+ "\tvec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n\tfloat z = -v.z / v.w;\n" \
-		+ "\tALBEDO = col; ALPHA = d <= 0.000001 ? 0.0 : 1.0 - exp(-density * density * z * z);   // (depth is reversed: 0 is nothing drawn)\n}\n"
+	sh.code = FOG_SHADER % UNSHOW_GLSL
 	return sh
+## (compatibility: col, the scene colour that tone maps to the fog colour, blended over the finished picture. Forward+ blends
+## before its tone mapping, so there the layer reads the picture, mixes the fog colour into it as shown on the screen, as
+## three.js did, and hands back the light that shows the mix: disp is the fog colour on the screen)
+const FOG_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+uniform vec3 col; uniform float density; uniform vec3 disp; uniform float exposure = 1.0;
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
+uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
+%s
+vec3 show(vec3 l) {
+	vec3 x = max(l * exposure, vec3(0.0)) * RRT;
+	vec3 y = clamp(((x * (x + FA) - FB) / (x * (FC * x + FD) + FE)) * ODT, 0.0, 1.0);
+	return mix(y * 12.92, 1.055 * pow(y, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), y));
+}
+#endif
+void vertex() { POSITION = vec4(VERTEX.xy, 0.0, 1.0); }
+void fragment() {
+	float d = texture(depth_tex, SCREEN_UV).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	vec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+#else
+	vec4 v = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, d, 1.0);
+#endif
+	float z = -v.z / v.w;
+	float f = d <= 0.000001 ? 0.0 : 1.0 - exp(-density * density * z * z);   // (depth is reversed: 0 is nothing drawn)
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	ALBEDO = col; ALPHA = f;
+#else
+	if (f <= 0.0) discard;
+	ALBEDO = unshow(mix(show(texture(screen_tex, SCREEN_UV).rgb), disp, f)); ALPHA = 1.0;
+#endif
+}
+"""
 
 ## three.js's MeshStandardMaterial lights with Lambert's diffuse; and solid things take their fog from World's fog layer
 static func three_like(n: GeometryInstance3D) -> void:
@@ -557,6 +605,9 @@ static func _three_mat(m: Material) -> void:
 	if m is BaseMaterial3D and not m.has_meta("three"):
 		var b := m as BaseMaterial3D; b.set_meta("three", true)
 		b.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+		# a vertex colour here is a screen colour: the compatibility renderer reads every one so, Forward+ only with the flag
+		# (set where the materials are made; this catches the rest, the toy room's among them)
+		if b.vertex_color_use_as_albedo: b.vertex_color_is_srgb = true
 		if b.transparency in [BaseMaterial3D.TRANSPARENCY_DISABLED, BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR, BaseMaterial3D.TRANSPARENCY_ALPHA_HASH] \
 				and b.blend_mode == BaseMaterial3D.BLEND_MODE_MIX:
 			b.disable_fog = true

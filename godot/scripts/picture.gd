@@ -11,6 +11,7 @@ var scene_vp: SubViewport
 var scene_cam: Camera3D
 var follow: Camera3D           # the main camera
 var share := 1.0               # the picture's size as a share of the window's (pixel ratio over the screen's)
+const MAX_W := 3840.0          # a picture drawn finer than the window (the computer's top levels) is at most this wide
 var show: TextureRect
 
 func _ready() -> void:
@@ -29,6 +30,9 @@ func _ready() -> void:
 func set_msaa(m: Viewport.MSAA) -> void:
 	scene_vp.msaa_3d = m
 
+## a share above 1 (finer than the window) only as far as MAX_W pixels wide, and never below the window's own size for it
+static func fine_share(s: float, width: float) -> float:
+	return minf(s, maxf(1.0, MAX_W / maxf(width, 1.0))) if s > 1.0 else s
 ## the picture's size in pixels
 func render_size() -> Vector2i:
 	return scene_vp.size
@@ -37,7 +41,8 @@ func render_size() -> Vector2i:
 ## and the ladder ask
 func _sync() -> void:
 	if follow == null or not is_instance_valid(follow): return
-	var win := Vector2(get_viewport().size); var want := Vector2i(maxi(1, roundi(win.x * share)), maxi(1, roundi(win.y * share)))
+	var win := Vector2(get_viewport().size); var s := fine_share(share, win.x)
+	var want := Vector2i(maxi(1, roundi(win.x * s)), maxi(1, roundi(win.y * s)))
 	if scene_vp.size != want: scene_vp.size = want
 	scene_cam.global_transform = follow.global_transform; scene_cam.fov = follow.fov; scene_cam.near = follow.near; scene_cam.far = follow.far
 	scene_cam.cull_mask = follow.cull_mask; scene_cam.keep_aspect = follow.keep_aspect; scene_cam.projection = follow.projection
