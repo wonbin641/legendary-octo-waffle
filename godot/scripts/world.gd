@@ -55,6 +55,7 @@ var env: Environment
 var sky_mat: ShaderMaterial
 var fog_mat: ShaderMaterial
 var grade: Grade = null   # the computer's finishing pass, tuned per stage
+var picture: Picture = null   # the 3D picture of its own (main makes it)
 var moon_shadow: MoonShadow          # the moon's shadow picture (see MoonShadow)
 var shadow_mat: ShaderMaterial       # and the layer that lays it over the frame
 var shadow_layer: MeshInstance3D
@@ -124,9 +125,9 @@ func _ready() -> void:
 	var sq := QuadMesh.new(); sq.size = Vector2(2, 2)
 	shadow_layer = MeshInstance3D.new(); shadow_layer.name = "ShadowLayer"; shadow_layer.mesh = sq; shadow_layer.material_override = shadow_mat
 	shadow_layer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; shadow_layer.extra_cull_margin = 16384.0; add_child(shadow_layer)
-	ao = AoView.new(); add_child(ao); ao.setup()
+	ao = AoView.new(); add_child(ao); ao.setup(); ao.make_blur(self)
 	ao_mat = ShaderMaterial.new(); var ash := Shader.new(); ash.code = AoView.APPLY_SHADER % Gfx.ALBEDO_GLSL; ao_mat.shader = ash; ao_mat.render_priority = Gfx.PRIO_AO
-	ao_mat.set_shader_parameter("ao_tex", ao.get_texture())
+	ao_mat.set_shader_parameter("ao_tex", ao.blur_v.get_texture())
 	var aq := QuadMesh.new(); aq.size = Vector2(2, 2)
 	ao_layer = MeshInstance3D.new(); ao_layer.name = "AoLayer"; ao_layer.mesh = aq; ao_layer.material_override = ao_mat
 	ao_layer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; ao_layer.extra_cull_margin = 16384.0; add_child(ao_layer)
@@ -146,8 +147,7 @@ func _process(_dt: float) -> void:
 		if sc: sun_spr.global_position = sc.global_position + Vector3(so[0], so[1], so[2]).normalized() * 330.0
 	if ao_layer.visible:
 		var c := get_viewport().get_camera_3d()
-		if c: ao.follow(c, get_viewport().get_visible_rect().size)
-		ao_mat.set_shader_parameter("ao_texel", Vector2(1.0 / ao.size.x, 1.0 / ao.size.y))
+		if c: ao.follow(c, picture.render_size() if picture else Vector2i(Vector2(get_viewport().size) * get_viewport().scaling_3d_scale))   # (half the picture's own size, as there)
 	if not shadow_layer.visible: return
 	shadow_mat.set_shader_parameter("shadow_clip", moon_shadow.world_to_clip())
 	var lp := PackedVector4Array()
@@ -206,7 +206,7 @@ func set_shadow_size(n: int) -> void:
 
 ## the computer's ambient occlusion on or off (phones, stage 5's own room, or a frame rate that cannot carry it)
 func set_ao(on: bool) -> void:
-	ao_layer.visible = on; ao.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+	ao_layer.visible = on; ao.blur_on(on)
 
 func _on_node_added(n: Node) -> void:
 	if n is GeometryInstance3D:
@@ -221,9 +221,22 @@ func _flush_fresh() -> void:
 		while a != null:
 			if sh == null and a.has_meta("shadow"): sh = a.get_meta("shadow")
 			if a in caster_roots: MoonShadow.caster(n, sh != false); MoonShadow.no_receive(n); break
-			if a == hand_root: (n as VisualInstance3D).layers = 1 << (Gfx.IN_HAND - 1); break
+			if a == hand_root: (n as VisualInstance3D).layers = 1 << (Gfx.IN_HAND - 1); _after_ao(n); break
 			a = a.get_parent()
 	_fresh.clear()
+
+## the gun in hand is drawn after the occlusion in the browser game: its see-through parts go after the occlusion layer
+static func _after_ao(n: Node) -> void:
+	var mats: Array = []
+	if n is GeometryInstance3D and (n as GeometryInstance3D).material_override: mats.push_back((n as GeometryInstance3D).material_override)
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		for i in mi.get_surface_override_material_count(): mats.push_back(mi.get_surface_override_material(i))
+		if mi.mesh:
+			for i in mi.mesh.get_surface_count(): mats.push_back(mi.mesh.surface_get_material(i))
+	for m in mats:
+		if m is BaseMaterial3D and (m as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED: (m as BaseMaterial3D).render_priority = Gfx.PRIO_HAND
+		elif m is ShaderMaterial: (m as ShaderMaterial).render_priority = Gfx.PRIO_HAND
 
 static func lin(c) -> Color:  # a colour as three.js r128 used it (linear numbers), for Godot's sRGB colour properties
 	return (c if c is Color else Color(c)).linear_to_srgb()

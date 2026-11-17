@@ -8,6 +8,7 @@ const BASE_FOV := 74.0
 var world: World; var fx: Fx; var proj: Proj; var enemies: Enemies; var loot: Loot; var guns: Guns; var game: Game; var ui: Ui
 var cam: Camera3D
 var grade: Grade
+var picture: Picture
 var player := Player.new()
 var state := "menu"
 var time := 0.0
@@ -42,15 +43,18 @@ func _ready() -> void:
 		is_touch = bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
 	if is_touch: look_mode = "touch"
 	get_window().content_scale_factor = dpr
-	# the 3D picture is drawn at most at 1.25x (touch) or 1.6x (desktop) of the page's size, as in the browser game (on a
-	# computer its quality ladder then sets it); the browser game multisamples four times on a computer and not on a phone
-	get_viewport().scaling_3d_scale = minf(1.0, (1.25 if is_touch else 1.6) / dpr)
-	get_viewport().msaa_3d = Viewport.MSAA_DISABLED if is_touch else Viewport.MSAA_4X
 	gpu_name = _gpu_name()
 	World.shadow_map_size = 1024 if is_touch else 2048   # the browser game's moon shadow map: 1024 on phones
 	world = World.new(); add_child(world)
-	grade = Grade.new(); add_child(grade); world.grade = grade
+	# the 3D picture of its own (drawn after the occlusion and shadow pictures the world makes), then the finishing pass
+	# from it; the window itself draws no 3D. At most 1.25x (touch) or 1.6x (desktop) of the page's size at first, as in
+	# the browser game (on a computer its quality ladder then sets it); four times multisampled on a computer, not on a phone
+	picture = Picture.new(); add_child(picture); world.picture = picture
+	picture.share = minf(1.0, (1.25 if is_touch else 1.6) / dpr); picture.set_msaa(Viewport.MSAA_DISABLED if is_touch else Viewport.MSAA_4X)
+	get_viewport().disable_3d = true
+	grade = Grade.new(); add_child(grade); grade.attach(picture.scene_vp); world.grade = grade
 	cam = Camera3D.new(); cam.near = 0.05; cam.far = 460.0; cam.fov = BASE_FOV; cam.rotation_order = EULER_ORDER_YXZ; add_child(cam); cam.make_current()
+	picture.follow = cam
 	cam.set_cull_mask_value(MoonShadow.ENCODE, false); cam.set_cull_mask_value(AoView.LAYER, false)   # those quads are for their own cameras only
 	world.use_ao = not is_touch   # the browser game's occlusion: computers at its top quality levels, never phones
 	world.on_level = _on_level
@@ -220,7 +224,7 @@ func _build_hud() -> void:
 ## the finishing pass runs (the moon's shadow picture, the occlusion and the enemies' shadow reach World and Enemies set)
 func _on_level(L: Dictionary) -> void:
 	if is_touch: return
-	get_viewport().scaling_3d_scale = minf(float(L.pr), dpr) / dpr
+	picture.share = minf(float(L.pr), dpr) / dpr
 	grade.level_post = L.post; grade.visible = grade.allowed and grade.level_post and world.toy == null
 
 ## the graphics card's name as the browser game reads it (WEBGL_debug_renderer_info), and whether it is a software one
@@ -244,19 +248,19 @@ static func gpu_short(name: String) -> String:
 ## triangles; the graphics card (and a warning when it is drawn by the CPU)
 var perf_box: PanelContainer
 var _pf := {"frames": 0, "acc": 0.0, "cpu": 0.0, "worst": 0.0}
-func _perf_frame(dt: float) -> void:
+func _perf_frame(dt: float, cpu_ms: float) -> void:
 	var on := bool(Store.settings.fps)
 	if perf_box.visible != on: perf_box.visible = on
 	if not on: return
-	_pf.frames += 1; _pf.acc += dt; _pf.cpu += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0; _pf.worst = maxf(_pf.worst, dt)
+	_pf.frames += 1; _pf.acc += dt; _pf.cpu += cpu_ms; _pf.worst = maxf(_pf.worst, dt)
 	if _pf.acc < 0.5: return
 	fps_label.text = perf_text(_pf.frames / _pf.acc, 1000.0 * _pf.acc / _pf.frames, _pf.worst * 1000.0, _pf.cpu / _pf.frames)
 	_pf.frames = 0; _pf.acc = 0.0; _pf.cpu = 0.0; _pf.worst = 0.0
 	var s := hud.size; var tall := s.y > s.x * 1.1
 	perf_box.reset_size(); perf_box.position = Vector2(12, 70) if tall else Vector2(12, s.y - 12.0 - perf_box.size.y)
 func perf_text(fps: float, ms: float, worst_ms: float, cpu_ms: float) -> String:
-	var phys := Vector2(get_window().size); var sc := get_viewport().scaling_3d_scale
-	return perf_format(fps, ms, worst_ms, cpu_ms, is_touch, str(World.GFX_LEVELS[world.gfx_level].name), world.gfx_mode, roundi(phys.x * sc), roundi(phys.y * sc), dpr * sc,
+	var rs := picture.render_size()
+	return perf_format(fps, ms, worst_ms, cpu_ms, is_touch, str(World.GFX_LEVELS[world.gfx_level].name), world.gfx_mode, rs.x, rs.y, dpr * picture.share,
 		grade.visible, world.ao_layer.visible, world.moon_shadow.size.x, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)), gpu_name)
 ## the four lines, word for word as the browser game's
@@ -559,6 +563,7 @@ func _cut_step(dt: float) -> void:
 
 var hold := false
 func _process(delta: float) -> void:
+	var cpu0 := Time.get_ticks_usec()   # (the frame's own work, as the browser game's readout counts it)
 	if not is_touch and state == "playing": world.govern(delta)   # (the browser game's ladder runs while you play)
 	enemies.esh = Enemies.ESH[world.gfx_level]   # (how far enemies still cast the moon's shadow, by the quality level)
 	var dt := minf(delta, 0.05)
@@ -603,7 +608,7 @@ func _process(delta: float) -> void:
 			view.rotation = Vector3(0, cu_ang, 0); view.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x), 0.02, -dist) - bas * mid
 			cu_light.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x) + 0.3, 0.5, -dist + 0.7)
 	cut.tick_fade(dt)
-	_perf_frame(delta)
+	_perf_frame(delta, (Time.get_ticks_usec() - cpu0) / 1000.0)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT: pause_game()
@@ -763,10 +768,10 @@ func command(line: String) -> Dictionary:
 			return {"moon_col": str(sm.get_shader_parameter("moon_col")), "hemi_sky": str(sm.get_shader_parameter("hemi_sky")), "exposure": sm.get_shader_parameter("exposure"), "moon_dir": str(sm.get_shader_parameter("moon_dir")), "lamps": str(sm.get_shader_parameter("lamp_pos")), "img": img != null, "near": near, "of": tot, "min": mn, "cam": [ms.cam.global_position.x, ms.cam.global_position.y, ms.cam.global_position.z], "layer": world.shadow_layer.visible, "casters": casters, "update": ms.render_target_update_mode}
 		"gfx":   # the 그래픽 setting: "gfx high" (the top, fixed, as the browser game's 최고 화질), "gfx fast" (프레임 우선), "gfx auto"
 			var gm2: String = a[1] if a.size() > 1 and a[1] in ["high", "fast", "auto"] else "auto"
-			Store.settings.gfx = gm2; Store.persist_settings()
+			Store.settings.gfx = gm2   # (for pictures and checks: not kept, as the browser game's harness sets its own)
 			if not is_touch: world.gfx_set_mode(gm2)
-			return {"level": world.gfx_level, "name": World.GFX_LEVELS[world.gfx_level].name, "mode": world.gfx_mode, "soft": world.gfx_soft, "scale": get_viewport().scaling_3d_scale,
-				"post": grade.visible, "ao": world.ao_layer.visible, "shadow": world.moon_shadow.size.x, "msaa": get_viewport().msaa_3d}
+			return {"level": world.gfx_level, "name": World.GFX_LEVELS[world.gfx_level].name, "mode": world.gfx_mode, "soft": world.gfx_soft, "scale": picture.share, "size": [picture.render_size().x, picture.render_size().y],
+				"post": grade.visible, "ao": world.ao_layer.visible, "shadow": world.moon_shadow.size.x, "msaa": picture.scene_vp.msaa_3d}
 		"steady": world.steady = a[1] == "1"   # pictures: lamps and fires at their mean brightness
 		"lampsoff":   # the six lamp lights out (for pictures that compare light by light)
 			world.lamp_scale = 0.0

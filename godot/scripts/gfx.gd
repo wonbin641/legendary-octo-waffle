@@ -410,7 +410,9 @@ static func points(list: PackedVector3Array, color: Color, size: float, alpha :=
 const TONE_WHITE := 14.26
 const PRIO_SHADOW := -128    # the moon's shadow layer (MoonShadow), first in the see-through pass, straight after the solid world
 const PRIO_FOG := -127       # then the fog layer
-const PRIO_AO := -126        # then the computer's ambient occlusion (AoView), multiplied over the fogged colours as there
+const PRIO_AO := 126         # the computer's ambient occlusion (AoView): multiplied over everything drawn, see-through things too, as the
+                             # browser game multiplies its whole picture after the world (only the gun in hand, PRIO_HAND, comes after)
+const PRIO_HAND := 127       # what is see-through on the gun in hand (the muzzle flash, a scope's glass, a laser): after the occlusion
 const PRIO_SKY := -125       # then the sky dome and what stands in front of it without fog (skyline, red mast lights)
 const PRIO_BACKDROP := -124
 const MAIN_ONLY := 19        # render layer of the full-screen layers: drawn for the main camera alone

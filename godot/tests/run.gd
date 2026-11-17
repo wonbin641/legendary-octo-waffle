@@ -31,6 +31,7 @@ func check(name: String, ok: bool, info = "") -> void:
 	if not ok: fails += 1
 
 func _ready() -> void:
+	Store.settings.dev = false; Store.settings.god = false; Store.settings.gfx = "auto"   # (whatever this machine kept from playing: the checks start from a fresh player's settings)
 	var ref: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/reference_stage1.json"))
 	var r := World.Rng.new(7)
 	var got := [r.next(), r.next(), r.next(), r.next()]; var want := [0.011704753153026104, 0.06195825757458806, 0.97690763277933, 0.6990287057124078]
@@ -1180,6 +1181,33 @@ func _ready() -> void:
 	var e_gr := Grade.new(); add_child(e_gr); e_gr.tune(World.STAGE_STYLE[9]); var e_toy := e_gr.visible; e_gr.tune(World.STAGE_STYLE[1]); var e_yard := e_gr.visible
 	e_gr.allowed = false; e_gr.tune(World.STAGE_STYLE[1]); var e_phone := e_gr.visible; e_gr.queue_free()
 	check("the finishing pass: on a computer in the browser game's stages, never in stage 5 (this port's own room keeps its light) nor on phones", not e_toy and e_yard and not e_phone, [e_toy, e_yard, e_phone])
+	# the 3D picture of its own and the finishing pass worked from it, pass by pass as the browser game's Post
+	var pc := Picture.new(); add_child(pc); var pc_cam := Camera3D.new(); add_child(pc_cam); pc_cam.position = Vector3(3, 2, 1); pc_cam.fov = 61.0
+	pc.follow = pc_cam; pc.share = 0.5; pc._sync(); var pc_win := Vector2(get_viewport().size)
+	var pc_ok: bool = pc.scene_vp.size == Vector2i(roundi(pc_win.x * 0.5), roundi(pc_win.y * 0.5)) and pc.scene_cam.global_position.is_equal_approx(Vector3(3, 2, 1)) and pc.scene_cam.fov == 61.0 and pc.scene_cam.current
+	pc_ok = pc_ok and pc.scene_vp.world_3d == get_viewport().find_world_3d() and pc.show.texture == pc.scene_vp.get_texture() and pc.layer < 0
+	pc.share = 1.0; pc.scene_vp.size = Vector2i(1280, 720); pc.follow = null
+	var gp := Grade.new(); add_child(gp); gp.attach(pc.scene_vp); gp.visible = true; gp._size = Vector2i.ZERO; gp._sync()
+	var gp_sizes: Array = gp.mips.map(func(m): return m.size)
+	var gp_ok: bool = gp_sizes == [Vector2i(640, 360), Vector2i(320, 180), Vector2i(160, 90), Vector2i(80, 45), Vector2i(40, 22)] and gp.final_vp.size == Vector2i(1280, 720)
+	gp_ok = gp_ok and (gp.mat_bright.get_shader_parameter("texel") as Vector2).is_equal_approx(Vector2(1.0 / 1280.0, 1.0 / 720.0)) and gp.mat_bright.get_shader_parameter("tex") == pc.scene_vp.get_texture()
+	for gi in range(1, 5):
+		var gd: ShaderMaterial = gp._mats_down[gi - 1]; var gu: ShaderMaterial = gp._mats_up[gi - 1]
+		gp_ok = gp_ok and gd.get_shader_parameter("tex") == gp.mips[gi - 1].get_texture() and (gd.get_shader_parameter("texel") as Vector2).is_equal_approx(Vector2(1.0 / gp.mips[gi - 1].size.x, 1.0 / gp.mips[gi - 1].size.y))
+		gp_ok = gp_ok and gu.get_shader_parameter("tex") == gp.ups[gi].get_texture() and gu.get_shader_parameter("base") == gp.mips[gi - 1].get_texture() and gp.ups[gi - 1].size == gp.mips[gi - 1].size
+		gp_ok = gp_ok and (gu.get_shader_parameter("texel") as Vector2).is_equal_approx(Vector2(0.5 / gp.mips[gi].size.x, 0.5 / gp.mips[gi].size.y))
+	var gp_order := gp.get_children().filter(func(c): return c is SubViewport)
+	var gp_want := []; gp_want.append_array(gp.mips); gp_want.append_array([gp.ups[3], gp.ups[2], gp.ups[1], gp.ups[0], gp.final_vp])
+	gp_ok = gp_ok and gp_order.size() == gp_want.size()
+	for gi in mini(gp_order.size(), gp_want.size()): gp_ok = gp_ok and gp_order[gi] == gp_want[gi]   # each made after the one it reads, so drawn after it
+	gp_ok = gp_ok and gp.mat_final.get_shader_parameter("scene") == pc.scene_vp.get_texture() and gp.mat_final.get_shader_parameter("bloom") == gp.ups[0].get_texture() and gp.show.texture == gp.final_vp.get_texture()
+	gp.tune(World.STAGE_STYLE[1]); var gp_night: Dictionary = gp._tuned.duplicate(); gp.tune(World.STAGE_STYLE[7]); var gp_day: Dictionary = gp._tuned.duplicate()
+	gp_ok = gp_ok and gp_night == {"threshold": 0.76, "knee": 0.14, "strength": 0.55, "vig": 0.6, "sat": 1.07} and gp_day == {"threshold": 0.9, "knee": 0.08, "strength": 0.3, "vig": 0.4, "sat": 1.04}
+	gp_ok = gp_ok and Grade.BRIGHT.contains("s = s * s / (4.0 * knee + 1e-4);") and Grade.DOWN.contains("* 0.125") and Grade.UP.contains("s / 12.0") and Grade.FINAL.contains("43758.5453) - 0.5) / 255.0")
+	gp.visible = false; var gp_off: bool = gp.mips.all(func(m): return m.render_target_update_mode == SubViewport.UPDATE_DISABLED) and gp.final_vp.render_target_update_mode == SubViewport.UPDATE_DISABLED
+	check("the finishing pass as the browser game's Post, from a 3D picture of its own (the window's world, the main camera's view, its share of the window's size): the bright pass at half size, four halvings down, four back up each adding the one below, then bloom, saturation, vignette and dither at the picture's size; night and day tuned as there; off, its passes stop",
+		pc_ok and gp_ok and gp_off, [pc.scene_vp.size, gp_sizes, gp_night, gp_day])
+	gp.queue_free(); pc.queue_free(); pc_cam.queue_free()
 	# ---- E 3-1: the savanna by day, as the browser game draws it ----
 	gm.begin(7); var sv := func(nm: String) -> Node: return w.group.find_child(nm, true, false)
 	var sv_cam := Camera3D.new(); add_child(sv_cam); sv_cam.position = Vector3(5, 2, 7); sv_cam.current = true; w._process(0.0)
@@ -1198,7 +1226,19 @@ func _ready() -> void:
 		sv_tm.stencil_mode == BaseMaterial3D.STENCIL_MODE_CUSTOM and sv_tm.stencil_reference == MoonShadow.GRASS and (sv_tu.layers & w.ao.cam.cull_mask) == 0
 		and sv_tu.layers == 1 << (Gfx.MAIN_ONLY - 1) and AoView.APPLY_SHADER.contains("stencil_mode read, compare_not_equal, 3;")
 		and MoonShadow.LAYER_SHADER.contains("stencil_mode read, compare_greater, 2;") and MoonShadow.GRASS == 3 and MoonShadow.UNSHADOWED == 2)
-	check("the occlusion is blurred seven texels each way along depth, as the browser game's two seven-tap passes", AoView.APPLY_SHADER.contains("for (int i = -3; i <= 3; i++)") and AoView.APPLY_SHADER.contains("for (int j = -3; j <= 3; j++)"))
+	w.ao.follow(w.ao.cam, Vector2i(1280, 720)); var ao_bh: ShaderMaterial = (w.ao.blur_h.get_child(0) as ColorRect).material; var ao_bv: ShaderMaterial = (w.ao.blur_v.get_child(0) as ColorRect).material
+	check("the occlusion is blurred as the browser game's two seven-tap passes: across, then down, each at half size and weighed by depth, then enlarged smoothly and multiplied in",
+		AoView.BLUR_SHADER.contains("for (int i = -3; i <= 3; i++)") and AoView.BLUR_SHADER.contains("exp(-float(i * i) / 8.0) * max(0.0, 1.0 - abs(z - zc) / (0.04 * zc + 0.08))")
+		and w.ao.size == Vector2i(640, 360) and w.ao.blur_h.size == w.ao.size and w.ao.blur_v.size == w.ao.size
+		and ao_bh.get_shader_parameter("src") == w.ao.get_texture() and ao_bv.get_shader_parameter("src") == w.ao.blur_h.get_texture()
+		and (ao_bh.get_shader_parameter("dir") as Vector2).is_equal_approx(Vector2(1.0 / 640.0, 0.0)) and (ao_bv.get_shader_parameter("dir") as Vector2).is_equal_approx(Vector2(0.0, 1.0 / 360.0))
+		and w.ao_mat.get_shader_parameter("ao_tex") == w.ao.blur_v.get_texture() and AoView.APPLY_SHADER.contains("uniform sampler2D ao_tex : filter_linear")
+		and w.get_children().find(w.ao) < w.get_children().find(w.ao.blur_h) and w.get_children().find(w.ao.blur_h) < w.get_children().find(w.ao.blur_v))
+	var ao_gun := MeshInstance3D.new(); var ao_glass := Gfx.unlit(Color(0.6, 0.8, 1.0, 0.2), false); ao_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; ao_gun.material_override = ao_glass
+	var ao_steel := MeshInstance3D.new(); var ao_sm := Gfx.std(Color.GRAY, 0.5); ao_steel.material_override = ao_sm; World._after_ao(ao_gun); World._after_ao(ao_steel)
+	check("the occlusion is multiplied over everything drawn, see-through things too (the browser game multiplies its whole picture after the world); only the gun's see-through parts come after it",
+		w.ao_mat.render_priority == Gfx.PRIO_AO and Gfx.PRIO_AO > 0 and Gfx.PRIO_AO > Gfx.PRIO_SKY and Gfx.PRIO_AO > Gfx.PRIO_FOG and ao_glass.render_priority == Gfx.PRIO_HAND and Gfx.PRIO_HAND > Gfx.PRIO_AO and ao_sm.render_priority == 0)
+	ao_gun.free(); ao_steel.free()
 	var sv_bl := Safari.blade_tex().get_image(); var sv_clear := 0; var sv_dark := 0
 	for sv_y in 128:
 		for sv_x in 128:

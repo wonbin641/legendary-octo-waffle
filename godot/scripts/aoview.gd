@@ -65,10 +65,47 @@ func setup() -> void:
 	_quad = MeshInstance3D.new(); _quad.mesh = q; _quad.material_override = mat; _quad.layers = 1 << (LAYER - 1)
 	_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; _quad.extra_cull_margin = 16384.0; cam.add_child(_quad); _quad.position = Vector3(0, 0, -1)
 
+## the browser game's aoBlur: seven taps along a line, weighed by distance from the middle and by how near in depth each
+## is; run across (into blur_h) and then down (into blur_v), each a half-size picture of its own drawn after this one
+const BLUR_SHADER := """
+shader_type canvas_item;
+render_mode unshaded;
+uniform sampler2D src : filter_nearest, repeat_disable;
+uniform vec2 dir;
+float dist_of(vec3 e) { return (e.g + e.b / 255.0) * 500.0; }
+void fragment() {
+	vec3 c0 = texture(src, UV).rgb; float zc = dist_of(c0); float sum = 0.0; float ws = 0.0;
+	for (int i = -3; i <= 3; i++) {
+		vec3 c = texture(src, UV + dir * float(i)).rgb; float z = dist_of(c);
+		float w = exp(-float(i * i) / 8.0) * max(0.0, 1.0 - abs(z - zc) / (0.04 * zc + 0.08));
+		sum += c.r * w; ws += w;
+	}
+	COLOR = vec4(ws > 0.0 ? sum / ws : 1.0, c0.g, c0.b, 1.0);   // (the depth goes on beside it for the next pass)
+}
+"""
+var blur_h: SubViewport; var blur_v: SubViewport
+var _bh: ShaderMaterial; var _bv: ShaderMaterial
+## the two blur pictures, put beside this one (after it, so they are drawn after it each frame)
+func make_blur(parent: Node) -> void:
+	var sh := Shader.new(); sh.code = BLUR_SHADER
+	for k in 2:
+		var vp := SubViewport.new(); vp.transparent_bg = false; vp.disable_3d = true; vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS; vp.size = Vector2i(2, 2)
+		var m := ShaderMaterial.new(); m.shader = sh; m.set_shader_parameter("src", get_texture() if k == 0 else blur_h.get_texture())
+		var r := ColorRect.new(); r.set_anchors_preset(Control.PRESET_FULL_RECT); r.material = m; vp.add_child(r); parent.add_child(vp)
+		if k == 0: blur_h = vp; _bh = m
+		else: blur_v = vp; _bv = m
+func blur_on(on: bool) -> void:
+	var mode := SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+	render_target_update_mode = mode
+	if blur_h: blur_h.render_target_update_mode = mode; blur_v.render_target_update_mode = mode
+
 ## follow the main camera, at half the window's size, as the browser game's half-size depth pass
 func follow(main_cam: Camera3D, window: Vector2i) -> void:
 	var s := Vector2i(maxi(1, window.x / 2), maxi(1, window.y / 2))
-	if size != s: size = s
+	if size != s:
+		size = s
+		if blur_h:
+			blur_h.size = s; blur_v.size = s; _bh.set_shader_parameter("dir", Vector2(1.0 / s.x, 0.0)); _bv.set_shader_parameter("dir", Vector2(0.0, 1.0 / s.y))
 	cam.global_transform = main_cam.global_transform; cam.fov = main_cam.fov; cam.near = main_cam.near; cam.far = main_cam.far; cam.keep_aspect = main_cam.keep_aspect
 
 ## the browser game's Post.tune for the occlusion: daylight and the white lab reach a little further and press less
@@ -77,15 +114,15 @@ func tune(style: Dictionary) -> float:
 	mat.set_shader_parameter("radius", 1.0 if day else 0.85); mat.set_shader_parameter("intensity", 1.2 if day else 1.3)
 	return 0.85 if day else 0.9   # how strongly it is multiplied in
 
-## the layer that lays it over the main picture: blurred along depth (as the browser game's two seven-tap passes, here a
-## seven-by-seven) and multiplied into the finished colours
+## the layer that lays it over the main picture, as the browser game's aoMul: the blurred occlusion, enlarged smoothly from
+## its half size, multiplied into the finished colours
 const APPLY_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mul, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;
 stencil_mode read, compare_not_equal, 3;   // (the savanna's grass blades, MoonShadow.GRASS, are left unshaded as there)
-uniform sampler2D ao_tex : filter_nearest;
+uniform sampler2D ao_tex : filter_linear, repeat_disable;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
-uniform vec2 ao_texel; uniform float strength = 0.9; uniform float flip = 0.0; uniform float exposure = 1.0;   // (screen to screen: the same way up)
+uniform float strength = 0.9; uniform float flip = 0.0; uniform float exposure = 1.0;   // (screen to screen: the same way up)
 uniform float near_skip = 0.9;
 %s
 const float FA = 0.0245786; const float FB = 0.000090537; const float FC = 0.983729; const float FD = 0.432951; const float FE = 0.238081;
@@ -98,27 +135,13 @@ vec3 unshow(vec3 s) {
 	vec3 v = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
 	return max(v * inverse(RRT), vec3(0.0)) / exposure;
 }
-float dist_of(vec3 e) { return (e.g + e.b / 255.0) * 500.0; }
 float apply(vec2 suv, mat4 ipm) {
 	float d0 = texture(depth_tex, suv).r;
 	if (d0 <= 0.000001) return 1.0;
 	vec4 v = ipm * vec4(suv * 2.0 - 1.0, d0 * 2.0 - 1.0, 1.0);
 	if (-v.z / v.w < near_skip) return 1.0;   // the gun in hand: drawn after the occlusion in the browser game
 	vec2 uv = vec2(suv.x, mix(suv.y, 1.0 - suv.y, flip));
-	vec3 c0 = texture(ao_tex, uv).rgb; float zc = dist_of(c0);
-	// seven texels each way, as the browser game's two seven-tap passes; each tap weighed by how far its texel's middle is
-	// from this pixel, which stands in for the smooth (linear) enlarging of its half-size picture after them
-	vec2 p = uv / ao_texel; vec2 k0 = floor(p);
-	float sum = 0.0, ws = 0.0;
-	for (int i = -3; i <= 3; i++) {
-		for (int j = -3; j <= 3; j++) {
-			vec2 k = k0 + vec2(float(i), float(j)) + 0.5; vec2 dk = k - p;
-			vec3 c = texture(ao_tex, k * ao_texel).rgb;
-			float w = exp(-dot(dk, dk) / 8.0) * max(0.0, 1.0 - abs(dist_of(c) - zc) / (0.04 * zc + 0.08));
-			sum += c.r * w; ws += w;
-		}
-	}
-	return mix(1.0, ws > 0.0 ? sum / ws : 1.0, strength);
+	return mix(1.0, texture(ao_tex, uv).r, strength);
 }
 void vertex() { POSITION = vec4(VERTEX.xy, 0.0, 1.0); }
 void fragment() {
