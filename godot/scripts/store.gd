@@ -18,13 +18,20 @@ static func save0() -> Dictionary:
 
 func _ready() -> void:
 	var touch: bool = OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
-	settings = {"sens": 1.0, "vol": 0.7, "autoFire": touch, "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8", "mailTo": ""}
+	settings = {"sens": 1.0, "vol": 0.7, "autoFire": touch, "gfx": "auto", "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8", "mailTo": ""}
 	var s = _read("settings")
 	if s is Dictionary: settings.merge(s, true)
 	save = save0()
 	var d = _read("save")
 	if d is Dictionary: save.merge(d, true)
 	fix_save()
+
+## where the computer's quality ladder last settled (the browser game keeps it as yard07.gfxlvl); -1 when never
+func level_saved() -> int:
+	var v = _read("gfxlvl")
+	return int(v) if (v is float or v is int) else -1
+func save_level(l: int) -> void:
+	_write("gfxlvl", l)
 
 func _read(key: String):
 	var text := ""

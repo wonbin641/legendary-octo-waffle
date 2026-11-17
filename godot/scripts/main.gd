@@ -42,14 +42,20 @@ func _ready() -> void:
 		is_touch = bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
 	if is_touch: look_mode = "touch"
 	get_window().content_scale_factor = dpr
-	# the 3D picture is drawn at most at 1.25x (touch) or 1.6x (desktop) of the page's size, as in the browser game
+	# the 3D picture is drawn at most at 1.25x (touch) or 1.6x (desktop) of the page's size, as in the browser game (on a
+	# computer its quality ladder then sets it); the browser game multisamples four times on a computer and not on a phone
 	get_viewport().scaling_3d_scale = minf(1.0, (1.25 if is_touch else 1.6) / dpr)
+	get_viewport().msaa_3d = Viewport.MSAA_DISABLED if is_touch else Viewport.MSAA_4X
+	gpu_name = _gpu_name()
 	World.shadow_map_size = 1024 if is_touch else 2048   # the browser game's moon shadow map: 1024 on phones
 	world = World.new(); add_child(world)
 	grade = Grade.new(); add_child(grade); world.grade = grade
 	cam = Camera3D.new(); cam.near = 0.05; cam.far = 460.0; cam.fov = BASE_FOV; cam.rotation_order = EULER_ORDER_YXZ; add_child(cam); cam.make_current()
 	cam.set_cull_mask_value(MoonShadow.ENCODE, false); cam.set_cull_mask_value(AoView.LAYER, false)   # those quads are for their own cameras only
 	world.use_ao = not is_touch   # the browser game's occlusion: computers at its top quality levels, never phones
+	world.on_level = _on_level
+	if not is_touch:   # the computer's quality ladder, as the browser game's Gfx.init
+		world.gfx_soft = gpu_soft(gpu_name); world.gfx_mode = str(Store.settings.gfx); world.gfx_init(Store.level_saved())
 	fx = Fx.new(); add_child(fx); world.fx = fx
 	proj = Proj.new(); add_child(proj); enemies = Enemies.new(); add_child(enemies); loot = Loot.new(); add_child(loot)
 	world.caster_roots = [enemies, loot]   # people, animals, robots and what they drop cast the moon's shadow, as there
@@ -88,6 +94,7 @@ func apply_settings() -> void:
 	Snd.touch = look_mode == "touch"
 	grade.allowed = look_mode != "touch"; grade.visible = grade.allowed and world.toy == null   # phones draw without the finishing pass, as the browser game's do
 	if look_mode == "touch" and world.use_ao: world.use_ao = false; world.set_ao(false)
+	if not is_touch and str(Store.settings.gfx) != world.gfx_mode: world.gfx_set_mode(str(Store.settings.gfx))   # the 그래픽 setting
 	enemies.phone = look_mode == "touch"   # no enemy casts the moon's shadow on a phone, as there
 	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
@@ -202,7 +209,64 @@ func _build_hud() -> void:
 	hud = Control.new(); hud.set_anchors_preset(Control.PRESET_FULL_RECT); hud.mouse_filter = Control.MOUSE_FILTER_IGNORE; root.add_child(hud); hud.draw.connect(_draw_hud)
 	hudd = Hud.new(); hudd.m = self
 	touch_ui = Control.new(); touch_ui.set_anchors_preset(Control.PRESET_FULL_RECT); touch_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE; touch_ui.visible = false; root.add_child(touch_ui); touch_ui.draw.connect(_draw_touch)
-	fps_label = _label("", f_mono, 12, SODIUM); fps_label.position = Vector2(12, 40); fps_label.z_index = 50; root.add_child(fps_label)
+	# the browser game's FPS readout (#perf): bottom left on a dark plate with a green edge, four lines
+	perf_box = PanelContainer.new(); var pst := StyleBoxFlat.new(); pst.bg_color = Color(8 / 255.0, 12 / 255.0, 22 / 255.0, 0.78)
+	pst.border_color = Color(94 / 255.0, 214 / 255.0, 176 / 255.0, 0.35); pst.set_border_width_all(1); pst.set_corner_radius_all(2)
+	pst.content_margin_left = 9; pst.content_margin_right = 9; pst.content_margin_top = 6; pst.content_margin_bottom = 6
+	perf_box.add_theme_stylebox_override("panel", pst); perf_box.mouse_filter = Control.MOUSE_FILTER_IGNORE; perf_box.z_index = 50; perf_box.visible = false
+	fps_label = _label("", f_mono, 11, Color("d7f5e8")); fps_label.add_theme_constant_override("line_spacing", 5); perf_box.add_child(fps_label); root.add_child(perf_box)
+
+## what a level of the computer's quality ladder asks of the picture: its pixel ratio (never past the screen's) and whether
+## the finishing pass runs (the moon's shadow picture, the occlusion and the enemies' shadow reach World and Enemies set)
+func _on_level(L: Dictionary) -> void:
+	if is_touch: return
+	get_viewport().scaling_3d_scale = minf(float(L.pr), dpr) / dpr
+	grade.level_post = L.post; grade.visible = grade.allowed and grade.level_post and world.toy == null
+
+## the graphics card's name as the browser game reads it (WEBGL_debug_renderer_info), and whether it is a software one
+var gpu_name := ""
+func _gpu_name() -> String:
+	if OS.has_feature("web"):
+		return str(JavaScriptBridge.eval("(function(){try{var c=document.createElement('canvas'),g=c.getContext('webgl2')||c.getContext('webgl'),e=g&&g.getExtension('WEBGL_debug_renderer_info');return String((e&&g.getParameter(e.UNMASKED_RENDERER_WEBGL))||(g&&g.getParameter(g.RENDERER))||'')}catch(x){return ''}})()"))
+	return RenderingServer.get_video_adapter_name()
+static func gpu_soft(name: String) -> bool:
+	var re := RegEx.new(); re.compile("(?i)swiftshader|llvmpipe|softpipe|software|basic render"); return re.search(name) != null
+## "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)" reads better as "NVIDIA GeForce RTX 3060"
+static func gpu_short(name: String) -> String:
+	var short := name; var re := RegEx.new(); re.compile("(?i)ANGLE \\(([^,]*),\\s*(.*?)(?:\\s+Direct3D|\\s+OpenGL|\\s+Vulkan|,|\\)$)")
+	var m := re.search(name)
+	if m: short = m.get_string(2)
+	var hx := RegEx.new(); hx.compile("(?i)\\s*\\(0x[0-9a-f]+\\)"); short = hx.sub(short, "", true).strip_edges()
+	return short if short != "" else "알 수 없음"
+
+## the browser game's FPS readout (Perf), every half second: the frame rate and time (the worst too) and the frame's own
+## work; the quality level, the picture's size and pixel ratio, bloom, occlusion, the shadow picture; draw calls and
+## triangles; the graphics card (and a warning when it is drawn by the CPU)
+var perf_box: PanelContainer
+var _pf := {"frames": 0, "acc": 0.0, "cpu": 0.0, "worst": 0.0}
+func _perf_frame(dt: float) -> void:
+	var on := bool(Store.settings.fps)
+	if perf_box.visible != on: perf_box.visible = on
+	if not on: return
+	_pf.frames += 1; _pf.acc += dt; _pf.cpu += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0; _pf.worst = maxf(_pf.worst, dt)
+	if _pf.acc < 0.5: return
+	fps_label.text = perf_text(_pf.frames / _pf.acc, 1000.0 * _pf.acc / _pf.frames, _pf.worst * 1000.0, _pf.cpu / _pf.frames)
+	_pf.frames = 0; _pf.acc = 0.0; _pf.cpu = 0.0; _pf.worst = 0.0
+	var s := hud.size; var tall := s.y > s.x * 1.1
+	perf_box.reset_size(); perf_box.position = Vector2(12, 70) if tall else Vector2(12, s.y - 12.0 - perf_box.size.y)
+func perf_text(fps: float, ms: float, worst_ms: float, cpu_ms: float) -> String:
+	var phys := Vector2(get_window().size); var sc := get_viewport().scaling_3d_scale
+	return perf_format(fps, ms, worst_ms, cpu_ms, is_touch, str(World.GFX_LEVELS[world.gfx_level].name), world.gfx_mode, roundi(phys.x * sc), roundi(phys.y * sc), dpr * sc,
+		grade.visible, world.ao_layer.visible, world.moon_shadow.size.x, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)), gpu_name)
+## the four lines, word for word as the browser game's
+static func perf_format(fps: float, ms: float, worst_ms: float, cpu_ms: float, phone: bool, level: String, mode: String, w: int, h: int, pr: float,
+		bloom: bool, ao: bool, shadow: int, calls: int, tris: int, gpu: String) -> String:
+	var t := "FPS %d · %.1fms (최악 %d) · CPU %.1fms\n" % [roundi(fps), ms, roundi(worst_ms), cpu_ms]
+	t += ("휴대폰 설정" if phone else "그래픽 " + level + (" (자동)" if mode == "auto" else (" (고정)" if mode == "high" else " (프레임 우선)")))
+	t += " · 해상도 %d×%d (%.2f배)" % [w, h, pr] + (" · 블룸" if bloom else "") + (" · AO" if ao else "") + " · 그림자 %d\n" % shadow
+	t += "드로우콜 %d · 삼각형 %dk\n" % [calls, roundi(tris / 1000.0)]
+	return t + "GPU " + gpu_short(gpu) + (" · 그래픽 가속 꺼짐: CPU로 그리는 중" if gpu_soft(gpu) else "")
 
 func _draw_hud() -> void:
 	hudd.draw(hud)
@@ -495,7 +559,7 @@ func _cut_step(dt: float) -> void:
 
 var hold := false
 func _process(delta: float) -> void:
-	if not is_touch: world.govern(delta)
+	if not is_touch and state == "playing": world.govern(delta)   # (the browser game's ladder runs while you play)
 	enemies.esh = Enemies.ESH[world.gfx_level]   # (how far enemies still cast the moon's shadow, by the quality level)
 	var dt := minf(delta, 0.05)
 	if state == "playing":
@@ -539,7 +603,7 @@ func _process(delta: float) -> void:
 			view.rotation = Vector3(0, cu_ang, 0); view.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x), 0.02, -dist) - bas * mid
 			cu_light.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x) + 0.3, 0.5, -dist + 0.7)
 	cut.tick_fade(dt)
-	fps_label.text = ("%d FPS" % Engine.get_frames_per_second()) if Store.settings.fps else ""
+	_perf_frame(delta)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT: pause_game()
@@ -697,9 +761,12 @@ func command(line: String) -> Dictionary:
 				if (n as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER): casters += 1
 			var sm: ShaderMaterial = world.shadow_mat
 			return {"moon_col": str(sm.get_shader_parameter("moon_col")), "hemi_sky": str(sm.get_shader_parameter("hemi_sky")), "exposure": sm.get_shader_parameter("exposure"), "moon_dir": str(sm.get_shader_parameter("moon_dir")), "lamps": str(sm.get_shader_parameter("lamp_pos")), "img": img != null, "near": near, "of": tot, "min": mn, "cam": [ms.cam.global_position.x, ms.cam.global_position.y, ms.cam.global_position.z], "layer": world.shadow_layer.visible, "casters": casters, "update": ms.render_target_update_mode}
-		"gfx":   # "gfx high": the computer's top quality, fixed (with the occlusion), as the browser game's setting; "gfx auto": the ladder
-			world.gfx_fixed = a.size() > 1 and a[1] == "high"
-			if world.gfx_fixed and not is_touch: world.gfx_level = 4; world.use_ao = true; world.set_ao(world.toy == null)
+		"gfx":   # the 그래픽 setting: "gfx high" (the top, fixed, as the browser game's 최고 화질), "gfx fast" (프레임 우선), "gfx auto"
+			var gm2: String = a[1] if a.size() > 1 and a[1] in ["high", "fast", "auto"] else "auto"
+			Store.settings.gfx = gm2; Store.persist_settings()
+			if not is_touch: world.gfx_set_mode(gm2)
+			return {"level": world.gfx_level, "name": World.GFX_LEVELS[world.gfx_level].name, "mode": world.gfx_mode, "soft": world.gfx_soft, "scale": get_viewport().scaling_3d_scale,
+				"post": grade.visible, "ao": world.ao_layer.visible, "shadow": world.moon_shadow.size.x, "msaa": get_viewport().msaa_3d}
 		"steady": world.steady = a[1] == "1"   # pictures: lamps and fires at their mean brightness
 		"lampsoff":   # the six lamp lights out (for pictures that compare light by light)
 			world.lamp_scale = 0.0

@@ -154,27 +154,55 @@ func _process(_dt: float) -> void:
 	for l: OmniLight3D in lights: lp.push_back(Vector4(l.position.x, l.position.y, l.position.z, l.light_energy if l.visible else 0.0))
 	shadow_mat.set_shader_parameter("lamp_pos", lp)
 
-## the browser game's quality ladder on a computer (Gfx.govern), the part that decides the ambient occlusion: from the top
-## level it steps down while the frame rate sags under 50 (two steps under 30), and the occlusion goes below level 3; it
-## creeps back up after three spells above 57, and holds off a minute if a step up does not last. gfx_fixed keeps it at
-## the top, as the browser game's "high" setting does
-var gfx_fixed := false
+## the browser game's quality ladder on a computer (src/03b_gfx.js Gfx): five levels. Each sets the picture's pixel ratio
+## (to the screen's at most), whether the finishing pass (bloom, grading) runs, the moon's shadow picture, the occlusion,
+## and how far away enemies still cast the moon's shadow. On "자동" it starts at the top (or where it last settled), steps
+## down while the frame rate sags under 50 (two steps under 30), creeps back up after three spells above 57, and holds off
+## a minute if a step up does not last; "최고 화질" keeps the top; "프레임 우선" goes no higher than level 1. A computer
+## drawing without its graphics card keeps level 0 unless told the top. Phones keep their own settings, as there
+const GFX_LEVELS := [
+	{"name": "낮음", "pr": 0.85, "post": false, "shadow": 1024, "esh": 0.0, "ao": false},
+	{"name": "보통", "pr": 1.0, "post": false, "shadow": 2048, "esh": 28.0, "ao": false},
+	{"name": "높음", "pr": 1.0, "post": true, "shadow": 2048, "esh": 28.0, "ao": false},
+	{"name": "매우 높음", "pr": 1.5, "post": true, "shadow": 4096, "esh": 45.0, "ao": true},
+	{"name": "최고", "pr": 2.0, "post": true, "shadow": 4096, "esh": 45.0, "ao": true},
+]
+var gfx_mode := "auto"   # the setting: "auto", "high" or "fast"
+var gfx_soft := false    # drawn by the CPU, not a graphics card
 var gfx_level := 4
+var on_level: Callable = Callable()   # main: what a level asks of the picture itself (pixel ratio, finishing pass)
 var _gv := {"acc": 0.0, "n": 0, "good": 0, "t": 0.0, "up_at": -1e9, "hold": 0.0}
+func gfx_max() -> int:
+	return 4 if gfx_mode == "high" else (0 if gfx_soft else (1 if gfx_mode == "fast" else 4))
+func gfx_apply(l: int) -> void:
+	gfx_level = clampi(l, 0, gfx_max()); var L: Dictionary = GFX_LEVELS[gfx_level]
+	set_shadow_size(int(L.shadow)); use_ao = L.ao; set_ao(use_ao and toy == null)
+	if on_level.is_valid(): on_level.call(L)
+	Store.save_level(gfx_level)
+## at start: the top if told so, level 0 without a graphics card, else where the ladder last settled (the top at first)
+func gfx_init(saved: int) -> void:
+	gfx_apply(4 if gfx_mode == "high" else (0 if gfx_soft else (saved if saved >= 0 else 4)))
+## the setting changed: start the count again from the top ("프레임 우선": no higher than 1)
+func gfx_set_mode(m: String) -> void:
+	gfx_mode = m; _gv.good = 0; _gv.acc = 0.0; _gv.n = 0; _gv.hold = 0.0
+	gfx_apply(4 if m == "high" else (mini(gfx_level, 1) if m == "fast" else 4))
 func govern(delta: float) -> void:
-	if gfx_fixed: return
+	if gfx_mode == "high": return
 	var G := _gv; G.t += delta; G.acc += delta; G.n += 1
 	if G.acc < 2.0: return
 	var avg: float = G.acc / G.n; G.acc = 0.0; G.n = 0
 	if avg > 1.0 / 50.0 and gfx_level > 0:
 		if G.t - G.up_at < 10.0: G.hold = G.t + 60.0   # the last step up did not hold: stay put for a while
-		gfx_level -= 2 if avg > 1.0 / 30.0 and gfx_level > 1 else 1; G.good = 0
-	elif avg < 1.0 / 57.0 and gfx_level < 4:
+		gfx_apply(gfx_level - (2 if avg > 1.0 / 30.0 and gfx_level > 1 else 1)); G.good = 0
+	elif avg < 1.0 / 57.0 and gfx_level < gfx_max():
 		G.good += 1
-		if G.good >= 3 and G.t > G.hold: gfx_level += 1; G.good = 0; G.up_at = G.t
+		if G.good >= 3 and G.t > G.hold: gfx_apply(gfx_level + 1); G.good = 0; G.up_at = G.t
 	else: G.good = 0
-	var want := gfx_level >= 3
-	if want != use_ao: use_ao = want; set_ao(want and toy == null)
+
+## the moon's shadow picture at this many texels a side (the browser game's shadowSize)
+func set_shadow_size(n: int) -> void:
+	if moon_shadow.size.x == n: return
+	moon_shadow.size = Vector2i(n, n); shadow_mat.set_shader_parameter("map_size", float(n))
 
 ## the computer's ambient occlusion on or off (phones, stage 5's own room, or a frame rate that cannot carry it)
 func set_ao(on: bool) -> void:

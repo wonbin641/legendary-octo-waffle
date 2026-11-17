@@ -500,6 +500,16 @@ func _ready() -> void:
 	var bf3 = lab.cages[1].animals[0]; bf3.caged = false; var hp3: float = zb3.hp
 	an.hit(bf3, "gore")
 	check("stage 3: up on a zebra the buffalo's horns hit the zebra: 25, and it bleeds", zb3.hp == hp3 - 25.0 and pl.hp == Player.MAX_HP and zb3.bleed_n == 1 and pl.stun_t == 0.0, zb3.hp)
+	# the browser game's ridden mount glows a moment when it is hit (its body's emissive 0.6, 0.35, 0.2 for the flash)
+	en.damage(zb3, 1.0, zb3.pos, Vector3(0, 0, 1), false); en.update(0.02, 0.0)
+	var fl3_on := 0; var fl3_body := 0
+	for fl3_n in (zb3.g as Node3D).find_children("*", "MeshInstance3D", true, false):
+		if fl3_n.has_meta("body"): fl3_body += 1; fl3_on += 1 if (fl3_n as MeshInstance3D).material_overlay == en._flash_mat else 0
+	for i in 5: en.update(0.02, 0.0)
+	var fl3_off := true
+	for fl3_n in (zb3.g as Node3D).find_children("*", "MeshInstance3D", true, false):
+		if fl3_n.has_meta("body") and (fl3_n as MeshInstance3D).material_overlay != null: fl3_off = false
+	check("stage 3: the zebra you ride glows a moment when it is hit, as there (the hit flash on its whole body, then gone)", fl3_body >= 5 and fl3_on == fl3_body and fl3_off, [fl3_body, fl3_on])
 	an.ride_off(false)
 	check("stage 3: off again, standing beside it", an.m == null and pl.grounded and not zb3.ridden)
 	# on foot: gored (25, out cold 3 s, a wound), bitten, tossed
@@ -1132,7 +1142,7 @@ func _ready() -> void:
 	check("a speck redder than the screen can show (a robot's burning bits) still comes out nearest to it", absf(e_sod.x - 0.97) < 0.003 and absf(e_sod.y - 0.3) < 0.003 and absf(e_sod.z - 0.05) < 0.04, e_sod)
 	w.set_ao(false); var e_off := not w.ao_layer.visible and w.ao.render_target_update_mode == SubViewport.UPDATE_DISABLED; w.set_ao(true)
 	check("the computer's ambient occlusion can be switched off (phones and stage 5 go without)", e_off and w.ao_layer.visible)
-	w.gfx_fixed = false; w.gfx_level = 4; w.use_ao = true; w.set_ao(true)
+	w.gfx_mode = "auto"; w.gfx_apply(4)
 	for i in 81: w.govern(1.0 / 40.0)   # two seconds at 40 a second: one step down, the occlusion stays
 	var e_l1 := [w.gfx_level, w.ao_layer.visible]
 	for i in 81: w.govern(1.0 / 40.0)   # another: level 2, the occlusion goes
@@ -1141,7 +1151,32 @@ func _ready() -> void:
 	var e_l3 := [w.gfx_level, w.ao_layer.visible]
 	check("the occlusion follows the browser game's quality ladder: down a step per sagging two seconds, gone below level 3, back after three good spells",
 		e_l1 == [3, true] and e_l2 == [2, false] and e_l3[1] == true and int(e_l3[0]) >= 3, [e_l1, e_l2, e_l3])
-	w.gfx_level = 4; w.use_ao = true; w.set_ao(true)
+	# the whole ladder, as the browser game's Gfx: what each level sets, the three settings, a computer drawing without its card
+	var gl_want := [[0.85, false, 1024, 0.0, false], [1.0, false, 2048, 28.0, false], [1.0, true, 2048, 28.0, false], [1.5, true, 4096, 45.0, true], [2.0, true, 4096, 45.0, true]]
+	var gl_ok := World.GFX_LEVELS.size() == 5 and World.GFX_LEVELS.map(func(L): return L.name) == ["낮음", "보통", "높음", "매우 높음", "최고"]
+	var gl_seen := []
+	for gl_i in 5:
+		var L: Dictionary = World.GFX_LEVELS[gl_i]; gl_ok = gl_ok and [L.pr, L.post, L.shadow, L.esh, L.ao] == gl_want[gl_i] and Enemies.ESH[gl_i] == L.esh
+		w.gfx_apply(gl_i); gl_seen.push_back([w.gfx_level, w.moon_shadow.size.x, w.ao_layer.visible])
+	check("the quality ladder's five levels as the browser game's (pixel ratio, bloom, shadow picture, enemies' shadow reach, occlusion), and each sets its shadow picture and occlusion",
+		gl_ok and gl_seen == [[0, 1024, false], [1, 2048, false], [2, 2048, false], [3, 4096, true], [4, 4096, true]], gl_seen)
+	w.gfx_apply(4); w.gfx_set_mode("fast"); var gl_fast := w.gfx_level
+	for i in 3 * 121: w.govern(1.0 / 60.0)
+	var gl_fast2 := w.gfx_level; w.gfx_set_mode("high"); var gl_high := w.gfx_level
+	for i in 3 * 81: w.govern(1.0 / 20.0)
+	var gl_high2 := w.gfx_level; w.gfx_set_mode("auto"); var gl_auto := w.gfx_level
+	w.gfx_soft = true; w.gfx_init(3); var gl_soft := w.gfx_level; w.gfx_mode = "high"; w.gfx_init(3); var gl_soft_hi := w.gfx_level
+	w.gfx_soft = false; w.gfx_mode = "auto"; w.gfx_init(2); var gl_saved := [w.gfx_level, Store.level_saved()]; w.gfx_init(-1); var gl_first := w.gfx_level
+	check("the 그래픽 setting: 프레임 우선 stays at level 1 or below, 최고 화질 holds the top whatever the frame rate, 자동 starts from the top; without a graphics card level 0 unless told the top; the level it settled at is kept for next time",
+		gl_fast == 1 and gl_fast2 == 1 and gl_high == 4 and gl_high2 == 4 and gl_auto == 4 and gl_soft == 0 and gl_soft_hi == 4 and gl_saved == [2, 2] and gl_first == 4,
+		[gl_fast, gl_fast2, gl_high, gl_high2, gl_auto, gl_soft, gl_soft_hi, gl_saved, gl_first])
+	var gl_main = load("res://scripts/main.gd")
+	var gl_txt: String = gl_main.perf_format(59.6, 16.78, 21.4, 3.26, false, "최고", "auto", 1280, 720, 1.0, true, true, 4096, 312, 120400, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)")
+	var gl_soft_txt: String = gl_main.perf_format(30.0, 33.3, 40.0, 9.0, false, "낮음", "fast", 1088, 612, 0.85, false, false, 1024, 90, 40000, "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)")
+	check("the FPS readout's four lines word for word as the browser game's (the graphics card's name shortened as there, the warning when the CPU draws)",
+		gl_txt == "FPS 60 · 16.8ms (최악 21) · CPU 3.3ms\n그래픽 최고 (자동) · 해상도 1280×720 (1.00배) · 블룸 · AO · 그림자 4096\n드로우콜 312 · 삼각형 120k\nGPU NVIDIA GeForce RTX 3060"
+		and gl_soft_txt.ends_with("· 그래픽 가속 꺼짐: CPU로 그리는 중") and gl_soft_txt.contains("그래픽 낮음 (프레임 우선) · 해상도 1088×612 (0.85배) · 그림자 1024"), [gl_txt, gl_soft_txt])
+	w.gfx_mode = "auto"; w.gfx_apply(4)
 	var e_gr := Grade.new(); add_child(e_gr); e_gr.tune(World.STAGE_STYLE[9]); var e_toy := e_gr.visible; e_gr.tune(World.STAGE_STYLE[1]); var e_yard := e_gr.visible
 	e_gr.allowed = false; e_gr.tune(World.STAGE_STYLE[1]); var e_phone := e_gr.visible; e_gr.queue_free()
 	check("the finishing pass: on a computer in the browser game's stages, never in stage 5 (this port's own room keeps its light) nor on phones", not e_toy and e_yard and not e_phone, [e_toy, e_yard, e_phone])

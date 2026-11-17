@@ -207,7 +207,7 @@ func kong_build(e: Enemies.Foe, boss: bool) -> void:
 	var mesh := func(parent: Node3D, k2: String, list: Array) -> void:
 		var mi := MeshInstance3D.new(); var kk := key + "_" + k2
 		if not en._meshes.has(kk): en._meshes[kk] = Gfx.kit_mesh(list)
-		mi.mesh = en._meshes[kk]; mi.material_override = _kong_mat; parent.add_child(mi)
+		mi.mesh = en._meshes[kk]; mi.material_override = _kong_mat; mi.set_meta("body", true); parent.add_child(mi)
 	var grp := func(parent: Node3D, at: Vector3, yxz := false) -> Node3D:
 		var n := Node3D.new(); n.position = at; parent.add_child(n)
 		if yxz: n.rotation_order = EULER_ORDER_YXZ
@@ -273,7 +273,7 @@ var _kit_mats := {}
 func _kit(parent: Node3D, at: Vector3, parts: Array, key: String, mat: Material) -> Node3D:
 	var n := Node3D.new(); n.position = at; parent.add_child(n)
 	if not en._meshes.has(key): en._meshes[key] = Gfx.kit_mesh(parts)
-	var mi := MeshInstance3D.new(); mi.mesh = en._meshes[key]; mi.material_override = mat; n.add_child(mi); return n
+	var mi := MeshInstance3D.new(); mi.mesh = en._meshes[key]; mi.material_override = mat; mi.set_meta("body", true); n.add_child(mi); return n   # (the body: a hit flash shows on it while ridden)
 
 func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	e.animal = true; e.kong = opts.get("kong", false); e.minion = opts.get("minion", false)

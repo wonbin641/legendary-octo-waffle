@@ -294,7 +294,7 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool, quiet :=
 		if e.hp <= 0.0: kill(e, false, dir); return true
 		return false
 	e.flinch = 1.0
-	if not e.animal and not e.robot and not e.toy: e.flash_t = 0.08
+	if not e.robot and not e.toy: e.flash_t = 0.08   # (a beast shows it only while you ride it, as there)
 	if fx:
 		fx.sparks(_at, 8 if weak else 4, [0.6, 0.8, 0.45] if e.type == "zombie" else ([1.0, 0.85, 0.45] if e.robot else [0.9, 0.8, 0.7]), 4.0 if e.robot else 2.5)
 		fx.puff(_at, 1, 0.25 if e.type == "zombie" else 0.4, 0.25)
@@ -757,7 +757,11 @@ func update(dt: float, _time: float) -> void:
 				var sh := not phone and e.dist < esh
 				if e.casts != (1 if sh else 0): cast_shadow(e, sh)
 		if e.downed: _update_downed(e, dt); e.g.position = e.pos; continue
-		if e.ridden: e.bar.visible = false; continue   # you are on it: you steer it
+		if e.ridden:   # you are on it: you steer it; just the hit flash here, as the browser game's
+			if e.flash_t > 0.0: e.flash_t -= dt; _glow(e, "flash")
+			else: _glow(e, "")
+			e.bar.visible = false; continue
+		if e.animal and e.glow != "": _glow(e, "")   # (got off mid-flash: the glow goes with the ride)
 		if not e.awake: continue
 		var eye := Vector3(e.pos.x, e.pos.y + e.eye_h * e.scale, e.pos.z)
 		var to := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var dist := maxf(to.length(), 0.001)

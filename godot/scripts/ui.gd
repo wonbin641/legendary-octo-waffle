@@ -520,14 +520,19 @@ func _check(name: String, key: String) -> CheckBox:
 
 const CROSS := [["cross", "십자"], ["circle", "원"], ["big", "큰 원"], ["dot", "점"]]
 const CROSS_COL := [["ece6d8", "흰색"], ["5ed6b0", "초록"], ["ff5260", "빨강"], ["ffe14a", "노랑"], ["6fe4ff", "하늘"], ["ff8ac0", "분홍"], ["f2a33a", "주황"]]
-func _settings_rows(into: VBoxContainer, full: bool) -> void:
+const GFX := [["auto", "자동"], ["high", "최고 화질"], ["fast", "프레임 우선"]]
+## the settings, in the browser game's order (main menu and pause alike): sensitivity, volume, auto fire (touch), graphics
+## (computers), the crosshair and its colour, the FPS readout (and, in developer mode, invincibility)
+func _settings_rows(into: VBoxContainer, _full: bool) -> void:
 	into.add_child(_slider("터치 감도" if is_touch else "마우스 감도", "sens", 0.2, 3.0, 0.1, func(v: float) -> String: return "%.1f" % v))
 	into.add_child(_slider("음량", "vol", 0.0, 1.0, 0.05, func(v: float) -> String: return str(roundi(v * 100))))
-	var row := hbox(16); into.add_child(row)
-	if is_touch: row.add_child(_check("자동 사격", "autoFire"))
-	row.add_child(_check("FPS 표시", "fps"))
-	if Store.settings.dev: row.add_child(_check("무적", "god"))
-	if not full: return
+	if is_touch: into.add_child(_check("자동 사격", "autoFire"))
+	else:
+		var gr := hbox(10); into.add_child(gr); var gl := lbl("그래픽", f_body, 14, INK); gl.custom_minimum_size = Vector2(96, 0); gr.add_child(gl)
+		var gi := 0
+		for i in GFX.size():
+			if GFX[i][0] == str(Store.settings.get("gfx", "auto")): gi = i
+		gr.add_child(_option(GFX.map(func(g): return g[1]), gi, func(j: int) -> void: Store.settings.gfx = GFX[j][0]; Store.persist_settings(); on_settings.call()))
 	var cr := hbox(10); into.add_child(cr); cr.add_child(lbl("조준선", f_body, 14, INK))
 	var ci := 0; var cj := 0
 	for i in CROSS.size():
@@ -536,6 +541,9 @@ func _settings_rows(into: VBoxContainer, full: bool) -> void:
 		if CROSS_COL[i][0] == Store.settings.crossColor: cj = i
 	cr.add_child(_option(CROSS.map(func(c): return c[1]), ci, func(j: int) -> void: Store.settings.cross = CROSS[j][0]; Store.persist_settings()))
 	cr.add_child(lbl("색", f_body, 14, INK)); cr.add_child(_option(CROSS_COL.map(func(c): return c[1]), cj, func(j: int) -> void: Store.settings.crossColor = CROSS_COL[j][0]; Store.persist_settings()))
+	var row := hbox(16); into.add_child(row)
+	row.add_child(_check("FPS 표시", "fps"))
+	if Store.settings.dev: row.add_child(_check("무적", "god"))
 
 func render_settings() -> void:
 	clear(set_body)

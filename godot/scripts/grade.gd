@@ -41,11 +41,12 @@ func _ready() -> void:
 	add_child(rect)
 
 var allowed := true   # phones go without (main sets this)
+var level_post := true   # the computer's quality ladder runs it from level 2 up (main sets this)
 
 ## the browser game's Post.tune: daylight and the white lab bloom less and darken the corners less. Stage 5, this port's
 ## own room, keeps the light it was made with: no finishing pass
 func tune(style: Dictionary) -> void:
-	visible = allowed and not style.get("toy", false)
+	visible = allowed and level_post and not style.get("toy", false)
 	var day: bool = style.get("day", false) or style.get("lab", false)
 	mat.set_shader_parameter("threshold", 0.9 if day else 0.76); mat.set_shader_parameter("knee", 0.08 if day else 0.14)
 	mat.set_shader_parameter("strength", 0.3 if day else 0.55); mat.set_shader_parameter("vig", 0.4 if day else 0.6)
