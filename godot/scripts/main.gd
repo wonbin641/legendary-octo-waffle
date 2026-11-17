@@ -88,6 +88,7 @@ func apply_settings() -> void:
 	Snd.touch = look_mode == "touch"
 	grade.allowed = look_mode != "touch"; grade.visible = grade.allowed and world.toy == null   # phones draw without the finishing pass, as the browser game's do
 	if look_mode == "touch" and world.use_ao: world.use_ao = false; world.set_ao(false)
+	enemies.phone = look_mode == "touch"   # no enemy casts the moon's shadow on a phone, as there
 	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
 	for id in Weapons.ORDER: gm_models.apply_look(id, Custom.setup(id))   # parts and paint
@@ -495,6 +496,7 @@ func _cut_step(dt: float) -> void:
 var hold := false
 func _process(delta: float) -> void:
 	if not is_touch: world.govern(delta)
+	enemies.esh = Enemies.ESH[world.gfx_level]   # (how far enemies still cast the moon's shadow, by the quality level)
 	var dt := minf(delta, 0.05)
 	if state == "playing":
 		if look_mode == "lock":

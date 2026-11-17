@@ -211,7 +211,7 @@ func build(e: Enemies.Foe, type: String) -> void:
 						for sx: float in [-1.0, 1.0]: _add(s, _bx(R * 0.05, R * 0.4, R * 0.6), armor, Vector3(sx * R * 0.25, R * 0.98, -R * 0.1))
 				s.visible = k == 0
 				e.k.shells.push_back({"g": s, "R": R, "eye": eye})
-			e.fly = true; e.eye_h = 0.0; e.bar_y = 3.2; e.parts = shell_parts(2.5); e.boss_guard = true
+			e.no_far = true; e.fly = true; e.eye_h = 0.0; e.bar_y = 3.2; e.parts = shell_parts(2.5); e.boss_guard = true   # (never drawn baked, as there)
 	e.bar = Node3D.new(); e.bar.visible = false; en.add_child(e.bar)
 	var bg := MeshInstance3D.new(); bg.mesh = en._bar_mesh; bg.material_override = en._bar_bg; bg.scale = Vector3(0.7, 0.07, 1); e.bar.add_child(bg)
 	e.fill = MeshInstance3D.new(); e.fill.mesh = en._bar_mesh; e.fill.material_override = _mat("bar", Color("8ec8ff"), true).duplicate(); e.fill.material_override.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; e.fill.material_override.billboard_keep_scale = true

@@ -189,9 +189,10 @@ func _flush_fresh() -> void:
 	for n in _fresh:
 		if not is_instance_valid(n): continue
 		Gfx.three_like(n)
-		var a: Node = n.get_parent()
+		var a: Node = n.get_parent(); var sh = null   # (a body marked "shadow" says whether what is on it casts: see Enemies.cast_shadow)
 		while a != null:
-			if a in caster_roots: MoonShadow.caster(n); MoonShadow.no_receive(n); break
+			if sh == null and a.has_meta("shadow"): sh = a.get_meta("shadow")
+			if a in caster_roots: MoonShadow.caster(n, sh != false); MoonShadow.no_receive(n); break
 			if a == hand_root: (n as VisualInstance3D).layers = 1 << (Gfx.IN_HAND - 1); break
 			a = a.get_parent()
 	_fresh.clear()

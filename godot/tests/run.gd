@@ -1260,6 +1260,7 @@ func _ready() -> void:
 		if not q4_t.has(q4_e.type): q4_t[q4_e.type] = q4_e
 	var q4_body := 0; var q4_kit_ok := true
 	for q4_n in (q4_t.patrol.g as Node3D).find_children("*", "MeshInstance3D", true, false):
+		if q4_n == q4_t.patrol.far: continue   # (the whole baked for far away, which D10 checks below)
 		if q4_n.has_meta("body"): q4_body += 1; var q4_m := (q4_n as MeshInstance3D).material_override as StandardMaterial3D; q4_kit_ok = q4_kit_ok and is_equal_approx(q4_m.roughness, 0.42) and is_equal_approx(q4_m.metallic, 0.55)
 	check("4: the robots' plating as the browser game's (roughness 0.42, metalness 0.55), and it shows the hit flash", q4_body == 5 and q4_kit_ok, q4_body)
 	var q4_d = q4_t.droneA; var q4_ro: Node3D = q4_d.k.rotors[0]; var q4_ry := q4_ro.rotation.y; en.robots.update(q4_d, 0.1, 80.0, Vector2(1, 0), 0.0)
@@ -1281,6 +1282,68 @@ func _ready() -> void:
 		and (q4_ball.material_override as ShaderMaterial).get_shader_parameter("map") == BotLook.shell_tex() and q4_red.is_equal_approx(Vector3(1.0, 26 / 255.0, 16 / 255.0)) and q4_rg.is_equal_approx(Color(World.lin("ff3a2a"), 0.34)),
 		[q4_zmax, q4_red])
 	check("the shiny robots take no moon shadow either (their own shader writes the mark)", BotLook.SHINE.contains("stencil_mode write, compare_always, 2;") and Gfx.unlit(Color.WHITE).stencil_reference == MoonShadow.UNSHADOWED)
+	# ---------------- D10: far away one baked mesh (the browser game's bakeFar and setFar); the moon's shadow as there ----------------
+	check("D10: the ship's crew is drawn baked far away, all but the boss drone (as there), the bake drawn with the plating's material",
+		q4_bs.far == null and q4_bs.no_far and q4_t.patrol.far != null and q4_t.patrol.far.material_override == en.robots._kit() and q4_t.cctv.far != null and q4_t.gdrone.far != null and q4_t.mine.far != null)
+	gm.begin(1); en.phone = false; en.esh = 45.0
+	var d10_px := pl.pos.x; var d10_pz := pl.pos.z
+	var d10_a: Enemies.Foe = en.spawn("thug", d10_px + 27.0, d10_pz, {"kit": "pistol"})
+	var d10_vc := 0; var d10_parts := 0
+	for d10_n in d10_a.g.find_children("*", "MeshInstance3D", true, false):
+		var d10_m = (d10_n as MeshInstance3D).mesh
+		if d10_n != d10_a.far and d10_m is ArrayMesh and ((d10_m as ArrayMesh).surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR) != 0:
+			d10_vc += (d10_m.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(); d10_parts += 1
+	var d10_fm: ArrayMesh = d10_a.far.mesh; var d10_bb := d10_fm.get_aabb()
+	check("D10: a person far away is one mesh, his five parts merged where they stand as built (feet to hair, -0.005 to 1.9 m), hidden until then, drawn with the body's material",
+		d10_parts == 5 and d10_fm.get_surface_count() == 1 and (d10_fm.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == d10_vc and not d10_a.far.visible
+		and d10_a.far.material_override == en._mat and d10_a.far.has_meta("body") and absf(d10_bb.position.y + 0.005) < 1e-4 and absf(d10_bb.end.y - 1.9) < 1e-4, [d10_parts, d10_bb])
+	d10_a.lod = 0.0; en.update(0.001, 0.0); var d10_near := not d10_a.is_far and not d10_a.far.visible and d10_a.upper.visible
+	d10_a.pos = Vector3(d10_px + 29.0, d10_a.pos.y, d10_pz); d10_a.lod = 0.0; en.update(0.001, 0.0)
+	var d10_only := true
+	for d10_c in d10_a.g.get_children(): d10_only = d10_only and (d10_c as Node3D).visible == (d10_c == d10_a.far)
+	check("D10: past 28 m only the baked mesh shows (setFar); a beast's line is 45 m, in the lab 46 (18 on a phone), a boss's half as far again",
+		d10_near and d10_a.is_far and d10_only and Enemies.far_line(false, false, false, false) == 28.0 and Enemies.far_line(true, false, false, false) == 45.0
+		and Enemies.far_line(true, false, true, false) == 46.0 and Enemies.far_line(true, false, true, true) == 18.0 and Enemies.far_line(false, true, false, false) == 42.0
+		and Enemies.far_line(true, true, false, true) == 67.5)
+	en._glow(d10_a, "flash"); var d10_flash: bool = d10_a.far.material_overlay != null and d10_a.far.material_overlay == en._flash_mat; en._glow(d10_a, "")
+	check("D10: a hit's flash shows on the baked mesh too (it is the body's material there)", d10_flash and d10_a.far.material_overlay == null)
+	# the moon's shadow: on a computer only within esh (0, 28, 28, 45, 45 m by quality level), never on a phone, never from a health bar
+	var d10_roots: Array = w.caster_roots; w.caster_roots = [en]; w._flush_fresh()
+	var d10_cast := func(e) -> int:
+		var k := 0
+		for d10_q in (e.g as Node3D).find_children("*", "GeometryInstance3D", true, false):
+			if (d10_q as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER): k += 1
+		return k
+	var d10_all: int = (d10_a.g as Node3D).find_children("*", "GeometryInstance3D", true, false).size()
+	var d10_c29: int = d10_cast.call(d10_a)
+	d10_a.pos = Vector3(d10_px + 50.0, d10_a.pos.y, d10_pz); d10_a.lod = 0.0; en.update(0.001, 0.0); var d10_c50: int = d10_cast.call(d10_a)
+	en.esh = Enemies.ESH[1]; d10_a.pos = Vector3(d10_px + 30.0, d10_a.pos.y, d10_pz); d10_a.lod = 0.0; en.update(0.001, 0.0); var d10_c30: int = d10_cast.call(d10_a)
+	d10_a.pos = Vector3(d10_px + 20.0, d10_a.pos.y, d10_pz); d10_a.lod = 0.0; en.update(0.001, 0.0); var d10_c20: int = d10_cast.call(d10_a)
+	var d10_bar := 0
+	for d10_q in d10_a.bar.find_children("*", "GeometryInstance3D", true, false):
+		if (d10_q as VisualInstance3D).get_layer_mask_value(MoonShadow.CASTER): d10_bar += 1
+	en.esh = 45.0; en.phone = true
+	var d10_b: Enemies.Foe = en.spawn("thug", d10_px + 8.0, d10_pz + 2.0, {"kit": "pistol"}); w._flush_fresh(); d10_b.lod = 0.0; en.update(0.001, 0.0)
+	var d10_cp: int = d10_cast.call(d10_b); en.phone = false
+	check("D10: enemies cast the moon's shadow within 45 m at the top quality and 28 m below it, never on a phone; their health bars never",
+		d10_c29 == d10_all and d10_all >= 6 and d10_c50 == 0 and d10_c30 == 0 and d10_c20 == d10_all and d10_bar == 0 and d10_cp == 0 and Enemies.ESH == [0.0, 28.0, 28.0, 45.0, 45.0],
+		[d10_all, d10_c29, d10_c50, d10_c30, d10_c20, d10_bar, d10_cp])
+	# a helmet is in the bake; knocked off, the bake is made again without it
+	var d10_h: Enemies.Foe = en.spawn("thug", d10_px + 12.0, d10_pz + 3.0, {"kit": "pistol", "helmet": true})
+	var d10_n0: int = (d10_h.far.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	var d10_hv: int = ((d10_h.helmet_node.get_child(0) as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	en._knock_helmet(d10_h, Vector3(0, 0, 1)); var d10_n1: int = (d10_h.far.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	var d10_fly: Node3D = en.flying.back()[0]
+	check("D10: a helmet is in the baked mesh, and knocking it off bakes it again without (as there); the tumbling helmet casts the moon's shadow, not on a phone",
+		d10_n0 - d10_n1 == d10_hv and d10_hv == 14 * 24 and not d10_h.is_far and d10_fly.get_meta("shadow", false) == true, [d10_n0, d10_n1, d10_hv])
+	# a striped beast keeps its picture; the boss intro shows a drone whole even if it was drawn baked
+	var d10_z: Enemies.Foe = en.spawn("zebra", d10_px + 60.0, d10_pz + 60.0, {})
+	var d10_za: Array = d10_z.far.mesh.surface_get_arrays(0)
+	var d10_zok: bool = d10_z.far.material_override == en.animals._kit_mats["zebra"] and (d10_za[Mesh.ARRAY_TEX_UV] as PackedVector2Array).size() == (d10_za[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	en.list.erase(d10_z); d10_z.g.queue_free(); d10_z.bar.queue_free()
+	en.set_far(d10_a, true); ct.start_boss_intro({"x": 0.0, "inward": 1.0, "z0": 0.0, "z1": 1.0, "title": "", "tone": "bee"}, d10_a, Callable()); var d10_cut := not d10_a.is_far and d10_a.upper.visible and not d10_a.far.visible; ct.skip()
+	check("D10: a striped beast's baked mesh keeps its picture (the same material, the parts' picture coordinates); a boss intro shows the drone whole", d10_zok and d10_cut)
+	w.caster_roots = d10_roots
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

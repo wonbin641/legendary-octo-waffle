@@ -64,10 +64,18 @@ class Foe:
 	var zig_t := 0.0; var fx_ := 0.0; var fz_ := 0.0; var bit := false; var roared := false; var tossed := false; var v0 := 0.0; var pass_v := 0.0; var slot = null; var claim_t := 0.0; var sg_cd := 0.0
 	var bleed_n := 0; var bleed_t := 0.0; var bleed_acc := 0.0; var k := {}; var legs: Array = []; var body: Node3D = null; var head: Node3D = null; var jaw: Node3D = null; var rig: Dictionary = {}; var neck_base: Array = []; var yaw_off := 0.0
 	var fuse := 0.0; var beep2 := false; var flame_on := 0.0; var flame_acc := 0.0; var flame_snd := 0.0; var aim_t := 0.0; var laser: MeshInstance3D = null   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
+	var far: MeshInstance3D = null; var is_far := false; var no_far := false; var casts := -1   # far away: one baked mesh (see bake_far); the moon's shadow (-1 not yet set)
 
 var list: Array[Foe] = []
 var dying: Array[Foe] = []
 var skip_calm := false
+## the browser game's isTouch, for drawing: on a phone no person, animal or robot casts the moon's shadow, and in the lab a beast
+## is drawn baked from nearer (main sets it with the phone's settings)
+var phone := false
+## how far away they still cast it on a computer (Gfx.esh), by the quality level the frame rate leaves (main sets it)
+const ESH := [0.0, 28.0, 28.0, 45.0, 45.0]
+var esh := 45.0
+var _far_meshes := {}
 var player: Player
 var cam: Camera3D
 var proj: Proj
@@ -182,6 +190,9 @@ func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	else: _build(e)
 	if opts.get("helmet", false):   # a full-face motorcycle helmet: the first shot to the head knocks it off
 		e.helmet = true; e.helmet_node = _helmet(); e.upper.add_child(e.helmet_node)
+	if not tk:   # as the browser game builds them: the baked mesh for far away (helmet and all), the moon's shadow as its build sets it
+		if not e.no_far: bake_far(e)
+		cast_shadow(e, not phone); e.bar.set_meta("shadow", false)
 	var sc: float = opts.get("scale", 1.0)
 	# a person's outline from above, in his own frame (x right, z forward): arms out at the front
 	e.foot = {"x0": -0.4 * sc, "x1": 0.4 * sc, "z0": -0.18 * sc, "z1": 0.52 * sc}
@@ -437,6 +448,60 @@ func _glow(e: Foe, kind: String) -> void:
 	for n in e.g.find_children("*", "MeshInstance3D", true, false):   # the body only: not the gun, a blade, the vest's light or a helmet
 		if n.has_meta("body"): (n as MeshInstance3D).material_overlay = mat
 
+## the browser game's bakeFar: far away an enemy is drawn as one mesh in the pose it was built in, instead of five or more
+## moving parts. As there, only the parts coloured by their vertices go in (not a gun's gold, a blade or the vest's light),
+## all drawn with the body's material, so a hit's flash still shows. The same build makes the same mesh, so it is kept
+func bake_far(e: Foe) -> void:
+	if e.far != null: e.g.remove_child(e.far); e.far.queue_free(); e.far = null
+	var items := []; var key := ""; var mat: Material = null
+	for n in e.g.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if not (mi.mesh is ArrayMesh): continue   # (a box or ball made as such has no vertex colours, as three.js's own geometries)
+		var t := Transform3D.IDENTITY; var a: Node = mi
+		while a != e.g: t = (a as Node3D).transform * t; a = a.get_parent()
+		for s in mi.mesh.get_surface_count():
+			if (mi.mesh as ArrayMesh).surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR == 0: continue
+			if mat == null: mat = mi.material_override if mi.material_override != null else mi.mesh.surface_get_material(s)
+			items.push_back([mi.mesh, s, t]); key += "%d/%d/%s;" % [mi.mesh.get_instance_id(), s, t]
+	if items.is_empty(): return
+	if not _far_meshes.has(key):
+		var vs := PackedVector3Array(); var ns := PackedVector3Array(); var cs := PackedColorArray(); var uvs := PackedVector2Array(); var idx := PackedInt32Array()
+		for it in items:
+			var arr: Array = (it[0] as Mesh).surface_get_arrays(it[1]); var t: Transform3D = it[2]; var nb := t.basis.inverse().transposed(); var off := vs.size()
+			var v0: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			for v in v0: vs.push_back(t * v)
+			if arr[Mesh.ARRAY_NORMAL] != null:
+				for nv: Vector3 in arr[Mesh.ARRAY_NORMAL]: ns.push_back((nb * nv).normalized())
+			else:
+				for i in v0.size(): ns.push_back(Vector3.UP)
+			cs.append_array(arr[Mesh.ARRAY_COLOR])
+			if arr[Mesh.ARRAY_TEX_UV] != null: uvs.append_array(arr[Mesh.ARRAY_TEX_UV])
+			else: uvs.resize(vs.size())
+			if arr[Mesh.ARRAY_INDEX] != null:
+				for i: int in arr[Mesh.ARRAY_INDEX]: idx.push_back(i + off)
+			else:
+				for i in v0.size(): idx.push_back(i + off)
+		var out := []; out.resize(Mesh.ARRAY_MAX)
+		out[Mesh.ARRAY_VERTEX] = vs; out[Mesh.ARRAY_NORMAL] = ns; out[Mesh.ARRAY_COLOR] = cs; out[Mesh.ARRAY_TEX_UV] = uvs; out[Mesh.ARRAY_INDEX] = idx
+		var am := ArrayMesh.new(); am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out); _far_meshes[key] = am
+	e.far = MeshInstance3D.new(); e.far.name = "Far"; e.far.mesh = _far_meshes[key]; e.far.material_override = mat; e.far.visible = false; e.far.set_meta("body", true)
+	e.g.add_child(e.far); e.is_far = false
+	if e.casts >= 0: MoonShadow.caster(e.far, e.casts == 1)
+
+## how far away the baked mesh takes over (the browser game's AI: 28 m, a beast 45, anything in the lab 46 or 18 on a phone; a boss 1.5 times)
+static func far_line(animal: bool, boss: bool, lab: bool, phone_: bool) -> float:
+	return ((18.0 if phone_ else 46.0) if lab else (45.0 if animal else 28.0)) * (1.5 if boss else 1.0)
+
+## the browser game's setFar: the baked mesh shows and everything else on the body hides, or the other way round
+func set_far(e: Foe, far: bool) -> void:
+	e.is_far = far
+	for c in e.g.get_children():
+		if c is Node3D: (c as Node3D).visible = far if c == e.far else not far
+
+## whether an enemy casts the moon's shadow; what is added to it later follows (World reads the mark)
+func cast_shadow(e: Foe, on: bool) -> void:
+	e.casts = 1 if on else 0; e.g.set_meta("shadow", on); MoonShadow.caster(e.g, on)
+
 func splash(c: Vector3, radius: float, dmg: float, skip = null) -> void:
 	for e in list.duplicate():
 		if e == skip: continue
@@ -476,6 +541,8 @@ var _helmet_mat: StandardMaterial3D
 func _knock_helmet(e: Foe, dir: Vector3) -> void:
 	e.helmet = false
 	var n := e.helmet_node; e.helmet_node = null; var at := n.global_position; e.upper.remove_child(n); add_child(n); n.global_position = at; n.rotation.y = e.yaw; n.scale = Vector3.ONE * e.scale
+	n.set_meta("shadow", not phone); MoonShadow.caster(n, not phone)   # (the tumbling helmet casts the moon's shadow, as there, but not on a phone)
+	if e.far != null: bake_far(e); set_far(e, e.is_far)   # the far mesh baked again without it (as there: drawn whole until the next look)
 	flying.push_back([n, Vector3(dir.x * 3.0 + randf_range(-1, 1), randf_range(3, 4.5), dir.z * 3.0 + randf_range(-1, 1)), 0.0])
 	Snd.play("ping", 1.0, e.pos); e.flinch = 1.0; e.flash_t = 0.05; _fx_sparks(at, 10, [1.0, 0.9, 0.6], 3.5)
 	if hitmark.is_valid(): hitmark.call(false, false)
@@ -672,6 +739,7 @@ func sight_all() -> void:
 func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
 	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	var lab: bool = World.STAGE_STYLE.get(stage, {}).get("lab", false)
 	if _rage_mat != null: _rage_mat.albedo_color = World.lin(Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01))
 	for e in list:
 		if not e.alive: continue
@@ -683,6 +751,11 @@ func update(dt: float, _time: float) -> void:
 			e.lod = 0.3 + randf() * 0.2; e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length()
 			e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0); e.awake = e.alert or e.angry or e.dist < ACT_R.get(stage, 60.0)
 			if not e.g.visible: e.bar.visible = false
+			if not e.toy:   # as there: past 28 m (a beast 45, in the lab 46, or 18 on a phone; a boss half as far again) the baked mesh; the shadow only near
+				var far := e.dist > far_line(e.animal, e.boss, lab, phone)
+				if e.far != null and e.is_far != far: set_far(e, far)
+				var sh := not phone and e.dist < esh
+				if e.casts != (1 if sh else 0): cast_shadow(e, sh)
 		if e.downed: _update_downed(e, dt); e.g.position = e.pos; continue
 		if e.ridden: e.bar.visible = false; continue   # you are on it: you steer it
 		if not e.awake: continue

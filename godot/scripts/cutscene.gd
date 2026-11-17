@@ -284,6 +284,7 @@ func start_boss_intro(D: Dictionary, e: Enemies.Foe, on_done: Callable) -> void:
 	C = {"kind": "boss", "t": 0.0, "dur": 1.5, "done": on_done, "D": D, "e": e, "cam0": cam0, "cam1": cam0.lerp(at, minf(0.4, 9.0 / maxf(1.0, cam0.distance_to(at)))), "base": at, "yaw0": e.yaw}
 	heli.visible = false; rope.visible = false; fig.visible = false; pool.visible = false
 	e.g.visible = true; e.bar.visible = false
+	if e.is_far: enemies.set_far(e, false)   # (it may still be drawn baked as far away)
 	_show("", "")
 	if card != null:
 		card.text = str(D.title); card.add_theme_color_override("font_color", Color("ffd23a") if D.tone == "bee" else Color("36ff7a")); card.visible = true
