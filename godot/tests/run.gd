@@ -84,6 +84,7 @@ func _ready() -> void:
 		check("move: " + run.name, p.pos.distance_to(e) < 1e-4 and p.grounded == run.grounded, "%s (browser %s)" % [str(p.pos), str(e)])
 	# ---------------- weapons ----------------
 	var nbad := 0; var which := ""
+	var price_now := {"rocket": [150000, 45000]}   # [price, rental] set by the owner of this port; the browser game's is [300000, 90000]
 	for id in ref.weapons:
 		var a: Dictionary = ref.weapons[id]; var b: Dictionary = Weapons.LIST.get(id, {})
 		for k in a:
@@ -91,12 +92,13 @@ func _ready() -> void:
 			if k == "adsSpeed" and not b.has(k): b = b.merged({"adsSpeed": 7})
 			var av = a[k]; var bv = b.get(k)
 			if k == "reserve" and str(av) == "inf": av = INF
+			if k == "price" and price_now.has(id): av = price_now[id][0]
 			var same := false
 			if av is Array: same = bv is Array and av.size() == bv.size() and absf(av[0] - bv[0]) < 1e-9 and absf(av[1] - bv[1]) < 1e-9
 			elif av is float or av is int: same = (bv is float or bv is int) and (av == bv or absf(av - bv) < 1e-9)
 			else: same = av == bv
 			if not same: nbad += 1; which += " %s.%s" % [id, k]
-		if Weapons.rent(id) != int(a.rent): nbad += 1; which += " %s.rent" % id
+		if Weapons.rent(id) != (int(price_now[id][1]) if price_now.has(id) else int(a.rent)): nbad += 1; which += " %s.rent" % id
 	check("all 8 weapons have the browser game's numbers and wording", nbad == 0 and ref.weapons.size() == Weapons.LIST.size(), which)
 	var cam := Camera3D.new(); cam.rotation_order = EULER_ORDER_YXZ; add_child(cam)
 	var pl := Player.new(); var en := Enemies.new(); add_child(en); var pr := Proj.new(); add_child(pr); en.player = pl; en.proj = pr; en.cam = cam
@@ -233,7 +235,12 @@ func _ready() -> void:
 	check("cleared: recorded, best time kept, money and gun stay, 2 and 1-1 offered next", shown == ["clear"] and Store.save.cleared == [1] and Store.save.best.has("t1") and Store.save.money == 119000 and Store.save.owned.size() == 1 \
 		and Store.next_stages(1) == [2, 6], str(Store.next_stages(1)))
 	var keep_save: Dictionary = Store.save; var keep_dev: bool = Store.settings.dev; Store.save = Store.save0(); Store.settings.dev = false
-	check("every stage can be played from the start: none waits for another to be cleared", Store.STAGE_ORDER.size() == 9 and Store.STAGE_ORDER.all(func(s): return Store.stage_open(s)) and not Store.stage_open(10))
+	var ul_open := Store.STAGE_ORDER.filter(func(s): return Store.stage_open(s))
+	Store.save.cleared = [1]; var ul_1 := [Store.stage_open(6), Store.stage_open(5)]; Store.save.cleared = [1, 6]; ul_1.push_back(Store.stage_open(5))
+	Store.save.cleared = [3]; var ul_3 := [Store.stage_open(7), Store.stage_open(8)]; Store.save.cleared = [3, 7]; ul_3.push_back(Store.stage_open(8))
+	Store.save.cleared = [5, 8]; var ul_kept := [Store.stage_open(5), Store.stage_open(8), Store.stage_open(6), Store.stage_open(7)]; Store.save.cleared = []
+	check("the five main stages (1 to 5) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
+		Store.STAGE_ORDER.size() == 9 and ul_open == [1, 2, 3, 4, 9] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(10), [ul_open, ul_1, ul_3, ul_kept])
 	Store.save = keep_save; Store.settings.dev = keep_dev
 	gm.begin(1); en.damage(en.list[3], 1000, en.list[3].pos, Vector3(0, 0, -1), false)
 	check("a stage played again pays nothing", gm.replay and Store.save.money == 119000)
@@ -279,14 +286,26 @@ func _ready() -> void:
 	check("a gun taken out of the layout no longer counts", not Meta.fits(2))
 	Meta.set_slot(5, "smg"); Meta.set_slot(0, "smg")
 	check("a gun sits in one slot only", Store.save.loadout[0] == "smg" and Store.save.loadout[5] == null and Meta.fits(2))
+	# the weapon order, in the menu or the middle of a stage: a gun swaps with the next gun before or after it in your hands
+	var wo_keep: Array = Store.save.loadout.duplicate(); Store.save.loadout = ["pistol", "gl", null, "smg", null, null, null]
+	var wo_moves := [Meta.move_gun("smg", -1), Meta.move_gun("pistol", -1), Meta.move_gun("smg", -1)]; var wo_a: Array = Store.save.loadout.duplicate()
+	Meta.swap_slots(3, 2); var wo_b: Array = Store.save.loadout.duplicate(); Meta.swap_slots(0, -1)
+	check("the weapon order: a gun moves ahead of the gun before it (the empty slots stay put), not past the first; the loadout screen swaps neighbouring slots",
+		wo_moves == [true, false, true] and wo_a == ["smg", "pistol", null, "gl", null, null, null] and wo_b == ["smg", "pistol", "gl", null, null, null, null] and Store.save.loadout == wo_b, [wo_moves, wo_a, wo_b])
+	Store.save.loadout = wo_keep
 	line = Meta.cancel_rent("smg")
 	check("cancelling a rental gives the fee back", Store.save.money == 79000 and not Store.save.rented.has("smg") and not Meta.fits(2))
 	Meta.buy_item("helmet"); Meta.buy_item("vest")
-	check("items: a helmet (10,000) and a vest (50,000, ten blocks)", Store.save.money == 19000 and Store.save.items.helmet == 1 and Store.save.items.vest == 10 and Meta.item_state("vest") == "착용 중 · 내구 10/10" and Meta.buy_item("helmet").contains("이미"))
+	check("items: a helmet (1,000) and a vest (5,000, ten blocks)", Store.save.money == 73000 and Store.save.items.helmet == 1 and Store.save.items.vest == 10 and Meta.item_state("vest") == "착용 중 · 내구 10/10" and Meta.buy_item("helmet").contains("이미"))
 	Store.save.items.ivory = 3
-	check("ivory sells for 50,000 a piece", Meta.sell_ivory(2).contains("+100,000원") and Store.save.money == 119000 and Store.save.items.ivory == 1)
+	check("ivory sells for 50,000 a piece", Meta.sell_ivory(2).contains("+100,000원") and Store.save.money == 173000 and Store.save.items.ivory == 1)
+	check("the guided rocket launcher rents for 45,000 (half the browser game's 90,000)", Weapons.rent("rocket") == 45000 and Weapons.LIST.rocket.price == 150000)
 	Store.settings.dev = true
-	check("developer mode: every stage open, every gun free to carry", Store.stage_open(4) and Store.gun_available("rocket"))
+	var dv_cl: Array = Store.save.cleared.duplicate(); Store.save.cleared = []
+	check("developer mode: every stage open (the side stages too, nothing cleared), every gun free to carry", Store.STAGE_ORDER.all(func(s9): return Store.stage_open(s9)) and Store.gun_available("rocket"))
+	Store.settings.god = true; var dv_chips: Array = Hud.new()._items(false); Store.settings.god = false; var dv_off: Array = Hud.new()._items(false)
+	check("developer mode's invincibility is shown on the screen while it is on", dv_chips.size() > 0 and dv_chips[0][0] == "무적 · 개발자 모드" and not dv_off.any(func(c): return c[0] == "무적 · 개발자 모드"), [dv_chips, dv_off])
+	Store.save.cleared = dv_cl
 	Store.settings.dev = false
 	# rentals go back when a stage ends
 	Store.save.loadout = ["pistol", "gl", null, null, null, null, null]; gm.begin(1)
@@ -295,7 +314,7 @@ func _ready() -> void:
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
 	# ---------------- stages 1-1 and 1-2 ----------------
 	for stn in [6, 5, 2, 3, 7, 4, 8]:
-		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.drop_pick = null; gm.begin(stn)
+		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.begin(stn)
 		var cb := 0
 		for i in mini(60, Phys.colliders.size()):
 			var b9 = Phys.colliders[i]; var q9: Array = R9.first[i]
@@ -317,7 +336,9 @@ func _ready() -> void:
 		for i in mini(w.crates.size(), R9.crates.size()):
 			if absf(w.crates[i].x - R9.crates[i][0]) > 1e-4 or absf(w.crates[i].z - R9.crates[i][1]) > 1e-4: cb9 += 1
 		check("stage %s: every crate is where the browser game has it" % Store.STAGE_TAG[stn], cb9 == 0, cb9)
-		check("stage %s: you start where the browser game starts you" % Store.STAGE_TAG[stn], absf(w.start.x - R9.start[0]) < 1e-4 and absf(w.start.z - R9.start[1]) < 1e-4 and absf(w.start.yaw - R9.start[2]) < 1e-4, w.start)
+		if stn == 5:   # 1-2 puts you down in the bottom left corner of the map (the owner's choice); the enemies are as there
+			check("stage 1-2: you start in the corner at the bottom left of the map, not at the browser game's south edge", w.start.x < -54.0 and w.start.z > 54.0 and Vector2(R9.start[0], R9.start[1]).distance_to(Vector2(w.start.x, w.start.z)) > 40.0, w.start)
+		else: check("stage %s: you start where the browser game starts you" % Store.STAGE_TAG[stn], absf(w.start.x - R9.start[0]) < 1e-4 and absf(w.start.z - R9.start[1]) < 1e-4 and absf(w.start.yaw - R9.start[2]) < 1e-4, w.start)
 	# ---------------- stage 2: the burning village ----------------
 	gm.begin(2); var s2_V2: Dictionary = ref.stages["2"]
 	var s2_cbad := 0
@@ -660,12 +681,19 @@ func _ready() -> void:
 	gm.begin(9); var s5_tf: ToyFoes = en.toys; pl.invuln = 1e9
 	var s5_kinds := {}
 	for e in en.list: s5_kinds[e.type] = int(s5_kinds.get(e.type, 0)) + 1
-	check("stage 5: a hundred toys: 30 plastic soldiers, 22 action figures, 24 wind-up cars, 24 brick figures", en.list.size() == 100 and gm.goal == 100 and s5_kinds.get("soldier", 0) == 30 and s5_kinds.get("figure", 0) == 22 and s5_kinds.get("rc", 0) == 24 and s5_kinds.get("brick", 0) == 24, s5_kinds)
+	var s5_riders := en.list.filter(func(e): return e.carried)
+	check("stage 5: a hundred toys: 42 plastic soldiers (12 of them standing on the 12 wind-up cars), 22 action figures, 24 brick figures",
+		en.list.size() == 100 and gm.goal == 100 and s5_kinds.get("soldier", 0) == 42 and s5_kinds.get("figure", 0) == 22 and s5_kinds.get("rc", 0) == 12 and s5_kinds.get("brick", 0) == 24
+		and s5_riders.size() == 12 and s5_riders.all(func(r): return r.type == "soldier" and r.k.car.type == "rc" and r.k.car.k.rider == r), s5_kinds)
 	var s5_bad := ""
 	for e in en.list:
+		if e.carried:   # a rider stands on the roof of his car
+			var c5: Vector3 = e.k.car.pos
+			if absf(e.pos.y - c5.y - ToyFoes.SEAT.y) > 0.01 or Vector2(e.pos.x - c5.x, e.pos.z - c5.z).length() > 0.2: s5_bad = "rider %s on %s" % [str(e.pos), str(c5)]; break
+			continue
 		var gy5 := Phys.ground_at(e.pos.x, e.pos.y + 0.1, e.pos.z, e.R)
 		if absf(gy5 - e.pos.y) > 0.05 or Phys.collide_at(e.pos.x, e.pos.y + 0.05, e.pos.z, e.R, 1.5) != null: s5_bad = "%s %s" % [e.type, str(e.pos)]; break
-	check("stage 5: every toy stands on something and inside nothing", s5_bad == "", s5_bad)
+	check("stage 5: every toy stands on something and inside nothing (a rider on his car's roof)", s5_bad == "", s5_bad)
 	var s5_first: Vector3 = en.list[0].pos; var s5_last: Vector3 = en.list[99].pos; gm.begin(9); s5_tf = en.toys
 	check("stage 5: the same toys in the same places every time", en.list[0].pos == s5_first and en.list[99].pos == s5_last)
 	var s5_hi := {"soldier": 0.0, "figure": 0.0}
@@ -684,6 +712,14 @@ func _ready() -> void:
 	check("stage 5: crouched, its head is lower too (the hit spheres follow it down)", absf(en.part_centre(s5_s, s5_s.parts[0]).y - s5_s.pos.y - 1.72 * s5_s.g.scale.y) < 0.01)
 	s5_s.vel = Vector3.ZERO; en.damage(s5_s, 1, s5_s.pos, Vector3(1, 0, 0), false)
 	check("stage 5: a hit gives it away (aim help finds it again) and barely shoves it", not s5_tf.camo(s5_s) and en.assist(s5_eye, s5_off.call(), 0.05, 30.0) != null and absf(s5_s.vel.x - 0.18) < 1e-4, s5_s.vel)
+	# ...and still, it blinks: out of sight for a second, back for a second, over and over (not drawn at all while out of sight)
+	var s5_bl = en.list.filter(func(e): return e.type == "soldier" and not e.carried)[3]
+	s5_bl.pos = Vector3(-2, 0, 50); s5_bl.k.post = s5_bl.pos; s5_bl.alert = false; s5_bl.los = false; s5_bl.k.reveal = 0.0; s5_bl.k.still = 0.0; s5_bl.k.blink = 0.0; s5_bl.k.move_t = 0.0
+	var s5_seen := []; var s5_drawn := []
+	for i in 112:
+		s5_tf.update(s5_bl, 0.05, 50.0, Vector2(50, 0), 0.0)
+		if i in [51, 71, 91, 111]: s5_seen.push_back(not s5_tf.gone(s5_bl)); s5_drawn.push_back((s5_bl.g.get_child(1) as Node3D).visible)
+	check("stage 5: a soldier gone still blinks: out of sight for a second, back for a second, and so on", s5_seen == [false, true, false, true] and s5_drawn == s5_seen and s5_tf.camo(s5_bl), [s5_seen, s5_drawn])
 	# action figure: a second jump at the top of the first; coming down a long way it glides on its cape
 	var s5_f = en.list.filter(func(e): return e.type == "figure")[0]
 	s5_f.pos = Vector3(-2, 0, 12); s5_f.vy = 0.0; s5_f.alert = true; s5_f.los = true; s5_f.k.jumps = 0; s5_f.k.glide = false; s5_f.k.jump_cd = 0.0; pl.pos = Vector3(40, 6, 12)
@@ -698,7 +734,7 @@ func _ready() -> void:
 	check("stage 5: falling from high up it spreads its cape: a second's drop is under 3 m (not 9.5)", bool(s5_f.k.glide) and s5_f.pos.y > 17.0, s5_f.pos.y)
 	# wind-up car: faster the longer it runs; it rams; broken, its battery bursts; toys near it shoot faster
 	var s5_r = en.list.filter(func(e): return e.type == "rc")[0]
-	s5_r.pos = Vector3(-30, 0, 48.5); s5_r.yaw = PI / 2; s5_r.vel = Vector3.ZERO; s5_r.k.v = 0.0; s5_r.k.back_t = 0.0; s5_r.alert = true; s5_r.los = true; pl.pos = Vector3(10, 0, 48.5)
+	s5_r.pos = Vector3(-30, 0, 48.5); s5_r.yaw = PI / 2; s5_r.vel = Vector3.ZERO; s5_r.k.v = 0.0; s5_r.k.back_t = 0.0; s5_r.alert = true; s5_r.los = true; pl.pos = Vector3(-5, 0, 48.5)   # (25 m: close and in its sight, so it comes at you)
 	var s5_x0: float = s5_r.pos.x
 	for i in 150:
 		var t7 := Vector2(pl.pos.x - s5_r.pos.x, pl.pos.z - s5_r.pos.z); s5_tf.update(s5_r, 0.02, t7.length(), t7, atan2(t7.x, t7.y))
@@ -710,6 +746,33 @@ func _ready() -> void:
 	check("stage 5: a toy within 8 m of a car shares its battery: it shoots 1.4 times as fast", s5_tf._share(s5_near) == ToyFoes.SHARE_MUL and s5_tf._share(s5_s) == 1.0)
 	pl.hp = Player.MAX_HP; pl.pos = Vector3(s5_r.pos.x + 1.5, 0, s5_r.pos.z); en.damage(s5_r, 999, s5_r.pos, Vector3(0, 0, 1), false)
 	check("stage 5: broken, its battery bursts: sparks for you close by", not s5_r.alive and Player.MAX_HP - pl.hp >= 15.0 and Player.MAX_HP - pl.hp <= 25.0, Player.MAX_HP - pl.hp)
+	# riders: a plastic soldier standing on each car, two toys with their own health; the car drives itself, the rider only shoots
+	var s5_rd = s5_r.k.get("rider", null)
+	check("stage 5: its car broken, the rider steps down onto the floor and fights on, a soldier on foot", s5_rd != null and s5_rd.alive and not s5_rd.carried and s5_rd.k.role == "trooper"
+		and absf(s5_rd.pos.y - Phys.ground_at(s5_rd.pos.x, s5_rd.pos.y + 0.2, s5_rd.pos.z, s5_rd.R)) < 0.05, s5_rd.pos if s5_rd != null else null)
+	var s5_c2 = en.list.filter(func(e): return e.type == "rc" and e.alive and e.k.get("rider", null) != null)[0]; var s5_r2 = s5_c2.k.rider; var s5_h0: float = s5_c2.hp
+	en.damage(s5_r2, 30, s5_r2.pos, Vector3(0, 0, 1), false)
+	check("stage 5: the rider and his car each have their own health: a shot at the rider leaves the car whole", s5_r2.hp == s5_r2.max_hp - 30.0 and s5_c2.hp == s5_h0 and s5_r2.alive and s5_c2.alive)
+	s5_c2.pos = Vector3(-30, 0, 48.5); s5_c2.yaw = PI / 2; s5_c2.k.v = 0.0; s5_c2.k.back_t = 0.0; s5_c2.vel = Vector3.ZERO; s5_c2.alert = true; s5_c2.los = false
+	s5_r2.alert = true; s5_r2.los = true; s5_r2.react = 0.0; s5_r2.fire_t = 0.0; s5_r2.burst = 0; pl.pos = Vector3(-30, 0, 70.0); pr.clear(); var s5_shot := 0; var s5_off2 := 0.0
+	for i in 90:
+		var s5_tc := Vector2(pl.pos.x - s5_c2.pos.x, pl.pos.z - s5_c2.pos.z); s5_tf.update(s5_c2, 0.02, s5_tc.length(), s5_tc, atan2(s5_tc.x, s5_tc.y))
+		var s5_tr := Vector2(pl.pos.x - s5_r2.pos.x, pl.pos.z - s5_r2.pos.z); s5_tf.update(s5_r2, 0.02, s5_tr.length(), s5_tr, atan2(s5_tr.x, s5_tr.y))
+		s5_shot = maxi(s5_shot, pr.list.size()); s5_off2 = maxf(s5_off2, Vector2(s5_r2.pos.x - s5_c2.pos.x, s5_r2.pos.z - s5_c2.pos.z).length())
+	check("stage 5: the rider goes where his car goes, standing on its roof, and shoots when he sees you", s5_shot > 0 and s5_off2 < 0.2 and absf(s5_r2.pos.y - s5_c2.pos.y - ToyFoes.SEAT.y) < 0.01 and s5_c2.pos.distance_to(Vector3(-30, 0, 48.5)) > 1.0, [s5_shot, s5_off2])
+	# the car out of your sight: it drives about at random and never stops, and not faster than 6 m/s
+	s5_c2.alert = false; s5_c2.los = false; pl.pos = Vector3(-30, 0, -60.0); var s5_prev: Vector3 = s5_c2.pos; var s5_path := 0.0; var s5_vmax := 0.0; var s5_vmin := INF; pr.clear()
+	for i in 300:
+		var s5_tw := Vector2(pl.pos.x - s5_c2.pos.x, pl.pos.z - s5_c2.pos.z); s5_tf.update(s5_c2, 0.02, s5_tw.length(), s5_tw, atan2(s5_tw.x, s5_tw.y))
+		s5_path += s5_c2.pos.distance_to(s5_prev); s5_prev = s5_c2.pos; s5_vmax = maxf(s5_vmax, float(s5_c2.k.v))
+		if i > 150: s5_vmin = minf(s5_vmin, float(s5_c2.k.v))
+	check("stage 5: with you out of its sight a car keeps driving about at random (it never stops), no faster than 6 m/s", s5_path > 8.0 and s5_vmax <= ToyFoes.RC_WANDER + 1e-6 and s5_vmin > 0.0, [s5_path, s5_vmax, s5_vmin])
+	en.damage(s5_r2, 999, s5_r2.pos, Vector3(0, 0, 1), false)
+	s5_c2.pos = Vector3(-30, 0, 48.5); s5_c2.yaw = PI / 2; s5_c2.vel = Vector3.ZERO; s5_c2.k.v = 0.0; s5_c2.k.back_t = 0.0; s5_c2.k.heading = PI / 2; s5_c2.k.wander_t = 3.0   # (off along the open carpet)
+	var s5_cp: Vector3 = s5_c2.pos
+	for i in 50:
+		var s5_tz := Vector2(pl.pos.x - s5_c2.pos.x, pl.pos.z - s5_c2.pos.z); s5_tf.update(s5_c2, 0.02, s5_tz.length(), s5_tz, atan2(s5_tz.x, s5_tz.y))
+	check("stage 5: shot off his car, the rider is down and the car drives on by itself", not s5_r2.alive and s5_c2.alive and s5_c2.pos.distance_to(s5_cp) > 1.0)
 	pl.invuln = 1e9
 	# brick figure: a brick off at every quarter of its health; a brick picked up goes back on; a quiet moment and it is whole
 	var s5_b = en.list.filter(func(e): return e.type == "brick")[0]
@@ -816,13 +879,19 @@ func _ready() -> void:
 	pr.clear(); pl.reset(0.0, 0.0, 0.0); pl.hp = 1000.0; pl.invuln = 0.0; pr.egrenade(Vector3(8, 1.5, 0), Vector3(0, 0.3, 0), "nade")
 	for i in 100: pr.update(1.0 / 30.0)
 	check("1-2: a thrown grenade goes off beside you (up to 100)", pr.list.is_empty() and pl.hp < 1000.0 and pl.hp >= 900.0, pl.hp)
-	# 1-2: choosing where to be put down
-	gm.begin(5); var d9 = gm.pick_drop(-50.0, -50.0)
-	check("1-2: you can pick where you are put down, and it is kept for another go", d9 != null and Vector2(pl.pos.x + 50.0, pl.pos.z + 50.0).length() < 10.0 and Phys.collide_at(pl.pos.x, 0.05, pl.pos.z, 0.36, 1.7) == null, pl.pos)
-	gm.begin(5); check("1-2: the next go starts there again", Vector2(pl.pos.x - d9.x, pl.pos.z - d9.z).length() < 0.01); gm.drop_pick = null
+	# 1-2: always put down in the corner at the bottom left of the map
+	gm.begin(5); var c9 := Vector2(pl.pos.x, pl.pos.z); var near9 := INF
+	for e9 in en.list: near9 = minf(near9, Vector2(e9.pos.x, e9.pos.z).distance_to(c9))
+	var in9 := Vector2(-sin(pl.yaw), -cos(pl.yaw)).dot(-c9.normalized())
+	check("1-2: you always come down in the corner at the bottom left of the map (the west and south ends) on open ground, facing in, with nobody close",
+		c9.x < -54.0 and c9.y > 54.0 and Phys.collide_at(pl.pos.x, 0.05, pl.pos.z, 0.36, 1.7) == null and Vector2(w.start.x, w.start.z).distance_to(c9) < 0.01 and in9 > 0.9 and near9 > 12.0, [c9, in9, near9])
+	gm.begin(5); check("1-2: and there again on the next go", Vector2(pl.pos.x, pl.pos.z).distance_to(c9) < 0.01)
 	# ---------------- stage 5: the toy room ----------------
 	Store.save = Store.save0(); gm.begin(9); var toy: ToyRoom = w.toy
 	check("the toy room: a hundred toys in it, every toy gun in hand", toy != null and en.list.size() == 100 and g.loadout == Toys.ORDER and Store.stage_open(9))
+	var to_moved := Meta.move_gun("rocket", -1, true); var to_lay: Array = gm.layout(); var to_first := Meta.move_gun("pistol", -1, true)
+	check("the toy room's nine toy guns change order too (keys 1-9), and keep it", to_moved and not to_first and to_lay[6] == "rocket" and to_lay[7] == "lmg" and to_lay.size() == 9 and Store.save.toy_order == to_lay, to_lay)
+	Store.save.toy_order = Toys.ORDER.duplicate(); g.reset(gm.layout())
 	var simt := func(sec: float) -> void:
 		for i in roundi(sec * 30): pl.update(1.0 / 30.0, cam, 0.0); toy.update(1.0 / 30.0, pl); g.update(1.0 / 30.0)
 	pl.in_f = 0.0; pl.in_s = 0.0; pl.in_run = false; simt.call(4.0)
@@ -1287,10 +1356,21 @@ func _ready() -> void:
 	# ---- E 4: the ship and its crew, as the browser game draws them ----
 	gm.begin(4); var e4_find := func(nm: String) -> Node: return w.group.find_child(nm, true, false)
 	var e4_w := []
-	for t: ImageTexture in [Ship.plate_tex(), Ship.hall_tex(), Ship.panel_tex(), Ship.grate_tex(), Ship.carpet_tex(), Ship.ceil_tex(), Ship.step_tex(), Ship.space_tex(0.62), Ship.airlock_tex(), Ship.door_tex(), Ship.shaft_tex()]: e4_w.push_back(t.get_width())
+	for t: ImageTexture in [Ship.plate_tex(), Ship.hall_tex(), Ship.panel_tex(), Ship.grate_tex(), Ship.carpet_tex(), Ship.ceil_tex(), Ship.step_tex(), Ship.space_tex(0.62), Ship.shaft_tex()]: e4_w.push_back(t.get_width())
 	var e4_pn := Ship.panel_tex().get_image(); var e4_yl := e4_pn.get_pixel(128, 249); var e4_sp := Ship.space_tex(0.62).get_image(); var e4_pl := e4_sp.get_pixel(int(1024 * 0.62), 250)
 	check("4: the ship's pictures at the browser game's sizes, the wall panels with their yellow line near the foot, space with a blue planet rising",
-		e4_w == [512, 512, 256, 128, 256, 256, 256, 1024, 256, 256, 4] and e4_yl.r > e4_yl.b + 0.1 and e4_yl.g > e4_yl.b and e4_pl.b > 0.45 and e4_pl.b > e4_pl.r and Ship.grate_tex().get_image().get_pixel(1, 1).is_equal_approx(Color("4a5260")), [e4_w, e4_yl, e4_pl])
+		e4_w == [512, 512, 256, 128, 256, 256, 256, 1024, 4] and e4_yl.r > e4_yl.b + 0.1 and e4_yl.g > e4_yl.b and e4_pl.b > 0.45 and e4_pl.b > e4_pl.r and Ship.grate_tex().get_image().get_pixel(1, 1).is_equal_approx(Color("4a5260")), [e4_w, e4_yl, e4_pl])
+	# the doors as the owner of this port drew them: a blue seam down the middle that crosses the black ring in the middle in an S;
+	# the bridge's and the hall's two leaves part along it
+	var dr_w := 10.0; var dr_h := 6.0; var dr_R := Ship.RING_R * dr_h
+	var dr_s := [Ship.seam_u(dr_h * 0.5 + dr_R * 0.5, dr_w, dr_h) - dr_w * 0.5, Ship.seam_u(dr_h * 0.5 - dr_R * 0.5, dr_w, dr_h) - dr_w * 0.5, Ship.seam_u(dr_h * 0.9, dr_w, dr_h) - dr_w * 0.5]
+	var dr_img: Image = (Ship.door_face(dr_w, dr_h)[0] as ImageTexture).get_image(); var dr_pw := dr_img.get_width(); var dr_ph := dr_img.get_height()
+	var dr_top := dr_img.get_pixel(dr_pw / 2, int(dr_ph * 0.15)); var dr_ring := dr_img.get_pixel(dr_pw / 2 + roundi(dr_ph * Ship.RING_R), dr_ph / 2); var dr_panel := dr_img.get_pixel(int(dr_pw * 0.25), int(dr_ph * 0.3))
+	var dr_D: Dictionary = w.ship.doors[0]; var dr_o0: float = dr_D.open; dr_D.open = 1.0; w.ship._slide(dr_D); var dr_gap: float = (dr_D.b as Node3D).position.z - (dr_D.a as Node3D).position.z
+	dr_D.open = dr_o0; w.ship._slide(dr_D)
+	check("4: the doors as drawn: a blue seam down the middle, crossing the black ring in the middle in an S; the bridge's and the hall's two leaves part along it, all the way",
+		dr_s[0] > 0.2 and dr_s[1] < -0.2 and absf(dr_s[2]) < 1e-6 and dr_pw == 640 and dr_top.b > dr_top.r + 0.3 and dr_ring.r < 0.1 and dr_ring.b < 0.1 and absf(dr_panel.r - Color("434a5a").r) < 0.02
+		and absf(dr_gap - dr_w) < 0.01 and (dr_D.a as MeshInstance3D).mesh.get_faces().size() > 100, [dr_s, dr_top, dr_ring, dr_panel, dr_gap])
 	var e4_sg := Ship.sign_tex("운전실", "up", Color("f2a33a")).get_image(); var e4_or := 0
 	for e4_y in range(70, 260, 3):
 		for e4_x in range(100, 640, 3): var e4_c := e4_sg.get_pixel(e4_x, e4_y); e4_or += 1 if e4_c.r > 0.8 and e4_c.g > 0.5 and e4_c.b < 0.4 else 0

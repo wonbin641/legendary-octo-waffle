@@ -56,6 +56,7 @@ class Foe:
 	var dash_used := false; var rage := false; var charge_cd := 0.0; var state_t := 0.0; var hit_done := false; var cx := 0.0; var cz := 0.0; var attack_cd := 0.0; var moan_t := 0.0
 	# robots (stage 4)
 	var toy := false   # stage 5
+	var carried := false   # stage 5: a soldier riding a wind-up car (it goes where the car goes, and is not shoved off it)
 	var flash_t := 0.0; var glow := ""   # a hit: 0.08 s of orange glow (people and zombies); the raging boss glows red
 	var robot := false; var sealed := false; var from_bee := false; var bee_fall := false; var eye_h := 1.65; var bar_y := -99.0; var boss_guard := false
 	# animals (stages 3, 3-1)
@@ -417,7 +418,7 @@ func kill(e: Foe, weak: bool, dir) -> void:
 		var now := e.self_det or e.vest_shot; proj.bomb(e.pos, 0.02 if now else 0.3)
 		if now: e.vanish = true
 	e.fall_dir = 1.0 if e.type == "zombie" else -1.0; e.downed = false
-	if e.type == "rc": toys.rc_burst(e)   # its battery bursts
+	if e.type == "rc": toys.rc_burst(e)   # its battery bursts (and its rider, if any, comes down onto the floor)
 	if e.type == "mine": robots.mine_blast(e.pos, 0.0 if e.self_det else 0.06)   # a spider mine goes off
 	if e.robot:
 		e.vanish = true
@@ -458,7 +459,7 @@ func _separate() -> void:
 	var count := list.size(); var squares := {}; var sq_key := PackedInt32Array(); sq_key.resize(count)
 	for i in count:
 		var a := list[i]
-		if a.downed or a.fly: sq_key[i] = -1; continue
+		if a.downed or a.fly or a.carried: sq_key[i] = -1; continue
 		var k := (floori(a.pos.x * 0.1) + 512) * 1024 + floori(a.pos.z * 0.1) + 512; sq_key[i] = k
 		if squares.has(k): (squares[k] as Array).push_back(i)
 		else: squares[k] = [i]
@@ -810,7 +811,7 @@ func update(dt: float, _time: float) -> void:
 			if not e.alive: continue
 			e.g.position = e.pos; e.g.rotation.y = e.yaw
 			if e.hp < e.max_hp:   # a soldier gone still shows its bar from half as far
-				e.bar.visible = e.g.visible and (not toys.camo(e) or e.dist < vis * 0.5); e.bar.position = Vector3(e.pos.x, e.pos.y + e.H + 0.4 * e.scale, e.pos.z)
+				e.bar.visible = e.g.visible and not toys.gone(e) and (not toys.camo(e) or e.dist < vis * 0.5); e.bar.position = Vector3(e.pos.x, e.pos.y + e.H + 0.4 * e.scale, e.pos.z)
 				var tf := clampf(e.hp / e.max_hp, 0.0, 1.0); e.fill.scale.x = 0.66 * tf; e.fill.position.x = -0.33 * (1.0 - tf)
 			else: e.bar.visible = false
 			continue

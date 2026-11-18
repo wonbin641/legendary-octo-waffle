@@ -3,8 +3,8 @@ class_name Meta
 ## kit for each stage. Ported from src/08f_meta.js; the recommended kit is new in the Godot version.
 
 const ITEMS := {
-	"helmet": {"name": "오토바이 헬멧", "tag": "머리", "price": 10000, "desc": "머리로 오는 공격을 한 번 막아 줍니다. 막으면 부서집니다."},
-	"vest": {"name": "방탄조끼", "tag": "몸", "price": 50000, "desc": "몸으로 오는 공격을 50% 줄여 줍니다. 10번 막으면 닳아 없어집니다. 불은 못 막습니다."},
+	"helmet": {"name": "오토바이 헬멧", "tag": "머리", "price": 1000, "desc": "머리로 오는 공격을 한 번 막아 줍니다. 막으면 부서집니다."},
+	"vest": {"name": "방탄조끼", "tag": "몸", "price": 5000, "desc": "몸으로 오는 공격을 50% 줄여 줍니다. 10번 막으면 닳아 없어집니다. 불은 못 막습니다."},
 	"jet": {"name": "제트백팩", "tag": "비행", "price": 100000, "desc": "점프(Space)를 두 번 누르면 날아오릅니다. Space는 위로, Ctrl 또는 C는 아래로. 최대 10초, 한 번 쓰면 끝입니다.",
 		"desc_touch": "점프 버튼을 두 번 누르면 날아오릅니다. 점프는 위로, 내려가기 버튼은 아래로. 최대 10초, 한 번 쓰면 끝입니다."},
 }
@@ -110,6 +110,22 @@ static func buy_ammo(id: String, guns: Guns) -> String:
 	return W.name + (" 로켓 1발 · %d/12" % int(st.mag + st.reserve) if W.get("rocket", false) else " 총알 100발 · %d발" % int(st.reserve))
 
 ## put a gun in a slot (or empty it); a gun sits in one slot only
+## the weapon order, changed in the middle of a stage too: a gun swaps places with the next gun before it (step -1) or after it
+## (step 1) in your hands, keeping the empty slots where they are. In the toy room the toy guns' own order (keys 1-9)
+static func move_gun(id: String, step: int, toys := false) -> bool:
+	var lo: Array = Store.save.toy_order if toys else Store.save.loadout
+	var i := lo.find(id)
+	if i < 0: return false
+	var j := i + step
+	while j >= 0 and j < lo.size() and (lo[j] == null or not (toys or Store.gun_available(lo[j]))): j += step
+	if j < 0 or j >= lo.size(): return false
+	lo[i] = lo[j]; lo[j] = id; Store.persist(); return true
+## the loadout screen's arrows: a slot swaps with the slot next to it, empty or not
+static func swap_slots(i: int, j: int) -> void:
+	var lo: Array = Store.save.loadout
+	if i < 0 or j < 0 or i >= lo.size() or j >= lo.size(): return
+	var t = lo[i]; lo[i] = lo[j]; lo[j] = t; Store.persist()
+
 static func set_slot(slot: int, id) -> void:
 	if id != null:
 		var j: int = Store.save.loadout.find(id)

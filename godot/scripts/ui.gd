@@ -5,7 +5,7 @@ extends Control
 
 const NIGHT := Color("0d1220"); const INK := Color("ece6d8"); const STEEL := Color("8f9bb0"); const SODIUM := Color("f2a33a")
 const ALARM := Color("ff5260"); const VITAL := Color("5ed6b0"); const LINE := Color(0.56, 0.61, 0.69, 0.35)
-const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 내릴 곳을 고름",
+const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 왼쪽 아래 구석에서 시작",
 	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만", 7: "넓은 사파리 · 5분 뒤 동물 100마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
 	9: "아이 방 전체가 싸움터 · 장난감 100개 · 플라스틱 군인, 액션 피규어, 태엽·RC 유닛, 조립 블록 피규어",
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 · 숨은 스파이더 마인"}
@@ -164,7 +164,7 @@ func _build_menu() -> void:
 	var c1 := PanelContainer.new(); c1.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.6), LINE, 1, 8)); c1.size_flags_horizontal = Control.SIZE_EXPAND_FILL; grid.add_child(c1)
 	var c1v := vbox(2); c1.add_child(c1v); c1v.add_child(lbl("최단 기록", f_mono, 10, STEEL)); d_best = lbl("—", f_bold, 18, INK); c1v.add_child(d_best)
 	var c2 := PanelContainer.new(); c2.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.6), LINE, 1, 8)); c2.size_flags_horizontal = Control.SIZE_EXPAND_FILL; grid.add_child(c2)
-	var c2v := vbox(2); c2.add_child(c2v); c2v.add_child(lbl("추천 스펙", f_mono, 10, STEEL)); d_spec = lbl("", f_bold, 18, VITAL); c2v.add_child(d_spec)
+	var c2v := vbox(2); c2.add_child(c2v); c2v.add_child(lbl("권장 스펙", f_mono, 10, STEEL)); d_spec = lbl("", f_bold, 18, VITAL); c2v.add_child(d_spec)
 	d_spec_list = lbl("", f_body, 12, STEEL, true); dv.add_child(d_spec_list)
 	d_go = btn("출동", "primary", func() -> void: _to_brief()); d_go.set_meta("first", true); dv.add_child(d_go)
 	var row := hbox(); dv.add_child(row); detail.set_meta("row", row)
@@ -227,7 +227,7 @@ func _place_nodes() -> void:
 
 func _status(s: int) -> Array:   # [state, line]
 	var open := Store.stage_open(s); var done: bool = Store.save.cleared.has(s); var best := int(Store.save.best.get("t%d" % s, 0))
-	if not open: return ["locked", "잠김"]
+	if not open: return ["locked", "잠김 · %s 클리어 후" % Store.STAGE_TAG[Store.NEEDS[s]]] if Store.NEEDS.has(s) else ["locked", "잠김"]
 	if done: return ["done", "클리어" + (" " + Store.fmt_time(best) if best > 0 else "")]
 	return ["open", "도전 가능"]
 
@@ -280,10 +280,10 @@ func refresh_menu() -> void:
 	var fit := Meta.fits(sel); var miss := Meta.missing(sel)
 	var no_spec: bool = Meta.spec(sel).all.is_empty() and Meta.spec(sel).any.is_empty()
 	d_spec.text = "—" if no_spec else ("적합" if fit else "부적합"); d_spec.add_theme_color_override("font_color", INK if no_spec else (VITAL if fit else ALARM))
-	d_spec_list.text = "" if no_spec else "추천 스펙 · " + Meta.spec_text(sel) + ("" if fit else "\n없는 것 · " + ", ".join(miss.map(func(id): return Meta.name_of(id))))
+	d_spec_list.text = "" if no_spec else "권장 스펙 · " + Meta.spec_text(sel) + ("" if fit else "\n없는 것 · " + ", ".join(miss.map(func(id): return Meta.name_of(id))))
 	var built := BUILT.has(sel)
 	d_go.disabled = not open or not built
-	d_msg.text = "" if (built or not open) else "이 스테이지는 아직 Godot판에 옮기지 않았습니다"
+	d_msg.text = ("스테이지 %s을 깨면 열립니다" % Store.STAGE_TAG[Store.NEEDS[sel]] if Store.NEEDS.has(sel) else "") if not open else ("" if built else "이 스테이지는 아직 Godot판에 옮기지 않았습니다")
 	board.queue_redraw()
 
 func _to_brief() -> void:
@@ -351,7 +351,7 @@ func render_shop() -> void:
 	# the stage's recommended kit, when something in it is missing
 	var miss: Array = Meta.missing(shop_ctx) if shop_ctx > 0 else []
 	if not miss.is_empty():
-		shop_list.add_child(_head("추천 상품 · 스테이지 %s 추천 스펙에 없는 것" % Store.STAGE_TAG[shop_ctx], ALARM))
+		shop_list.add_child(_head("추천 상품 · 스테이지 %s 권장 스펙에 없는 것" % Store.STAGE_TAG[shop_ctx], ALARM))
 		for id in miss: shop_list.add_child(_item_row(id) if Meta.ITEMS.has(id) else _gun_row(id))
 	shop_list.add_child(_head("아이템 · 다 쓸 때까지 가지고 다닙니다"))
 	for id in Meta.ITEM_ORDER: shop_list.add_child(_item_row(id))
@@ -372,8 +372,34 @@ func _build_loadout() -> void:
 	var c := btn("총기 커스텀", "ghost", func() -> void: open_sub("custom")); s[0].set_meta("cu", c)
 	s[2].add_child(b); s[2].add_child(r); s[2].add_child(c); s[2].move_child(b, 0); s[2].move_child(r, 1); s[2].move_child(c, 2)
 
+## the weapon order changed in the pause or on the loadout screen: the number keys follow at once, the gun in hand stays in hand
+func _relayout() -> void:
+	if not in_stage: return
+	guns.loadout = game.layout(); guns.slots = guns.loadout.filter(func(x): return x != null); guns.none = guns.slots.is_empty()
+func _move_gun(id: String, step: int, toys: bool, again: Callable) -> void:
+	if Meta.move_gun(id, step, toys): Snd.play("reload0")
+	_relayout(); again.call()
+func _arrows(row: HBoxContainer, up: Callable, down: Callable, can_up: bool, can_down: bool) -> void:
+	var u := btn("▲", "small", up); u.disabled = not can_up; u.tooltip_text = "앞 번호로"; row.add_child(u)
+	var d := btn("▼", "small", down); d.disabled = not can_down; d.tooltip_text = "뒤 번호로"; row.add_child(d)
+## the guns in your hands in key order, each with arrows to move it (the pause; the toy room's nine toy guns there)
+func _gun_order(into: VBoxContainer, again: Callable) -> void:
+	var toys: bool = game.stage == 9; var lay: Array = guns.loadout; var held := lay.filter(func(x): return x != null)
+	into.add_child(_head("무기 순서 · 숫자 키 %d-%d번" % [1, lay.size()]))
+	for i in lay.size():
+		var id = lay[i]
+		if id == null: continue
+		var row := hbox(8); into.add_child(row); var at := held.find(id)
+		var k := lbl(str(i + 1), f_mono, 15, SODIUM); k.custom_minimum_size = Vector2(22, 0); row.add_child(k)
+		var nm := lbl(Toys.NAMES[id] if toys else Weapons.LIST[id].name + " " + Weapons.LIST[id].model, f_body, 14, INK); nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL; row.add_child(nm)
+		_arrows(row, func() -> void: _move_gun(id, -1, toys, again), func() -> void: _move_gun(id, 1, toys, again), at > 0, at < held.size() - 1)
+
 func render_loadout() -> void:
 	clear(lo_list); (screens.loadout.get_meta("cu") as Button).visible = not in_stage
+	if in_stage and game.stage == 9:   # the toy room hands you all nine toy guns: only their order (keys 1-9) changes
+		_gun_order(lo_list, render_loadout)
+		lo_list.add_child(lbl("장난감 방에서는 장난감 총 아홉 자루를 모두 듭니다 · 화살표로 숫자 키 차례를 바꿉니다", f_body, 13, INK, true))
+		return
 	for i in 7:
 		var cur_id = Store.save.loadout[i]; var row := hbox(10); lo_list.add_child(row)
 		var k := lbl(str(i + 1), f_mono, 16, SODIUM); k.custom_minimum_size = Vector2(22, 0); row.add_child(k)
@@ -387,11 +413,11 @@ func render_loadout() -> void:
 			if id == cur_id: pick = ob.item_count - 1
 		ob.select(pick)
 		ob.item_selected.connect(func(ix: int) -> void:
-			Meta.set_slot(i, ob.get_item_metadata(ix))
-			if in_stage: guns.loadout = game.layout(); guns.slots = guns.loadout.filter(func(x): return x != null); guns.none = guns.slots.is_empty()
-			render_loadout())
+			Meta.set_slot(i, ob.get_item_metadata(ix)); _relayout(); render_loadout())
 		var note := "" if cur_id == null else ("이번에는 빈 칸" if not Store.gun_available(cur_id) else ("무료" if cur_id == "pistol" else ("개발자 모드" if Store.settings.dev else ("보유" if Store.save.owned.has(cur_id) else "대여 중"))))
 		var nl := lbl(note, f_mono, 11, STEEL); nl.custom_minimum_size = Vector2(84, 0); row.add_child(nl)
+		_arrows(row, func() -> void: Meta.swap_slots(i, i - 1); Snd.play("reload0"); _relayout(); render_loadout(),
+			func() -> void: Meta.swap_slots(i, i + 1); Snd.play("reload0"); _relayout(); render_loadout(), i > 0, i < 6)
 	var ready := []
 	for i in 7:
 		var id = Store.save.loadout[i]
@@ -607,7 +633,7 @@ func open_dialog(kind: String) -> void:
 			dlg_text.text = "돈, 열린 스테이지, 깬 기록, 최단 기록, 무기 편성, 대여 중인 무기, 가진 총, 아이템과 상아, 총기 커스텀을 모두 지우고 처음 상태로 돌아갑니다. 되돌릴 수 없으니 필요하면 먼저 저장 코드를 받아 두세요. 설정(감도, 음량, 개발자 모드)은 그대로입니다."
 		"dev":
 			dlg_head.text = "개발자 모드"; dlg_title.text = "비밀번호"; dlg_ok.text = "켜기"; dlg_cancel.text = "취소"; dlg_in.placeholder_text = "비밀번호"
-			dlg_text.text = "개발자 모드를 켜려면 비밀번호를 넣으세요. 켜면 모든 스테이지와 모든 총, 아이템을 무료로 쓸 수 있습니다."
+			dlg_text.text = "개발자 모드를 켜려면 비밀번호를 넣으세요. 켜면 모든 스테이지와 모든 총, 아이템을 무료로 쓸 수 있고 무적이 됩니다(무적은 설정에서 끌 수 있습니다)."
 	open_sub("dlg")
 	if dlg_in.visible: dlg_in.grab_focus.call_deferred()
 
@@ -644,7 +670,7 @@ func _dialog_ok() -> void:
 			Store.save = Store.save0(); Store.fix_save(); Store.persist(); Snd.play("reload0"); close_sub(); set_msg.text = "모든 진행 상황을 지웠습니다"; on_settings.call()
 		"dev":
 			if SaveCode.dev_hash(dlg_in.text.strip_edges()) != SaveCode.DEV_HASH: dlg_msg.text = "비밀번호가 틀렸습니다"; Snd.play("empty"); return
-			Store.settings.dev = true; Store.persist_settings(); close_sub(); set_msg.text = "개발자 모드 · 모든 스테이지와 모든 총을 쓸 수 있습니다"; render_settings()
+			Store.settings.dev = true; Store.settings.god = true; Store.persist_settings(); close_sub(); set_msg.text = "개발자 모드 · 모든 스테이지와 모든 총을 쓸 수 있고 무적입니다"; render_settings()
 
 # ================= the briefing =================
 func _build_brief() -> void:
@@ -653,11 +679,6 @@ func _build_brief() -> void:
 	br_box = BoxContainer.new(); br_box.vertical = true; br_box.add_theme_constant_override("separation", 14); br_body.add_child(br_box)
 	br_map = Control.new(); br_map.custom_minimum_size = Vector2(260, 260); br_map.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; br_box.add_child(br_map)
 	br_map.draw.connect(func() -> void: tac.draw(br_map, br_map.size))
-	br_map.gui_input.connect(func(e: InputEvent) -> void:   # 1-2: tap the map to choose where you are put down
-		if game.stage != 5 or not ((e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed)): return
-		var at := tac.to_world(br_map.size, e.position); var d = game.pick_drop(at.x, at.y)
-		if d != null: Snd.play("reload1")
-		br_gear_note = "내릴 곳을 바꿨습니다" if d != null else "그곳에는 내릴 수 없습니다 · 빈 땅을 눌러 주세요"; _brief_gear(); br_map.queue_redraw())
 	br_side = vbox(10); br_box.add_child(br_side)
 	br_leg_h = _flow(); br_side.add_child(br_leg_h); br_leg_v = vbox(6); br_side.add_child(br_leg_v)
 	br_gear = lbl("", f_body, 13, SODIUM, true); br_side.add_child(br_gear); br_note = lbl("", f_body, 13, INK, true); br_side.add_child(br_note)
@@ -666,7 +687,7 @@ func _build_brief() -> void:
 	for i in 4: s[2].add_child([br_go, b1, b2, b3][i]); s[2].move_child([br_go, b1, b2, b3][i], i)
 
 func open_brief(stage: int) -> void:
-	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); br_gear_note = ""; show_screen("brief"); _brief_gear(); _legend(br_leg_h, br_leg_v, false)
+	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); show_screen("brief"); _brief_gear(); _legend(br_leg_h, br_leg_v, false)
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name
 	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else ""); br_map.queue_redraw()
 
@@ -676,7 +697,7 @@ func _brief_gear() -> void:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
 	if sel == 9: br_gear.text = "장난감 무기 9종 · 1-9번 키"; br_go.disabled = false; return
-	br_gear.text = ((("지도를 눌러 내릴 곳을 고를 수 있습니다" if br_gear_note == "" else br_gear_note) + "\n") if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n추천 스펙 · " + ("적합" if fit else "부적합")
+	br_gear.text = ("지도 왼쪽 아래 구석(서남쪽 끝)에 내립니다\n" if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
 func _deploy() -> void:
@@ -741,9 +762,9 @@ func render_pause() -> void:
 	clear(pa_body); pa_body.add_child(lbl("일시정지", f_title, 48, INK))
 	if pa_note_text != "": pa_body.add_child(lbl(pa_note_text, f_body, 13, SODIUM, true))
 	pa_body.add_child(lbl("처치 %d / %d · 가방 %s" % [game.kills, game.goal, Store.won(Store.save.money)], f_mono, 13, INK))
+	if not guns.none: _gun_order(pa_body, render_pause)
 	_settings_rows(pa_body, false)
 var pa_note_text := ""
-var br_gear_note := ""
 
 # ================= the result sheet =================
 func _build_over() -> void:

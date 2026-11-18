@@ -22,7 +22,6 @@ const BOSS := {
 	4: {"type": "bdrone", "name": "최첨단 감시 드론 B-3", "josa": "이", "scale": 1.0, "hp": 9000, "dmgMul": 1.0},
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
 }
-var drop_pick = null   # 1-2: where you chose to be put down (kept for another go)
 
 var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var proj: Proj; var loot: Loot; var fx: Fx
 var banner: Callable = Callable(); var feed: Callable = Callable(); var on_result: Callable = Callable()   # on_result(kind) shows the result sheet
@@ -67,7 +66,7 @@ func say_feed(text: String) -> void: _say(feed, [text, 0])
 func say_hint(text: String, sec: float) -> void: _say(hint, [text, sec])
 
 func layout() -> Array:
-	if stage == 9: return Toys.ORDER.duplicate()   # the preview hands you every toy gun (keys 1-9)
+	if stage == 9: return (Store.save.toy_order as Array).duplicate()   # every toy gun in hand (keys 1-9), in the order you put them
 	return (Store.save.loadout as Array).map(func(id): return id if (id != null and Store.gun_available(id, bonus_guns)) else null)
 
 func begin(stage_: int) -> void:
@@ -89,12 +88,15 @@ func begin(stage_: int) -> void:
 	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false
-	# 1-2 crowds the middle of the docks, so unless you pick somewhere else you come down at the south edge, facing in
+	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
+	# down in the corner at the bottom left of the map (the west and south ends), facing in
 	if stage == 5:
 		var d = open_spot(0.0, 58.0)
 		if d != null: world.start = d; player.reset(d.x, d.z, d.yaw); player.invuln = 1.5
 	populate()
-	if stage == 5 and drop_pick != null: set_drop(drop_pick)
+	if stage == 5:
+		var c = open_spot(-(Phys.HALF - 6.0), Phys.HALF - 6.0)
+		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
 	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(20000))) if not B.is_empty() else ""
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
@@ -110,11 +112,6 @@ func open_spot(x: float, z: float):
 			return {"x": px, "z": pz, "yaw": atan2(px, pz) if Vector2(px, pz).length() > 3.0 else 0.0}
 		rr += 0.5
 	return null
-
-func pick_drop(x: float, z: float):
-	var d = open_spot(x, z)
-	if d == null: return null
-	drop_pick = d; set_drop(d); return d
 
 func set_drop(d: Dictionary) -> void:
 	world.start = {"x": d.x, "z": d.z, "yaw": d.yaw}; player.pos = Vector3(d.x, 0, d.z); player.yaw = d.yaw; player.pitch = 0.0; Phys.update_flow(d.x, d.z)

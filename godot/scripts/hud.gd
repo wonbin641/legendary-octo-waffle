@@ -263,6 +263,7 @@ func _vbars(ci: Control, s: Vector2, g: Game, pl: Player, f_title: Font, f_bold:
 
 func _items(touch: bool) -> Array:
 	var it: Dictionary = Store.save.items; var chips := []
+	if Store.settings.dev and Store.settings.god: chips.push_back(["무적 · 개발자 모드", "jet"])
 	if int(it.helmet) > 0: chips.push_back(["헬멧", ""])
 	if int(it.vest) > 0: chips.push_back(["조끼 %d/10" % int(it.vest), "low" if int(it.vest) <= 3 else ""])
 	if int(it.jet) > 0: chips.push_back(["제트팩 · 점프 두 번" if touch else "제트팩 · Space 두 번", "jet"])

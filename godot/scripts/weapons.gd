@@ -26,7 +26,7 @@ const LIST := {
 	"lmg": {"name": "기관총", "model": "M-200", "short": "기관총", "tab": "기관총", "cls": "5.56mm 분대지원 기관총", "price": 110000, "real": 11000000, "dmg": 28, "rate": 0.05, "auto": true, "mag": 240, "reserve": 1200, "reload": 5.2,
 		"spread": 0.03, "adsSpread": 0.012, "moveSpread": 0.03, "pellets": 1, "recoil": 0.009, "kick": 0.03, "range": 150, "adsFov": 52, "sound": "lmg", "flash": 3.2, "head": 2, "bloom": 0.0025, "ammoCost": 2400, "moveMul": 0.9, "adsSpeed": 4.5,
 		"heavy": true, "heat": true, "note": "탄창 240발 · 쏠수록 총이 빨갛게 달아오름 · 한 탄창을 쉬지 않고 다 쏘면 과열(연기) · 과열되면 다른 총으로 바꿔야 재장전 · 이동속도 10% 감소"},
-	"rocket": {"name": "유도로켓발사기", "model": "R-12", "short": "유도로켓", "tab": "로켓", "cls": "유도 로켓발사기 · 한 발씩 장전", "price": 300000, "real": 30000000, "dmg": 1000, "splash": 6, "splashDmg": 500, "rocket": true,
+	"rocket": {"name": "유도로켓발사기", "model": "R-12", "short": "유도로켓", "tab": "로켓", "cls": "유도 로켓발사기 · 한 발씩 장전", "price": 150000, "real": 30000000, "dmg": 1000, "splash": 6, "splashDmg": 500, "rocket": true,
 		"rate": 0.6, "auto": false, "mag": 1, "reserve": 11, "reload": 2.2, "spread": 0.004, "adsSpread": 0.002, "moveSpread": 0.012, "pellets": 1, "recoil": 0.06, "kick": 0.16, "range": 200, "adsFov": 50, "sound": "rocket",
 		"flash": 3.4, "head": 1, "bloom": 0, "ammoCost": 0, "moveMul": 0.88, "adsSpeed": 5, "note": "쏠 때 조준선에 가장 가까운 적을 쫓아감 · 직격 1,000 · 폭발 반경 6 m (나도 맞음) · 한 발마다 재장전 · 최대 12발"},
 }

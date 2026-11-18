@@ -1,12 +1,16 @@
 class_name ToyFoes
 extends RefCounted
 ## Stage 5's enemies: four kinds of toy, each with its own way of moving and two things only it can do.
-##   plastic soldiers: one piece of green or tan plastic. still for 2 s they fade into the room (harder to see, aim help reaches
-##     half as far, the health bar shows from half as far); explosions barely shove them. snipers and ambushers on the bed and the desk.
+##   plastic soldiers: one piece of green or tan plastic. still for 2 s they go see-through, blinking out of sight and back every
+##     second (aim help reaches half as far, the health bar shows from half as far, never while out of sight); explosions barely
+##     shove them. snipers and ambushers on the bed and the desk, and riders standing on the wind-up cars.
 ##   action figures: jointed heroes on the high ground. they jump twice, and coming down from a height they spread a cape and glide,
 ##     shooting on the way.
-##   wind-up and RC units: cars on the floor. the longer they run the faster they go, and they cannot turn sharply at speed. they ram.
-##     toys near one shoot faster (it shares its battery); broken, its battery bursts in sparks.
+##   wind-up and RC units: cars on the floor, each with a plastic soldier standing on it. the car and its rider are two toys, each
+##     with its own health: the car drives on its own (at you when you are close and in its sight, ramming; anywhere at random
+##     otherwise, and it never stops), the rider only shoots at you when he sees you and never steers. the longer a car runs the
+##     faster it goes, and it cannot turn sharply at speed. toys near one shoot faster (it shares its battery); broken, its battery
+##     bursts in sparks and its rider steps down and fights on foot.
 ##   brick figures: block people round the block bridge. they climb straight up walls, shed bricks as they are hurt (a shed brick
 ##     picked up again heals them, and so does a quiet moment), and put up little brick walls to shoot from behind.
 
@@ -18,8 +22,11 @@ const TOYS := {
 }
 const FEET := {"soldier": [-0.4, 0.4, -0.2, 0.52], "figure": [-0.42, 0.42, -0.3, 0.52], "rc": [-0.5, 0.5, -0.85, 0.85], "brick": [-0.42, 0.42, -0.22, 0.5]}
 const CAMO_AFTER := 2.0      # seconds a soldier must keep still before it fades
-const CAMO_ALPHA := 0.22
+const CAMO_ALPHA := 0.0       # ...out of sight for a second, back for a second, while it keeps still
+const CAMO_BLINK := 1.0
 const RC_TOP := 14.0         # a wound-up car's top speed
+const RC_WANDER := 6.0       # ...and how fast it goes driving about at random
+const SEAT := Vector3(0, 0.75, -0.1)   # where a rider stands on a car: on the roof of its cabin
 const RC_ACCEL := 3.2
 const SHARE_R := 8.0         # how far a car's battery reaches
 const SHARE_MUL := 1.4       # ...and how much faster toys near it shoot
@@ -66,6 +73,8 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 			e.arm_l = _node(e.upper, Vector3(-0.29, 0.6, 0), [[0.12, 0.62, 0.13, 0, -0.29, 0, W]], "ts_arm", mat)
 			e.arm_r = _node(e.upper, Vector3(0.29, 0.6, 0), [[0.12, 0.62, 0.13, 0, -0.29, 0, W], [0.05, 1.05 if role == "sniper" else 0.75, 0.08, 0, -0.95, 0.03, W]], "ts_gun_" + role, mat)
 			e.parts = human; e.muzzle = Vector3(0.2, 1.42, 1.3 if role == "sniper" else 1.0); e.k.base_y = [1.72, 1.3, 0.95, 0.48]
+			var car = opts.get("car", null)
+			if car != null: e.k.car = car; e.carried = true; car.k.rider = e; carry(car)   # standing on the cabin roof of its car
 		"figure":   # a hero in bright colours with a cape
 			var c1: String = ["d62828", "1d4ed8", "f4b400", "7b2cbf"][int(opts.get("tint", 0)) % 4]; var c2: String = ["f4b400", "d62828", "1d4ed8", "f4b400"][int(opts.get("tint", 0)) % 4]
 			var leg2 := [[0.15, 0.9, 0.17, 0, -0.45, 0, c1], [0.17, 0.2, 0.28, 0, -0.82, 0.05, c2]]
@@ -121,9 +130,12 @@ func populate(put: Callable, SR: World.Rng) -> void:
 	for i in 6: put.call("figure", at.call(12.0, 60.0, -28.0, 28.0, U, 5.0), {"role": "smg" if i % 2 else "shotgun", "tint": i + 2})
 	for i in 4: put.call("figure", at.call(-21.0, -7.0, -3.2, 3.2, D, 3.0), {"role": "shotgun" if i % 2 else "smg", "tint": i + 3})
 	for i in 2: put.call("figure", at.call(-46.0, -24.0, -20.0, 16.0, D, 4.0), {"role": "smg", "tint": i})
-	# wind-up and RC units: under the bed and on the carpet
-	for i in 12: put.call("rc", at.call(13.0, 60.0, -28.0, 28.0, 0.0, 4.0, 0.8), {"tint": i})
-	for i in 12: put.call("rc", at.call(-44.0, 44.0, 34.0, 66.0, 0.0, 5.0, 0.8), {"tint": i + 1})
+	# wind-up and RC units under the bed and on the carpet, a plastic soldier standing on each: two toys apiece
+	for i in 12:
+		var p = at.call(13.0, 60.0, -28.0, 28.0, 0.0, 4.0, 0.8) if i < 6 else at.call(-44.0, 44.0, 34.0, 66.0, 0.0, 5.0, 0.8)
+		var car = put.call("rc", p, {"tint": i if i < 6 else i - 5})
+		if car == null: continue
+		if put.call("soldier", p, {"role": "rider", "tint": i % 2, "car": car, "yaw": car.yaw}) != null: carry(car)
 	# brick figures: on and under the block bridge, among the blocks on the carpet, by the toy bins
 	for i in 6: put.call("brick", at.call(-21.0, 8.0, -3.4, 3.4, D, 2.2), {"tint": i})
 	for i in 4: put.call("brick", at.call(-4.0, 9.0, -3.4, 3.4, D - 2.0, 2.2), {"tint": i + 1})
@@ -184,7 +196,7 @@ func update(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float
 		var sight: float = 60.0 if k.role == "sniper" else T.sight
 		if (e.los and dist < sight) or dist < 6.0: en.alarm(e); _call(e, 14.0)
 	match e.type:
-		"soldier": _soldier(e, dt, dist, to, face_yaw)
+		"soldier": _rider(e, dt, dist, face_yaw) if e.carried else _soldier(e, dt, dist, to, face_yaw)
 		"figure": _figure(e, dt, dist, to, face_yaw)
 		"rc": _rc(e, dt, dist, to)
 		_: _brick(e, dt, dist, to, face_yaw)
@@ -220,13 +232,52 @@ func _soldier(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: flo
 					var a := rnd(0, TAU); var r := rnd(3.0, 7.0); var x := e.pos.x + cos(a) * r; var z := e.pos.z + sin(a) * r; var gy := Phys.ground_at(x, e.pos.y + 1.0, z, e.R)
 					if absf(gy - e.pos.y) < 0.6 and Phys.collide_at(x, gy + 0.05, z, e.R, 1.8) == null: k.post = Vector3(x, gy, z); k.move_t = 3.0; break
 		en._ground_move(e, e.vel.x, e.vel.z, dt); e.vel *= exp(-dt * 6.0)
-	# crouched and fading while it keeps still; standing and plain while it moves or has just fired
-	var hid := camo(e); k.alpha = lerpf(float(k.alpha), CAMO_ALPHA if hid else 1.0, 1.0 - exp(-dt * 5.0)); var m: StandardMaterial3D = k.mat
-	m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if float(k.alpha) > 0.98 else BaseMaterial3D.TRANSPARENCY_ALPHA; m.albedo_color.a = float(k.alpha)
+	# crouched and blinking while it keeps still: out of sight for a second, back for a second, and so on; standing and plain while
+	# it moves or has just fired
+	var hid := camo(e); k.blink = float(k.get("blink", 0.0)) + dt if hid else 0.0
+	_fade(e, CAMO_ALPHA if (hid and fmod(float(k.blink), 2.0 * CAMO_BLINK) < CAMO_BLINK) else 1.0, dt)
 	var crouch := float(k.move_t) <= 0.0; e.g.scale.y = lerpf(e.g.scale.y, (0.72 if crouch else 1.0) * e.scale, 1.0 - exp(-dt * 10.0))
 	var sy := e.g.scale.y / e.scale; e.H = 1.8 * e.g.scale.y; e.eye_h = 1.65 * sy; e.muzzle.y = 1.42 * sy
 	for i in 4: e.parts[i].o.y = float(k.base_y[i]) * sy   # the hit spheres crouch with it
 	_walk(e, sp, dt, e.alert and float(k.move_t) <= 0.0)
+
+## the soldier's see-through plastic: quick to go and quick to come back (a blink); gone, it is not drawn at all, shadow and all
+func _fade(e: Enemies.Foe, want: float, dt: float) -> void:
+	var k := e.k; k.alpha = lerpf(float(k.alpha), want, 1.0 - exp(-dt * 14.0))
+	if absf(float(k.alpha) - want) < 0.01: k.alpha = want
+	var m: StandardMaterial3D = k.mat
+	m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if float(k.alpha) > 0.98 else BaseMaterial3D.TRANSPARENCY_ALPHA; m.albedo_color.a = float(k.alpha)
+	k.gone = float(k.alpha) < 0.03
+	for c in e.g.get_children(): (c as Node3D).visible = not bool(k.gone)
+## out of sight right now (blinked out): its health bar stays hidden too
+func gone(e: Enemies.Foe) -> bool: return e.type == "soldier" and bool(e.k.get("gone", false))
+
+# ---------------- riders: plastic soldiers standing on the wind-up cars ----------------
+## the rider goes where its car goes (the car is not his to steer), turns to face you and shoots when he sees you, as a trooper
+func _rider(e: Enemies.Foe, dt: float, dist: float, face_yaw: float) -> void:
+	var k := e.k; var car = k.get("car", null)
+	if car == null or not car.alive: dismount(e); _soldier(e, dt, dist, Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z), face_yaw); return
+	k.still = 0.0; carry(car)
+	if e.alert:
+		_turn(e, face_yaw, 6.0, dt)
+		if e.los and dist < 45.0:
+			e.react -= dt
+			if e.react <= 0.0: _burst(e, dt, 3, 4, 0.12, 1.4, 2.2, 80.0, 10.0, 0.35 + dist * 0.028, "toy_shot_smg")
+		else: e.react = maxf(e.react, 0.5)
+	else: e.yaw = car.yaw
+	_fade(e, 1.0, dt); _walk(e, 0.0, dt, e.alert)
+## the rider stands on the car's roof: put him there (each time the car moves, so he never falls behind)
+func carry(car: Enemies.Foe) -> void:
+	var r = car.k.get("rider", null)
+	if r == null or not r.alive or not r.carried: return
+	var s := Vector3(SEAT.x * cos(car.yaw) + SEAT.z * sin(car.yaw), SEAT.y, -SEAT.x * sin(car.yaw) + SEAT.z * cos(car.yaw))
+	r.pos = car.pos + s; r.vel = Vector3.ZERO; r.vy = 0.0
+	if r.g != null: r.g.position = r.pos; r.g.rotation.y = r.yaw
+## his car broken under him: he steps down onto the floor and fights on as a soldier on foot
+func dismount(e: Enemies.Foe) -> void:
+	if not e.carried: return
+	e.carried = false; e.k.car = null; e.pos.y = Phys.ground_at(e.pos.x, e.pos.y + 0.2, e.pos.z, e.R); e.k.post = e.pos; e.k.move_t = 0.0; e.k.role = "trooper"
+	if e.g != null: e.g.position = e.pos
 
 # ---------------- action figures ----------------
 func _figure(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float) -> void:
@@ -275,30 +326,37 @@ func _figure(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: floa
 func _rc(e: Enemies.Foe, dt: float, dist: float, to: Vector2) -> void:
 	var k := e.k
 	e.head.rotation.z += dt * (4.0 + float(k.v) * 2.0)   # the key turns faster the faster it goes
-	if not e.alert: k.v = 0.0; en._ground_move(e, 0.0, 0.0, dt); return
-	# where to go: at you, along the floor's walking grid when it cannot see you; backing off for a moment after a hit
-	var want := to / dist; var fd := Phys.flow_dir(e.pos.x, e.pos.z)
-	if not e.los and fd != Vector2.ZERO: want = fd
+	# where to go: at you when you are close and it can see you (to ram you); otherwise anywhere, a new way every few seconds or
+	# when it runs into something, and it never stops. backing off for a moment after a hit
+	var near: bool = e.los and dist < float(e.T.sight)
+	var want := to / dist
+	if not near:
+		k.wander_t = float(k.get("wander_t", 0.0)) - dt
+		if float(k.wander_t) <= 0.0: k.heading = rnd(0.0, TAU); k.wander_t = rnd(2.0, 5.0)
+		want = Vector2(sin(float(k.heading)), cos(float(k.heading)))
 	if float(k.back_t) > 0.0: k.back_t = float(k.back_t) - dt; want = -want
-	# the longer it runs the faster it goes; it cannot turn sharply at speed, so it swings wide (and slides)
-	k.v = minf(RC_TOP, float(k.v) + RC_ACCEL * dt); var v: float = k.v
+	# the longer it runs the faster it goes (not so fast just driving about); it cannot turn sharply at speed, so it swings wide (and slides)
+	k.v = minf(RC_TOP if near else maxf(RC_WANDER, float(k.v) - RC_ACCEL * dt), float(k.v) + RC_ACCEL * dt); var v: float = k.v
 	var turn := lerpf(6.0, 1.3, clampf(v / RC_TOP, 0.0, 1.0)); _turn(e, atan2(want.x, want.y), turn, dt)
 	var head := Vector2(sin(e.yaw), cos(e.yaw)); var slide := lerpf(12.0, 2.2, clampf(v / RC_TOP, 0.0, 1.0))
 	var cur := Vector2(e.vel.x, e.vel.z).lerp(head * v, 1.0 - exp(-dt * slide)); e.vel.x = cur.x; e.vel.z = cur.y
 	var blocked := en._ground_move(e, cur.x, cur.y, dt)
-	if blocked: k.v = v * 0.35; e.vel.x *= 0.3; e.vel.z *= 0.3; k.back_t = 0.5   # into a wall: nearly all its speed gone
+	if blocked: k.v = v * 0.35; e.vel.x *= 0.3; e.vel.z *= 0.3; k.back_t = 0.5; k.wander_t = 0.0   # into a wall: nearly all its speed gone, and off another way
 	# the ram: harder the faster it is going
-	if float(k.back_t) <= 0.0 and v > 5.0 and dist < en.stop_dist(e) + 0.5 and absf(player.pos.y - e.pos.y) < 1.5:
+	if near and float(k.back_t) <= 0.0 and v > 5.0 and dist < en.stop_dist(e) + 0.5 and absf(player.pos.y - e.pos.y) < 1.5:
 		player.hurt((10.0 + 15.0 * clampf(v / RC_TOP, 0.0, 1.0)) * e.dmg_mul, e.pos, "body"); Snd.play("thud", 1.0, e.pos); Snd.play("metal", 1.0, e.pos)
 		player.vel.x += to.x / dist * (4.0 + v * 0.5); player.vel.z += to.y / dist * (4.0 + v * 0.5)
 		k.v = 0.0; e.vel = Vector3.ZERO; k.back_t = 1.5
 	e.g.rotation.z = clampf(-(head.x * cur.y - head.y * cur.x) * 0.06, -0.3, 0.3)   # leaning in the slide
+	carry(e)
 
 ## broken, its battery bursts: sparks for anyone close
 func rc_burst(e: Enemies.Foe) -> void:
 	var c := Vector3(e.pos.x, e.pos.y + 0.4, e.pos.z)
 	if fx: fx.spark(c); fx.spark(c + Vector3(0.3, 0.2, 0)); fx.spark(c + Vector3(-0.2, 0.3, 0.2))
 	Snd.play("toy_boom", 0.7, c)
+	var r = e.k.get("rider", null)
+	if r != null and r.alive: dismount(r)
 	var d := c.distance_to(Vector3(player.pos.x, player.pos.y + 0.9, player.pos.z))
 	if d < SPARK_R and Phys.line_of_sight(c, Vector3(player.pos.x, player.pos.y + 1.0, player.pos.z)): player.hurt(SPARK_DMG * (1.0 - 0.5 * d / SPARK_R), c, "body")
 

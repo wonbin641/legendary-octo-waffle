@@ -14,7 +14,7 @@ var ivory_lock = null
 var own_lock = null
 
 static func save0() -> Dictionary:
-	return {"v": 4, "money": 0, "cleared": [], "best": {}, "loadout": ["pistol", null, null, null, null, null, null], "rented": [], "owned": [], "items": {"helmet": 0, "vest": 0, "jet": 0, "ivory": 0}, "custom": {}}
+	return {"v": 4, "money": 0, "cleared": [], "best": {}, "loadout": ["pistol", null, null, null, null, null, null], "rented": [], "owned": [], "items": {"helmet": 0, "vest": 0, "jet": 0, "ivory": 0}, "custom": {}, "toy_order": Toys.ORDER.duplicate()}
 
 func _ready() -> void:
 	var touch: bool = OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
@@ -73,6 +73,9 @@ func fix_save() -> void:
 			if Weapons.LIST.has(id) and save.custom[id] is Dictionary: cu[id] = save.custom[id]
 	save.custom = cu
 	for id in cu.keys(): cu[id] = Custom.setup(id)   # only parts that fit the gun
+	# the toy room's nine toy guns in the order you put them (keys 1-9); not in the save code
+	var to: Array = save.toy_order if save.get("toy_order") is Array else []
+	save.toy_order = to.duplicate() if (to.size() == Toys.ORDER.size() and Toys.ORDER.all(func(id): return to.has(id))) else Toys.ORDER.duplicate()
 	save.v = 4
 
 func persist() -> void:
@@ -86,9 +89,16 @@ func persist() -> void:
 func persist_settings() -> void:
 	_write("settings", settings)
 
-## every stage can be played from the start; NEXT only says which stages follow on the stage tree (the browser game opens them in turn)
+## the five main stages (1, 2, 3, 4 and 5) are open from the start; a side stage opens once the one before it on its branch is
+## cleared: 1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1. New side stages follow the same rule. Developer mode opens
+## them all, and a stage once cleared stays open (every stage used to be open from the start). NEXT only says which stages follow
+## on the stage tree
+const NEEDS := {6: 1, 5: 6, 7: 3, 8: 7}
 func stage_open(n: int) -> bool:
-	return STAGE_TAG.has(n)
+	if not STAGE_TAG.has(n): return false
+	if bool(settings.get("dev", false)) or not NEEDS.has(n): return true
+	var cl: Array = save.get("cleared", [])
+	return cl.has(NEEDS[n]) or cl.has(n)
 
 func next_stages(n: int) -> Array:
 	return (NEXT.get(n, []) as Array).filter(func(s): return stage_open(s))

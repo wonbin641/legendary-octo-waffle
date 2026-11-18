@@ -165,26 +165,73 @@ static func sign_tex(text: String, dir: String, col: Color) -> ImageTexture:
 		Gfx.text(img, text, load("res://fonts/yardsign_hahmlet_subset.woff2"), 176, tx, cy + 10, "center", "middle", col, 5, Color("0e1219"))
 		_tx[key_] = Gfx.tex(img)
 	return _tx[key_]
-## the airlock's inner door: striped at its foot, its name in red
-static func airlock_tex() -> ImageTexture:
-	if not _tx.has("airlock"):
-		var w := 256; var img := Image.create(w, w, false, Image.FORMAT_RGBA8); img.fill(Color("4a5162")); Gfx.frect(img, 16, 16, w - 32, w - 32, Color("3a4050"))
-		for i in range(-w, w, 40): _band(img, i, w, 20, 30, Color("e8b040"))
-		Gfx.text(img, "에어록", load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"), 40, w / 2.0, w * 0.42, "center", "alphabetic", Color("ff3a2a"))
-		Gfx.text(img, "AIRLOCK B-07", load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"), 18, w / 2.0, w * 0.58, "center", "alphabetic", Color("cfd6e2"))
-		_tx.airlock = Gfx.tex(img)
-	return _tx.airlock
-## the sliding doors onto the bridge and the hall: striped at the foot, a blue light by the edge
-static func door_tex() -> ImageTexture:
-	if not _tx.has("door"):
-		var w := 256; var img := Image.create(w, w, false, Image.FORMAT_RGBA8); img.fill(Color("434a5a")); Gfx.frect(img, 12, 12, w - 24, w - 24, Color("373d4b"))
-		for i in range(-w, w, 36): _band(img, i, w, 16, 26, _c(232, 176, 64, 0.85))
-		Gfx.frect(img, w - 18, w * 0.3, 6, w * 0.4, _c(80, 190, 255, 0.8))
-		_tx.door = Gfx.tex(img)
-	return _tx.door
-static func _band(img: Image, i: float, h: float, bw: float, rise: float, col: Color) -> void:   # one slanted stripe at the foot
-	var a := Vector2(i, h); var b := Vector2(i + bw, h); var c := Vector2(i + bw + rise, h - rise); var d := Vector2(i + rise, h - rise)
-	Gfx.ftri(img, a, b, c, col); Gfx.ftri(img, a, c, d, col)
+## the ship's doors, drawn by the owner of this port: a dark panel in a black frame, a blue seam of light down the middle, and in
+## the middle a black ring that the seam crosses in an S. The bridge's and the hall's two leaves part along that seam, S and all;
+## the airlock's door rises in one piece and the sealed doors along the corridor stay shut, with the same face
+const RING_R := 0.215      # the ring's radius, as a share of the door's height
+const RING_W := 0.055      # its line, as a share of the height
+const SEAM_S := 0.28       # how far the seam swings out each way inside the ring, as a share of its radius
+const SEAM_W := 0.022      # the seam's line, as a share of the height
+## where the seam runs at height v (metres from the floor), measured across the door from its left edge
+static func seam_u(v: float, w: float, h: float) -> float:
+	var R := RING_R * h; var y := (h * 0.5 - v) / R   # -1 at the ring's top, 1 at its bottom
+	if absf(y) >= 1.0: return w * 0.5
+	return w * 0.5 - SEAM_S * R * sin(PI * y)
+## the face for a door w by h metres: [colour, glow (the seam)], cached by size
+static func door_face(w: float, h: float) -> Array:
+	var key := "face%.2fx%.2f" % [w, h]
+	if not _tx.has(key):
+		var ph := 384; var pw := roundi(384.0 * w / h); var img := Image.create(pw, ph, false, Image.FORMAT_RGBA8); var glow := Image.create(pw, ph, false, Image.FORMAT_RGBA8)
+		img.fill(Color("434a5a")); glow.fill(Color.BLACK)
+		var k := ph / h; var fr := maxf(4.0, 0.035 * ph)   # pixels a metre; the frame's width
+		img.fill_rect(Rect2i(0, 0, pw, roundi(fr)), Color("15181e")); img.fill_rect(Rect2i(0, ph - roundi(fr), pw, roundi(fr)), Color("15181e"))
+		img.fill_rect(Rect2i(0, 0, roundi(fr), ph), Color("15181e")); img.fill_rect(Rect2i(pw - roundi(fr), 0, roundi(fr), ph), Color("15181e"))
+		var R := RING_R * ph; var cx := pw * 0.5; var cy := ph * 0.5; var rw := RING_W * ph; var sw := SEAM_W * ph; var blue := Color("3f8cff")
+		# the seam above and below the ring: a straight line of blue light
+		for band: Array in [[fr, cy - R - rw * 0.5], [cy + R + rw * 0.5, ph - fr]]:
+			var y0: int = roundi(band[0]); var y1: int = roundi(band[1])
+			img.fill_rect(Rect2i(roundi(cx - sw * 0.5), y0, maxi(1, roundi(sw)), y1 - y0), blue); glow.fill_rect(Rect2i(roundi(cx - sw * 0.5), y0, maxi(1, roundi(sw)), y1 - y0), blue)
+		# the ring, and the S across it (black), drawn pixel by pixel round the ring only, smoothed at the edges
+		var ink := Color("0d0f13")
+		for py in range(maxi(0, int(cy - R - rw)), mini(ph, int(cy + R + rw) + 1)):
+			for px in range(maxi(0, int(cx - R - rw)), mini(pw, int(cx + R + rw) + 1)):
+				var dx := px + 0.5 - cx; var dy := py + 0.5 - cy; var r := sqrt(dx * dx + dy * dy)
+				var a := clampf(rw * 0.5 - absf(r - R) + 0.5, 0.0, 1.0)
+				if r < R:
+					var su := seam_u(h * 0.5 - dy / k, w, h) * k - cx   # the S at this height, in pixels from the middle
+					a = maxf(a, clampf(sw * 0.75 - absf(dx - su) + 0.5, 0.0, 1.0))
+				if a > 0.0: img.set_pixel(px, py, img.get_pixel(px, py).lerp(ink, a))
+		_tx[key] = [Gfx.tex(img), Gfx.tex(glow)]
+	return _tx[key]
+## the door's material: the face, its seam glowing a little, both sides drawn (a leaf is a thin slab cut along the seam)
+static func door_mat(w: float, h: float) -> StandardMaterial3D:
+	var f := door_face(w, h); var m := Gfx.std(Color.WHITE, 0.5, 0.55, f[0])
+	m.emission_enabled = true; m.emission_texture = f[1]; m.emission = Color.WHITE; m.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY; m.emission_energy_multiplier = 1.4
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
+## one leaf of a sliding door, w by h and th thick, cut along the seam (left: the part before it). centred on the door, the face
+## across z, its thickness along x, standing on the floor
+static func leaf_mesh(w: float, h: float, th: float, left: bool) -> ArrayMesh:
+	var seam := PackedVector2Array([Vector2(w * 0.5, 0.0)]); var R := RING_R * h
+	for i in 33: var v := h * 0.5 - R + 2.0 * R * i / 32.0; seam.push_back(Vector2(seam_u(v, w, h), v))
+	seam.push_back(Vector2(w * 0.5, h))
+	var poly := PackedVector2Array()
+	if left: poly.push_back(Vector2(0, 0)); poly.append_array(seam); poly.push_back(Vector2(0, h))
+	else:
+		poly.push_back(Vector2(w, 0)); poly.push_back(Vector2(w, h))
+		for i in range(seam.size() - 1, -1, -1): poly.push_back(seam[i])
+	var idx := Geometry2D.triangulate_polygon(poly); var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for sd: float in [1.0, -1.0]:   # the two faces
+		for i in idx: var q := poly[i]; st.set_normal(Vector3(sd, 0, 0)); st.set_uv(Vector2(q.x / w, 1.0 - q.y / h)); st.add_vertex(Vector3(sd * th * 0.5, q.y, q.x - w * 0.5))
+	var area := 0.0
+	for i in poly.size(): area += poly[i].cross(poly[(i + 1) % poly.size()])
+	for i in poly.size():   # the edges all round, facing out
+		var a := poly[i]; var b := poly[(i + 1) % poly.size()]; var e := (b - a).normalized(); var o := Vector2(e.y, -e.x) * (1.0 if area > 0.0 else -1.0)
+		var nn := Vector3(0, o.y, o.x); var ua := Vector2(a.x / w, 1.0 - a.y / h); var ub := Vector2(b.x / w, 1.0 - b.y / h)
+		for c: Array in [[a, th, ua], [b, th, ub], [b, -th, ub], [a, th, ua], [b, -th, ub], [a, -th, ua]]:
+			var q2: Vector2 = c[0]; st.set_normal(nn); st.set_uv(c[2]); st.add_vertex(Vector3(float(c[1]) * 0.5, q2.y, q2.x - w * 0.5))
+	return st.commit()
+
 ## a column of red light standing up out of an open hatch: black above, orange at the floor
 static func shaft_tex() -> ImageTexture:
 	if not _tx.has("shaft"):
@@ -316,22 +363,23 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		if absf(x + 24.25) >= 4.0:   # keep the mouth of the passage clear
 			box.call(x - 1.5, 0.0, z - 0.35, x + 1.5, 1.15, z + 0.35, "454d60"); solid.push_back([3.04, 0.08, 0.74, x, 1.16, z, "e8b040"])
 		x += 12.0; bi += 1
-	for sx: float in [-80.0, -55.0, -40.0, -15.0, 8.0, 33.0, 52.0]:   # sealed side doors along the corridor walls
-		solid.push_back([2.4, 3.2, 0.12, sx, 1.6, -12.44, "2c313c"]); solid.push_back([2.4, 3.2, 0.12, sx + 6, 1.6, -2.56, "2c313c"])
+	var side_x := []
+	for sx: float in [-80.0, -55.0, -40.0, -15.0, 8.0, 33.0, 52.0]:   # sealed side doors along the corridor walls (the doors' face)
+		side_x.push_back(Transform3D(Basis.IDENTITY, Vector3(sx, 1.6, -12.44))); side_x.push_back(Transform3D(Basis.IDENTITY, Vector3(sx + 6, 1.6, -2.56)))
 		glow.push_back([0.3, 0.12, 0.05, sx + 1.5, 1.7, -12.36, "ff3a2a"]); glow.push_back([0.3, 0.12, 0.05, sx + 4.5, 1.7, -2.64, "ff3a2a"])
 	var sign_at := func(tex: Texture2D, sx: float, sy: float, sz: float, ry: float, sw: float) -> void:   # unlit, as the browser game's MeshBasicMaterial
 		var sm_ := MeshInstance3D.new(); var sq := QuadMesh.new(); sq.size = Vector2(sw, sw * 0.3125); sm_.mesh = sq; var smat_ := Gfx.unlit(Color.WHITE); smat_.albedo_texture = tex; sm_.material_override = smat_
 		sm_.position = Vector3(sx, sy, sz); sm_.rotation.y = ry; G.add_child(sm_)
+	var sdm := Gfx.multimesh(Gfx.box(Vector3(2.4, 3.2, 0.12)), side_x); sdm.material_override = door_mat(2.4, 3.2); G.add_child(sdm); MoonShadow.no_receive(sdm)
 	sign_at.call(sign_tex("운전실", "left", Color("f2a33a")), -24.9, 3.3, -12.43, 0.0, 4.3); sign_at.call(sign_tex("메인홀", "right", Color("5ed6b0")), -18.1, 3.3, -12.43, 0.0, 4.3)
 	x = -86.0
 	while x <= 64.0: w.lamps.push_back({"x": x, "y": 5.2, "z": -7.5}); x += 12.0
 	for q in [[-41.75, 3.9, 18.0], [-33.0, 3.9, 10.0], [-24.25, 3.9, 2.5]]: w.lamps.push_back({"x": q[0], "y": q[1], "z": q[2]})
 	# 5b. the sliding doors onto the bridge and the hall: two leaves that part into the wall
-	var dmat := Gfx.std(Color.WHITE, 0.5, 0.55, door_tex())
 	for D: Dictionary in DOORS:
-		var d := D.duplicate(); var lw: float = (D.z1 - D.z0) / 2
+		var d := D.duplicate(); var dw: float = D.z1 - D.z0; var dmat := door_mat(dw, D.h)
 		for nm in ["a", "b"]:
-			var leaf := MeshInstance3D.new(); leaf.mesh = Gfx.box(Vector3(0.3, D.h, lw)); leaf.material_override = dmat; MoonShadow.caster(leaf); MoonShadow.no_receive(leaf); leaf.position = Vector3(D.x, D.h / 2, D.z0 + lw / 2 if nm == "a" else D.z1 - lw / 2); G.add_child(leaf); d[nm] = leaf
+			var leaf := MeshInstance3D.new(); leaf.mesh = leaf_mesh(dw, D.h, 0.3, nm == "a"); leaf.material_override = dmat; MoonShadow.caster(leaf); MoonShadow.no_receive(leaf); leaf.position = Vector3(D.x, 0.0, (D.z0 + D.z1) / 2); G.add_child(leaf); d[nm] = leaf
 		d.open = 0.0; d.mode = "shut"; d.col = Phys.add_collider(D.x - 0.2, 0, D.z0, D.x + 0.2, D.h, D.z1, "metal"); d.col.door = true; doors.push_back(d)
 		# a sign hung from the ceiling a few metres before the door, facing you as you come down the corridor: the name and 'straight on'
 		var out: float = -D.inward; var hx: float = D.x + out * 4.5
@@ -484,7 +532,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	MoonShadow.no_receive(hatches[0].a)
 	# light and draw: the solid kit (vertex colours), the airlock door, the pipes, everything that glows
 	var sm := MeshInstance3D.new(); sm.name = "Solid"; sm.mesh = Gfx.merge_boxes(solid); sm.material_override = kit_mat; G.add_child(sm); MoonShadow.caster(sm)
-	air_door = MeshInstance3D.new(); (air_door as MeshInstance3D).mesh = Gfx.box(Vector3(4.5, 4.5, 0.3)); (air_door as MeshInstance3D).material_override = Gfx.std(Color.WHITE, 0.5, 0.5, airlock_tex())
+	air_door = MeshInstance3D.new(); (air_door as MeshInstance3D).mesh = Gfx.box(Vector3(4.5, 4.5, 0.3)); (air_door as MeshInstance3D).material_override = door_mat(4.5, 4.5)
 	air_door.position = Vector3(-41.75, 2.25, DOOR_Z); G.add_child(air_door); MoonShadow.no_receive(air_door)
 	var pm := MeshInstance3D.new(); pm.name = "Pipes"; pm.mesh = pipes.commit(); pm.material_override = Gfx.std(World.lin("59627a"), 0.45, 0.6); G.add_child(pm); MoonShadow.no_receive(pm)
 	var gmesh := MeshInstance3D.new(); gmesh.name = "Glow"; gmesh.mesh = Gfx.merge_boxes(glow); gmesh.material_override = glow_mat; G.add_child(gmesh); MoonShadow.no_receive(gmesh)
@@ -625,8 +673,8 @@ func restore(sp: Dictionary) -> void:
 	if sp.key: key = true; key_obj.visible = false
 
 func _slide(D: Dictionary) -> void:
-	var w: float = (D.z1 - D.z0) / 2; var k: float = D.open * D.open * (3.0 - 2.0 * D.open)
-	(D.a as Node3D).position.z = D.z0 + w / 2 - k * w; (D.b as Node3D).position.z = D.z1 - w / 2 + k * w
+	var w: float = (D.z1 - D.z0) / 2; var k: float = D.open * D.open * (3.0 - 2.0 * D.open); var zc: float = (D.z0 + D.z1) / 2
+	(D.a as Node3D).position.z = zc - k * w; (D.b as Node3D).position.z = zc + k * w   # (each leaf all the way into the wall)
 
 ## the boss's second phase: the floor round the reactor breaks up and falls into the stepped pit under it. the dais goes with it;
 ## whatever stood there drops onto the steps (buried mines too, which land and arm again)
