@@ -133,12 +133,12 @@ func _build_guns() -> void:
 	# the laser pointer's beam and its dot (stage 5's rifle, while you aim)
 	laser = MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(0.006, 0.006, 1.0); laser.mesh = lb
 	var lm := StandardMaterial3D.new(); lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; lm.albedo_color = Color(1, 0.1, 0.08, 0.55); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; lm.disable_fog = true
-	laser.material_override = lm; laser.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; laser.visible = false; add_child(laser)
-	laser_dot = MeshInstance3D.new(); var ls := SphereMesh.new(); ls.radius = 0.05; ls.height = 0.1; laser_dot.mesh = ls; var dm: StandardMaterial3D = lm.duplicate(); dm.albedo_color = Color(1, 0.15, 0.1, 1); laser_dot.material_override = dm; laser_dot.visible = false; add_child(laser_dot)
+	laser.material_override = Gfx.see_through(lm); laser.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; laser.visible = false; add_child(laser)
+	laser_dot = MeshInstance3D.new(); var ls := SphereMesh.new(); ls.radius = 0.05; ls.height = 0.1; laser_dot.mesh = ls; var dm: StandardMaterial3D = lm.duplicate(); dm.albedo_color = Color(1, 0.15, 0.1, 1); laser_dot.material_override = Gfx.see_through(dm); laser_dot.visible = false; add_child(laser_dot)
 	flash = MeshInstance3D.new(); var q := QuadMesh.new(); q.size = Vector2(0.16, 0.16); flash.mesh = q
 	var fm := StandardMaterial3D.new(); fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; fm.albedo_texture = Gfx.glow_tex(Color(1, 0.95, 0.8, 1), Color(1, 0.7, 0.3, 0.6))
 	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; fm.disable_fog = true
-	flash.material_override = fm; flash.visible = false; view.add_child(flash)
+	flash.material_override = Gfx.see_through(fm); flash.visible = false; view.add_child(flash)
 	flash_light = OmniLight3D.new(); flash_light.light_color = Color(1, 0.8, 0.5); flash_light.omni_range = 9.0; flash_light.light_energy = 0.0; cam.add_child(flash_light)
 
 static func _smooth(a: float, b: float, x: float) -> float:

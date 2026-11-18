@@ -1522,6 +1522,30 @@ func _ready() -> void:
 	un_high.append_array([w.gfx_level, w.gfx_under]); w.web = false; w.gfx_mode = "auto"; w.gfx_apply(4)
 	check("the web is the taster: 자동 starts at level 0 there (the computer's game at the top, or where it settled) and only there goes below it: the picture three quarters, then three fifths of level 0's size while the frame rate still sags, back a step per three good spells before the ladder climbs; never on 최고 화질",
 		un_desk == [0, 0, 4, 3, 0, 0, 0] and un_seen == [[0, 1], [0, 2], [0, 2], [0, 1], [1, 0]] and un_high == [4, 0, 4, 0] and World.UNDER_SHARE == [1.0, 0.75, 0.6], [un_desk, un_seen, un_high])
+	# ---- the computer's game on Forward+ (these run on the compatibility path: Gfx.fplus is false here, as on the web)
+	var fp_main = load("res://scripts/main.gd")
+	var fp_share := [fp_main.level_share(2.0, 2.0, true), fp_main.level_share(2.0, 1.0, true), fp_main.level_share(0.85, 1.0, true), fp_main.level_share(2.0, 1.0, false), fp_main.level_share(1.5, 1.0, false), fp_main.level_share(0.85, 1.0, false)]
+	var fp_fine := [Picture.fine_share(2.0, 1280.0), Picture.fine_share(2.0, 1920.0), Picture.fine_share(2.0, 2560.0), Picture.fine_share(2.0, 3840.0), Picture.fine_share(1.5, 1920.0), Picture.fine_share(0.85, 3840.0)]
+	check("the picture's size up the ladder: on the web the level's pixel ratio, at most the screen's; the computer's game draws its top levels finer than the window (1.5 and 2 times each way) and no wider than 3840 pixels",
+		fp_share == [1.0, 1.0, 0.85, 2.0, 1.5, 0.85] and fp_fine == [2.0, 2.0, 1.5, 1.0, 1.5, 0.85], [fp_share, fp_fine])
+	var fp_tex := Gfx.glow_tex(Color(1, 1, 1, 1), Color(1, 1, 1, 0))
+	var fp_m := StandardMaterial3D.new(); fp_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; fp_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fp_m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; fp_m.albedo_color = Color(1, 0.5, 0.25, 0.4); fp_m.albedo_texture = fp_tex; fp_m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; fp_m.render_priority = 3
+	var fp_same: bool = Gfx.see_through(fp_m) == fp_m and not Gfx.fplus
+	Gfx.fplus = true; var fp_s = Gfx.see_through(fp_m); var fp_mix_m := StandardMaterial3D.new(); fp_mix_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; fp_mix_m.disable_fog = true
+	var fp_mix = Gfx.see_through(fp_mix_m); Gfx.fplus = false
+	var fp_code: String = (fp_s as ShaderMaterial).shader.code if fp_s is ShaderMaterial else ""; var fp_mix_code: String = (fp_mix as ShaderMaterial).shader.code if fp_mix is ShaderMaterial else ""
+	var fp_param := [fp_s.get_shader_parameter("albedo") == fp_m.albedo_color, fp_s.get_shader_parameter("tex") == fp_tex, fp_s.render_priority] if fp_s is ShaderMaterial else []
+	Gfx.set_alpha(fp_s, 0.7); var fp_a: float = Gfx.get_tint(fp_s).a; Gfx.tint(fp_m, Color(1, 0, 0, 0.5)); Gfx.set_alpha(fp_m, 0.25)
+	check("a see-through glow as three.js mixes it: the material itself on the web's renderer; on Forward+ a shader with its colour, picture, billboard and fog that adds the light showing it as the screen adds it (a mixed one laid over), whose colour and alpha change the same way",
+		fp_same and fp_s is ShaderMaterial and fp_param == [true, true, 3] and fp_code.contains("#define SHOWN_ADD") and fp_code.contains("#define BILLBOARD") and fp_code.contains("#define TEX") and fp_code.contains("#define FOG")
+		and fp_code.contains("hint_screen_texture") and fp_mix is ShaderMaterial and not fp_mix_code.contains("#define SHOWN_ADD") and not fp_mix_code.contains("#define FOG")
+		and absf(fp_a - 0.7) < 1e-6 and fp_m.albedo_color == Color(1, 0, 0, 0.25), [fp_param, fp_a, fp_m.albedo_color])
+	var fp_vm := StandardMaterial3D.new(); fp_vm.vertex_color_use_as_albedo = true; var fp_vn := MeshInstance3D.new(); fp_vn.mesh = BoxMesh.new(); fp_vn.material_override = fp_vm
+	Gfx.three_like(fp_vn); var fp_vc := fp_vm.vertex_color_is_srgb; fp_vn.free()
+	var fp_globals := ["yard_exposure", "yard_tone_k", "yard_fog_density", "yard_fog_disp", "yard_fog_scene", "yard_fog_end"].filter(func(g): return ProjectSettings.has_setting("shader_globals/" + g))
+	check("vertex colours are screen colours (the compatibility renderer reads them so, Forward+ only when told); the see-through layers' globals are declared, and the tone mapping's white comes out as Godot's: 1 at the browser game's white, 1.28 at the toy room's",
+		fp_vc and fp_globals.size() == 6 and absf(Gfx.tone_k(Gfx.TONE_WHITE) - 1.0) < 0.002 and absf(Gfx.tone_k(1.0) - 1.2803) < 0.002, [fp_vc, fp_globals, Gfx.tone_k(Gfx.TONE_WHITE), Gfx.tone_k(1.0)])
 	gm.begin(1)
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails else 0)

@@ -41,3 +41,30 @@ textures/default_filters/anisotropic_filtering_level=4
 textures/default_filters/anisotropic_filtering_level.mobile=3
 lights_and_shadows/directional_shadow/size=2048
 lights_and_shadows/directional_shadow/size.mobile=1024
+
+[shader_globals]
+
+yard_exposure={
+"type": "float",
+"value": 1.0
+}
+yard_tone_k={
+"type": "float",
+"value": 1.0
+}
+yard_fog_density={
+"type": "float",
+"value": 0.0
+}
+yard_fog_disp={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+yard_fog_scene={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+yard_fog_end={
+"type": "float",
+"value": 100.0
+}

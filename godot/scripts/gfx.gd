@@ -394,8 +394,11 @@ static func bake(mesh: Mesh, xforms: Array, colors := []) -> ArrayMesh:
 static func points(list: PackedVector3Array, color: Color, size: float, alpha := 1.0, fog := false) -> MeshInstance3D:
 	var a := []; a.resize(Mesh.ARRAY_MAX); a[Mesh.ARRAY_VERTEX] = list
 	var m := ArrayMesh.new(); m.add_surface_from_arrays(Mesh.PRIMITIVE_POINTS, a)
-	var sh := Shader.new()
-	sh.code = "shader_type spatial; render_mode unshaded, " + ("" if fog else "fog_disabled, ") + "blend_mix, depth_draw_never; uniform vec4 col : source_color; uniform float size;\nvoid vertex(){ POINT_SIZE = size; }\nvoid fragment(){ ALBEDO = col.rgb; ALPHA = col.a; }"
+	var sh := Shader.new()   # (Forward+: mixed in as shown, SHOWN_GLSL)
+	sh.code = "shader_type spatial;\n" + ("#define FOG\n" if fog else "") + "#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\nrender_mode unshaded, " + ("" if fog else "fog_disabled, ") + "blend_mix, depth_draw_never;\n" \
+		+ "#else\nrender_mode unshaded, fog_disabled, blend_add, depth_draw_never;\n#endif\nuniform vec4 col : source_color; uniform float size; varying float dist;\n" + SHOWN_GLSL \
+		+ "void vertex(){ POINT_SIZE = size; dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz); }\nvoid fragment(){\n#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\n\tALBEDO = col.rgb; ALPHA = col.a;\n#else\n" \
+		+ "\tvec3 l = col.rgb;\n#ifdef FOG\n\tl = sh_fog(l, dist);\n#endif\n\tALBEDO = shown(sh_show(l), col.a, SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX); ALPHA = 1.0;\n#endif\n}"
 	var mat := ShaderMaterial.new(); mat.shader = sh; mat.set_shader_parameter("col", Color(color.r, color.g, color.b, alpha)); mat.set_shader_parameter("size", size)
 	var n := MeshInstance3D.new(); n.mesh = m; n.material_override = mat; n.custom_aabb = AABB(Vector3(-400, -20, -400), Vector3(800, 500, 800))
 	return n
@@ -485,18 +488,28 @@ vec3 unshow(vec3 s) {
 ## stencil so the moon's shadow layer leaves them be (they take no light, so they lose none in shadow)
 const UNTONED := """
 shader_type spatial;
+%s
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 render_mode unshaded, %s cull_back, fog_disabled, shadows_disabled;
+#else
+render_mode unshaded, %s cull_back, fog_disabled, shadows_disabled;
+#endif
 %s
 uniform sampler2D tex : filter_linear_mipmap_anisotropic, repeat_enable, hint_default_white;
 uniform vec3 mul = vec3(1.0); uniform float opacity = 1.0; uniform float exposure = 1.0; uniform vec2 uv_scale = vec2(1.0);
+%s
 %s
 %s
 vec3 dec(vec3 s) { return mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), s)); }
 vec3 enc(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
 void fragment() {
 	vec4 t = texture(tex, UV * uv_scale);
+#ifdef SEE_FPLUS
+	ALBEDO = shown(enc(dec(t.rgb) * mul), clamp(t.a * opacity, 0.0, 1.0), SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX); ALPHA = 1.0;
+#else
 	ALBEDO = albedo_of(unshow(enc(dec(t.rgb) * mul)));
 	%s
+#endif
 }
 """
 static var _untoned := {}
@@ -506,7 +519,10 @@ static func untoned(mul: Color, map: Texture2D = null, exposure := 1.0, opacity 
 	if not _untoned.has(key):
 		var sh := Shader.new()
 		var modes := ("blend_add, " if add else "blend_mix, ") + ("depth_draw_never, " if see else "") + ("cull_disabled, " if two_sided else "")
-		sh.code = (UNTONED % [modes, "" if see else "stencil_mode write, compare_always, 2;", ALBEDO_GLSL, UNSHOW_GLSL, "ALPHA = t.a * opacity;" if see else ""]).replace("cull_disabled,  cull_back", "cull_disabled")
+		# (Forward+: a see-through one adds the light that shows it mixed as three.js mixes it, SHOWN_GLSL)
+		var fmodes := ("blend_add, depth_draw_never, " if see else "blend_mix, ") + ("cull_disabled, " if two_sided else "")
+		var defs := ("#define SEE\n#if CURRENT_RENDERER != RENDERER_COMPATIBILITY\n#define SEE_FPLUS\n#endif\n" + ("#define SHOWN_ADD\n" if add else "")) if see else ""
+		sh.code = (UNTONED % [defs, modes, fmodes, "" if see else "stencil_mode write, compare_always, 2;", ALBEDO_GLSL, UNSHOW_GLSL, SHOWN_GLSL if see else "", "ALPHA = t.a * opacity;" if see else ""]).replace("cull_disabled,  cull_back", "cull_disabled")
 		_untoned[key] = sh
 	var m := ShaderMaterial.new(); m.shader = _untoned[key]
 	m.set_shader_parameter("mul", Vector3(mul.r, mul.g, mul.b)); m.set_shader_parameter("exposure", exposure); m.set_shader_parameter("opacity", opacity)
@@ -536,13 +552,17 @@ float ndc_z(float d) {
 }
 """
 
-## the browser game's sky dome (a sphere 380 m round the middle, no fog), in scene colours like the original's shader
+## the browser game's sky dome (a sphere 380 m round the middle, no fog), in scene colours like the original's shader.
+## On Forward+ it is solid, drawn with the world, so the picture the see-through layers read (SHOWN_GLSL) has the sky in it;
+## the fog layer knows it by its distance from the middle (SKY_R) and leaves it be
+const SKY_R := 370.0
 static func sky_shader() -> Shader:
 	var sh := Shader.new()
-	sh.code = "shader_type spatial;\nrender_mode unshaded, fog_disabled, cull_front, depth_draw_never, shadows_disabled;\n" \
+	sh.code = "shader_type spatial;\n#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\nrender_mode unshaded, fog_disabled, cull_front, depth_draw_never, shadows_disabled;\n" \
+		+ "#else\nrender_mode unshaded, fog_disabled, cull_front, shadows_disabled;\n#endif\n" \
 		+ "uniform vec3 horizon; uniform vec3 zenith; uniform vec3 glow;\nvarying vec3 dir;\n" + ALBEDO_GLSL \
 		+ "void vertex() { dir = VERTEX; }\nvoid fragment() {\n\tfloat h = normalize(dir).y; vec3 c = mix(horizon, zenith, smoothstep(0.0, 0.6, h));\n" \
-		+ "\tc += glow * exp(-max(h, 0.0) * 12.0) * smoothstep(-0.08, 0.0, h);\n\tALBEDO = albedo_of(c); ALPHA = 1.0;\n}\n"
+		+ "\tc += glow * exp(-max(h, 0.0) * 12.0) * smoothstep(-0.08, 0.0, h);\n\tALBEDO = albedo_of(c);\n#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\n\tALPHA = 1.0;\n#endif\n}\n"
 	return sh
 
 ## the fog over solid things, from the depth buffer: three.js r128's FogExp2 on the view depth, mixed over the finished
@@ -581,11 +601,153 @@ void fragment() {
 #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 	ALBEDO = col; ALPHA = f;
 #else
+	if (length((INV_VIEW_MATRIX * vec4(v.xyz / v.w, 1.0)).xyz) > 370.0) f = 0.0;   // the sky dome, solid here (Gfx.SKY_R): no fog
 	if (f <= 0.0) discard;
 	ALBEDO = unshow(mix(show(texture(screen_tex, SCREEN_UV).rgb), disp, f)); ALPHA = 1.0;
 #endif
 }
 """
+
+# ---------------- Forward+: see-through things mixed as shown ----------------
+## Forward+ (the computer's game) blends see-through things into the picture in linear light, before its tone mapping;
+## three.js, and the compatibility renderer with it, blends the colours as shown, after it: a glow added to the night sky
+## stays a glow there, where linear light makes it a wide lit haze. So on Forward+ a see-through layer reads the picture
+## under it (the solid world and the sky, copied before the see-through pass, with the fog layer's fog laid over the world
+## as that layer lays it) and adds the light that makes the picture show what three.js shows: the colour shown underneath
+## plus this layer's colour as shown (SHOWN_ADD), or mixed with it. Blended this way on top of what is really there, so
+## layers over layers still add up. The compatibility renderer compiles none of it. World sets the globals for each stage
+## (set_view_globals); they are declared in project.godot
+const SHOWN_GLSL := """
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
+uniform sampler2D sh_screen : hint_screen_texture, filter_nearest;
+uniform sampler2D sh_depth : hint_depth_texture, filter_nearest;
+global uniform float yard_exposure;
+global uniform float yard_tone_k;
+global uniform float yard_fog_density;
+global uniform vec3 yard_fog_disp;
+global uniform vec3 yard_fog_scene;
+global uniform float yard_fog_end;
+const mat3 SH_RRT = mat3(vec3(0.59719 * 1.8, 0.35458 * 1.8, 0.04823 * 1.8), vec3(0.07600 * 1.8, 0.90834 * 1.8, 0.01566 * 1.8), vec3(0.02840 * 1.8, 0.13383 * 1.8, 0.83777 * 1.8));
+const mat3 SH_ODT = mat3(vec3(1.60475, -0.53108, -0.07367), vec3(-0.10208, 1.10813, -0.00605), vec3(-0.00327, -0.07276, 1.07602));
+// (their inverses, worked out once)
+const mat3 SH_RRT_INV = mat3(vec3(0.980411651, -0.375432043, -0.0494240521), vec3(-0.08168214, 0.644584173, -0.0073464776), vec3(-0.0201871278, -0.090242465, 0.665985148));
+const mat3 SH_ODT_INV = mat3(vec3(0.643038249, 0.311186752, 0.0457754574), vec3(0.0592686904, 0.931436487, 0.00929491568), vec3(0.00596190125, 0.0639290157, 0.930118384));
+// a scene colour as the screen shows it (Godot's ACES, divided by its white, then sRGB), and back
+vec3 sh_show(vec3 l) {
+	vec3 x = max(l * yard_exposure, vec3(0.0)) * SH_RRT;
+	vec3 y = clamp(((x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.432951) + 0.238081)) * SH_ODT * yard_tone_k, 0.0, 1.0);
+	return mix(y * 12.92, 1.055 * pow(y, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), y));
+}
+vec3 sh_unshow(vec3 s) {
+	s = clamp(s, 0.0, 1.0);
+	vec3 t = clamp(mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), s)) / yard_tone_k * SH_ODT_INV, 0.0, 1.0);
+	vec3 a = 0.983729 * t - 1.0, b = 0.432951 * t - 0.0245786, c = 0.238081 * t + 0.000090537;
+	return max(((-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a)) * SH_RRT_INV, vec3(0.0)) / yard_exposure;
+}
+// Godot's own fog on a see-through thing at this distance, as the compatibility renderer lays it (World sets it to the
+// colour that tone maps to the browser game's fog)
+vec3 sh_fog(vec3 l, float far_m) { return mix(l, yard_fog_scene, smoothstep(0.0, yard_fog_end, far_m)); }
+// what the screen shows under this pixel when the see-through things come: the solid world and the sky, and the fog layer's
+// fog over the world (not the sky dome, past Gfx.SKY_R from the middle)
+vec3 sh_under(vec2 suv, mat4 ipm, mat4 iv) {
+	vec3 b = sh_show(texture(sh_screen, suv).rgb);
+	float d = texture(sh_depth, suv).r;
+	if (d > 0.000001) {
+		vec4 v = ipm * vec4(suv * 2.0 - 1.0, d, 1.0); vec3 p = v.xyz / v.w;
+		if (length((iv * vec4(p, 1.0)).xyz) < 370.0) b = mix(b, yard_fog_disp, 1.0 - exp(-yard_fog_density * yard_fog_density * p.z * p.z));
+	}
+	return b;
+}
+// the light to add (blend_add, ALPHA 1) for a layer of screen colour c at alpha a: added on the screen (SHOWN_ADD), or
+// mixed over what is shown
+vec3 shown(vec3 c, float a, vec2 suv, mat4 ipm, mat4 iv) {
+	vec3 B = sh_under(suv, ipm, iv);
+#ifdef SHOWN_ADD
+	vec3 D = min(B + c * a, vec3(1.0));
+#else
+	vec3 D = mix(B, c, a);
+#endif
+	return sh_unshow(D) - sh_unshow(B);
+}
+#endif
+"""
+## the globals SHOWN_GLSL reads, for the stage being built: the tone mapping's exposure and white (k = 1 / Godot's ACES of the
+## white), the fog layer's density and colour as shown, and Godot's fog on see-through things (colour, end)
+static func set_view_globals(exposure_v: float, white: float, fog_density: float, fog_disp: Vector3, fog_scene: Vector3, fog_end: float) -> void:
+	for kv: Array in [["yard_exposure", exposure_v], ["yard_tone_k", tone_k(white)], ["yard_fog_density", fog_density], ["yard_fog_disp", fog_disp], ["yard_fog_scene", fog_scene], ["yard_fog_end", fog_end]]:
+		RenderingServer.global_shader_parameter_set(kv[0], kv[1])
+## what Godot's ACES multiplies by after its curve for this white (1 / the curve at the white): 1.0 at TONE_WHITE
+static func tone_k(white: float) -> float:
+	var w := white * 1.8
+	return (w * (0.983729 * w + 0.432951) + 0.238081) / (w * (w + 0.0245786) - 0.000090537)
+
+## a see-through unshaded material (a three.js MeshBasicMaterial with transparent or additive blending) for the renderer
+## in use: the material itself on the compatibility renderer; on Forward+ a shader with the same colour, picture, vertex
+## colours, billboard and fog that mixes it in as shown (SHOWN_GLSL). Call it once the material is set up; change its
+## colour later with tint() and set_alpha(), which take either kind
+const SEE_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, %s, fog_disabled, shadows_disabled%s;
+%s
+uniform vec4 albedo : source_color = vec4(1.0);
+uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable, hint_default_white;
+uniform vec3 uv_scale = vec3(1.0); uniform vec3 uv_offset = vec3(0.0);
+%s
+varying float dist;
+void vertex() {
+	UV = UV * uv_scale.xy + uv_offset.xy;
+#ifdef BILLBOARD
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(MAIN_CAM_INV_VIEW_MATRIX[0], MAIN_CAM_INV_VIEW_MATRIX[1], MAIN_CAM_INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
+#ifdef KEEP_SCALE
+	MODELVIEW_MATRIX = MODELVIEW_MATRIX * mat4(vec4(length(MODEL_MATRIX[0].xyz), 0.0, 0.0, 0.0), vec4(0.0, length(MODEL_MATRIX[1].xyz), 0.0, 0.0), vec4(0.0, 0.0, length(MODEL_MATRIX[2].xyz), 0.0), vec4(0.0, 0.0, 0.0, 1.0));
+#endif
+	MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
+#endif
+	dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+}
+void fragment() {
+	vec4 c = albedo;
+#ifdef TEX
+	c *= texture(tex, UV);
+#endif
+#ifdef VCOL
+	c *= vec4(mix(COLOR.rgb / 12.92, pow((COLOR.rgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), COLOR.rgb)), COLOR.a);
+#endif
+	if (c.a <= 0.0) discard;
+	vec3 l = c.rgb;
+#ifdef FOG
+	l = sh_fog(l, dist);
+#endif
+	ALBEDO = shown(sh_show(l), min(c.a, 1.0), SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX); ALPHA = 1.0;
+}
+"""
+static var _see := {}
+static func see_through(m: BaseMaterial3D) -> Material:
+	if not fplus: return m
+	var add := m.blend_mode == BaseMaterial3D.BLEND_MODE_ADD; var tex := m.albedo_texture != null; var vc := m.vertex_color_use_as_albedo
+	var bb := m.billboard_mode == BaseMaterial3D.BILLBOARD_ENABLED; var keep := bb and m.billboard_keep_scale; var fog := not m.disable_fog
+	var cull: String = ["cull_back", "cull_front", "cull_disabled"][m.cull_mode]; var notest := m.no_depth_test
+	var key := "%s%s%s%s%s%s%s%s" % [add, tex, vc, bb, keep, fog, cull, notest]
+	if not _see.has(key):
+		var defs := ""
+		for d: Array in [[add, "SHOWN_ADD"], [tex, "TEX"], [vc, "VCOL"], [bb, "BILLBOARD"], [keep, "KEEP_SCALE"], [fog, "FOG"]]:
+			if d[0]: defs += "#define %s\n" % d[1]
+		var sh := Shader.new(); sh.code = SEE_SHADER % [cull, ", depth_test_disabled" if notest else "", defs, SHOWN_GLSL]
+		_see[key] = sh
+	var s := ShaderMaterial.new(); s.shader = _see[key]; s.render_priority = m.render_priority
+	s.set_shader_parameter("albedo", m.albedo_color); s.set_shader_parameter("uv_scale", m.uv1_scale); s.set_shader_parameter("uv_offset", m.uv1_offset)
+	if tex: s.set_shader_parameter("tex", m.albedo_texture)
+	return s
+## a see-through material's colour, or its alpha alone, whichever kind see_through() gave
+static func tint(m: Material, c: Color) -> void:
+	if m is BaseMaterial3D: (m as BaseMaterial3D).albedo_color = c
+	elif m is ShaderMaterial: (m as ShaderMaterial).set_shader_parameter("albedo", c)
+static func get_tint(m: Material) -> Color:
+	if m is BaseMaterial3D: return (m as BaseMaterial3D).albedo_color
+	if m is ShaderMaterial: return (m as ShaderMaterial).get_shader_parameter("albedo")
+	return Color.WHITE
+static func set_alpha(m: Material, a: float) -> void:
+	var c := get_tint(m); c.a = a; tint(m, c)
 
 ## three.js's MeshStandardMaterial lights with Lambert's diffuse; and solid things take their fog from World's fog layer
 static func three_like(n: GeometryInstance3D) -> void:

@@ -171,7 +171,7 @@ func _gold_gun_mat() -> StandardMaterial3D:
 
 ## the sabers: the blade a flat light (a8d4ff, or ff8a8a for the dual wielders), the halo added light at 42% (38%) round it
 var _sabers := {}
-func _saber_mat(dual: bool, halo: bool) -> StandardMaterial3D:
+func _saber_mat(dual: bool, halo: bool) -> Material:
 	var k := "%s%s" % [dual, halo]
 	if not _sabers.has(k):
 		var m: StandardMaterial3D
@@ -179,7 +179,7 @@ func _saber_mat(dual: bool, halo: bool) -> StandardMaterial3D:
 			m = Gfx.unlit(World.lin("ff2a3a" if dual else "2a62ff"), true); m.albedo_color.a = 0.38 if dual else 0.42
 			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 		else: m = Gfx.unlit(World.lin("ff8a8a" if dual else "a8d4ff"), true)
-		_sabers[k] = m
+		_sabers[k] = Gfx.see_through(m) if halo else m
 	return _sabers[k]
 
 func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
@@ -439,14 +439,14 @@ func _fx_sparks(p: Vector3, n: int, col: Array, speed: float) -> void:
 	if fx: fx.sparks(p, n, col, speed)
 
 ## the glow over a hit enemy's body: drawn on top of its meshes (an overlay), not on the shared material
-var _flash_mat: StandardMaterial3D; var _rage_mat: StandardMaterial3D
+var _flash_mat: Material; var _rage_mat: Material   # (as Forward+ draws them: Gfx.see_through)
 func _glow(e: Foe, kind: String) -> void:
 	if e.glow == kind: return
 	e.glow = kind
 	if _flash_mat == null:
 		# the browser game's emissive on the body's material: 0.6, 0.35, 0.2 for a hit; the raging boss's pulsing red
-		_flash_mat = Gfx.unlit(World.lin(Color(0.6, 0.35, 0.2)), false); _flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		_rage_mat = Gfx.unlit(World.lin(Color(0.3, 0.02, 0.01)), false); _rage_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		var fm := Gfx.unlit(World.lin(Color(0.6, 0.35, 0.2)), false); fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; _flash_mat = Gfx.see_through(fm)
+		var rm := Gfx.unlit(World.lin(Color(0.3, 0.02, 0.01)), false); rm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; _rage_mat = Gfx.see_through(rm)
 	var mat: Material = _flash_mat if kind == "flash" else (_rage_mat if kind == "rage" else null)
 	for n in e.g.find_children("*", "MeshInstance3D", true, false):   # the body only: not the gun, a blade, the vest's light or a helmet
 		if n.has_meta("body"): (n as MeshInstance3D).material_overlay = mat
@@ -680,7 +680,7 @@ func _fight(e: Foe, dt: float, dist: float) -> bool:
 		"sniper":   # a red laser shows where he is aiming for a moment before the shot
 			if e.laser == null:
 				e.laser = MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(0.018, 0.018, 1.0); e.laser.mesh = lb
-				var lm := Gfx.unlit(Color(1, 0.16, 0.16, 0.75), false); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; e.laser.material_override = lm; e.laser.visible = false; add_child(e.laser)
+				var lm := Gfx.unlit(Color(1, 0.16, 0.16, 0.75), false); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; e.laser.material_override = Gfx.see_through(lm); e.laser.visible = false; add_child(e.laser)
 			if e.aim_t > 0.0:
 				e.aim_t -= dt; var mz := muzzle_of(e); var aim := Vector3(player.pos.x + player.vel.x * dist / 400.0, player.pos.y + 1.58, player.pos.z + player.vel.z * dist / 400.0)   # snipers go for the head
 				var L := mz.distance_to(aim)
@@ -776,7 +776,7 @@ func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
 	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
 	var lab: bool = World.STAGE_STYLE.get(stage, {}).get("lab", false)
-	if _rage_mat != null: _rage_mat.albedo_color = World.lin(Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01))
+	if _rage_mat != null: Gfx.tint(_rage_mat, World.lin(Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01)))
 	for e in list:
 		if not e.alive: continue
 		if not e.animal and not e.robot and not e.toy:   # a hit's flash; the raging zombie boss's red

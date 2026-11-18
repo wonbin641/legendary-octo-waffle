@@ -13,7 +13,7 @@ var cam: Camera3D; var player: Player; var game: Game; var world: World; var ene
 var touch := false
 var C := {}
 var clock := 0.0   # its own time, for the hover's bob
-var heli: Node3D; var rotor: Node3D; var tail: Node3D; var beam: MeshInstance3D; var pool: MeshInstance3D; var pool_mat: StandardMaterial3D; var rope: Node3D
+var heli: Node3D; var rotor: Node3D; var tail: Node3D; var beam: MeshInstance3D; var pool: MeshInstance3D; var pool_mat: Material; var rope: Node3D
 var fig: Node3D; var arm_l: Node3D; var arm_r: Node3D
 # the screen: black bars top and bottom, the caption, the skip line, a boss's name, and a black fade
 var overlay: Control; var cap: VBoxContainer; var cap_title: Label; var cap_sub: Label; var skip_lbl: Label; var card: Label; var fade: ColorRect
@@ -63,7 +63,7 @@ func _ready() -> void:
 		var b := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.32, 0.05, 7.2); b.mesh = bm; b.material_override = blade; b.position.z = 3.6; arm.add_child(b)
 	var disc := MeshInstance3D.new(); var dm := CylinderMesh.new(); dm.top_radius = 7.2; dm.bottom_radius = 7.2; dm.height = 0.001; dm.radial_segments = 32; disc.mesh = dm
 	var dmat := StandardMaterial3D.new(); dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; dmat.albedo_color = Color(Color("9aa4b4"), 0.1); dmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	dmat.cull_mode = BaseMaterial3D.CULL_DISABLED; dmat.no_depth_test = false; disc.material_override = dmat; disc.position.y = 4.08; disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; heli.add_child(disc)
+	dmat.cull_mode = BaseMaterial3D.CULL_DISABLED; dmat.no_depth_test = false; disc.material_override = Gfx.see_through(dmat); disc.position.y = 4.08; disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; heli.add_child(disc)
 	tail = Node3D.new(); tail.position = Vector3(0.2, 3.0, -7.6); heli.add_child(tail)
 	for i in 2:
 		var b := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.04, 1.5, 0.16); b.mesh = bm; b.material_override = blade; b.rotation.x = i * PI / 2.0; tail.add_child(b)
@@ -71,12 +71,12 @@ func _ready() -> void:
 	beam = MeshInstance3D.new(); var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = 5.0; cm.height = 18.0; cm.radial_segments = 20; cm.cap_top = false; cm.cap_bottom = false; beam.mesh = cm
 	var bg := Gradient.new(); bg.set_color(0, Color(1, 1, 1, 1)); bg.set_color(1, Color(1, 1, 1, 0)); var bt := GradientTexture2D.new(); bt.gradient = bg; bt.fill_from = Vector2(0, 0); bt.fill_to = Vector2(0, 1)
 	var bmat := StandardMaterial3D.new(); bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; bmat.albedo_color = Color(Color("fff2d0"), 0.12); bmat.albedo_texture = bt
-	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; bmat.cull_mode = BaseMaterial3D.CULL_DISABLED; bmat.disable_fog = true; beam.material_override = bmat
+	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; bmat.cull_mode = BaseMaterial3D.CULL_DISABLED; bmat.disable_fog = true; beam.material_override = Gfx.see_through(bmat)
 	beam.position = Vector3(0, -8, 3.5); beam.rotation.x = 0.35; beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; heli.add_child(beam)
 	pool = MeshInstance3D.new(); var pq := PlaneMesh.new(); pq.size = Vector2(14, 14); pool.mesh = pq
 	var pg := Gradient.new(); pg.set_color(0, Color(1, 1, 1, 1)); pg.set_color(1, Color(1, 1, 1, 0)); var pt := GradientTexture2D.new(); pt.gradient = pg; pt.fill = GradientTexture2D.FILL_RADIAL; pt.fill_from = Vector2(0.5, 0.5); pt.fill_to = Vector2(1.0, 0.5)
-	pool_mat = StandardMaterial3D.new(); pool_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; pool_mat.albedo_color = Color("fff2d0"); pool_mat.albedo_texture = pt
-	pool_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; pool_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; pool.material_override = pool_mat; pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var pm := StandardMaterial3D.new(); pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; pm.albedo_color = Color("fff2d0"); pm.albedo_texture = pt
+	pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; pm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; pool_mat = Gfx.see_through(pm); pool.material_override = pool_mat; pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	pool.visible = false; add_child(pool)
 	rope = Node3D.new(); var rm := MeshInstance3D.new(); var rc := CylinderMesh.new(); rc.top_radius = 0.035; rc.bottom_radius = 0.035; rc.height = 1.0; rc.radial_segments = 6; rm.mesh = rc
 	var rmat := StandardMaterial3D.new(); rmat.albedo_color = Color("6b5a3a"); rmat.roughness = 0.9; rm.material_override = rmat; rm.position.y = -0.5; rope.add_child(rm); rope.visible = false; add_child(rope)
@@ -373,7 +373,7 @@ func _wash(_dt: float) -> void:
 	if agl < 16.0 and randf() < 0.8 and fx != null:
 		var a := randf() * TAU; var rr := randf_range(2.0, 7.0)
 		fx.puff(Vector3(heli.position.x + cos(a) * rr, 0.3, heli.position.z + sin(a) * rr), 1, 0.6 if world.style.get("day", false) else 0.4, 1.2)
-	if pool.visible: pool.position = Vector3(heli.position.x + C.fx * 3.0, 0.04, heli.position.z + C.fz * 3.0); pool_mat.albedo_color.a = clampf(1.0 - agl / 40.0, 0, 1)
+	if pool.visible: pool.position = Vector3(heli.position.x + C.fx * 3.0, 0.04, heli.position.z + C.fz * 3.0); Gfx.set_alpha(pool_mat, clampf(1.0 - agl / 40.0, 0, 1))
 	Snd.loop("rotor", clampf(1.0 - heli.position.distance_to(cam.global_position) / 140.0, 0.05, 1.0))   # (the rotor's own 0.55 is in its take)
 
 func _overlay(dt: float) -> void:

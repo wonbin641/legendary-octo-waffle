@@ -36,13 +36,13 @@ var monkey_mode := "idle"
 var monkey_t := 0.0
 var _arm_l: Node3D; var _arm_r: Node3D
 var _bar_mat: StandardMaterial3D; var _glass_mat: StandardMaterial3D; var _kick_mat: StandardMaterial3D = null
-var _glow_mat: StandardMaterial3D = null
+var _glow_mat: Material = null   # (as Forward+ draws it: Gfx.see_through)
 ## a beacon's red glow, added light that shows while it turns
-func _beacon_glow() -> StandardMaterial3D:
+func _beacon_glow() -> Material:
 	if _glow_mat == null:
-		_glow_mat = StandardMaterial3D.new(); _glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; _glow_mat.albedo_texture = Gfx.glow_tex(Color(1, 60 / 255.0, 50 / 255.0, 0.95), Color(1, 30 / 255.0, 20 / 255.0, 0.3))
-		_glow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _glow_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; _glow_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		_glow_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; _glow_mat.disable_fog = true
+		var gm := StandardMaterial3D.new(); gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; gm.albedo_texture = Gfx.glow_tex(Color(1, 60 / 255.0, 50 / 255.0, 0.95), Color(1, 30 / 255.0, 20 / 255.0, 0.3))
+		gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; gm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; gm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		gm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; gm.disable_fog = true; _glow_mat = Gfx.see_through(gm)
 	return _glow_mat
 var beacons: Array = []
 var pressed := false      # the monkey has slammed his button (in the opening scene, or as play begins if it was skipped)

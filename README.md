@@ -5,7 +5,7 @@
 - 웹: 이 저장소의 GitHub Pages (`index.html`, `game.js`)
 - claude.ai 아티팩트: 한 파일짜리 페이지 (`tools/build.sh`가 만드는 `build/yard07.html`)
 - 안드로이드 앱: `android/` (인터넷 없이 돌아가는 가로 전용 앱, 설명은 [android/README.md](android/README.md))
-- Windows 데스크톱판(Godot판): [설치 파일 내려받기](https://wonbin641.github.io/legendary-octo-waffle/download/Yarr07-Setup.exe) (`download/Yarr07-Setup.exe`, Windows 10/11 64비트)
+- Windows 데스크톱판(Godot판, 완성판): [설치 파일 내려받기](https://wonbin641.github.io/legendary-octo-waffle/download/Yarr07-Setup.exe) (`download/Yarr07-Setup.exe`, Windows 10/11 64비트, Forward+ 렌더러: Vulkan 또는 Direct3D 12). Godot 웹판은 가볍게 맛보는 판입니다
 
 Godot 4로 옮긴 판이 따로 있습니다: [godot/](godot/README.md) (소스), `godot-web/` (웹 내보내기, GitHub Pages의 `/godot-web/`). 브라우저판과 같은 스테이지 8개, 같은 수치, 같은 저장 코드를 쓰고, Godot판에만 있는 스테이지 5(장난감 방)가 더 있습니다.
 

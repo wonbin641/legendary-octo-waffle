@@ -111,9 +111,9 @@ func _parts(id: String, M: Dictionary) -> void:
 	var g: Node3D = M.g; var MT: Dictionary = MOUNT_GEO[id]; var ys: float = MUZZLE[id][2]; var mzy: float = MUZZLE[id][1]; var mzz: float = MUZZLE[id][0]
 	var dk := Gfx.std(World.lin("1c1f24"), 0.45, 0.55); var dk2 := Gfx.std(World.lin("2a2e35"), 0.6, 0.35)
 	var tube_m: StandardMaterial3D = dk.duplicate(); tube_m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var glass := Gfx.unlit(Color(0.62, 0.85, 1.0, 0.16), false); glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; glass.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var gl := Gfx.unlit(Color(0.62, 0.85, 1.0, 0.16), false); gl.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; gl.cull_mode = BaseMaterial3D.CULL_DISABLED; var glass := Gfx.see_through(gl)
 	var red := Gfx.unlit(Color("ff2a1a"), false)
-	var beam := Gfx.unlit(Color(1.0, 0.16, 0.1, 0.45), false); beam.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; beam.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	var bm := Gfx.unlit(Color(1.0, 0.16, 0.1, 0.45), false); bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; bm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; var beam := Gfx.see_through(bm)
 	var add := func(slot: String, pid: String) -> Node3D:
 		var p := Node3D.new(); p.visible = false; g.add_child(p); M.parts[slot][pid] = p; return p
 	var dot := func(p: Node3D, r: float, at: Vector3) -> void:

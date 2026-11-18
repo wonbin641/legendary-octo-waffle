@@ -136,17 +136,18 @@ vec3 unshow(vec3 s) {
 	vec3 v = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
 	return max(v * inverse(RRT), vec3(0.0)) / exposure;
 }
-float apply(vec2 suv, mat4 ipm) {
+float apply(vec2 suv, mat4 ipm, mat4 iv) {
 	float d0 = texture(depth_tex, suv).r;
 	if (d0 <= 0.000001) return 1.0;
 	vec4 v = ipm * vec4(suv * 2.0 - 1.0, ndc_z(d0), 1.0);
 	if (-v.z / v.w < near_skip) return 1.0;   // the gun in hand: drawn after the occlusion in the browser game
+	if (length((iv * vec4(v.xyz / v.w, 1.0)).xyz) > 370.0) return 1.0;   // the sky dome (solid on Forward+, Gfx.SKY_R)
 	vec2 uv = vec2(suv.x, mix(suv.y, 1.0 - suv.y, flip));
 	return mix(1.0, texture(ao_tex, uv).r, strength);
 }
 void vertex() { POSITION = vec4(VERTEX.xy, 0.0, 1.0); }
 void fragment() {
-	float m = apply(SCREEN_UV, INV_PROJECTION_MATRIX);
+	float m = apply(SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX);
 	if (m >= 0.999) discard;
 #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 	ALBEDO = albedo_of(unshow(vec3(m))); ALPHA = 1.0;   // tone mapped on the way out, it comes to m itself: the multiplier

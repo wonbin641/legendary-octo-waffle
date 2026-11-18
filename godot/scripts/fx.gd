@@ -6,7 +6,7 @@ extends Node3D
 var _tracers: Array = []
 var _flames: Array = []
 var _lights: Array = []
-var _tmat: StandardMaterial3D
+var _tmat: StandardMaterial3D; var _tmat_s: Material   # (the tracers' material, and as Forward+ draws it: Gfx.see_through)
 var _bmat: StandardMaterial3D
 var _glow: Pool
 var _smoke: Pool
@@ -17,6 +17,7 @@ const BOOM_COL := [1.0, 0.55, 0.2]
 func _ready() -> void:
 	_tmat = Gfx.unlit(World.lin(Color(1.0, 0.85, 0.6)), false); _tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _tmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_bmat = Gfx.unlit(World.lin(Color(1.0, 0.62, 0.25)), false); _bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_tmat_s = Gfx.see_through(_tmat)
 	var dot := _dot_tex()
 	_glow = Pool.new(900, true, dot); add_child(_glow.node)
 	_smoke = Pool.new(260, false, dot); add_child(_smoke.node)
@@ -41,7 +42,7 @@ class Pool:
 		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD if add else BaseMaterial3D.BLEND_MODE_MIX; mat.albedo_texture = tex
 		mat.vertex_color_use_as_albedo = true; mat.vertex_color_is_srgb = true; mat.disable_fog = true
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED; mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-		node.mesh = mesh; node.material_override = mat; node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.mesh = mesh; node.material_override = Gfx.see_through(mat); node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.custom_aabb = AABB(Vector3(-2000, -2000, -2000), Vector3(4000, 4000, 4000))   # never culled, as frustumCulled = false
 		_vx.resize(n * 4); _col.resize(n * 4); _uv.resize(n * 4); _idx.resize(n * 6)
 		for i in n:
@@ -114,7 +115,7 @@ func live() -> int:
 func tracer(from: Vector3, to: Vector3) -> void:
 	var l := from.distance_to(to)
 	if l < 0.5: return
-	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(0.024, 0.024, l); m.mesh = b; m.material_override = _tmat
+	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(0.024, 0.024, l); m.mesh = b; m.material_override = _tmat_s
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.transparency = 0.1; add_child(m)
 	m.look_at_from_position((from + to) / 2, to, Vector3.UP if absf((to - from).normalized().y) < 0.99 else Vector3.RIGHT)
 	_tracers.push_back([m, 0.06, 0.06])
@@ -134,7 +135,7 @@ func explode(at: Vector3, big := true, col: Array = BOOM_COL) -> void:
 ## a lick of flame from a spray can: a small bright ball that runs out along the jet and fades
 func flame(from: Vector3, dir: Vector3) -> void:
 	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 1.0; s.height = 2.0; s.radial_segments = 8; s.rings = 5; m.mesh = s
-	var mat: StandardMaterial3D = _bmat.duplicate(); mat.albedo_color = World.lin(Color(1.0, randf_range(0.45, 0.8), 0.15)); m.material_override = mat; m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = from; add_child(m)
+	var mat: StandardMaterial3D = _bmat.duplicate(); mat.albedo_color = World.lin(Color(1.0, randf_range(0.45, 0.8), 0.15)); m.material_override = Gfx.see_through(mat); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = from; add_child(m)
 	_flames.push_back([m, 0.0, dir * randf_range(18.0, 24.0) + Vector3(randf_range(-1, 1), randf_range(-0.5, 1.5), randf_range(-1, 1))])
 
 # the toy room's bits go into the same pools; their sizes are radii (a speck as wide as twice that)
@@ -146,7 +147,7 @@ func streak(from: Vector3, to: Vector3, color: Color, width: float, life: float)
 	var l := from.distance_to(to)
 	if l < 0.3: return
 	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(width, width, l); m.mesh = b
-	var mat := StandardMaterial3D.new(); mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.albedo_color = color; m.material_override = mat
+	var mat := StandardMaterial3D.new(); mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.albedo_color = color; m.material_override = Gfx.see_through(mat)
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
 	m.look_at_from_position((from + to) / 2, to, Vector3.UP if absf((to - from).normalized().y) < 0.99 else Vector3.RIGHT)
 	_tracers.push_back([m, life, 0.0])
@@ -213,7 +214,7 @@ func decal(p: Vector3, n: Vector3) -> void:
 		_holes = ArrayMesh.new()
 		var mat := StandardMaterial3D.new(); mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.albedo_texture = Gfx.glow_tex(Color8(8, 8, 10, 242), Color8(20, 20, 24, 153)); mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-		var mi := MeshInstance3D.new(); mi.mesh = _holes; mi.material_override = mat; mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mi := MeshInstance3D.new(); mi.mesh = _holes; mi.material_override = Gfx.see_through(mat); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.custom_aabb = AABB(Vector3(-2000, -2000, -2000), Vector3(4000, 4000, 4000)); add_child(mi)
 	var b := Basis.looking_at(-n, Vector3.UP if absf(n.y) < 0.99 else Vector3.FORWARD) * Basis(Vector3.BACK, randf() * TAU)   # its face along the surface's normal, turned at random
 	var xf := Transform3D(b.scaled(Vector3.ONE * randf_range(0.7, 1.3)), p + n * 0.02)
@@ -256,7 +257,7 @@ func update(dt: float) -> void:
 		var f: Array = _flames[i]; f[1] += dt; var u: float = f[1] / 0.38
 		if u >= 1.0: f[0].queue_free(); _flames.remove_at(i); continue
 		(f[0] as MeshInstance3D).position += (f[2] as Vector3) * dt * (1.0 - u * 0.6); (f[0] as MeshInstance3D).scale = Vector3.ONE * lerpf(0.06, 0.55, u)
-		((f[0] as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.a = 1.0 - u
+		Gfx.set_alpha((f[0] as MeshInstance3D).material_override, 1.0 - u)
 
 func clear() -> void:
 	for d in _debris: (d[0] as Node3D).queue_free()

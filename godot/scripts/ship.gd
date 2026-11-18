@@ -382,7 +382,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	for n: Node in [bow, kb]: MoonShadow.caster(n); MoonShadow.no_receive(n)
 	key_glow = MeshInstance3D.new(); var kq := QuadMesh.new(); kq.size = Vector2(1.4, 1.4); key_glow.mesh = kq; var kgm := StandardMaterial3D.new(); kgm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	kgm.albedo_texture = Gfx.glow_tex(Color(1, 220 / 255.0, 120 / 255.0, 0.95), Color(1, 170 / 255.0, 40 / 255.0, 0.2)); kgm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; kgm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	kgm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; kgm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; kgm.albedo_color = Color(1, 1, 1, 0.7); key_glow.material_override = kgm; key_glow.position.y = 0.38; key_obj.add_child(key_glow)
+	kgm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; kgm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; kgm.albedo_color = Color(1, 1, 1, 0.7); key_glow.material_override = Gfx.see_through(kgm); key_glow.position.y = 0.38; key_obj.add_child(key_glow)
 	for cz: float in [BR.z0 + 0.4, BR.z1 - 0.4]:
 		for cx: float in [-104.0, -99.0]: box.call(cx - 1.4, 0.0, cz - 0.3, cx + 1.4, 1.1, cz + 0.3, "2c3240"); screens.push_back([2.4, 0.9, 0.05, cx, 2.1, cz + (0.3 if cz < 0 else -0.3), "3fd0ff"])
 	# up on the gallery: consoles against the walls, and a big status board high on the east wall
@@ -696,7 +696,7 @@ func update(dt: float, time: float) -> void:
 	if core_mat: var kk := 0.82 + 0.14 * sin(time * 2.6) + 0.04 * sin(time * 19.0); core_mat.albedo_color = World.lin(Color(0.45 * kk, 0.82 * kk, 1.0 * kk))   # (three.js's colour numbers are linear)
 	if ring: ring.rotation.y += dt * 0.35
 	if screens_mat: var sk := 0.85 + 0.15 * sin(time * 4.3); screens_mat.albedo_color = World.lin(Color(sk, sk, sk))
-	if key_obj != null and key_obj.visible: key_obj.rotation.y += dt * 1.2; (key_glow.material_override as StandardMaterial3D).albedo_color.a = 0.55 + 0.3 * sin(time * 4.0)
+	if key_obj != null and key_obj.visible: key_obj.rotation.y += dt * 1.2; Gfx.set_alpha(key_glow.material_override, 0.55 + 0.3 * sin(time * 4.0))
 	if save_t > 0.0:
 		save_t -= dt
 		if save_t <= 0.0 and not key: game.say_banner("운전실 문이 열렸습니다", "조종석에 꽂힌 메인홀 열쇠를 뽑으세요 · 뽑으면 세이브 포인트", 3.4)
