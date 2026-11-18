@@ -20,6 +20,7 @@ var lock_wait := -1.0
 var dpr := 1.0
 var base_fov := BASE_FOV
 var toy_models := {}; var ruler: Node3D; var inspect := false; var laser: MeshInstance3D; var laser_dot: MeshInstance3D
+var carry_view: Node3D = null   # stage 5's battery rush: the battery in your arms
 var needle: Node3D; var needle_arm: Node3D; var needle_syr: Node3D; var needle_juice: MeshInstance3D
 var gm_models: GunModels
 var jet_puff_t := 0.0
@@ -101,6 +102,11 @@ func _smoke() -> void:
 	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "9"]:
 		command("start " + st); command("sim 2")
 		print("smoke: stage %s %s, %d enemies" % [Store.STAGE_TAG.get(int(st), st), state, enemies.list.size()])
+	var was := ToyMatch.picked()
+	for k in ["rush", "escort", "freeze"]:   # stage 5's team modes
+		Store.settings.toyMode = k; command("start 9"); command("sim 2")
+		print("smoke: stage 5 %s %s, %d enemies, %d allies" % [k, state, enemies.list.size(), game.tm.allies.size() if game.tm != null else -1])
+	Store.settings.toyMode = was
 	to_menu(); print("smoke: ok"); get_tree().quit(0)
 
 func apply_settings() -> void:
@@ -130,6 +136,8 @@ func _build_guns() -> void:
 	for id in Weapons.ORDER: gun_models[id] = gm_models.models[id].g
 	for id in Toys.ORDER: var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
 	ruler = Toys.build("ruler"); view.add_child(ruler); ruler.visible = false
+	# stage 5's battery rush: the AA cell you carry, held low on the left of the view
+	carry_view = ModeRush.battery_node(); carry_view.scale = Vector3.ONE * 0.22; carry_view.position = Vector3(-0.3, -0.42, -0.62); carry_view.rotation = Vector3(0.35, 0.25, 1.25); carry_view.visible = false; cam.add_child(carry_view)
 	# the laser pointer's beam and its dot (stage 5's rifle, while you aim)
 	laser = MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(0.006, 0.006, 1.0); laser.mesh = lb
 	var lm := StandardMaterial3D.new(); lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; lm.albedo_color = Color(1, 0.1, 0.08, 0.55); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; lm.disable_fog = true
@@ -157,7 +165,8 @@ func _build_needle(parent: Node3D) -> void:
 
 func _pose_gun(dt: float) -> void:
 	var W := guns.w(); var a := guns.ads * guns.ads * (3.0 - 2.0 * guns.ads); var d: Array = GUN_SHAPE[guns.cur]
-	var toy := game.stage == 9; var shown: bool = not guns.scoped() and not guns.none
+	var toy := game.stage == 9; var shown: bool = not guns.scoped() and not guns.none and not player.out
+	if carry_view != null: carry_view.visible = game.tm != null and game.tm.key == "rush" and game.tm.mode.carry != null and not player.out   # the battery under your arm
 	for id in gun_models: (gun_models[id] as Node3D).visible = not toy and id == guns.cur and shown
 	for id in toy_models: (toy_models[id] as Node3D).visible = toy and id == guns.cur and shown and not guns.melee_on
 	ruler.visible = toy and guns.melee_on   # the jab swings a ruler
@@ -346,6 +355,8 @@ func _touch_pills(all := false) -> Dictionary:
 	var key := world.ship != null and world.ship.key_near(); var act := "메인홀 열쇠 줍기" if key or all else _ride_act()
 	if act != "": p["car"] = [pill.call(act, 16, 50, 26, 15, row + 116.0), act]
 	if all or (enemies.animals.m != null and enemies.animals.target != null): p["off"] = [pill.call("내리기", 76, 40, 18, 13, row + 64.0), "내리기"]
+	if game.tm != null and game.tm.key == "freeze" and not all:   # bedtime: the soda cans left
+		var ct := "탄산 캔 %d" % game.tm.mode.cans; p["can"] = [pill.call(ct, 16, 46, 22, 15, row + 116.0), ct]
 	return p
 
 func _sbox(bg: Color, line: Color, r: int, bw := 1.5) -> StyleBoxFlat:
@@ -390,6 +401,7 @@ func _set_state(s: String) -> void:
 
 func to_menu() -> void:
 	game.sp = null   # leaving for the menu ends the run, save point and all
+	if game.tm != null: game.tm.clear()
 	if not game.ended and game.stats.time > 0.0: game.forfeit()
 	game.return_rentals(); Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear(); player.jet_end()
@@ -471,7 +483,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_R: guns.start_reload()
 			if e.physical_keycode == KEY_V: guns.melee_start()
 			if e.physical_keycode == KEY_F: game.use_antidote()
-			if (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G:
+			if e.physical_keycode == KEY_G and game.tm != null and game.tm.key == "freeze": game.tm.mode.throw_can()   # (bedtime: a soda can)
+			elif (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G:
 				if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
 			if e.physical_keycode == KEY_X and enemies.animals.m != null: enemies.animals.ride_off(false)
 			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_9: guns.switch_slot(e.physical_keycode - KEY_1)
@@ -522,6 +535,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
 				"off": enemies.animals.ride_off(false)
 				"swap": guns.cycle(1)
+				"can": if game.tm != null and game.tm.key == "freeze": game.tm.mode.throw_can()
 			if hit != "": touch_ui.queue_redraw(); return
 			if joy_id < 0 and (r.pad as Rect2).grow(12).has_point(p):
 				joy_id = e.index; _pad_steer(p)
@@ -669,6 +683,15 @@ func command(line: String) -> Dictionary:
 		"mail": (ui._copy_mail() if a[1] == "copy" else ui._send_mail(a[1]))
 		"resume": resume_game()
 		"money": Store.save.money = int(a[1]); Store.persist(); ui.refresh_menu()
+		"toymode": Store.settings.toyMode = a[1] if a.size() > 1 else "sweep"   # stage 5's mode: sweep, rush, escort, freeze
+		"tmc":   # stage 5's team mode: one of the mode's own commands for the tests and pictures
+			if game.tm == null: return {"tm": false}
+			return game.tm.mode.cmd(Array(a.slice(1)))
+		"tm":   # stage 5's team mode: the two sides and the mode's own state
+			if game.tm == null: return {"tm": false}
+			var T: ToyMatch = game.tm
+			return {"tm": true, "mode": T.key, "allies": T.allies.size(), "them": T.units("them").size(), "queue": T.queue.size(), "score": T.score, "down": T.down_t, "out": player.out,
+				"pos": [player.pos.x, player.pos.y, player.pos.z], "hp": player.hp, "gun": guns.cur, "lock": guns.lock_to, "ended": game.ended, "result": game.result, "money": Store.save.money, "state": T.mode.state()}
 		"dev": Store.settings.dev = a[1] == "1"; Store.settings.god = a.size() > 2 and a[2] == "1"; ui.refresh_menu()
 		"reset": Store.save = Store.save0(); Store.fix_save(); Store.persist(); ui.refresh_menu()
 		"at": player.pos = Vector3(float(a[1]), 0, float(a[2])); player.vel = Vector3.ZERO; player.yaw = float(a[3]); player.pitch = float(a[4]) if a.size() > 4 else 0.0

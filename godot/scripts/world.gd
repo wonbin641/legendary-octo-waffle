@@ -81,6 +81,7 @@ var _lamp_t := 0.0
 var on_crate: Callable = Callable()   # called with the crate when one breaks
 var fx: Fx = null
 var toy: ToyRoom = null
+var toy_tm = null   # stage 5's team mode (ToyMatch) to build into the room, or null for the sweep
 const TOY_FPLUS_SUN := 2.5   # (the toy room's sun on Forward+: see build_stage)
 var village: Village = null
 var lab: Lab = null
@@ -381,7 +382,7 @@ func build_stage(stage: int) -> void:
 		if Gfx.fplus: moon.light_energy = float(S.moon[1]) * TOY_FPLUS_SUN
 		hemi_up.light_energy = 0.0; hemi_dn.light_energy = 0.0
 		moon.shadow_enabled = true; moon.shadow_caster_mask = 0xFFFFFFFF; shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED; set_ao(false)
-		toy = ToyRoom.new(); toy.build(self, G); return
+		toy = ToyRoom.new(); toy.tm = toy_tm; toy.build(self, G); return
 	(get_node("Night") as Node3D).visible = not S.get("day", false) and not S.get("indoor", false)
 	# the harbour skyline and ship only belong to the docks; the village gets the stars and a bigger moon
 	for p in _port: p.visible = is_yard(stage)

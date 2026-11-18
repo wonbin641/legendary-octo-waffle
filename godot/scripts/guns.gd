@@ -44,6 +44,7 @@ var toy := false           # stage 5: the guns are toys (their own sounds and ef
 var since_shot := 9.0
 var _reload_f := 0.0
 var auto_reload := true   # an emptied gun reloads by itself a quarter of a second later
+var lock_to := ""         # stage 5's battery in your arms: only this gun (the dart pistol) and the jab
 # the jab
 var melee_on := false
 var melee_t := 0.0
@@ -67,7 +68,7 @@ func reset(layout: Array) -> void:
 	since_shot = 9.0; _reload_f = 0.0; shots = 0; hits = 0   # the result sheet's accuracy is this stage's alone, as the browser game's
 	cooldown = 0.0; reload_t = 0.0; switch_t = 0.0; pending = null; ads = 0.0; ads_held = false; bloom = 0.0; kick_z = 0.0; kick_rot = 0.0; flash_t = 0.0
 	trigger = false; trigger_edge = false; melee_on = false; melee_t = 0.0; melee_cd = 0.0; _melee_target = null; _pump_t = -1.0; _auto_reload_t = -1.0
-	loadout = layout.duplicate(); slots = loadout.filter(func(x): return x != null); none = slots.is_empty()
+	loadout = layout.duplicate(); slots = loadout.filter(func(x): return x != null); none = slots.is_empty(); lock_to = ""
 	cur = slots[0] if not none else "pistol"
 
 func muzzle() -> Vector3:
@@ -94,7 +95,7 @@ func rocket_lock():
 
 # ---------- the jab: V or the mouse's back button; 120 to the body, twice that to the head; it breaks crates ----------
 func melee_start(target = null) -> void:
-	if melee_cd > 0.0 or none or busy > 0.0 or switch_t > 0.0: return
+	if melee_cd > 0.0 or none or busy > 0.0 or switch_t > 0.0 or player.out: return
 	melee_on = true; melee_t = 0.0; melee_cd = 0.62; _melee_hit = false; _melee_target = target
 	reload_t = 0.0; trigger = false; ads_held = false
 	Snd.play("swing")
@@ -164,7 +165,7 @@ func _heat_update(dt: float) -> void:
 # ---------- firing ----------
 func fire() -> void:
 	var W := w(); var s := st()
-	if none or busy > 0.0 or melee_on or switch_t > 0.0 or reload_t > 0.0 or cooldown > 0.0: return
+	if none or busy > 0.0 or melee_on or switch_t > 0.0 or reload_t > 0.0 or cooldown > 0.0 or player.out: return
 	if player.sprinting: player.sprint_lock = 0.25
 	if s.mag <= 0:
 		Snd.play("empty"); cooldown = 0.3
@@ -258,8 +259,17 @@ func _finish_reload() -> void:
 	if s.reserve != INF: s.reserve -= int(take)
 
 func switch_to(id) -> void:
+	if lock_to != "" and id != lock_to and id != null:
+		_say(hint, ["건전지를 든 동안은 다트 권총과 30cm 자만 쓸 수 있습니다", 1.6]); return
 	if id == null or not slots.has(id) or id == cur or switch_t > 0.0 or busy > 0.0: return
 	reload_t = 0.0; pending = id; switch_t = 0.36; Snd.play("reload0")
+
+## straight to this gun, whatever you were doing with the one in hand (the battery comes into your arms)
+func force_to(id: String) -> void:
+	if not slots.has(id): return
+	melee_on = false; reload_t = 0.0; trigger = false; ads_held = false
+	if cur == id and pending == null: return
+	pending = id; switch_t = 0.36; Snd.play("reload0")
 
 func switch_slot(i: int) -> void:
 	if i < loadout.size(): switch_to(loadout[i])

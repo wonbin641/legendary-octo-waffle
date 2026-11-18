@@ -40,6 +40,7 @@ var game = null
 var world: World
 var fx: Fx = null
 var proj: Proj
+var tm = null            # the team modes' ToyMatch (null in the sweep: the toys play as above)
 var bricks: Array = []   # shed brick parts lying about: {n, pos, t}
 var walls: Array = []    # the little brick walls: crate-like records in world.crates
 
@@ -65,7 +66,7 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	var human := [_hpart(Vector3(0, 1.72, 0.01), 0.15, 1.0, true), _hpart(Vector3(0, 1.3, 0), 0.3), _hpart(Vector3(0, 0.95, 0), 0.22, 0.9), _hpart(Vector3(0, 0.48, 0), 0.24, 0.7)]
 	match type:
 		"soldier":   # one colour all over, on a flat base, a rifle moulded into the hands
-			var tan := int(opts.get("tint", 0)) == 1; var mat := Gfx.std(World.lin("b89b63" if tan else "3f7a3a"), 0.45); e.k.mat = mat; e.k.alpha = 1.0
+			var mat := Gfx.std(World.lin(["3f7a3a", "b89b63", "203f8a"][clampi(int(opts.get("tint", 0)), 0, 2)]), 0.45); e.k.mat = mat; e.k.alpha = 1.0   # green, tan; blue for ours in the team modes
 			var W := "ffffff"; var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, W], [0.16, 0.09, 0.27, 0, -0.88, 0.05, W]]
 			_node(e.g, Vector3.ZERO, [[0.7, 0.05, 0.5, 0, 0.025, 0.05, W]], "ts_base", mat)
 			e.leg_l = _node(e.g, Vector3(-0.11, 0.92, 0), leg, "ts_leg", mat); e.leg_r = _node(e.g, Vector3(0.11, 0.92, 0), leg, "ts_leg", mat)

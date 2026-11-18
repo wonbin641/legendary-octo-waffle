@@ -58,6 +58,7 @@ const CURE_AT := 0.82
 var hint: Callable = Callable()
 var on_flash: Callable = Callable()   # (amount, from): the red flash and the direction of a bite
 var on_pay: Callable = Callable()     # (money): it pops out under the box at the top
+var tm: ToyMatch = null               # stage 5's team modes (battery rush, train escort, bedtime): the two sides and the rules
 
 func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
@@ -74,13 +75,19 @@ func begin(stage_: int) -> void:
 	var an := enemies.animals; an.player = player; an.game = self; an.world = world; an.fx = fx; player.rider = an; player.on_toss_land = an.toss_land
 	var tf := enemies.toys; tf.player = player; tf.game = self; tf.world = world; tf.fx = fx; tf.proj = proj
 	var rb := enemies.robots; rb.player = player; rb.game = self; rb.world = world; rb.fx = fx; rb.proj = proj
+	if tm != null: tm.clear()
+	tm = null
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
+	if stage == 9 and ToyMatch.picked() != "sweep":   # a team mode in the toy room: its things are built with the room
+		tm = ToyMatch.create(ToyMatch.picked()); tm.game = self; tm.world = world; tm.en = enemies; tm.toys = tf; tm.player = player; tm.guns = guns; tm.proj = proj; tm.fx = fx
+	world.toy_tm = tm; tf.tm = tm; proj.tm = tm; enemies.vis_r = 160.0 if tm != null else 0.0
 	world.build_stage(stage); calm = 0; sp = null; mid = null
+	if tm != null: tm.room = world.toy
 	if world.ship != null: world.ship.player = player; world.ship.game = self; world.ship.enemies = enemies; world.ship.fx = fx
 	player.toss_ceil = Lab.CEIL if world.lab != null else INF
 	if world.lab != null: world.lab.player = player; world.lab.game = self
 	if world.safari != null: world.safari.player = player; world.safari.game = self; world.safari.enemies = enemies; world.safari.fx = fx
-	bonus_guns = []; replay = Store.save.cleared.has(stage)
+	bonus_guns = []; replay = Store.save.best.has(tm.mode.record_key()) if tm != null else Store.save.cleared.has(stage)   # (a team mode: once won, it pays no more)
 	guns.reset(layout()); guns.stage = stage; enemies.stage = stage; enemies.down_hint = false; proj.stage = stage; guns.toy = stage == 9
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
@@ -99,6 +106,7 @@ func begin(stage_: int) -> void:
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
 	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(20000))) if not B.is_empty() else ""
+	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
 
 ## the nearest open ground to a point on the map: room to land, not on a container, inside the fence; you face the middle of the docks
@@ -140,13 +148,14 @@ func populate() -> void:
 	if world.lab != null or world.safari != null or world.ship != null or world.toy != null:
 		if world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
+		elif world.toy != null and tm != null: tm.mode.populate()   # (a team mode: the two sides, not the hundred toys)
 		elif world.toy != null: enemies.toys.populate(put, SR)
 		else:
 			world.safari.populate(put, find, SR)
 			for e in enemies.list:
 				e.wild = true
 				if e.type == "zebra": e.fury = true; enemies.animals.wake(e); e.bs = "graze"; e.bt = SR.rng(0.5, 4)   # zebras just live their quiet life, and never bolt here
-		goal = enemies.list.size(); boss = null; spawned = n[0]
+		goal = enemies.list.size() if tm == null else 0; boss = null; spawned = n[0]
 		for e in enemies.list:
 			if e.boss: boss = e
 			if e.T.get("mid", false): mid = e
@@ -241,8 +250,11 @@ func update(dt: float) -> void:
 	if _result_t > 0.0:
 		_result_t -= dt
 		if _result_t <= 0.0: _say(on_result, [_result_kind])
-	if not ended and player.hp <= 0.0: over("dead")
+	if not ended and player.hp <= 0.0:
+		if tm != null: tm.player_down()   # (a team mode: you are back at your base in a few seconds)
+		else: over("dead")
 	clock += dt
+	if tm != null and not ended: tm.update(dt)
 	if world.lab != null: world.lab.update(dt)
 	if world.ship != null: world.ship.update(dt, clock)
 	if world.safari != null: world.safari.update(dt)
@@ -368,6 +380,7 @@ func take_antidote() -> bool:
 
 func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if ended or e.extra: return
+	if tm != null: tm.on_kill(e, weak); return
 	kills += 1; stats.kills += 1
 	if e.tamed: calm = maxi(0, calm - 1)   # it was already counted
 	var base := int(e.T.get("money", 1000)) if ((e.animal and not e.minion) or e.robot or e.toy) else 1000
@@ -409,6 +422,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 
 ## a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead
 func on_crate(c: Dictionary) -> void:
+	if str(c.get("trap", "")) != "" and tm != null: tm.mode.trap_broken(c); return   # (the train escort: a trap on the track, shot to bits)
 	if c.get("wall", false): return   # a brick figure's little wall: nothing inside
 	loot.drop("anti" if stage == 2 else "hp", c.x, c.z, c.y)
 
@@ -453,6 +467,25 @@ func finish() -> void:
 	Store.persist(); Snd.play("clear")
 	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", "헬기가 데리러 옵니다 · " + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
 	result = "clear"; _result_kind = "clear"; _result_t = 1.7
+
+## a team mode won: the record, the first win's bonus, and the result sheet (no helicopter: you are already home)
+func win_match() -> void:
+	if ended: return
+	ended = true; player.invuln = 1e9; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
+	var key: String = tm.mode.record_key(); var first: bool = not Store.save.best.has(key); var t := int(stats.time)
+	var extra: int = tm.mode.bonus() if first else 0
+	Store.save.money += extra; stats.earned += extra
+	if first or t < int(Store.save.best[key]): Store.save.best[key] = t
+	return_rentals(); Store.persist(); Snd.play("clear")
+	_say(banner, [tm.mode.win_title(), ("첫 승리 보너스 +" + Store.won(extra) if extra > 0 else "다시 하기라 보상 없음") + " · 가방 " + Store.won(Store.save.money), 2.6])
+	result = "clear"; _result_kind = "clear"; _result_t = 2.2
+
+## a team mode lost: what you earned in it is gone, as when you fall anywhere else
+func lose_match() -> void:
+	if ended: return
+	ended = true; player.invuln = 1e9; forfeit(); _leave_animals(); return_rentals()
+	_say(banner, [tm.mode.lose_stamp, tm.mode.lose_title, 2.6]); Snd.play("hurt")
+	result = "lost"; _result_kind = "lost"; _result_t = 2.2
 
 func _leave_animals() -> void:
 	var an := enemies.animals

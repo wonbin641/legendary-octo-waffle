@@ -90,6 +90,7 @@ var flying: Array = []                # helmets knocked off: [node, velocity, ag
 var helmet_hint := false
 var down_hint := false
 var stage := 1
+var vis_r := 0.0   # how far enemies are drawn, when a stage's own reach is not enough (stage 5's team modes: the whole room)
 var on_bite: Callable = Callable()     # (foe): a zombie's bite landed
 var on_poison: Callable = Callable()   # (foe): a zombie's dash landed
 var on_stun: Callable = Callable()     # (foe): the boss's charge landed
@@ -768,14 +769,14 @@ func _keep_out(e: Foe) -> void:
 
 ## after a jump (pictures from a free camera): who is in sight of where you now stand, at once rather than within half a second
 func sight_all() -> void:
-	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	var vis: float = (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
 	for e in list:
 		e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length(); e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0)
 		if not e.g.visible: e.bar.visible = false
 
 func update(dt: float, _time: float) -> void:
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
-	var vis: float = VIS_R.get(stage, 90.0) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	var vis: float = (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
 	var lab: bool = World.STAGE_STYLE.get(stage, {}).get("lab", false)
 	if _rage_mat != null: Gfx.tint(_rage_mat, World.lin(Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01)))
 	for e in list:
@@ -800,6 +801,10 @@ func update(dt: float, _time: float) -> void:
 			e.bar.visible = false; continue
 		if e.animal and e.glow != "": _glow(e, "")   # (got off mid-flash: the glow goes with the ride)
 		if not e.awake: continue
+		if e.toy and toys.tm != null and e.k.has("team"):   # stage 5's team modes: the match moves its toys
+			toys.tm.unit(e, dt)
+			if e.alive: toys.tm.place(e)
+			continue
 		var eye := Vector3(e.pos.x, e.pos.y + e.eye_h * e.scale, e.pos.z)
 		var to := Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z); var dist := maxf(to.length(), 0.001)
 		e.los_t -= dt

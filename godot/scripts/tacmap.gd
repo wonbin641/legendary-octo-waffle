@@ -190,6 +190,11 @@ func draw(ci, size: Vector2) -> void:
 			if e.toy and game.enemies.toys != null and game.enemies.toys.camo(e): col.a = 0.45   # a soldier gone still: fainter
 			ci.draw_circle(ep, rr, col)
 			if e.alert or e.angry: ci.draw_arc(ep, rr + 2.0 * u, 0, TAU, 24, Color.WHITE, 1.2 * u)
+	if stage == 9 and game.tm != null:   # stage 5's team modes: the mode's own marks, and our blue soldiers
+		game.tm.mode.tac(ci, X, Z, k, u)
+		for a in game.tm.allies:
+			if a.alive and not bool(a.k.get("gone", false)):
+				var apos := Vector2(X.call(a.pos.x), Z.call(a.pos.z)); ci.draw_circle(apos, 3.4 * u, Color("5f9cff")); ci.draw_arc(apos, 3.4 * u, 0, TAU, 16, Color(0.05, 0.08, 0.15, 0.9), 1.0 * u)
 	# you: where you stand, the way you face and a cone of what you see (north on the map is -z)
 	var pl: Player = game.player; var pp := Vector2(X.call(pl.pos.x), Z.call(pl.pos.z)); var ang := atan2(-cos(pl.yaw), -sin(pl.yaw))
 	var fov := deg_to_rad(cam.fov if cam != null else 75.0) * 0.6; var cone := PackedVector2Array([pp]); var cc := PackedColorArray([Color(ME, 0.45)])
@@ -234,6 +239,10 @@ func legend(live: bool) -> Array:
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("내리는 곳 · 지도를 눌러 바꾸기" if (stage == 5 and not live) else ("내리는 곳" if stage == 9 else "헬기에서 내리는 곳")))
 	out.push_back(["lz", lz, SODIUM, "" if stage == 9 else ("문" if lab else ("A" if stage == 4 else "H"))])
+	if stage == 9 and game != null and game.tm != null:   # stage 5's team modes: their own marks
+		for it: Array in game.tm.mode.legend(): out.push_back(["en", it[2], Color(str(it[1])), ""])
+		out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
+		return out
 	for kd: Array in KINDS[stage]: out.push_back(["en", kd[2], Color(str(kd[1])), ""])
 	if stage == 7: out.push_back(["tw", "감시탑 · 체력", Color("8a6440"), ""])
 	elif stage != 9: out.push_back(["bo", "보스", Color("ff2d3d"), ""])

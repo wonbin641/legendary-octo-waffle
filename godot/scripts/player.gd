@@ -55,6 +55,9 @@ var slow_mul := 1.0     # thumbtacks underfoot
 var launched := false   # thrown by a catapult: no steering until you land
 var since_zip := 9.0
 var chute := false      # coming down under a parachute at the start
+var out := false        # stage 5's team modes: down (or in the toy box) till you are back at your base: no moving, no shooting
+var carry_mul := 1.0    # stage 5's battery in your arms: a little slower
+var held := false       # stage 5's bedtime: in the owner's hand (it moves you; you can only look about)
 var say: Callable = Callable()       # a line for the feed (helmet broken, vest worn out, jetpack)
 # the jetpack: double-tap jump to lift off; jump goes up, Ctrl or C down; 10 seconds, one use
 var jet_on := false
@@ -107,6 +110,7 @@ func reset(x: float, z: float, yaw_: float) -> void:
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
 	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
 	hp = MAX_HP; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0; Snd.jet(0.0)
+	out = false; carry_mul = 1.0; held = false
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
 	if stun_t > 0.0:
@@ -118,9 +122,13 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	pitch -= look_dy * s
 	look_dx = 0.0; look_dy = 0.0
 	pitch = clampf(pitch + in_pitch * 1.6 * dt, -1.5, 1.5)
+	if held:   # carried by the hand: whatever holds you puts you where you are; you look about
+		vel = Vector3.ZERO; grounded = false; speed_xz = 0.0; sprinting = false
+		if cam != null: cam.position = Vector3(pos.x, pos.y + EYE, pos.z); cam.rotation = Vector3(pitch, yaw, 0.0)
+		return
 	recoil_pitch *= exp(-dt * 9)
 	var f := in_f; var sd := in_s
-	if stunned: f = 0.0; sd = 0.0; jump_buf = 0.0
+	if stunned or out: f = 0.0; sd = 0.0; jump_buf = 0.0
 	fear_t = maxf(0.0, fear_t - dt)
 	if rider != null and rider.m != null and rider.ride_update(dt, f, sd, in_run, stunned):
 		# on an animal's back: it carries you where you steer it; you look and shoot freely
@@ -136,7 +144,7 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if m > 1.0: f /= m; sd /= m
 	sprint_lock = maxf(0.0, sprint_lock - dt)
 	sprinting = in_run and f > 0.3 and sprint_lock <= 0.0 and not no_sprint
-	var speed := (8.2 if sprinting else 5.4) * move_mul * ads_slow * slow_mul
+	var speed := (8.2 if sprinting else 5.4) * move_mul * ads_slow * slow_mul * carry_mul
 	var sy := sin(yaw); var cy := cos(yaw)
 	var tx := (-sy * f + cy * sd) * speed; var tz := (-cy * f - sy * sd) * speed
 	if fear_t > 0.0 and not stunned and not toss_on: tx = fear_x * 8.2; tz = fear_z * 8.2; jump_buf = 0.0
@@ -184,7 +192,7 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if cam == null: return
 	var bob := absf(sin(step_phase)) * 0.045 * clampf(speed_xz / 6.0, 0.0, 1.3) * (1.0 - ads * 0.7) if grounded else 0.0
 	var sh := shake; shake *= exp(-dt * 7)
-	cam.position = Vector3(pos.x, pos.y + EYE - bob - land_dip, pos.z)
+	cam.position = Vector3(pos.x, pos.y + (0.45 if out else EYE) - bob - land_dip, pos.z)   # (down: the view lies on the floor)
 	var sw := clampf(stun_t, 0.0, 1.0) if stunned else 0.0   # knocked out: the view sags and swims
 	cam.rotation = Vector3(pitch + recoil_pitch * 0.5 + randf_range(-1, 1) * sh * 0.05 + sin(time * 2.3) * 0.07 * sw - 0.12 * sw, yaw + randf_range(-1, 1) * sh * 0.05 + sin(time * 1.7) * 0.05 * sw,
 		sin(step_phase * 0.5) * 0.004 * clampf(speed_xz / 6.0, 0.0, 1.0) + sin(time * 3.1) * 0.09 * sw)

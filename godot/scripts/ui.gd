@@ -34,6 +34,7 @@ var cx_tab := "gun"; var cx_list: VBoxContainer
 var set_body: VBoxContainer; var set_msg: Label
 var dlg_title: Label; var dlg_text: Label; var dlg_in: LineEdit; var dlg_msg: Label; var dlg_ok: Button; var dlg_kind := ""
 var br_title: Label; var br_code: Label; var br_map: Control; var br_note: Label; var br_gear: Label; var br_go: Button
+var br_modes: HFlowContainer   # stage 5: the sweep, or one of the three team modes
 # the tactical map: drawn on the briefing and on its own screen (M, the pause's map button, the touch map button)
 var tac: TacMap
 var br_body: VBoxContainer; var br_box: BoxContainer; var br_side: VBoxContainer; var br_leg_h: HFlowContainer; var br_leg_v: VBoxContainer
@@ -680,6 +681,7 @@ func _build_brief() -> void:
 	br_map = Control.new(); br_map.custom_minimum_size = Vector2(260, 260); br_map.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; br_box.add_child(br_map)
 	br_map.draw.connect(func() -> void: tac.draw(br_map, br_map.size))
 	br_side = vbox(10); br_box.add_child(br_side)
+	br_modes = _flow(); br_modes.alignment = FlowContainer.ALIGNMENT_BEGIN; br_side.add_child(br_modes)
 	br_leg_h = _flow(); br_side.add_child(br_leg_h); br_leg_v = vbox(6); br_side.add_child(br_leg_v)
 	br_gear = lbl("", f_body, 13, SODIUM, true); br_side.add_child(br_gear); br_note = lbl("", f_body, 13, INK, true); br_side.add_child(br_note)
 	br_go = btn("출동", "primary", func() -> void: _deploy()); br_go.set_meta("first", true)
@@ -688,15 +690,33 @@ func _build_brief() -> void:
 
 func open_brief(stage: int) -> void:
 	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); show_screen("brief"); _brief_gear(); _legend(br_leg_h, br_leg_v, false)
-	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name
-	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else ""); br_map.queue_redraw()
+	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name + (" · " + ToyMatch.SHORT[game.tm.key] if game.tm != null else "")
+	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else "")
+	if game.tm != null: br_note.text = game.tm.mode.brief() + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.tm.mode.bonus()))
+	_mode_buttons(stage); br_map.queue_redraw()
+
+## stage 5's modes, as a row of buttons on its briefing: the one picked lit, a press builds the room for another
+func _mode_buttons(stage: int) -> void:
+	clear(br_modes); br_modes.visible = stage == 9
+	if stage != 9: return
+	var cur_mode := ToyMatch.picked()
+	br_modes.add_child(lbl("모드", f_mono, 12, STEEL))
+	for k: String in ToyMatch.MODES:
+		var b := btn(ToyMatch.NAMES[k], "primary" if k == cur_mode else "small", func() -> void: _pick_mode(k))
+		b.custom_minimum_size = Vector2(0, 38); b.add_theme_font_size_override("font_size", 15 if k == cur_mode else 13); b.set_meta("mode", k); br_modes.add_child(b)
+
+func _pick_mode(k: String) -> void:
+	if ToyMatch.picked() == k: return
+	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("press"); open_brief(9)
 
 func _brief_gear() -> void:
 	var ready := []; var lo := game.layout()
 	for i in 7:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
-	if sel == 9: br_gear.text = "장난감 무기 9종 · 1-9번 키"; br_go.disabled = false; return
+	if sel == 9:
+		var k := ToyMatch.picked()
+		br_gear.text = "장난감 무기 9종 · 1-9번 키" + {"rush": " · 건전지를 들면 다트 권총과 30cm 자만", "escort": " · 화물칸 탄약 상자에서 보급", "freeze": " · 탄산 캔 G"}.get(k, ""); br_go.disabled = false; return
 	br_gear.text = ("지도 왼쪽 아래 구석(서남쪽 끝)에 내립니다\n" if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
@@ -730,7 +750,7 @@ func _build_map() -> void:
 
 ## the map screen, over the paused fight
 func open_map(touch: bool) -> void:
-	tac.setup(game.stage); mp_code.text = "스테이지 %s · 처치 %d / %d" % [Store.STAGE_TAG[game.stage], game.kills, game.goal]
+	tac.setup(game.stage); mp_code.text = ("스테이지 %s · %s" % [Store.STAGE_TAG[game.stage], ToyMatch.SHORT[game.tm.key]]) if game.tm != null else "스테이지 %s · 처치 %d / %d" % [Store.STAGE_TAG[game.stage], game.kills, game.goal]
 	mp_hint.text = "게임 중 오른쪽 위 지도 버튼으로 다시 열 수 있습니다" if touch else "M 키로 열고 닫기"
 	_legend(mp_leg_h, mp_leg_v, true); show_screen("map"); mp_map.queue_redraw()
 
@@ -761,7 +781,7 @@ func _build_pause() -> void:
 func render_pause() -> void:
 	clear(pa_body); pa_body.add_child(lbl("일시정지", f_title, 48, INK))
 	if pa_note_text != "": pa_body.add_child(lbl(pa_note_text, f_body, 13, SODIUM, true))
-	pa_body.add_child(lbl("처치 %d / %d · 가방 %s" % [game.kills, game.goal, Store.won(Store.save.money)], f_mono, 13, INK))
+	pa_body.add_child(lbl((game.tm.summary() + " · 처치 %d" % game.kills if game.tm != null else "처치 %d / %d" % [game.kills, game.goal]) + " · 가방 %s" % Store.won(Store.save.money), f_mono, 13, INK, true))
 	if not guns.none: _gun_order(pa_body, render_pause)
 	_settings_rows(pa_body, false)
 var pa_note_text := ""
@@ -783,8 +803,10 @@ func _build_over() -> void:
 func show_result(kind: String) -> void:
 	var clear_ := kind == "clear"; var st: Dictionary = game.stats; var tag: String = Store.STAGE_TAG[game.stage]
 	(ov.stamp as Label).text = "임무 완료" if clear_ else ("감염" if kind == "zombie" else ("중독" if kind == "poison" else ("출혈" if kind == "bleed" else ("레이저" if kind == "laser" else "작전 실패")))); (ov.stamp as Label).add_theme_color_override("font_color", VITAL if clear_ else ALARM)
-	(ov.title as Label).text = "스테이지 %s 클리어" % tag if clear_ else ("좀비가 되었습니다" if kind == "zombie" else ("독이 퍼져 쓰러졌습니다" if kind == "poison" else ("고릴라에게 짓눌렸습니다" if kind == "slam" else ("피를 너무 많이 흘렸습니다" if kind == "bleed" else ("보스 드론의 레이저에 맞았습니다" if kind == "laser" else "스테이지 %s · 쓰러짐" % tag)))))
-	(ov.kills as Label).text = "%d%s / %d" % [st.kills, " + 길들임 %d" % game.calm if game.calm > 0 else "", game.goal]; (ov.earn as Label).text = Store.won(st.earned); (ov.hs as Label).text = str(st.heads)
+	if game.tm != null:   # stage 5's team modes: their own stamp and title
+		(ov.stamp as Label).text = "임무 완료" if clear_ else game.tm.mode.lose_stamp
+	(ov.title as Label).text = (game.tm.mode.win_title() if clear_ else game.tm.mode.lose_title) if game.tm != null else "스테이지 %s 클리어" % tag if clear_ else ("좀비가 되었습니다" if kind == "zombie" else ("독이 퍼져 쓰러졌습니다" if kind == "poison" else ("고릴라에게 짓눌렸습니다" if kind == "slam" else ("피를 너무 많이 흘렸습니다" if kind == "bleed" else ("보스 드론의 레이저에 맞았습니다" if kind == "laser" else "스테이지 %s · 쓰러짐" % tag)))))
+	(ov.kills as Label).text = ("%d · %d 대 %d" % [st.kills, game.tm.score.us, game.tm.score.them]) if game.tm != null else "%d%s / %d" % [st.kills, " + 길들임 %d" % game.calm if game.calm > 0 else "", game.goal]; (ov.earn as Label).text = Store.won(st.earned); (ov.hs as Label).text = str(st.heads)
 	(ov.earn as Label).add_theme_color_override("font_color", ALARM if (not clear_ and st.earned > 0) else INK)
 	(ov.acc as Label).text = "%d%%" % (roundi(100.0 * st.hits / st.shots) if st.shots > 0 else 0); (ov.time as Label).text = Store.fmt_time(st.time)
 	(ov.code as Label).text = "보고 번호 " + Store.iso_code("YRD", (game.stage * 100000 + st.kills * 997) % 1000000)
@@ -795,6 +817,7 @@ func show_result(kind: String) -> void:
 		if i < nx.size(): b.set_meta("st", nx[i]); b.text = "스테이지 %s%s" % [Store.STAGE_TAG[nx[i]], "으로" if Store.STAGE_TAG[nx[i]].ends_with("1") or Store.STAGE_TAG[nx[i]].ends_with("3") else "로"]; b.disabled = not BUILT.has(nx[i])
 	var all_done: bool = Store.STAGE_ORDER.all(func(s): return Store.save.cleared.has(s))
 	(ov.best as Label).text = (("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ") if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else "")) + "가방 " + Store.won(Store.save.money)
+	if game.tm != null: (ov.best as Label).text = (("이겨서 번 돈을 챙겼습니다 · 최고 기록 " + Store.fmt_time(float(Store.save.best.get(game.tm.mode.record_key(), 0)))) if clear_ else ("져서 이번에 번 %s을 잃었습니다" % Store.won(st.earned) if st.earned > 0 else "다시 도전해 보세요")) + " · 가방 " + Store.won(Store.save.money)
 	back_stack.clear(); show_screen("over")
 
 ## a look over the screen on show (for the checks at five screen sizes): anything off the edge of the screen (outside a

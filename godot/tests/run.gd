@@ -31,7 +31,7 @@ func check(name: String, ok: bool, info = "") -> void:
 	if not ok: fails += 1
 
 func _ready() -> void:
-	Store.settings.dev = false; Store.settings.god = false; Store.settings.gfx = "auto"   # (whatever this machine kept from playing: the checks start from a fresh player's settings)
+	Store.settings.dev = false; Store.settings.god = false; Store.settings.gfx = "auto"; Store.settings.toyMode = "sweep"   # (whatever this machine kept from playing: the checks start from a fresh player's settings)
 	var ref: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/reference_stage1.json"))
 	var r := World.Rng.new(7)
 	var got := [r.next(), r.next(), r.next(), r.next()]; var want := [0.011704753153026104, 0.06195825757458806, 0.97690763277933, 0.6990287057124078]
@@ -761,6 +761,7 @@ func _ready() -> void:
 		s5_shot = maxi(s5_shot, pr.list.size()); s5_off2 = maxf(s5_off2, Vector2(s5_r2.pos.x - s5_c2.pos.x, s5_r2.pos.z - s5_c2.pos.z).length())
 	check("stage 5: the rider goes where his car goes, standing on its roof, and shoots when he sees you", s5_shot > 0 and s5_off2 < 0.2 and absf(s5_r2.pos.y - s5_c2.pos.y - ToyFoes.SEAT.y) < 0.01 and s5_c2.pos.distance_to(Vector3(-30, 0, 48.5)) > 1.0, [s5_shot, s5_off2])
 	# the car out of your sight: it drives about at random and never stops, and not faster than 6 m/s
+	seed(5150)   # (its turns are drawn at random: the same draws every run)
 	s5_c2.alert = false; s5_c2.los = false; pl.pos = Vector3(-30, 0, -60.0); var s5_prev: Vector3 = s5_c2.pos; var s5_path := 0.0; var s5_vmax := 0.0; var s5_vmin := INF; pr.clear()
 	for i in 300:
 		var s5_tw := Vector2(pl.pos.x - s5_c2.pos.x, pl.pos.z - s5_c2.pos.z); s5_tf.update(s5_c2, 0.02, s5_tw.length(), s5_tw, atan2(s5_tw.x, s5_tw.y))
@@ -807,6 +808,7 @@ func _ready() -> void:
 	for i in 120: gm.update(0.02)
 	check("stage 5: all hundred down is a clear", gm.ended and gm.result == "clear" and gm.kills == 100, [gm.kills, gm.result])
 	pr.clear()
+	_team_modes(gm, en, pl, g, pr, w, cam)
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -1633,6 +1635,189 @@ func _ready() -> void:
 # ---------------- the browser game's own ways (src/04b_physics.js, src/07b_ai.js), as this port had them line for line: the
 # quicker ones in the game must give the same answers ----------------
 const _REF_DIRS := [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+# ---------------- stage 5's team modes ----------------
+## the whole fight for a while, as the game's frame runs it
+func _tick(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, sec: float) -> void:
+	for i in roundi(sec * 30.0):
+		pl.update(1.0 / 30.0, cam, 0.0); w.toy.update(1.0 / 30.0, pl); g.update(1.0 / 30.0); en.update(1.0 / 30.0, 0.0); pr.update(1.0 / 30.0); gm.update(1.0 / 30.0)
+
+## every way of a mode's waypoints can be walked: a toy put at one end and steered at the other gets there (one-way drops too)
+func _walk_edges(tm: ToyMatch) -> Array:
+	var u: Enemies.Foe = tm.allies[0]; var bad: Array = []; var seen := {}
+	for a in tm.adj:
+		var pa: Vector3 = tm.nodes[a]; var gy := Phys.ground_at(pa.x, pa.y + 0.6, pa.z, u.R)
+		if absf(gy - pa.y) > 0.3 or Phys.collide_at(pa.x, gy + 0.05, pa.z, u.R, u.H) != null: bad.push_back("node " + a); continue
+		pa.y = gy   # (on a stepped ramp the step under it can be a little higher)
+		for ed: Array in tm.adj[a]:
+			var b: String = ed[0]
+			if seen.has(a + ">" + b): continue
+			seen[a + ">" + b] = true
+			var pb: Vector3 = tm.nodes[b]; u.pos = pa; u.vy = 0.0; u.vel = Vector3.ZERO; var ok := false
+			for i in roundi((float(ed[1]) / 3.4 + 6.0) * 30.0):
+				var d := Vector2(pb.x - u.pos.x, pb.z - u.pos.z)
+				if d.length() < 1.0 and absf(pb.y - u.pos.y) < 1.0: ok = true; break
+				var dn := d.normalized(); tm._move(u, dn.x * 3.4, dn.y * 3.4, 1.0 / 30.0)
+			if not ok: bad.push_back("%s>%s at %s" % [a, b, str(u.pos.snapped(Vector3.ONE * 0.1))])
+	return bad
+
+func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D) -> void:
+	var run := func(sec: float) -> void: _tick(gm, en, pl, g, pr, w, cam, sec)
+	var money0: int = Store.save.money; var best0: Dictionary = (Store.save.best as Dictionary).duplicate()
+	check("stage 5's modes: the sweep by default; a team mode is picked in the briefing and kept in the settings", ToyMatch.picked() == "sweep" and ToyMatch.MODES == ["sweep", "rush", "escort", "freeze"])
+	# ---- the shared part, in the battery rush ----
+	Store.settings.toyMode = "rush"; gm.begin(9); var tm: ToyMatch = gm.tm
+	check("battery rush: our six blue soldiers (kept off the enemies' list) against twelve of the room's toys, each on its side", tm != null and tm.mode is ModeRush and tm.allies.size() == 6 and en.list.size() == 12 and gm.goal == 0
+		and tm.allies.all(func(a): return a.k.team == "us" and not en.list.has(a)) and en.list.all(func(e): return e.k.team == "them"), [tm.allies.size(), en.list.size()])
+	var a0: Enemies.Foe = tm.allies[0]; var ray_o := a0.pos + Vector3(0, 1.2, 5.0)
+	check("our soldiers are blue, and nothing of yours hits them (your shots pass through)", (a0.k.mat as StandardMaterial3D).albedo_color.is_equal_approx(World.lin("203f8a")) and en.raycast(ray_o, Vector3(0, 0, -1), 20.0) == null)
+	var bad_r := _walk_edges(tm)
+	check("battery rush: every way the toys take round the room can be walked (floor, under the bed, desk, bridge, mattress, the stairs, the drops)", bad_r.is_empty(), bad_r)
+	# their round hits ours; ours hits theirs and pays you nothing
+	pl.invuln = 1e9; var e0: Enemies.Foe = en.list[0]; a0 = tm.allies[1]
+	e0.pos = Vector3(-6, 0, 20); a0.pos = Vector3(-6, 0, 28); e0.g.position = e0.pos; a0.g.position = a0.pos; var hp_a := a0.hp
+	pr.bullet(e0.pos + Vector3(0, 1.4, 0.6), a0.pos + Vector3(0, 1.0, 0), 80.0, 10.0, 0.0, "them")
+	for i in 20: pr.update(1.0 / 30.0)
+	check("their round hits one of ours", a0.hp < hp_a, [hp_a, a0.hp])
+	var hp_e := e0.hp; var m_before: int = Store.save.money
+	pr.bullet(a0.pos + Vector3(0, 1.4, -0.6), e0.pos + Vector3(0, 1.0, 0), 80.0, 2000.0, 0.0, "us")
+	for i in 20: pr.update(1.0 / 30.0)
+	check("ours hits theirs; downed by one of ours it pays you nothing (and comes back at its base later)", not e0.alive and Store.save.money == m_before and tm.queue.size() == 1 and int(tm.score.us) == 1, [hp_e, Store.save.money - m_before, tm.queue.size()])
+	run.call(float(ToyMatch.BACK.them) + 0.2)
+	check("...back at its base", en.list.filter(func(e): return e.alive).size() == 12 and en.list.any(func(e): return e.pos.z < -40.0))
+	# you fall: down a few seconds, then back at the base, fresh
+	var them0 := int(tm.score.them); pl.invuln = 0.0; pl.hp = 0.0; gm.update(0.02)
+	check("you fall: down (no moving, no shooting), a point to them, not the end", pl.out and not gm.ended and int(tm.score.them) == them0 + 1, [them0, tm.score.them])
+	var sh0 := g.shots; g.fire(); check("down, your gun does nothing", g.shots == sh0)
+	run.call(ToyMatch.PLAYER_BACK + 0.2)
+	check("...and back at your base a few seconds later, at full health", not pl.out and pl.hp == Player.MAX_HP and pl.pos.z > 40.0)
+	# the batteries
+	var R: ModeRush = tm.mode; pl.invuln = 1e9
+	gm.begin(9); tm = gm.tm; R = tm.mode; pl.invuln = 1e9
+	for u in tm.units("us") + tm.units("them"): u.speed = 0.0   # (everyone stands, so the checks are yours alone)
+	run.call(ModeRush.FIRST_DROP + 0.1)
+	check("battery rush: the first battery comes down %d s in, on the block bridge or the rug in the middle" % int(ModeRush.FIRST_DROP), R.batteries.size() == 1 and R.batteries[0].state == "fall")
+	run.call(3.5)
+	var bat: Dictionary = R.batteries[0]; var bp: Vector3 = bat.pos
+	check("...and lands there, a light over it so you can find it", bat.state == "ground" and ((absf(bp.y - 9.0) < 0.1 and absf(bp.x + 14.0) < 3.0) or (absf(bp.y) < 0.1 and absf(bp.x + 6.0) < 3.0)) and (bat.beacon as Node3D).visible, bp)
+	pl.reset(bp.x + 1.0, bp.z, 0.0); pl.pos.y = bp.y; pl.invuln = 1e9; g.reset(gm.layout()); g.cur = "rifle"
+	run.call(0.6); var half := R.carry == null and R.pull > 0.3
+	run.call(0.6)
+	check("a second beside it pulls it free: in your arms", half and R.carry == bat and bat.state == "carried" and R.player_carrying())
+	run.call(0.5)
+	check("carrying it: the dart pistol and the ruler only, and a little slower", g.cur == "pistol" and g.lock_to == "pistol" and pl.carry_mul == ModeRush.CARRY_MUL)
+	g.switch_to("rifle"); run.call(0.5); check("...the rifle stays away", g.cur == "pistol")
+	var m1: int = Store.save.money; pl.pos = Vector3(0, 0, 50); run.call(0.2)
+	check("in our fortress, by the robot: it goes into its chest (1 of 3), you are paid, your hands are free", int(R.slots.us) == 1 and R.carry == null and g.lock_to == "" and pl.carry_mul == 1.0 and Store.save.money == m1 + ModeRush.DELIVER_PAY, [R.slots, Store.save.money - m1])
+	# a carrier who falls drops it where he fell
+	R.cmd(["carry"]); pl.pos = Vector3(-6, 0, 20); pl.invuln = 0.0; pl.hp = 0.0; gm.update(0.02); pl.invuln = 1e9
+	var dropped: Array = R.batteries.filter(func(b): return b.state == "ground")
+	check("down with a battery: it falls where you fell", dropped.size() >= 1 and Vector2(dropped[dropped.size() - 1].pos.x + 6.0, dropped[dropped.size() - 1].pos.z - 20.0).length() < 1.0 and R.carry == null and g.lock_to == "")
+	run.call(ToyMatch.PLAYER_BACK + 0.2)
+	# three in: the robot wakes and burns their fortress down; you win
+	var fort_box: Phys.Box = R.forts.them.boxes[0]; var m2: int = Store.save.money; Store.save.best.erase("t9r")
+	R.cmd(["give", "us", "3"]); run.call(1.0)
+	check("three in: our robot wakes (eyes lit, arms going up), and nobody fights while it does", R.phase == "wake" and (R.robots.us.eye_mat as StandardMaterial3D).emission_energy_multiplier > 2.0 and R.hold(tm.allies[0]))
+	run.call(6.0)
+	check("lasers and foam missiles: their fortress falls (its walls gone), and it is a win", bool(R.forts.them.down) and not Phys.colliders.has(fort_box) and gm.ended and gm.result == "clear")
+	check("the win: its best time kept, the first win's bonus paid", Store.save.best.has("t9r") and Store.save.money == m2 + ModeRush.new().bonus(), Store.save.money - m2)
+	# their three: a loss
+	gm.begin(9); tm = gm.tm; R = tm.mode; pl.invuln = 1e9
+	check("once won it pays no more (a replay)", gm.replay)
+	var m3: int = Store.save.money; Store.save.money += 777; gm.stats.earned += 777
+	R.cmd(["give", "them", "3"]); run.call(7.5)
+	check("their robot wakes first: our fortress falls, it is a loss, and what you earned in there is gone", gm.ended and gm.result == "lost" and bool(R.forts.us.down) and Store.save.money == m3, [gm.result, Store.save.money - m3])
+	gm.begin(9); tm = gm.tm; R = tm.mode; pl.invuln = 1e9; R.time_left = 0.5; run.call(1.0)
+	check("the power runs out: a loss", gm.ended and gm.result == "lost" and R.lose_stamp == "전원 꺼짐")
+	# ---- the train escort ----
+	Store.settings.toyMode = "escort"; gm.begin(9); tm = gm.tm; var E: ModeEscort = tm.mode; pl.invuln = 1e9
+	check("train escort: six of ours by the train on the carpet, twelve of theirs (three snipers up on the bookshelf and the wardrobe)", tm.allies.size() == 6 and en.list.size() == 12 and en.list.filter(func(e): return e.k.job == "nest" and e.pos.y >= 19.9).size() == 3)
+	var bad_e := _walk_edges(tm)
+	check("train escort: every way can be walked, up the spiral to the desk and down", bad_e.is_empty(), bad_e)
+	check("the track: from the carpet's station through the tunnel under the bed, round the spiral, on along the desk (about 316 m); the spiral takes it 9 m up",
+		absf(E.total - 316.6) < 1.0 and E.at(0.0).distance_to(Vector3(-38, 0, 52)) < 0.01 and absf(E.at(E.total).y - 9.0) < 0.01 and E.at(120.0).x == 28.0 and absf(E.at(120.0).z) < 30.0, [E.total, E.at(120.0)])
+	for u in tm.units("us") + tm.units("them"): u.speed = 0.0; u.pos.x += 200.0 if false else 0.0
+	for u in tm.units("us"): u.pos = Vector3(-60, 0, 60) + Vector3(randf(), 0, randf()); u.g.position = u.pos
+	for u in tm.units("them"):
+		if u.k.job != "nest": u.pos = Vector3(-50, 9, 0) + Vector3(randf(), 0, randf()); u.g.position = u.pos
+	var wp := E.wagon_pos(); pl.reset(wp.x, wp.z + 4.0, 0.0); var d0 := E.d
+	run.call(2.0)
+	check("one of us beside it and none of them: it goes (1.6 m/s)", absf((E.d - d0) / 2.0 - ModeEscort.SPEED) < 0.15, (E.d - d0) / 2.0)
+	var foe: Enemies.Foe = tm.units("them").filter(func(e): return e.k.job != "nest")[0]; wp = E.wagon_pos(); foe.pos = wp + Vector3(0, 0, -5); foe.g.position = foe.pos
+	var d1 := E.d; run.call(1.0)
+	check("one of them beside it too: it stands", absf(E.d - d1) < 0.01 and E.near_them >= 1)
+	foe.pos = Vector3(-50, 9, 2); pl.pos = Vector3(-60, 0, 30); var d2 := E.d; run.call(ModeEscort.BACK_AFTER + 2.0)
+	check("left alone it rolls back after %d s (half a metre a second)" % int(ModeEscort.BACK_AFTER), E.d < d2 - 0.6 and E.d > d2 - 1.5, d2 - E.d)
+	# riding the wagon, the ammo box, a checkpoint
+	E.cmd(["at", "150"]); wp = E.wagon_pos(); pl.reset(wp.x, wp.z, 0.0); pl.pos.y = wp.y + 0.46; pl.vel = Vector3.ZERO; pl.update(1.0 / 30.0, cam, 0.0)
+	var p_on := pl.pos; var t0 := E.time_left; var m4: int = Store.save.money
+	g.wstate.rifle.reserve = 0; run.call(4.0)
+	check("you on the wagon go with it (stood behind its block walls)", pl.pos.distance_to(p_on) > 4.0 and absf(pl.pos.y - (E.wagon_pos().y + 0.45)) < 0.2, pl.pos.distance_to(p_on))
+	check("past the corner after the tunnel: checkpoint 1, more time, paid", E.cp == 1 and E.time_left > t0 and Store.save.money == m4 + (0 if gm.replay else ModeEscort.CP_PAY))
+	check("by the ammo box on the wagon every gun fills up", float(g.wstate.rifle.reserve) == float(Custom.weapon("rifle").reserve))
+	# traps
+	pl.pos = Vector3(-60, 0, 30); E.cmd(["at", "60"]); E.idle_t = 0.0; wp = E.wagon_pos(); pl.reset(wp.x, wp.z - 3.0, 0.0)
+	E.cmd(["trap", "tack", str(E.d + ModeEscort.ENGINE_AHEAD + 5.0)]); E.cmd(["trap", "mouse", str(E.d + ModeEscort.ENGINE_AHEAD + 8.5)])
+	check("their traps lie on the track ahead: thumbtacks and a mousetrap", E.traps.size() == 2)
+	run.call(2.0); var slow: bool = E.slow_t > 0.0
+	run.call(6.0); var stopped: bool = E.stop_t > 0.0 or E.state().stop > 0.0
+	check("the train crawls over the thumbtacks, and the mousetrap stops it dead", slow and (stopped or E.traps.is_empty()), [slow, E.stop_t])
+	E.cmd(["trap", "mouse", str(E.d + 30.0)]); var tr: Dictionary = E.traps[E.traps.size() - 1]
+	w.damage_crate(tr.rec, 200.0, tr.pos)
+	check("a trap shot to bits is gone", tr.dead and E.traps.filter(func(t): return not t.dead).size() < E.traps.size() + 1 and not Phys.colliders.has(tr.rec.b))
+	E.cmd(["at", str(E.total)]); run.call(0.2)
+	check("the engine at the terminal: a win", gm.ended and gm.result == "clear")
+	gm.begin(9); tm = gm.tm; E = tm.mode; pl.invuln = 1e9; pl.pos = Vector3(-60, 0, 30)
+	for u in tm.units("us"): u.pos = Vector3(60, 0, -60); u.speed = 0.0
+	E.time_left = 0.3; run.call(1.0)
+	check("out of time with nobody of ours by the train: a loss", gm.ended and gm.result == "lost")
+	# ---- bedtime ----
+	Store.settings.toyMode = "freeze"; gm.begin(9); tm = gm.tm; var F: ModeFreeze = tm.mode; pl.invuln = 1e9
+	check("bedtime: five of ours, eleven of theirs; the south wall has the room's door, and the hall behind it", tm.allies.size() == 5 and en.list.size() == 11 and F.door != null and F.giant != null)
+	var bad_f := _walk_edges(tm)
+	check("bedtime: every way can be walked", bad_f.is_empty(), bad_f)
+	pl.reset(-20.0, 40.0, 0.0); pl.update(0.0, cam, 0.0)
+	F.cmd(["visit"]); run.call(0.2)
+	check("footsteps, the knob turns, an alarm: the warning", F.phase == "warn" and F.visits == 1)
+	run.call(ModeFreeze.WARN + ModeFreeze.OPEN + 0.1)
+	check("three seconds later the door is open and the owner leans in to look", F.phase == "look" and F.door.rotation.y < -1.5 and F.giant.rotation.x < -0.5 and w.toy.train_hold)
+	var held_n := (tm.units("us") + tm.units("them")).filter(func(u): return F.hold(u)).size(); var all_n := (tm.units("us") + tm.units("them")).size()
+	check("the toys keep still once they have heard it (now and then one is slow to)", held_n >= all_n - 4 and held_n > 0, [held_n, all_n])
+	var box_us := int(F.boxed.us); var sc_them := int(tm.score.them)
+	pl.in_f = 1.0; run.call(1.0); pl.in_f = 0.0
+	check("you move while it looks: caught", F._is_caught(pl) or pl.out)
+	run.call(1.5)
+	check("the hand comes down and picks you up", pl.out and (pl.held or int(F.boxed.us) > box_us))
+	run.call(4.0)
+	check("...into the toy box: out of the fight, a point to them", pl.out and not pl.held and int(F.boxed.us) == box_us + 1 and int(tm.score.them) >= sc_them + 1 and absf(absf(pl.pos.x) - 47.0) < 3.0, [pl.pos, F.boxed])
+	run.call(ModeFreeze.BOX_BACK_YOU + 4.0)
+	check("...back at your base a long while later", not pl.out and pl.pos.z > 30.0 and pl.pos.x < 0.0, pl.pos)
+	# a toy of theirs moving while it looks is boxed: a point to us (everyone else keeping still)
+	for i in 20:
+		if F.grab == null: break
+		run.call(0.5)
+	F.phase = "calm"; F.caught.clear(); F.cmd(["look"])
+	for u in tm.units("us") + tm.units("them"): u.k.freeze_at = 0.0; u.k.erase("can_at")
+	var mover: Enemies.Foe = tm.units("them")[0]; mover.k.freeze_at = 99.0; mover.speed = 6.0; mover.k.hot = mover.pos + Vector3(8, 0, 0); mover.k.hot_t = 99.0
+	var sc_us := int(tm.score.us); var bx_them := int(F.boxed.them); tm.queue.clear()
+	run.call(ModeFreeze.GRACE + 5.0)
+	check("one of theirs that moves while it looks goes into the box: off the field, a point to us", int(F.boxed.them) == bx_them + 1 and int(tm.score.us) == sc_us + 1 and not en.list.has(mover), [F.boxed, tm.score])
+	check("...and back on their side after a long wait", tm.queue.any(func(q): return q.team == "them" and float(q.t) > ModeFreeze.BOX_BACK - 3.0))
+	# soda cans: whoever is in the puddle slides about
+	for i in 20:
+		if F.grab == null: break
+		run.call(0.5)
+	F.phase = "calm"; F.phase_t = 0.0; F.next_t = 999.0; F.visit_t = 0.0; tm.down_t = 0.0; pl.reset(-20.0, 30.0, 0.0); pl.invuln = 1e9; pl.update(0.0, cam, 0.0); cam.rotation = Vector3(-0.3, 0.0, 0.0); cam.position = pl.pos + Vector3(0, 1.62, 0)
+	var cans0 := F.cans; var thrown := F.throw_can(); run.call(2.0)
+	var vic: Enemies.Foe = tm.units("them")[0]; vic.speed = 0.0
+	if not F.puddles.is_empty(): vic.pos = F.puddles[0].pos; vic.g.position = vic.pos
+	var vp := vic.pos; run.call(1.0)
+	check("a soda can: thrown, it bursts and the floor there gets slippery; a toy in it slides about", thrown and F.cans == cans0 - 1 and F.puddles.size() == 1 and vic.pos.distance_to(vp) > 0.8, [F.puddles.size(), vic.pos.distance_to(vp)])
+	tm.score.us = ModeFreeze.TARGET; run.call(0.1)
+	check("bedtime: the first side to %d points wins" % ModeFreeze.TARGET, gm.ended and gm.result == "clear")
+	# back to the sweep for whatever follows
+	Store.settings.toyMode = "sweep"; Store.save.money = money0; Store.save.best = best0; pl.in_f = 0.0
+	gm.begin(9); check("the sweep again: the hundred toys, no team mode", gm.tm == null and en.list.size() == 100)
+
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)
 	var blk := Phys.nav_blocked; var s := Phys.nav_i(pz) * n + Phys.nav_i(px); var head := 0; var tail := 0

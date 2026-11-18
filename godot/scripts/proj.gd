@@ -8,6 +8,7 @@ var enemies: Enemies
 var fx: Fx
 var stage := 1
 var hitmark: Callable = Callable()
+var tm = null   # stage 5's team modes: the ToyMatch (whose toys the enemies' rounds and ours can hit)
 var list: Array = []
 
 func _mesh(scale_: Vector3, color: String) -> MeshInstance3D:
@@ -25,12 +26,20 @@ func rocket(from: Vector3, dir: Vector3, W: Dictionary, target) -> void:
 		"life": 7.0, "age": 0.0, "target": target, "m": _mesh(Vector3(0.055, 0.055, 0.32), "59603f")})
 
 ## an enemy's pistol round: fast, a visible tracer; it hurts you where it strikes (above the shoulders is the head)
-func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: float) -> void:
+## an enemy's round. team: "them" (the enemies': it hits you, and in stage 5's team modes our blue soldiers too) or "us"
+## (one of our soldiers': it hits the room's toys, and a trap on the train's track)
+func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: float, team := "them") -> void:
 	var v := Vector3(target.x + randf_range(-1, 1) * spread_r - from.x, target.y + randf_range(-0.7, 0.7) * spread_r - from.y, target.z + randf_range(-1, 1) * spread_r - from.z).normalized() * speed
-	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(0.03, 0.03, 0.55); m.mesh = b; m.material_override = _bullet_mat(); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
+	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(0.03, 0.03, 0.55); m.mesh = b; m.material_override = _ally_mat() if team == "us" else _bullet_mat(); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
 	m.look_at_from_position(from, from + v, Vector3.UP if absf(v.normalized().y) < 0.99 else Vector3.RIGHT)
-	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m})
+	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m, "team": team})
 	if fx and stage != 9: fx.glow(from, Vector3.ZERO, 0.08, 0.45, 0.1, Color(1, 0.8, 0.5, 0.9))   # the flash at his muzzle
+
+var _amat: Material
+func _ally_mat() -> Material:   # our soldiers' rounds: blue
+	if _amat == null:
+		var mm := StandardMaterial3D.new(); mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mm.albedo_color = Color(0.45, 0.7, 1.0); mm.disable_fog = true; _amat = mm
+	return _amat
 
 var _bmat: Material
 func _bullet_mat() -> Material:
@@ -151,13 +160,21 @@ func update(dt: float) -> void:
 			# small steps so fast rounds cannot skip past you between checks
 			var hy0 := player.pos.y + 0.1; var hy1 := player.pos.y + Player.HEIGHT
 			var steps := maxi(3, ceili((p.vel as Vector3).length() * dt / 0.3))
+			var mine: bool = p.team == "us"
+			var near: Array = tm.bullet_cands(p.pos, p.pos + p.vel * dt, p.team) if tm != null else []   # (stage 5's team modes: the toys of the other side by its way)
 			for s in steps:
 				p.pos += p.vel * (dt / steps)
-				var py := clampf(p.pos.y, hy0, hy1); var dd := Vector3(p.pos.x - player.pos.x, p.pos.y - py, p.pos.z - player.pos.z).length()
-				if dd < 0.4: player.hurt(p.dmg, p.src, "head" if py - player.pos.y > 1.42 else "body"); dead = true; break
-				if not p.whiz and dd < 1.5: p.whiz = true; Snd.play("whiz", 1.0, p.pos)
-				if p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.02 or Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1) != null:
-					if fx: fx.sparks(p.pos, 3, [1.0, 0.8, 0.5], 2.0)
+				if not mine:
+					var py := clampf(p.pos.y, hy0, hy1); var dd := Vector3(p.pos.x - player.pos.x, p.pos.y - py, p.pos.z - player.pos.z).length()
+					if dd < 0.4 and not player.out: player.hurt(p.dmg, p.src, "head" if py - player.pos.y > 1.42 else "body"); dead = true; break
+					if not p.whiz and dd < 1.5: p.whiz = true; Snd.play("whiz", 1.0, p.pos)
+				for u in near:
+					if tm.bullet_hits(u, p.pos): tm.bullet_hit(u, p.pos, p.dmg, p.vel, p.src); dead = true; break
+				if dead: break
+				var wall: Phys.Box = Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1)
+				if p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.02 or wall != null:
+					if mine and wall != null and wall.ref != null and wall.ref is Dictionary and str(wall.ref.get("trap", "")) != "": world.damage_crate(wall.ref, p.dmg, p.pos)   # our soldiers shoot the traps on the track
+					if fx: fx.sparks(p.pos, 3, [0.5, 0.75, 1.0] if mine else [1.0, 0.8, 0.5], 2.0)
 					dead = true; break
 			if not dead: (p.m as MeshInstance3D).position = p.pos
 		else:

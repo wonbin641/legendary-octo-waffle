@@ -120,8 +120,11 @@ func draw(ci: Control) -> void:
 		T = minf(g.infect_t, g.poison_t) if (inf and poi) else (g.infect_t if inf else g.poison_t)
 		_glow(ci, "toxic", [[0.0, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0)], [0.35, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0)], [1.0, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0.5)]], 0.55 + sin(t * 9.0) * 0.25 + maxf(0.0, 5.0 - T) * 0.06)
 	if pl.stun_t > 0.0: _glow(ci, "stun", [[0.0, Color(1, 1, 1, 0.18)], [0.45, Color(200 / 255.0, 200 / 255.0, 210 / 255.0, 0.35)], [1.0, Color(20 / 255.0, 20 / 255.0, 30 / 255.0, 0.75)]], clampf(pl.stun_t, 0.0, 1.0) * (0.75 + sin(t * 7.0) * 0.15))
+	if g.tm != null and pl.out: _glow(ci, "down", [[0.0, Color(0, 0, 0, 0.35)], [0.5, Color(0, 0, 0, 0.5)], [1.0, Color(0.05, 0.02, 0.02, 0.85)]], 1.0)   # down: the view darkens
+	if g.tm != null and g.tm.key == "freeze" and str(g.tm.mode.phase) in ["open", "look"]: _glow(ci, "watch", [[0.0, Color(1, 0.85, 0.5, 0)], [0.6, Color(1, 0.85, 0.5, 0.0)], [1.0, Color(1, 0.75, 0.35, 0.4)]], 0.6 + 0.4 * sin(t * 5.0))
 	_scope_and_cross(ci, s, c, W, guns, pl)
 	_dmgdir(ci, c, pl)
+	if g.tm != null: _friends(ci, g)
 	_targets(ci, c, g, pl)
 	_lock(ci, s, W, guns, st)
 	if hit_t > 0.0:   # the hit mark: white, orange for the head, red for a kill
@@ -141,6 +144,7 @@ func draw(ci: Control) -> void:
 	var stt := _status(pl, g, touch)
 	if stt != "":
 		if pl.stun_t > 0.0: _t(ci, f_title, stt, c.x, s.y * 0.23, int(clampf(s.x * 0.08, 30, 52)), Color.WHITE, "center")
+		elif g.tm != null and (pl.out or stt == "움직이지 마세요!"): _t(ci, f_title, stt, c.x, s.y * 0.36, int(clampf(s.x * 0.05, 24, 40)), ALARM if stt == "움직이지 마세요!" else INK, "center")
 		else: _t(ci, f_bold, stt, c.x, s.y * 0.23, int(clampf(s.x * 0.036, 15, 20)), Color("b9f5a8"), "center")
 	if inf or poi:
 		var what := "감염 + 중독" if (inf and poi) else ("감염됨" if inf else "중독됨"); var pulse := 1.0 + 0.06 * (0.5 + 0.5 * sin(t * PI * 2.0))
@@ -187,6 +191,7 @@ func draw(ci: Control) -> void:
 func _topbox(ci: Control, s: Vector2, c: Vector2, g: Game, f_mono: Font, f_bold: Font, f_title: Font) -> void:
 	var done := g.kills + g.calm
 	var cells := [["스테이지", Store.STAGE_TAG[g.stage], SODIUM], ["처치", "%d / %d" % [done, g.goal], INK], ["가방", Store.won(Store.save.money), INK]]
+	if g.tm != null: cells = g.tm.mode.hud_cells()   # stage 5's team modes: their own cells
 	var ws := []; var total := 0.0
 	for q in cells: var w: float = maxf(74.0, maxf(_w(f_mono, q[0], 10), _w(f_mono, q[1], 18)) + 28.0); ws.push_back(w); total += w
 	var x0 := c.x - total / 2.0; var y0 := 14.0; var h := 48.0
@@ -196,7 +201,8 @@ func _topbox(ci: Control, s: Vector2, c: Vector2, g: Game, f_mono: Font, f_bold:
 		if i > 0: ci.draw_line(Vector2(x, y0), Vector2(x, y0 + h), LINE, 1.0)
 		_t(ci, f_mono, cells[i][0], x + ws[i] / 2.0, y0 + 6, 10, STEEL, "center", false); _t(ci, f_mono, cells[i][1], x + ws[i] / 2.0, y0 + 20, 18, cells[i][2], "center", false); x += ws[i]
 	var y := y0 + h + 3.0
-	ci.draw_rect(Rect2(x0, y, total, 4), Color(INK, 0.14)); ci.draw_rect(Rect2(x0, y, total * clampf(float(done) / maxf(1.0, g.goal), 0.0, 1.0), 4), SODIUM); y += 7.0
+	var bar := [clampf(float(done) / maxf(1.0, g.goal), 0.0, 1.0), SODIUM] if g.tm == null else g.tm.mode.hud_bar()
+	ci.draw_rect(Rect2(x0, y, total, 4), Color(INK, 0.14)); ci.draw_rect(Rect2(x0, y, total * clampf(float(bar[0]), 0.0, 1.0), 4), bar[1]); y += 7.0
 	var pop_y := y
 	# the safari: the time to the stampede, then how many are left. the lab: the next cage and its countdown
 	var sf: Safari = m.world.safari; var lab: Lab = m.world.lab; var lb := ""; var txt := ""; var sec := ""; var soon := false
@@ -213,10 +219,12 @@ func _topbox(ci: Control, s: Vector2, c: Vector2, g: Game, f_mono: Font, f_bold:
 			lb = "다음 우리"; txt = "%d번 · %s" % [nc.n, ("보스 " + Game.BOSS[3].name) if nc.boss else "%s %d마리" % [Animals.ANIMALS[nc.type].name, alive]]
 			sec = (("버튼을 누르는 중" if lab.reach == nc else "앞 우리 %d마리 남음" % mini(99, lab.wait_left(nc))) if nc.held else "%d초" % ceili(maxf(0.0, nc.open_at - lab.t)))
 			soon = not nc.held and nc.open_at - lab.t <= 3.0
-	if lb != "":
-		y += 4.0; var lx := _t(ci, f_mono, lb, x0, y + 5, 10, SODIUM); var tx := _t(ci, f_bold, txt, x0 + lx + 8, y + 1, 13, INK)
-		var pulse := 1.0 + (0.06 * (0.5 + 0.5 * sin(m.time * PI / 0.35)) if soon else 0.0)
-		_t(ci, f_mono, sec, x0 + lx + tx + 16, y - 2, int(18 * pulse), ALARM if soon else SODIUM); y += 22.0
+	var lines: Array = [[lb, txt, sec, soon]] if lb != "" else []
+	if g.tm != null and not g.ended: lines = g.tm.mode.hud_lines()
+	for L: Array in lines:
+		y += 4.0; var lx := _t(ci, f_mono, L[0], x0, y + 5, 10, SODIUM); var tx := _t(ci, f_bold, L[1], x0 + lx + 8, y + 1, 13, INK)
+		var pulse := 1.0 + (0.06 * (0.5 + 0.5 * sin(m.time * PI / 0.35)) if L[3] else 0.0)
+		_t(ci, f_mono, L[2], x0 + lx + tx + 16, y - 2, int(18 * pulse), ALARM if L[3] else SODIUM); y += 22.0
 	var an: Animals = m.enemies.animals
 	if an.bleed_t > 0.0:   # bleeding: how many wounds and how long they keep going
 		y += 4.0; var bt := "출혈 ×%d" % an.bleed_n; var bw := _w(f_bold, bt, 12) + 10.0
@@ -271,11 +279,13 @@ func _items(touch: bool) -> Array:
 	return chips
 
 func _status(pl: Player, g: Game, touch: bool) -> String:
+	if g.tm != null and pl.out and not g.ended: return g.tm.mode.status() if pl.held else ("장난감 상자 안 · %d초 뒤 다시 출동" % ceili(g.tm.down_t) if g.tm.down_why == "box" else "쓰러짐 · %d초 뒤 다시 출동" % ceili(g.tm.down_t))
 	if pl.stun_t > 0.0: return "기절 %.1f" % pl.stun_t
 	if pl.fear_t > 0.0: return "공포 %.1f" % pl.fear_t
 	if pl.toss_on: return "공중으로 날아가는 중"
 	if g.inject_on: return "해독약 주사 중"
 	if pl.jet_on: return "제트백팩 %.1f초" % maxf(0.0, pl.jet_t) + ("" if touch else " · Space 위로 · Ctrl(C) 아래로")
+	if g.tm != null and not g.ended: return g.tm.mode.status()
 	return ""
 
 ## where hits came from: a red arc round the crosshair, turned towards it, fading over a second
@@ -291,6 +301,7 @@ func _dmgdir(ci: Control, c: Vector2, pl: Player) -> void:
 ## arrows round the crosshair: to the chest you have to open, or (with ten or fewer left) to the nearest three enemies; never on the ship
 func aims(g: Game) -> Array:
 	var out := []
+	if g.tm != null: return [] if (g.ended or m.player.out) else g.tm.mode.aims()   # stage 5's team modes: batteries, home, the train, traps
 	var chest = m.loot.pending() if g._chest_wait else null
 	if chest != null: out.push_back([Vector2(chest.x, chest.z), 0.95])
 	else:
@@ -308,7 +319,25 @@ func _targets(ci: Control, c: Vector2, g: Game, pl: Player) -> void:
 		var tri := PackedVector2Array([Vector2(0, -96), Vector2(7, -83), Vector2(-7, -83)])
 		for i in 3: tri[i] = c + tri[i].rotated(rot)
 		ci.draw_colored_polygon(PackedVector2Array([tri[0] + Vector2(1, 1.5), tri[1] + Vector2(1, 1.5), tri[2] + Vector2(1, 1.5)]), Color(0, 0, 0, 0.5 * a[1]))
-		ci.draw_colored_polygon(tri, Color(SODIUM, a[1]))
+		ci.draw_colored_polygon(tri, Color(a[2] if a.size() > 2 else SODIUM, a[1]))
+
+## stage 5's team modes: a little blue mark over each of our soldiers in view (a battery over one carrying), a red battery over
+## theirs that carry one
+func _friends(ci: Control, g: Game) -> void:
+	var cam: Camera3D = m.cam; var T: ToyMatch = g.tm
+	for a in T.allies:
+		if not a.alive or bool(a.k.get("gone", false)): continue
+		var top: Vector3 = a.pos + Vector3(0, a.H + 0.6, 0)
+		if cam.is_position_behind(top) or top.distance_to(cam.global_position) > 80.0: continue
+		var p := cam.unproject_position(top); var col := Color("5f9cff")
+		ci.draw_colored_polygon(PackedVector2Array([p + Vector2(-6, -8), p + Vector2(6, -8), p + Vector2(0, 0)]), col)
+		if a.k.carrying != null: ci.draw_rect(Rect2(p.x - 4, p.y - 22, 8, 12), Color("ffd23a"))
+	for e in m.enemies.list:
+		if not e.alive or not e.k.has("team") or e.k.get("carrying") == null: continue
+		var top2: Vector3 = e.pos + Vector3(0, e.H + 0.9, 0)
+		if cam.is_position_behind(top2): continue
+		var q := cam.unproject_position(top2)
+		ci.draw_rect(Rect2(q.x - 5, q.y - 16, 10, 14), Color("ff5260")); ci.draw_rect(Rect2(q.x - 2, q.y - 19, 4, 3), Color("ff5260"))
 
 ## the rocket launcher's lock: a turning red diamond on the enemy the next rocket would chase
 func _lock(ci: Control, s: Vector2, W: Dictionary, guns: Guns, st: Dictionary) -> void:

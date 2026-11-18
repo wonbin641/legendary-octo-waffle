@@ -23,6 +23,11 @@ var beds: Array = []             # mattress areas: [minx, minz, maxx, maxz, y] (
 var train: Dictionary = {}
 var riding = null                # the zipline you are on: {line, t}
 var _tack_t := 0.0
+var tm = null                    # the team mode being played here (ToyMatch), or null for the sweep
+var train_hold := false          # (bedtime: the toy train keeps still while the room's owner looks in)
+
+## a part of the room the team mode builds its own way, or leaves out to make room for its own things
+func _skip(what: String) -> bool: return tm != null and tm.mode.skips(what)
 
 # ---------- building helpers ----------
 ## a box given by its corners; it is drawn and (unless told otherwise) stands in the way
@@ -64,13 +69,15 @@ func build(w: World, group: Node3D) -> void:
 	for i in 14: box(-HALF + i * 10.0, -0.5, -HALF, -HALF + (i + 1) * 10.0 - 0.15, 0.0, HALF, "b98a5a" if i % 2 else "c49766", "wood", false)
 	box(-HALF, -0.6, -HALF, HALF, -0.5, HALF, "6e4f30", "wood", false)
 	for wl in [[-HALF - 1.0, -HALF, -HALF, HALF], [HALF, -HALF, HALF + 1.0, HALF], [-HALF, -HALF - 1.0, HALF, -HALF], [-HALF, HALF, HALF, HALF + 1.0]]:
+		if wl[1] == HALF and _skip("south_wall"): continue   # (bedtime: the wall with the room's door in it)
 		box(wl[0], 0, wl[1], wl[2], 46.0, wl[3], "cfe3ea"); box(wl[0] - (0.0 if wl[2] - wl[0] > 5 else 0.3), 0, wl[1] - (0.3 if wl[2] - wl[0] > 5 else 0.0), wl[2] + (0.0 if wl[2] - wl[0] > 5 else 0.3), 2.2, wl[3] + (0.3 if wl[2] - wl[0] > 5 else 0.0), "f4f1e8", "concrete", false)
 	_bed(); _desk(); _bridge(); _south(); _north()
+	if tm != null: tm.mode.build_room(self); tm.build_graph()   # the team mode's own things, then the ways the toys walk
 	# everything boxy in one mesh
 	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts, true); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.75; mi.material_override = mat; G.add_child(mi)
 	_crates()
 	Phys.index_colliders(); Phys.build_nav()
-	world.start = {"x": 0.0, "z": 56.0, "yaw": 0.0}; world.spawns.clear()
+	world.start = {"x": 0.0, "z": 56.0, "yaw": 0.0} if tm == null else tm.mode.start(); world.spawns.clear()
 
 ## wooden toy boxes with health potions in them, as in every other stage: on the floor, in the blanket's trenches, on the desk and the
 ## upper bunk; never on a way up (stairs, ladder, springs, catapults, the ends of the bridge and the tapes), the train's track or the tacks
@@ -97,6 +104,7 @@ func _crates() -> void:
 			var g0 := Phys.ground_at(x, y + 1.0, z, 0.05)
 			if absf(g0 - y) > 0.01 or absf(Phys.ground_at(x, y + 1.0, z, 0.75) - g0) > 0.01: return false   # flat under the whole box
 			if Phys.collide_at(x, y + 0.05, z, 0.7, 1.25) != null or Phys.ceil_at(x, y, z, 0.6, 1.2) < y + 1.3 or keep_off.call(x, z, y): return false
+			if tm != null and tm.keep_off(x, z, y): return false   # (a team mode: not on the toys' ways, nor at a base)
 			for p: Vector3 in placed:
 				if p.distance_to(Vector3(x, y, z)) < 4.0: return false
 			placed.push_back(Vector3(x, y, z)); return true, true)
@@ -130,6 +138,7 @@ func _bed() -> void:
 	box(58.0, 4.4, z1, x1, BED_Y, z1 + 3.4, "8cc456", "wood")                                    # a bedside shelf: the foot of the ladder
 	# under the bed: socks, a slipper, lost balls. dark and close
 	for s in [[18.0, -20.0, 7.0, 2.6, "e85d75"], [30.0, 4.0, 2.6, 8.0, "f2f2f2"], [44.0, -12.0, 8.0, 2.4, "5fbf8f"], [24.0, 18.0, 6.0, 2.4, "f2c14e"], [50.0, 14.0, 2.6, 7.0, "9b7fd1"], [38.0, -24.0, 2.4, 6.0, "f2f2f2"]]:
+		if _skip("sock_%d_%d" % [int(s[0]), int(s[1])]): continue   # (the train's tunnel)
 		box(s[0], 0, s[1], s[0] + s[2], 1.7, s[1] + s[3], s[4], "bed")
 	box(34.0, 0, 16.0, 46.0, 1.2, 21.0, "3d7dca", "bed"); box(34.0, 1.2, 16.0, 40.0, 3.2, 21.0, "3d7dca", "bed")   # a slipper
 	ball(Vector3(22.0, 1.6, -4.0), 1.6, "e63946"); ball(Vector3(52.0, 1.3, -22.0), 1.3, "ffd166"); ball(Vector3(46.0, 2.0, 2.0), 2.0, "2a9d8f")
@@ -177,17 +186,21 @@ func _south() -> void:
 		box(b[0] + 1.0, 0, 47.0, b[0] + 9.0, 4.4, 57.0, "f4d35e", "bed")
 	var cols := ["e63946", "f4d35e", "3d7dca", "5fbf8f", "f77f00", "9b7fd1"]
 	var blocks := [[-24.0, 40.0, 4.0, 2.0, 2.0], [-18.0, 50.0, 2.0, 2.0, 4.0], [-8.0, 58.0, 4.0, 3.2, 2.0], [8.0, 40.0, 2.0, 2.0, 2.0], [14.0, 52.0, 6.0, 2.0, 2.0], [24.0, 44.0, 2.0, 4.0, 2.0], [-30.0, 60.0, 2.0, 2.0, 2.0], [30.0, 60.0, 4.0, 2.0, 2.0]]
-	for i in blocks.size(): var b: Array = blocks[i]; box(b[0], 0, b[1], b[0] + b[2], b[3], b[1] + b[4], cols[i % 6])
+	for i in blocks.size():
+		var b: Array = blocks[i]
+		if not _skip("block_%d_%d" % [int(b[0]), int(b[1])]): box(b[0], 0, b[1], b[0] + b[2], b[3], b[1] + b[4], cols[i % 6])
 	ball(Vector3(-12.0, 2.4, 44.0), 2.4, "f77f00"); ball(Vector3(20.0, 1.5, 60.0), 1.5, "5fbf8f"); ball(Vector3(-36.0, 1.2, 42.0), 1.2, "9b7fd1")
 	_catapult(-14.0, 30.0, Vector3(-5.6, 34.0, -32.2))   # to the top of the bookshelf
 	_catapult(52.0, 41.0, Vector3(-2.4, 30.0, -12.0))     # from the south-east corner onto the upper bunk
-	tacks.push_back({"x": -4.0, "z": 46.0, "r": 5.0}); tacks.push_back({"x": 30.0, "z": 43.0, "r": 3.5})
+	if not _skip("tacks_mid"): tacks.push_back({"x": -4.0, "z": 46.0, "r": 5.0})
+	if not _skip("tacks_east"): tacks.push_back({"x": 30.0, "z": 43.0, "r": 3.5})
 	for t in tacks:
 		for i in 14:
 			var a := i * 2.4; var rr: float = t.r * sqrt((i + 0.5) / 14.0); var p := Vector3(t.x + cos(a) * rr, 0.0, t.z + sin(a) * rr)
 			cyl(p + Vector3(0, 0.06, 0), 0.5, 0.12, ["e63946", "f4d35e", "3d7dca"][i % 3], false); cyl(p + Vector3(0, 0.5, 0), 0.05, 0.8, "c9ced6", false, 0.0)
 	# the train: a loop of track round the carpet and under the desk's edge, an engine and two flat wagons you can ride
 	var loop := [Vector3(-66.0, 0, 36.5), Vector3(66.0, 0, 36.5), Vector3(66.0, 0, 67.0), Vector3(-66.0, 0, 67.0)]
+	if _skip("train"): train = {"loop": loop, "t": 0.0, "speed": 0.0, "cars": []}; return   # (the escort: its own train on its own track)
 	for i in 4:
 		var a: Vector3 = loop[i]; var b: Vector3 = loop[(i + 1) % 4]; var along_x := absf(b.x - a.x) > 1.0
 		for s in [-0.9, 0.9]: box(minf(a.x, b.x) - (0.0 if along_x else -s + 0.1), 0, minf(a.z, b.z) - (-s + 0.1 if along_x else 0.0), maxf(a.x, b.x) + (0.0 if along_x else s + 0.1), 0.14, maxf(a.z, b.z) + (s + 0.1 if along_x else 0.0), "8d99ae", "metal", false)
@@ -247,7 +260,7 @@ func _loop_at(d: float) -> Array:   # a point d metres along the train's loop, a
 ## what the room does each frame: the train runs, springs and catapults throw you, the tape measure carries you, tacks hurt
 func update(dt: float, p: Player) -> void:
 	# the train: each car is a moving platform; standing on one, you go with it
-	train.t += dt * train.speed
+	if not train_hold: train.t += dt * train.speed
 	for c in train.cars:
 		var at: Array = _loop_at(train.t - c.off); var np: Vector3 = at[0]; var old: Vector3 = c.pos
 		var top := 0.45 if not c.engine else 3.4; var hx := 1.4 if absf(sin(at[1])) < 0.5 else 2.5; var hz := 2.5 if absf(sin(at[1])) < 0.5 else 1.4
