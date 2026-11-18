@@ -273,12 +273,13 @@ func alarm(e: Foe) -> void:
 		if e.dist < 30.0: Snd.play("moan", 1.0, e.pos)
 	else: e.react = maxf(e.react, randf_range(0.4, 0.8))
 
+const ZOMBIE_EAR := 1.5   # zombies hear gunfire and blasts half as far again as anyone (the owner's rule)
 ## gunfire carries: everyone within earshot comes for you
 func noise(at: Vector3, r: float) -> void:
 	for e in list:
 		if not e.alive: continue
 		var d := Vector2(e.pos.x - at.x, e.pos.z - at.z).length()
-		if d > r: continue
+		if d > r * (ZOMBIE_EAR if e.type == "zombie" else 1.0): continue
 		if e.animal: animals.hear(e, d)
 		else: alarm(e)
 

@@ -309,7 +309,7 @@ func update(dt: float) -> void:
 
 func _checkpoint() -> void:
 	cp += 1; time_left += CP_TIME; overtime = false
-	var pay := 0 if m.game.replay else CP_PAY
+	var pay := 0 if m.game.replay else CP_PAY * Store.PAY
 	if pay > 0: Store.save.money += pay; m.game.stats.earned += pay; Store.persist(); Snd.play("coin"); m.game._say(m.game.on_pay, [pay])
 	Snd.play("horn"); Snd.play("clear")
 	m.game.say_banner("체크포인트 %d / 3" % cp, "시간 +%d초 · 아군은 이제 여기서 다시 나옵니다" % int(CP_TIME), 2.4)

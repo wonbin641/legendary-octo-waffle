@@ -6,9 +6,9 @@ extends Control
 const NIGHT := Color("0d1220"); const INK := Color("ece6d8"); const STEEL := Color("8f9bb0"); const SODIUM := Color("f2a33a")
 const ALARM := Color("ff5260"); const VITAL := Color("5ed6b0"); const LINE := Color(0.56, 0.61, 0.69, 0.35)
 const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 왼쪽 아래 구석에서 시작",
-	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만", 7: "넓은 사파리 · 5분 뒤 동물 100마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
+	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만 · 해독약 상자는 오두막 안에만", 7: "넓은 사파리 · 5분 뒤 동물 93마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
 	9: "아이 방 전체가 싸움터 · 장난감 100개 · 플라스틱 군인, 액션 피규어, 태엽·RC 유닛, 조립 블록 피규어",
-	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 · 숨은 스파이더 마인"}
+	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 (잡으면 끝) · 숨은 스파이더 마인"}
 const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82]}
 const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8]]
 const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # stages the Godot version can play so far
@@ -297,8 +297,10 @@ func _build_shop() -> void:
 	shop_head = s[0].get_meta("title"); shop_money = s[0].get_meta("code")
 	var b := btn("돌아가기", "primary", close_sub); b.set_meta("first", true); s[2].add_child(b); s[2].move_child(b, 0)
 
-func _row(title: String, tag: String, desc: String, state: String, price: String, buttons: Array, own := false, bars := []) -> Control:
-	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _box(Color(0.1, 0.16, 0.2, 0.55) if own else Color(NIGHT, 0.5), Color(VITAL, 0.5) if own else LINE, 1, 10))
+const REC_FILL := Color(0.95, 0.64, 0.23, 0.17)   # the shop: a gun or item in the stage's recommended kit (and not had yet) is filled amber
+func _row(title: String, tag: String, desc: String, state: String, price: String, buttons: Array, own := false, bars := [], rec := false) -> Control:
+	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _box(REC_FILL if rec else (Color(0.1, 0.16, 0.2, 0.55) if own else Color(NIGHT, 0.5)), Color(SODIUM, 0.8) if rec else (Color(VITAL, 0.5) if own else LINE), 2 if rec else 1, 10))
+	p.set_meta("rec", rec)
 	var narrow := size.x < 560
 	var h: BoxContainer = vbox(6) if narrow else hbox(12); p.add_child(h)
 	var left := vbox(2); h.add_child(left)
@@ -320,7 +322,7 @@ func _row(title: String, tag: String, desc: String, state: String, price: String
 func _head(t: String, color := STEEL) -> Label:
 	return lbl(t, f_mono, 12, color)
 
-func _gun_row(id: String) -> Control:
+func _gun_row(id: String, rec := false) -> Control:
 	var W: Dictionary = Custom.weapon(id); var rented: bool = Store.save.rented.has(id); var owned: bool = Store.save.owned.has(id); var free: bool = id == "pistol" or Store.settings.dev
 	var has: bool = free or rented or owned; var fee := Weapons.rent(id); var mid := in_stage
 	var price := "무료" if id == "pistol" else ("무료 · 개발자 모드" if Store.settings.dev else ("보유 · 영구 (보물상자)" if owned else ("대여 중" if rented else "대여료 " + Store.won(fee))))
@@ -334,12 +336,12 @@ func _gun_row(id: String) -> Control:
 	var state := "" if not has else ("%d번 칸" % (Store.save.loadout.find(id) + 1) if in_lo else "빈 칸이 없어 무기 편성에서 넣어 주세요" if not Store.save.loadout.has(null) else "무기 편성에서 넣어 주세요")
 	if has and not in_lo and Store.save.loadout.has(null): bs.push_back(["무기 편성", func() -> void: Meta.place(id); _after_buy()])
 	return _row(W.name, W.model, W.cls + " · 총알 " + ("무제한" if W.reserve == INF else "%d발" % int(W.reserve)) + (" · " + W.note if W.has("note") else ""), state, price, bs, has,
-		[["피해", (W.dmg * W.pellets) / 170.0], ["연사", (1.0 / W.rate) / 22.2], ["탄창", log(W.mag) / log(1200.0)]])
+		[["피해", (W.dmg * W.pellets) / 170.0], ["연사", (1.0 / W.rate) / 22.2], ["탄창", log(W.mag) / log(1200.0)]], rec)
 
-func _item_row(id: String) -> Control:
+func _item_row(id: String, rec := false) -> Control:
 	var I: Dictionary = Meta.ITEMS[id]; var have: bool = int(Store.save.items[id]) > 0; var price: int = 0 if Store.settings.dev else I.price
 	return _row(I.name, I.tag, I.desc_touch if (is_touch and I.has("desc_touch")) else I.desc, Meta.item_state(id), Store.won(price) if price > 0 else "무료 · 개발자 모드",
-		[["보유 중" if have else "구매", func() -> void: shop_msg.text = Meta.buy_item(id); _after_buy(), have or Store.save.money < price]], have)
+		[["보유 중" if have else "구매", func() -> void: shop_msg.text = Meta.buy_item(id); _after_buy(), have or Store.save.money < price]], have, [], rec)
 
 func _after_buy() -> void:
 	if in_stage: guns.loadout = game.layout(); guns.slots = guns.loadout.filter(func(x): return x != null); guns.none = guns.slots.is_empty()
@@ -353,15 +355,15 @@ func render_shop() -> void:
 	var miss: Array = Meta.missing(shop_ctx) if shop_ctx > 0 else []
 	if not miss.is_empty():
 		shop_list.add_child(_head("추천 상품 · 스테이지 %s 권장 스펙에 없는 것" % Store.STAGE_TAG[shop_ctx], ALARM))
-		for id in miss: shop_list.add_child(_item_row(id) if Meta.ITEMS.has(id) else _gun_row(id))
+		for id in miss: shop_list.add_child(_item_row(id, true) if Meta.ITEMS.has(id) else _gun_row(id, true))
 	shop_list.add_child(_head("아이템 · 다 쓸 때까지 가지고 다닙니다"))
-	for id in Meta.ITEM_ORDER: shop_list.add_child(_item_row(id))
+	for id in Meta.ITEM_ORDER: shop_list.add_child(_item_row(id, miss.has(id)))
 	var have := int(Store.save.items.ivory); var can: int = have if Store.ivory_lock == null else mini(have, Store.ivory_lock)
 	var ib := [["1개 팔기", func() -> void: shop_msg.text = Meta.sell_ivory(1); render_shop(), can < 1]]
-	if can > 1: ib.push_back(["모두 팔기 · " + Store.won(Meta.IVORY_PRICE * can), func() -> void: shop_msg.text = Meta.sell_ivory(can); render_shop()])
-	shop_list.add_child(_row("상아", "팔기", "스테이지 3의 코끼리를 잡으면 얻습니다(다시 하기에서는 안 나옴). 1개에 " + Store.won(Meta.IVORY_PRICE) + "에 삽니다.", "%d개 가지고 있음" % have if have > 0 else "없음", "1개 " + Store.won(Meta.IVORY_PRICE), ib, have > 0))
+	if can > 1: ib.push_back(["모두 팔기 · " + Store.won(Meta.ivory_price() * can), func() -> void: shop_msg.text = Meta.sell_ivory(can); render_shop()])
+	shop_list.add_child(_row("상아", "팔기", "스테이지 3의 코끼리를 잡으면 얻습니다(다시 하기에서는 안 나옴). 1개에 " + Store.won(Meta.ivory_price()) + "에 삽니다.", "%d개 가지고 있음" % have if have > 0 else "없음", "1개 " + Store.won(Meta.ivory_price()), ib, have > 0))
 	shop_list.add_child(_head("무기 대여 · 이번 스테이지 동안" if mid else "무기 대여 · 다음 스테이지 한 번"))
-	for id in Weapons.ORDER: shop_list.add_child(_gun_row(id))
+	for id in Weapons.ORDER: shop_list.add_child(_gun_row(id, miss.has(id)))
 
 # ================= the weapon layout =================
 func _build_loadout() -> void:
@@ -524,7 +526,7 @@ func render_codex() -> void:
 		if cx_st != "all" and not (e.st as Array).has(cx_st): continue
 		if not Codex.seen(e.st): grid.add_child(_cx_card({"locked": true, "st": e.st}, true)); continue
 		var rows := [["체력", e.hp], ["이동속도", e.speed], ["무장", e.arms], ["데미지", e.dmg], ["특징", e.trait], ["스킬", e.skill]]
-		if e.has("pay"): rows.push_back(["처치 보상", Store.won(e.pay)])
+		if e.has("pay"): rows.push_back(["처치 보상", Store.won(int(e.pay) * Store.PAY)])   # (twice the browser game's, as every income here)
 		grid.add_child(_cx_card({"name": e.name, "st": e.st, "boss": e.get("boss", 0), "rows": rows}, true))
 	cx_list.add_child(lbl(Codex.INFO_FOE, f_body, 12, STEEL, true))
 

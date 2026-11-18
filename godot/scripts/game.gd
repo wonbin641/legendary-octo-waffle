@@ -6,12 +6,12 @@ const STAGES := {
 	1: {"name": "컨테이너 부두", "enemy": "thug", "goal": 100, "unit": "명", "label": "조직원", "intro": "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다"},
 	6: {"name": "헬멧 부두", "enemy": "thug", "goal": 100, "unit": "명", "label": "조직원", "intro": "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 머리를 한 번 맞히면 벗겨집니다"},
 	5: {"name": "무장 부두", "enemy": "thug", "goal": 100, "unit": "명", "label": "조직원", "intro": "단검 20 · 파란 광선검 10 · 쌍광선검 5 · 야구방망이 15 · 자폭맨 10 · 저격 5 · 보스는 기관총"},
-	2: {"name": "불타는 마을", "enemy": "zombie", "goal": 100, "unit": "마리", "label": "좀비", "intro": "좀비 100마리 · 체력은 없고 감염과 중독뿐 · 해독약은 나무 상자에서"},
-	3: {"name": "동물 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개 · 10초 뒤 첫 우리가 열리고 15초마다 하나씩 · 얼룩말 → 기린 → 코끼리 순서로 올라탈 수 있음 · 보스 고릴라는 방탄유리 우리에"},
-	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 100, "unit": "마리", "label": "동물", "intro": "넓은 사파리의 동물 100마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다"},
-	8: {"name": "차례 연구소", "enemy": "animal", "goal": 90, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
+	2: {"name": "불타는 마을", "enemy": "zombie", "goal": 100, "unit": "마리", "label": "좀비", "intro": "좀비 100마리 · 체력은 없고 감염과 중독뿐 · 해독약은 오두막 안의 나무 상자에서 · 좀비는 총소리를 멀리서도 듣습니다"},
+	3: {"name": "동물 연구소", "enemy": "animal", "goal": 84, "unit": "마리", "label": "동물", "intro": "우리 10개 · 10초 뒤 첫 우리가 열리고 15초마다 하나씩 · 얼룩말 → 기린 → 코끼리 순서로 올라탈 수 있음 · 보스 고릴라는 방탄유리 우리에"},
+	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 93, "unit": "마리", "label": "동물", "intro": "넓은 사파리의 동물 93마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다"},
+	8: {"name": "차례 연구소", "enemy": "animal", "goal": 84, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
 	9: {"name": "장난감 방", "enemy": "toy", "goal": 100, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 플라스틱 군인 30, 액션 피규어 22, 태엽·RC 유닛 24, 조립 블록 피규어 24"},
-	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 바닥의 스파이더 마인 조심"},
+	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 보스 드론을 잡으면 끝 · 바닥의 스파이더 마인 조심"},
 }
 const BOSS := {
 	1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6},
@@ -101,13 +101,21 @@ func begin(stage_: int) -> void:
 		var d = open_spot(0.0, 58.0)
 		if d != null: world.start = d; player.reset(d.x, d.z, d.yaw); player.invuln = 1.5
 	populate()
+	if world.village != null: world.village.drop_ghosts()   # (stage 2: the crates out in the village only kept the zombies where the browser game puts them)
 	if stage == 5:
 		var c = open_spot(-(Phys.HALF - 6.0), Phys.HALF - 6.0)
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
-	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(20000))) if not B.is_empty() else ""
+	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
 	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
+
+## what the stage's boss pays: twenty times one of its kind (a man, a zombie: 1,000), and then twice that, as all pay here
+static func boss_pay(B: Dictionary) -> int:
+	var t: String = B.type; var base := 1000
+	if Animals.ANIMALS.has(t): base = int(Animals.ANIMALS[t].money)
+	elif Robots.ROBOTS.has(t): base = int(Robots.ROBOTS[t].get("money", 1000))
+	return base * 20 * Store.PAY
 
 ## the nearest open ground to a point on the map: room to land, not on a container, inside the fence; you face the middle of the docks
 func open_spot(x: float, z: float):
@@ -388,7 +396,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	# a kill with a shot to the head pays 1.5 times; a boss twenty times; a stage you have already cleared pays nothing
 	# so does a zombie finished off before it ever got back up (the two multiply)
 	var fresh := e.type == "zombie" and not e.revived
-	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((base * 20 if e.boss else (base * 10 if e.T.get("mid", false) else base)) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0))
+	var pay := 0 if (replay or e.self_det or e.no_pay) else roundi((base * 20 if e.boss else (base * 10 if e.T.get("mid", false) else base)) * (1.5 if weak else 1.0) * (1.5 if fresh else 1.0)) * Store.PAY
 	Store.save.money += pay; stats.earned += pay; Store.persist()
 	Snd.play("kill")
 	if pay > 0: Snd.play("coin"); _say(on_pay, [pay])
@@ -403,6 +411,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 			for o in enemies.list.duplicate():
 				if o.extra: enemies.vanish(o)
 			world.ship.on_down(e)
+		if stage == 4: finish()   # the ship is won with its boss drone: open its chest and you are out (the owner's rule)
 	elif e.T.get("mid", false):
 		_say(feed, ["중간 보스 " + e.name + " 처치", pay, true])
 		_say(banner, ["중간 보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "운전실을 장악했습니다", 2.4]); mid = null
@@ -456,7 +465,7 @@ func open_chest() -> void:
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
-		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열어야 헬기가 옵니다", 3.0])
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if stage == 4 else "상자를 열어야 헬기가 옵니다", 3.0])
 		return
 	_leave_animals()
 	ended = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null

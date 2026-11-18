@@ -33,6 +33,7 @@ var fx: Fx = null
 var proj: Proj
 var rockets: Array = []    # {p, v, dmg, life, see_t, sees}
 var blasts: Array = []     # mines going off: {at, t}
+const MINE_R := [2.5, 4.0, 0.45]   # how far out the boss drone throws its mines: from 2.5 m to 4 m + 0.45 m a mine (5: 6.3 m, 10: 8.5, 20: 13)
 var rocket_mm: MultiMeshInstance3D = null
 var _rocket_mesh: CylinderMesh = null
 var _rockets_drawn := 0
@@ -346,10 +347,15 @@ func _mine_legs(e: Enemies.Foe, dt: float, sp: float) -> void:
 func _mine(e: Enemies.Foe, dt: float, dist: float, to: Vector2) -> void:
 	var T := e.T; var k := e.k
 	match e.bs:
-		"fall":   # thrown out by the boss: arcing down to the floor
-			e.vy -= 18.0 * dt; e.pos += Vector3(e.vel.x, e.vy, e.vel.z) * dt
+		"fall":   # thrown out by the boss: arcing down to the floor (or dropping when the hall's floor goes)
+			var F = k.get("fly")
+			if F != null:   # a set arc from its belly to the free spot picked for it: nothing knocks it off that, so it never lands past a step's edge, inside the step
+				F.t = float(F.t) + dt; var tt: float = F.t; var f := minf(1.0, tt / float(F.T)); var a: Vector3 = F.from; var b: Vector3 = F.to
+				e.pos = Vector3(lerpf(a.x, b.x, f), (a.y + (float(F.vy) - 9.0 * tt) * tt) if f < 1.0 else b.y, lerpf(a.z, b.z, f)); e.vy = float(F.vy) - 18.0 * tt
+				if f >= 1.0: k.erase("fly"); e.vel = Vector3.ZERO   # (there: if the floor it was aimed at has gone meanwhile, it drops on from here)
+			else: e.vy -= 18.0 * dt; e.pos += Vector3(e.vel.x, e.vy, e.vel.z) * dt
 			var gy := Phys.ground_at(e.pos.x, e.pos.y + 0.3, e.pos.z, 0.2)
-			if e.pos.y <= gy and e.vy < 0.0: e.pos.y = gy; k.baseY = gy; e.bs = "arm"; e.bt = 1.0; e.vel = Vector3.ZERO; Snd.play("metal", 1.0, e.pos); _puff(e.pos, 2, 0.3, 0.3)
+			if e.pos.y <= gy and e.vy < 0.0: e.pos.y = gy; k.baseY = gy; k.erase("fly"); e.bs = "arm"; e.bt = 1.0; e.vel = Vector3.ZERO; Snd.play("metal", 1.0, e.pos); _puff(e.pos, 2, 0.3, 0.3)
 			_mine_legs(e, dt, 0.0)
 		"arm":   # landed: blinking while it arms itself
 			e.bt -= dt; _light(e, "ff3020" if sin(e.bt * 30.0) > 0.0 else "401010")
@@ -504,12 +510,14 @@ func _drop_mines(e: Enemies.Foe, n: int) -> void:
 		if o.extra and o.alive: live += 1
 	n = mini(n, 45 - live)
 	for i in n:
-		var tx := 0.0; var tz := 0.0; var ty := 0.0
-		for tries in 8:   # straight down out of its belly, spreading a little round the spot under it
-			var a := rnd(0, TAU); var rr := rnd(0.2, 1.2 + n * 0.12); tx = e.pos.x + cos(a) * rr; tz = e.pos.z + sin(a) * rr; ty = Phys.ground_at(tx, e.pos.y, tz, 0.2)
+		var tx := 0.0; var tz := 0.0; var ty := 0.0; var rr := 0.0
+		for tries in 12:   # thrown out of its belly in a wide ring round the spot under it, each its own way round (nearer in if that is out of the hall)
+			var a := (float(i) + rnd(-0.4, 0.4)) / maxf(1.0, float(n)) * TAU; rr = rnd(MINE_R[0], MINE_R[1] + n * MINE_R[2]) * (1.0 if tries < 6 else 0.5)
+			tx = e.pos.x + cos(a) * rr; tz = e.pos.z + sin(a) * rr; ty = Phys.ground_at(tx, e.pos.y, tz, 0.2)
 			if not Ship.room_at(tx, tz).is_empty() and Phys.collide_at(tx, ty + 0.05, tz, 0.4, 0.5) == null: break
 		var mn := en.spawn("mine", e.pos.x, e.pos.z, {"y": e.pos.y - e.R * 0.5, "yaw": rnd(0, TAU)})
-		var T := rnd(0.45, 0.75); mn.extra = true; mn.bs = "fall"; mn.vel = Vector3((tx - e.pos.x) / T, 0, (tz - e.pos.z) / T); mn.vy = (ty - mn.pos.y + 0.5 * 18.0 * T * T) / T; mn.k.baseY = ty; mn.alert = true; mn.awake = true; mn.lod = 0.0
+		var T := rnd(0.55, 0.85) + rr * 0.02; mn.extra = true; mn.bs = "fall"; mn.vel = Vector3((tx - e.pos.x) / T, 0, (tz - e.pos.z) / T); mn.vy = (ty - mn.pos.y + 0.5 * 18.0 * T * T) / T; mn.k.baseY = ty; mn.alert = true; mn.awake = true; mn.lod = 0.0
+		mn.k.fly = {"from": mn.pos, "to": Vector3(tx, ty, tz), "T": T, "t": 0.0, "vy": mn.vy}
 	Snd.play("clank", 1.0, e.pos)
 
 func _make_fx() -> void:

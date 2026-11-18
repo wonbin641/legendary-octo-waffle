@@ -8,6 +8,8 @@ const LOG := ["5b4532", "4f3b2a", "664d36", "563f2d"]
 const CHAR := ["1d1712", "261d16", "16120e", "2e231a"]
 const ROOF := ["46382a", "3d3124", "4b3c2b"]
 
+var ghosts: Array = []       # the browser game's crates out in the village: in the way only while the zombies are put down
+var ghost_at: Array = []     # ...and where they stood
 var R: World.Rng
 var parts: Array = []     # boxes for one mesh: [sx, sy, sz, x, y, z, colour, (rotation)]
 var fires: Array = []     # [x, y, z, power]
@@ -103,7 +105,9 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	var crowns := MeshInstance3D.new(); crowns.mesh = Gfx.bake(crown_mesh(), crown_x, crown_c); crowns.name = "Crowns"
 	var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crm.vertex_color_is_srgb = true; crowns.material_override = crm; G.add_child(crowns); MoonShadow.caster(crowns)
 
-	# crates: two in every hut first, then the rest out in the village
+	# crates: two in every hut, and none out in the village (the antidotes are found indoors: the owner's rule). The browser game's
+	# crates out in the village are still worked out where they would be, and stand in the way while the zombies are put down, so
+	# the zombies stand where the browser game puts them; then they go (drop_ghosts, from Game.begin)
 	var count := maxi(int(S.crates), inside.size() + 16); var hc := 0; var xs := []; var i := 0; tries = 0
 	while i < count and tries < count * 40:
 		tries += 1; var in_hut := hc < inside.size(); var x: float; var z: float
@@ -111,7 +115,9 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 		else: x = r(-62, 62); z = r(-62, 62)
 		var ok: bool = (not Phys.box_at(x, z, 0.58, 0.05, 1.15)) if in_hut else (Vector2(x, z - 6).length() >= 6 and not Phys.occupied(x - 0.6, z - 0.6, x + 0.6, z + 0.6, 0.3))
 		if not ok: continue
-		xs.push_back(Transform3D(Basis(Vector3.UP, randf_range(-0.2, 0.2)), Vector3(x, 0.6, z)))
+		var turn := randf_range(-0.2, 0.2)
+		if not in_hut: ghosts.push_back(Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood")); ghost_at.push_back(Vector2(x, z)); i += 1; continue
+		xs.push_back(Transform3D(Basis(Vector3.UP, turn), Vector3(x, 0.6, z)))
 		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": 0.0, "dead": false}
 		cr.b = Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood", cr); w.crates.push_back(cr); i += 1
 	var mmi := Gfx.multimesh(Gfx.box(Vector3(1.2, 1.2, 1.2)), xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); MoonShadow.caster(mmi); w.crate_mm = mmi.multimesh; w.crate_mmi = mmi; w.crate_xf = xs.duplicate()
@@ -332,3 +338,9 @@ func _prop(x: float, z: float) -> void:
 		for y in [0.45, 0.95]: parts.push_back([L, 0.1, 0.07, x, y, z, "4a3826"] if a else [0.07, 0.1, L, x, y, z, "4a3826"])
 		if a: Phys.add_collider(x - L / 2, 0, z - 0.1, x + L / 2, 1.2, z + 0.1, "wood")
 		else: Phys.add_collider(x - 0.1, 0, z - L / 2, x + 0.1, 1.2, z + L / 2, "wood")
+
+## the crates out in the village go (they stood in the way only while the zombies were put down): the antidotes are indoors
+func drop_ghosts() -> void:
+	if ghosts.is_empty(): return
+	for b: Phys.Box in ghosts: Phys.remove_collider(b)
+	ghosts.clear(); Phys.build_nav()

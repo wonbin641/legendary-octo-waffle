@@ -9,6 +9,7 @@ const ITEMS := {
 		"desc_touch": "점프 버튼을 두 번 누르면 날아오릅니다. 점프는 위로, 내려가기 버튼은 아래로. 최대 10초, 한 번 쓰면 끝입니다."},
 }
 const IVORY_PRICE := 50000
+static func ivory_price() -> int: return IVORY_PRICE * Store.PAY   # what one sells for (twice the browser game's, as all income here)
 const ITEM_ORDER := ["helmet", "vest", "jet"]
 
 # ---------- the recommended kit: every 'all' is needed, and one of each 'any' group ----------
@@ -78,8 +79,8 @@ static func sell_ivory(n: int) -> String:
 	if n < 1: return "팔 수 있는 상아가 없습니다"
 	Store.save.items.ivory = have - n
 	if Store.ivory_lock != null: Store.ivory_lock -= n
-	refund(n * IVORY_PRICE); Snd.play("buy"); Snd.play("coin")
-	return "상아 %d개를 팔았습니다 · +%s" % [n, Store.won(n * IVORY_PRICE)]
+	refund(n * ivory_price()); Snd.play("buy"); Snd.play("coin")
+	return "상아 %d개를 팔았습니다 · +%s" % [n, Store.won(n * ivory_price())]
 
 ## a freshly rented gun goes into the first empty slot; returns the slot number (1-7), or 0 when the layout is full
 static func place(id: String) -> int:

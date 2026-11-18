@@ -9,6 +9,7 @@ const CEIL := 15.0
 const FIRST := 10.0
 const STEP := 15.0
 const WIN := {"w": 8.0, "y0": 5.0, "y1": 10.0, "depth": 5.0}
+const LION_SCALE := 1.5   # the lions: fewer (half), and half as big again (and as tough): the owner's rule
 const CAGES := [
 	{"n": 1, "type": "zebra", "x": -37.5, "z": 33.3, "w": 11.0, "d": 11.0, "h": 3.6},
 	{"n": 2, "type": "buffalo", "x": 37.5, "z": 33.3, "w": 11.0, "d": 11.0, "h": 3.6},
@@ -17,7 +18,7 @@ const CAGES := [
 	{"n": 5, "type": "cheetah", "x": -37.5, "z": -11.1, "w": 11.0, "d": 11.0, "h": 3.6},
 	{"n": 6, "type": "giraffe", "x": 37.5, "z": -11.1, "w": 11.0, "d": 11.0, "h": 3.6, "count": 3},
 	{"n": 7, "type": "tiger", "x": -37.5, "z": -33.3, "w": 11.0, "d": 11.0, "h": 3.6},
-	{"n": 8, "type": "lionM", "x": 37.5, "z": -33.3, "w": 11.0, "d": 11.0, "h": 3.6},
+	{"n": 8, "type": "lionM", "x": 37.5, "z": -33.3, "w": 11.0, "d": 11.0, "h": 3.6, "keep": [0, 2, 5, 7, 8, 10], "scale": LION_SCALE, "hp_mul": LION_SCALE},   # six big lions in a checkerboard of the twelve places
 	{"n": 9, "type": "elephant", "x": -12.45, "z": -33.6, "w": 15.0, "d": 15.0, "h": 4.2, "scale": 0.9, "count": 2},
 	{"n": 10, "type": "gorilla", "x": 14.7, "z": -35.85, "w": 12.0, "d": 12.0, "h": 6.0, "boss": true},
 ]
@@ -368,7 +369,8 @@ func populate(put: Callable, SR: World.Rng, boss_opts: Dictionary) -> void:
 			var i := k % cols; var j := k / cols; var jx := maxf(0.0, cw / 2 - T.r * sc - 0.2); var jz := maxf(0.0, ch / 2 - T.r * sc - 0.2)
 			var x: float = c.x - iw / 2 + cw * (i + 0.5) + (SR.next() * 2 - 1) * jx; var z: float = c.z - id / 2 + ch * (j + 0.5) + (SR.next() * 2 - 1) * jz
 			var yaw := SR.next() * TAU
-			var e = put.call(c.type, {"x": x, "z": z}, {"yaw": yaw, "scale": sc})
+			if c.has("keep") and not (c.keep as Array).has(k): SR.next(); continue   # (a place left empty: its draws taken all the same, the turn the browser game's put draws too, so the rest stand as ever)
+			var e = put.call(c.type, {"x": x, "z": z}, {"yaw": yaw, "scale": sc, "hp": float(T.hp) * float(c.get("hp_mul", 1.0))})
 			if e != null: e.cage = c; e.caged = true; c.animals.push_back(e); e.glassed = seq   # 3-2: every cage is glass
 
 ## a cage opens: its walls stop blocking at once and start to fall, and the animals inside are let loose

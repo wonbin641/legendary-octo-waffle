@@ -208,7 +208,7 @@ func _topbox(ci: Control, s: Vector2, c: Vector2, g: Game, f_mono: Font, f_bold:
 	var sf: Safari = m.world.safari; var lab: Lab = m.world.lab; var lb := ""; var txt := ""; var sec := ""; var soon := false
 	if sf != null and not g.ended:
 		var L := sf.left(); var cs := ceili(L)
-		lb = "습격 중" if sf.stampede else "습격까지"; txt = "남은 동물" if sf.stampede else "동물 100마리가 감시탑으로"
+		lb = "습격 중" if sf.stampede else "습격까지"; txt = "남은 동물" if sf.stampede else "동물 %d마리가 감시탑으로" % g.goal
 		sec = ("%d마리" % (g.goal - g.kills - g.calm)) if sf.stampede else "%d:%02d" % [cs / 60, cs % 60]; soon = not sf.stampede and L <= 30.0
 	elif lab != null and lab.running:
 		var nc = lab.next_cage()

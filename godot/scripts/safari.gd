@@ -6,6 +6,7 @@ extends RefCounted
 
 const T_STAMPEDE := 300.0   # five minutes
 const ROSTER := [["zebra", 12], ["buffalo", 13], ["hippo", 12], ["rhino", 12], ["cheetah", 12], ["tiger", 12], ["lionM", 14], ["giraffe", 3], ["elephant", 4], ["gorilla", 6]]
+const LION := {"scale": Lab.LION_SCALE, "hp": 340.0 * Lab.LION_SCALE}   # the lions: one at every other of the fourteen places, half as big again (and as tough)
 # the safari's lowland gorillas: the lab's gorilla build and fists, half as hard like every other animal here
 const GORILLA := {"kong": true, "hp": 1000, "scale": 1.15, "dmgMul": 0.5, "name": "로랜드고릴라"}
 const TOWER := {"hp": 10000.0, "ph": 3.84, "half": 2.6, "base": 3.2, "step": 0.48, "steps": 8}
@@ -322,6 +323,7 @@ func _build_tower(G: Node3D, x: float, z: float) -> void:
 
 ## the animals spread over the plain: herds of zebra, buffalo and giraffe, hippos round the waterhole, the cats and elephants further out
 func populate(put: Callable, find: Callable, SR: World.Rng) -> void:
+	var lions := 0
 	for row in ROSTER:
 		var kind: String = row[0]; var c: int = row[1]; var guard := 0
 		while c > 0 and guard < 400:
@@ -346,6 +348,12 @@ func populate(put: Callable, find: Callable, SR: World.Rng) -> void:
 				var p = find.call(60.0, 3.0, 1.5, {"x": WATER.x + cos(a) * (WATER.r + 2.5), "z": WATER.z + sin(a) * (WATER.r + 2.5)}, 4.0)
 				if p == null: p = find.call(70.0, 6.0, 2.0)
 				if put.call(kind, p, {}) != null: c -= 1
+			elif kind == "lionM":   # (every other place the browser game picks gets a lion; the places and turns are drawn all the same, so the rest stand as ever)
+				var lp = find.call(80.0, 8.0, 1.4)
+				if lp == null: continue   # (no room: drawn again, as there)
+				lions += 1; c -= 1
+				if lions % 2 == 1: put.call(kind, lp, LION)
+				else: SR.next()   # (the turn the browser game's put draws for it)
 			else:
 				var el := kind == "elephant"
 				if put.call(kind, find.call(90.0 if el else 80.0, 14.0 if el else 8.0, 2.4 if el else 1.4), {}) != null: c -= 1

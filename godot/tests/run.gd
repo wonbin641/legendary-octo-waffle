@@ -200,6 +200,8 @@ func _ready() -> void:
 	check("a person's and the boss's footprints match the browser game", absf(ft.foot.x1 - ref.foot.thug.x1) < 1e-6 and absf(ft.foot.z0 - ref.foot.thug.z0) < 1e-6 and absf(ft.foot.z1 - ref.foot.thug.z1) < 1e-6 and absf(ft.foot_r - ref.foot.thug.R) < 1e-6 \
 		and absf(fb.foot.x1 - ref.foot.boss.x1) < 1e-6 and absf(fb.foot.z1 - ref.foot.boss.z1) < 1e-6 and absf(fb.foot_r - ref.foot.boss.R) < 1e-6 and absf(fb.mass - ref.foot.boss.mass) < 1e-9)
 	check("the pistol is all you carry on a new save", g.slots == ["pistol"])
+	check("all income is twice the browser game's (the owner's rule): the boss's pay on the briefing is what it really pays, 20,000 doubled",
+		Store.PAY == 2 and gm.boss_msg.ends_with(Store.won(40000)) and Game.boss_pay(Game.BOSS[3]) == 2500 * 20 * 2 and Game.boss_pay(Game.BOSS[4]) == 2000 * 20 * 2, gm.boss_msg)
 	# hits: body 34, head 85; three body shots or two head shots kill a man (100)
 	var t0 = ft; var hd: Vector3 = en.part_centre(t0, t0.parts[0]); var bd: Vector3 = en.part_centre(t0, t0.parts[1])
 	var rh = en.raycast(hd + Vector3(0, 0, 5), Vector3(0, 0, -1), 20.0); var rb = en.raycast(bd + Vector3(0, 0, 5), Vector3(0, 0, -1), 20.0)
@@ -207,10 +209,10 @@ func _ready() -> void:
 	var money0: int = Store.save.money
 	en.damage(t0, 34, bd, Vector3(0, 0, -1), false); en.damage(t0, 34, bd, Vector3(0, 0, -1), false)
 	check("two body shots leave him standing, and he is awake now", t0.alive and t0.hp == 32.0 and t0.alert)
-	check("the third kills him and pays 1,000", en.damage(t0, 34, bd, Vector3(0, 0, -1), false) and not t0.alive and Store.save.money == money0 + 1000 and gm.kills == 1)
+	check("the third kills him and pays 1,000, doubled", en.damage(t0, 34, bd, Vector3(0, 0, -1), false) and not t0.alive and Store.save.money == money0 + 1000 * Store.PAY and gm.kills == 1)
 	var t1 = en.list[2]
 	en.damage(t1, 85, hd, Vector3(0, 0, -1), true); en.damage(t1, 85, hd, Vector3(0, 0, -1), true)
-	check("a kill by a shot to the head pays 1,500", not t1.alive and Store.save.money == money0 + 2500 and gm.stats.heads == 1)
+	check("a kill by a shot to the head pays 1,500, doubled", not t1.alive and Store.save.money == money0 + 2500 * Store.PAY and gm.stats.heads == 1)
 	# they come for you and shoot: stand still near a group and lose health
 	near = en.list[5]; pl.reset(near.pos.x + 9.0, near.pos.z, 0.0); pl.update(0.0, cam, 0.0); en.noise(pl.pos, 30.0)
 	pl.invuln = 0.0; sim.call(3.0)
@@ -225,14 +227,14 @@ func _ready() -> void:
 	var bossy = gm.boss
 	for e4 in en.list.duplicate():
 		if e4 != bossy: en.damage(e4, 1000, e4.pos, Vector3(0, 0, -1), false)
-	check("99 down: 99,000 in the bag, the boss still to go", gm.kills == 99 and Store.save.money == 99000 and not gm.ended)
+	check("99 down: 99,000 doubled in the bag, the boss still to go", gm.kills == 99 and Store.save.money == 99000 * Store.PAY and not gm.ended)
 	var bp: Vector3 = bossy.pos
 	en.damage(bossy, 5000, bossy.pos, Vector3(0, 0, -1), false)
-	check("the boss pays 20,000 and leaves a chest; the stage waits for it", Store.save.money == 119000 and lt.chests.size() == 1 and not gm.ended)
+	check("the boss pays 20,000 doubled and leaves a chest; the stage waits for it", Store.save.money == 119000 * Store.PAY and lt.chests.size() == 1 and not gm.ended)
 	pl.pos = Vector3(bp.x, 0, bp.z + 1.0); sim.call(0.2)
 	check("opening the chest gives a gun for good and ends the stage", Store.save.owned.size() == 1 and gm.ended and gm.result == "clear")
 	sim.call(2.0)
-	check("cleared: recorded, best time kept, money and gun stay, 2 and 1-1 offered next", shown == ["clear"] and Store.save.cleared == [1] and Store.save.best.has("t1") and Store.save.money == 119000 and Store.save.owned.size() == 1 \
+	check("cleared: recorded, best time kept, money and gun stay, 2 and 1-1 offered next", shown == ["clear"] and Store.save.cleared == [1] and Store.save.best.has("t1") and Store.save.money == 119000 * Store.PAY and Store.save.owned.size() == 1 \
 		and Store.next_stages(1) == [2, 6], str(Store.next_stages(1)))
 	var keep_save: Dictionary = Store.save; var keep_dev: bool = Store.settings.dev; Store.save = Store.save0(); Store.settings.dev = false
 	var ul_open := Store.STAGE_ORDER.filter(func(s): return Store.stage_open(s))
@@ -243,7 +245,7 @@ func _ready() -> void:
 		Store.STAGE_ORDER.size() == 9 and ul_open == [1, 2, 3, 4, 9] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(10), [ul_open, ul_1, ul_3, ul_kept])
 	Store.save = keep_save; Store.settings.dev = keep_dev
 	gm.begin(1); en.damage(en.list[3], 1000, en.list[3].pos, Vector3(0, 0, -1), false)
-	check("a stage played again pays nothing", gm.replay and Store.save.money == 119000)
+	check("a stage played again pays nothing", gm.replay and Store.save.money == 119000 * Store.PAY)
 	check("money reads with thousands separators", Store.won(119000) == "119,000원" and Store.fmt_time(252) == "4:12")
 	# ---------------- save codes ----------------
 	nbad = 0; which = ""
@@ -298,7 +300,20 @@ func _ready() -> void:
 	Meta.buy_item("helmet"); Meta.buy_item("vest")
 	check("items: a helmet (1,000) and a vest (5,000, ten blocks)", Store.save.money == 73000 and Store.save.items.helmet == 1 and Store.save.items.vest == 10 and Meta.item_state("vest") == "착용 중 · 내구 10/10" and Meta.buy_item("helmet").contains("이미"))
 	Store.save.items.ivory = 3
-	check("ivory sells for 50,000 a piece", Meta.sell_ivory(2).contains("+100,000원") and Store.save.money == 173000 and Store.save.items.ivory == 1)
+	check("ivory sells for 50,000 a piece, doubled", Meta.sell_ivory(2).contains("+200,000원") and Store.save.money == 273000 and Store.save.items.ivory == 1 and Meta.ivory_price() == 100000)
+	# the shop: what the stage's recommended kit still lacks is filled amber, up top and again in the lists below (the owner's rule)
+	var sh_keep: Dictionary = Store.save; Store.save = Store.save0()
+	var sh_ui := Ui.new(); add_child(sh_ui); sh_ui._build_shop(); sh_ui.shop_ctx = 3; sh_ui.render_shop()
+	var sh_rec := 0; var sh_plain := 0; var sh_ok := true
+	for c9 in sh_ui.shop_list.get_children():
+		if not (c9 is PanelContainer) or not c9.has_meta("rec"): continue
+		var sb9: StyleBoxFlat = (c9 as PanelContainer).get_theme_stylebox("panel")
+		if bool(c9.get_meta("rec")): sh_rec += 1; sh_ok = sh_ok and sb9.bg_color == Ui.REC_FILL
+		else: sh_plain += 1; sh_ok = sh_ok and sb9.bg_color != Ui.REC_FILL
+	var sh_miss: Array = Meta.missing(3)
+	check("the shop: the guns and items stage 3's recommended kit lacks are filled amber, up top and again in the lists below; the rest as ever",
+		sh_miss.size() == 8 and sh_rec == 2 * sh_miss.size() and sh_plain > 0 and sh_ok, [sh_rec, sh_plain, sh_miss])
+	sh_ui.queue_free(); Store.save = sh_keep
 	check("the guided rocket launcher rents for 45,000 (half the browser game's 90,000)", Weapons.rent("rocket") == 45000 and Weapons.LIST.rocket.price == 150000)
 	Store.settings.dev = true
 	var dv_cl: Array = Store.save.cleared.duplicate(); Store.save.cleared = []
@@ -319,22 +334,44 @@ func _ready() -> void:
 		for i in mini(60, Phys.colliders.size()):
 			var b9 = Phys.colliders[i]; var q9: Array = R9.first[i]
 			if absf(b9.minx - q9[0]) > 2e-6 or absf(b9.minz - q9[1]) > 2e-6 or absf(b9.maxy - q9[2]) > 2e-6: cb += 1
-		var nb := 0; var nh := 0
+		# (stage 2: the browser game's crates out in the village are gone, the antidotes are indoors; put back for a moment, the yard is the browser game's)
+		var gh9: Array = w.village.ghost_at if stn == 2 else []; var ghb9: Array = []
+		for gp9: Vector2 in gh9: ghb9.push_back(Phys.add_collider(gp9.x - 0.6, 0, gp9.y - 0.6, gp9.x + 0.6, 1.2, gp9.y + 0.6, "wood"))
+		if not ghb9.is_empty(): Phys.build_nav()
+		var nb := 0; var nh := 0; var ncol9 := Phys.colliders.size()
 		for i in Phys.nav_blocked.size():
 			if Phys.nav_blocked[i] != 0: nb += 1; nh = (nh * 31 + i) % 1000000007
-		check("stage %s: the docks are laid out as in the browser game" % Store.STAGE_TAG[stn], Phys.colliders.size() == int(R9.colliders) and cb == 0 and nb == int(R9.navBlocked) and nh == int(R9.navHash) and w.crates.size() == R9.crates.size(), "%d colliders" % Phys.colliders.size())
+		for b9 in ghb9: Phys.remove_collider(b9)
+		if not ghb9.is_empty(): Phys.build_nav()
+		check("stage %s: the docks are laid out as in the browser game" % Store.STAGE_TAG[stn], ncol9 == int(R9.colliders) and cb == 0 and nb == int(R9.navBlocked) and nh == int(R9.navHash) and w.crates.size() + gh9.size() == R9.crates.size(), "%d colliders" % ncol9)
+		# (stages 3, 3-1 and 3-2: the lions are fewer and bigger, the owner's rule: the lab keeps six of its twelve in a checkerboard, the savanna every other of its fourteen)
+		var E9: Array = R9.enemies
+		if stn == 3 or stn == 7 or stn == 8:
+			var lion0: int = 73 if stn == 7 else 75; var keep9: Array = [0, 2, 4, 6, 8, 10, 12] if stn == 7 else [0, 2, 5, 7, 8, 10]; E9 = []
+			for i in R9.enemies.size():
+				var q9: Array = (R9.enemies[i] as Array).duplicate()
+				if q9[7] == "lionM":
+					if not keep9.has(i - lion0): continue
+					q9[5] = 340.0 * Lab.LION_SCALE
+				E9.push_back(q9)
+			var lz9: Array = en.list.filter(func(e): return e.type == "lionM")
+			check("stage %s: the lions are fewer and bigger: %d of the browser game's %d, half as big again and as tough" % [Store.STAGE_TAG[stn], keep9.size(), 14 if stn == 7 else 12],
+				lz9.size() == keep9.size() and lz9.all(func(e): return absf(e.scale - Lab.LION_SCALE) < 1e-6 and e.max_hp == 340.0 * Lab.LION_SCALE and e.hp == e.max_hp), lz9.size())
 		var eb := 0; var efirst := ""
-		for i in mini(en.list.size(), R9.enemies.size()):
-			var e9 = en.list[i]; var q9: Array = R9.enemies[i]
+		for i in mini(en.list.size(), E9.size()):
+			var e9 = en.list[i]; var q9: Array = E9[i]
 			var moved9: bool = (stn == 3 or stn == 8) and (absf(e9.pos.x - q9[0]) > 11.0 or absf(e9.pos.z - q9[1]) > 11.0)   # the lab's animals had paced about their cages by the time they were written down
 			var still9: bool = stn != 3 and stn != 8 and (stn != 4 or e9.type in ["cctv", "mine", "gdrone", "bdrone"])   # the ship's patrols and drones had moved off by the time they were written down
 			if (still9 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or moved9 or e9.type != q9[7] or (absf(e9.pos.y - q9[2]) > 1e-3 and (stn != 4 or e9.type == "mine")) or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
 				eb += 1
 				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
-		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == R9.enemies.size() and eb == 0 and gm.goal == int(R9.goal), efirst)
+		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == E9.size() and eb == 0 and gm.goal == int(R9.goal) - (R9.enemies.size() - E9.size()), efirst)
 		var cb9 := 0
 		for i in mini(w.crates.size(), R9.crates.size()):
 			if absf(w.crates[i].x - R9.crates[i][0]) > 1e-4 or absf(w.crates[i].z - R9.crates[i][1]) > 1e-4: cb9 += 1
+		for j in gh9.size():   # (stage 2: where the ones out in the village would be)
+			var gq9: Array = R9.crates[w.crates.size() + j]
+			if absf(gh9[j].x - gq9[0]) > 1e-4 or absf(gh9[j].y - gq9[1]) > 1e-4: cb9 += 1
 		check("stage %s: every crate is where the browser game has it" % Store.STAGE_TAG[stn], cb9 == 0, cb9)
 		if stn == 5:   # 1-2 puts you down in the bottom left corner of the map (the owner's choice); the enemies are as there
 			check("stage 1-2: you start in the corner at the bottom left of the map, not at the browser game's south edge", w.start.x < -54.0 and w.start.z > 54.0 and Vector2(R9.start[0], R9.start[1]).distance_to(Vector2(w.start.x, w.start.z)) > 40.0, w.start)
@@ -344,7 +381,17 @@ func _ready() -> void:
 	var s2_cbad := 0
 	for i in mini(w.crates.size(), s2_V2.crates.size()):
 		if absf(w.crates[i].x - s2_V2.crates[i][0]) > 1e-4 or absf(w.crates[i].z - s2_V2.crates[i][1]) > 1e-4: s2_cbad += 1
-	check("stage 2: 15 huts, and every crate where the browser game has it", w.village.huts.size() == int(s2_V2.huts) and s2_cbad == 0 and w.crates.size() == 46, "%d huts %d off" % [w.village.huts.size(), s2_cbad])
+	var s2_out := 0
+	for cr2 in w.crates:
+		var in2 := false
+		for h2 in w.village.huts:
+			var dx2: float = cr2.x - h2.x; var dz2: float = cr2.z - h2.z; var c2 := cos(float(h2.yaw)); var sn2 := sin(float(h2.yaw))
+			if absf(dx2 * c2 - dz2 * sn2) < float(h2.W) / 2 and absf(dx2 * sn2 + dz2 * c2) < float(h2.D) / 2: in2 = true
+		if not in2: s2_out += 1
+	check("stage 2: 15 huts, two crates in every one and none out in the village (the antidotes are indoors: the owner's rule), each where the browser game has it",
+		w.village.huts.size() == int(s2_V2.huts) and s2_cbad == 0 and w.crates.size() == 2 * w.village.huts.size() and s2_out == 0 and w.village.ghosts.is_empty() and w.village.ghost_at.size() == s2_V2.crates.size() - w.crates.size(),
+		"%d huts %d crates %d off %d outside" % [w.village.huts.size(), w.crates.size(), s2_cbad, s2_out])
+	check("stage 2: the crates out in the village leave no wall behind them", w.village.ghost_at.all(func(gp: Vector2): return Phys.collide_at(gp.x, 0.05, gp.y, 0.3, 1.0) == null))
 	check("stage 2: zombies, one giant among them", en.list.all(func(e): return e.type == "zombie") and gm.boss != null and gm.boss.max_hp == 2200.0 and gm.boss.scale == 1.7 and en.list[1].max_hp == 180.0 and gm.antidotes == 1)
 	check("stage 2: a zombie stoops from the moment it is put down, asleep or not (the browser game's spawn: 0.28 forward)", en.list.all(func(z9): return absf(z9.upper.rotation.x - 0.28) < 1e-6))
 	# people, animals, robots and loot take no moon shadow, as in the browser game: their solid materials mark the stencil
@@ -372,10 +419,10 @@ func _ready() -> void:
 	check("stage 2: left alone for 3.7 s it is back on its feet at full health", not s2_z1.downed and s2_z1.hp == 180.0 and s2_z1.revived and s2_z1.alert)
 	var s2_m0: int = Store.save.money
 	en.damage(s2_z1, 500, s2_z1.pos, s2_zdir, false); en.damage(s2_z1, 1, s2_z1.pos, s2_zdir, false)
-	check("stage 2: shot again on the ground it is gone, and one that had got up pays 1,000", not s2_z1.alive and gm.kills == 1 and Store.save.money == s2_m0 + 1000, Store.save.money - s2_m0)
+	check("stage 2: shot again on the ground it is gone, and one that had got up pays 1,000, doubled", not s2_z1.alive and gm.kills == 1 and Store.save.money == s2_m0 + 1000 * Store.PAY, Store.save.money - s2_m0)
 	var s2_z2 = en.list[5]; s2_m0 = Store.save.money
 	en.damage(s2_z2, 500, s2_z2.pos, s2_zdir, true); en.damage(s2_z2, 1, s2_z2.pos, s2_zdir, true)
-	check("stage 2: finished before it ever rose, with a shot to the head: 1,000 x 1.5 x 1.5", Store.save.money == s2_m0 + 2250, Store.save.money - s2_m0)
+	check("stage 2: finished before it ever rose, with a shot to the head: 1,000 x 1.5 x 1.5, doubled", Store.save.money == s2_m0 + 2250 * Store.PAY, Store.save.money - s2_m0)
 	# a bite: 5 seconds; the antidote takes 0.82 s to work and the gun is busy for 1.35 s
 	pl.invuln = 0.0; gm.bitten(en.list[0])
 	check("stage 2: a bite starts a 5 second countdown", gm.infected and gm.infect_t == 5.0)
@@ -426,6 +473,15 @@ func _ready() -> void:
 	pl.in_f = 1.0; var s2_before2 := pl.pos; pl.vel = Vector3.ZERO; pl.update(0.02, null, 0.0)
 	check("stage 2: knocked out, you cannot walk", pl.pos.distance_to(s2_before2) < 0.01)
 	pl.in_f = 0.0; pl.stun_t = 0.0
+	# zombies hear gunfire half as far again as anyone (the owner's rule)
+	gm.begin(2); pl.invuln = 1e9
+	var s2_ea = en.list[9]; var s2_ea0: bool = s2_ea.alert; var s2_np: Vector3 = s2_ea.pos + Vector3(13.0, 0, 0)
+	en.noise(s2_np, 10.0); var s2_heard: bool = s2_ea.alert
+	var s2_eb = null
+	for z9 in en.list:
+		if not z9.alert and Vector2(z9.pos.x - s2_np.x, z9.pos.z - s2_np.z).length() > 16.0 and not z9.boss: s2_eb = z9; break
+	en.noise(s2_eb.pos + Vector3(16.0, 0, 0), 10.0)
+	check("stage 2: zombies hear a shot half as far again as anyone: 13 m off a 10 m shot one comes, 16 m off one sleeps on", Enemies.ZOMBIE_EAR == 1.5 and not s2_ea0 and s2_heard and not s2_eb.alert, [s2_ea0, s2_heard])
 	# stage 2's looks, as the browser game's village
 	check("stage 2: no harbour behind the village (skyline, water, the ship), no blinking mast, and a bigger moon (92 to the docks' 62)",
 		w._port.size() == 8 and w._port.all(func(n9): return not n9.visible) and w.blink.is_empty() and (w.moon_spr.mesh as QuadMesh).size == Vector2(92, 92))
@@ -464,7 +520,7 @@ func _ready() -> void:
 	check("stage 1: the harbour is back behind the yard, the mast blinks, the moon is the docks' size", w._port.all(func(n9): return n9.visible) and not w.blink.is_empty() and (w.moon_spr.mesh as QuadMesh).size == Vector2(62, 62) and w.fire_mats.is_empty())
 	# ---------------- stage 3: the lab ----------------
 	gm.begin(3); var lab: Lab = w.lab; var an: Animals = en.animals; pl.invuln = 0.0
-	check("stage 3: 90 animals in ten cages, the giant gorilla in the last", en.list.size() == 90 and gm.goal == 90 and gm.boss != null and gm.boss.max_hp == 5200.0 and gm.boss.scale == 3.0 and lab.cages[5].animals.size() == 3 and lab.cages[8].animals.size() == 2)
+	check("stage 3: 84 animals in ten cages (six big lions where the browser game has twelve), the giant gorilla in the last", en.list.size() == 84 and gm.goal == 84 and lab.cages[7].animals.size() == 6 and gm.boss != null and gm.boss.max_hp == 5200.0 and gm.boss.scale == 3.0 and lab.cages[5].animals.size() == 3 and lab.cages[8].animals.size() == 2)
 	var zb3 = lab.cages[0].animals[0]; var gb3 = lab.cages[9].animals[0]
 	# the lab as the browser game draws it
 	var l3_tex := {}   # what each lab picture is put on
@@ -561,7 +617,7 @@ func _ready() -> void:
 	gm.begin(3); var m3: int = Store.save.money; var z3b = w.lab.cages[0].animals[1]; z3b.caged = false
 	en.damage(z3b, 999, z3b.pos, Vector3(0, 0, 1), false)
 	var r3b = w.lab.cages[3].animals[1]; r3b.caged = false; en.damage(r3b, 9999, r3b.pos, Vector3(0, 0, 1), false)
-	check("stage 3: a zebra pays 1,000, a rhino 3,000", Store.save.money == m3 + 4000 and gm.kills == 2, Store.save.money - m3)
+	check("stage 3: a zebra pays 1,000, a rhino 3,000, both doubled", Store.save.money == m3 + 4000 * Store.PAY and gm.kills == 2, Store.save.money - m3)
 	check("stage 3: a giraffe's head takes ten times the damage", w.lab.cages[5].animals[0].head_x == 10.0)
 	# the gorilla: out of its cage it punches for 500
 	var kg = gm.boss; kg.caged = false; kg.release_t = 0.0; kg.fury = true; kg.angry = true; kg.alert = true; kg.lod = 0.0; pl.invuln = 0.0; pl.hp = Player.MAX_HP
@@ -594,7 +650,7 @@ func _ready() -> void:
 	en.animals.ride_off(true)
 	# ---------------- stage 3-1: the safari ----------------
 	gm.begin(7); var sf: Safari = w.safari; pl.invuln = 0.0
-	check("stage 3-1: 100 animals living wild, a tower of 10,000, three crates up on it", en.list.size() == 100 and en.list.all(func(e): return e.wild) and sf.hp == 10000.0 and sf.slots.size() == 16 and w.crates[0].y == 3.84, sf.slots.size())
+	check("stage 3-1: 93 animals living wild (seven big lions where the browser game has fourteen), a tower of 10,000, three crates up on it", en.list.size() == 93 and gm.goal == 93 and en.list.all(func(e): return e.wild) and sf.hp == 10000.0 and sf.slots.size() == 16 and w.crates[0].y == 3.84, sf.slots.size())
 	check("stage 3-1: the stampede is five minutes away", sf.left() == 300.0 and not sf.stampede)
 	pl.pos = Vector3(0, 3.84, 0); sf.update(0.02)
 	check("stage 3-1: up on the platform counts as holding the tower", sf.on and sf.holds())
@@ -625,7 +681,7 @@ func _ready() -> void:
 	check("stage 4: the key cannot be pulled while the bee lives", not s4_sh.take_key())
 	var s4_m4: int = Store.save.money; pl.invuln = 1e9
 	en.damage(bee4, 1e6, bee4.pos, Vector3(0, 0, 1), false)
-	check("stage 4: the bee pays ten times its price and its door opens for good", Store.save.money == s4_m4 + 15000 and s4_sh.doors[0].mode == "open" and gm.mid == null, Store.save.money - s4_m4)
+	check("stage 4: the bee pays ten times its price, doubled, and its door opens for good", Store.save.money == s4_m4 + 15000 * Store.PAY and s4_sh.doors[0].mode == "open" and gm.mid == null, Store.save.money - s4_m4)
 	pl.pos = Vector3(Ship.KEY.x + 1.0, 0.45, Ship.KEY.z)
 	check("stage 4: pulling the key out is the save point", s4_sh.take_key() and s4_sh.key and gm.sp != null and gm.sp.kills == 1 and gm.sp.key)
 	# dying after it: back on the bridge with the key, the kills and the bag as they were
@@ -654,6 +710,22 @@ func _ready() -> void:
 	check("stage 4: at a third left the second shell goes: phase 3, and the hatches are about to open", boss4.hp == 3000.0 and boss4.k.phase == 2 and boss4.R == 0.75 and s4_sh.hatch_wait > 0.0)
 	for i in 140: en.update(0.02, 0.0)
 	check("stage 4: the hatches open and drones start coming up", s4_sh.hatches[0].open and s4_sh.hatch_q.size() > 0)
+	# its mines: thrown out of its belly in a wide ring round the spot under it (the owner's rule), not dropped in a heap under it
+	var s4_was: Array = en.list.duplicate(); var s4_at: Vector3 = boss4.pos
+	s4_rb._drop_mines(boss4, 10)
+	var s4_mines: Array = en.list.filter(func(e): return not s4_was.has(e) and e.type == "mine")
+	for i in 55: en.update(0.02, 0.0)
+	var s4_d: Array = s4_mines.map(func(m): return Vector2(m.pos.x - s4_at.x, m.pos.z - s4_at.z).length()); var s4_q := {}
+	for m in s4_mines: s4_q[int(fposmod(atan2(m.pos.z - s4_at.z, m.pos.x - s4_at.x), TAU) / (TAU / 4.0))] = true
+	var s4_mean: float = (s4_d.reduce(func(a, b): return a + b, 0.0) / s4_d.size()) if not s4_d.is_empty() else 0.0
+	check("stage 4: ten mines from the boss drone land in a wide ring all round it (2.5 to 8.5 m out), and lie arming",
+		s4_mines.size() == 10 and s4_mines.all(func(m): return m.bs == "arm") and s4_d.min() >= 1.0 and s4_d.max() <= Robots.MINE_R[1] + 10 * Robots.MINE_R[2] + 0.5 and s4_mean >= 3.5 and s4_q.size() == 4, [s4_d, s4_q.keys()])
+	# the boss drone down is the ship won, robots left or not: open its chest and you are out (the owner's rule)
+	var s4_left: int = en.list.filter(func(e): return e.alive and not e.extra and e != boss4).size()
+	en.damage(boss4, 1e6, boss4.pos, Vector3(0, 0, 1), false)
+	check("stage 4: the boss drone down, the stage waits only for its chest, though robots are left", not boss4.alive and s4_left > 0 and lt.pending() != null and not gm.ended and gm._chest_wait, s4_left)
+	var s4_ch: Dictionary = lt.pending(); pl.pos = Vector3(float(s4_ch.x), float(s4_ch.y), float(s4_ch.z) + 1.0); lt.update(0.02); gm.update(0.02)
+	check("stage 4: its chest opened, the ship is cleared", gm.ended and gm.result == "clear" and Store.save.cleared.has(4), [gm.ended, gm.result])
 	# the laser: touching the beam is the end
 	check("stage 4: the beam's reach is measured along its whole length", absf(Robots.seg_dist(Vector3(0, 1, 0), Vector3(10, 1, 0), Vector3(5, 0, 0.4), Vector3(5, 1.7, 0.4)) - 0.4) < 1e-5)
 	# a mine: buried, wakes when you come close, and goes off for 100
@@ -860,13 +932,13 @@ func _ready() -> void:
 	var bm9 = en.list.filter(func(e8): return e8.kit == "bomber"); var b1 = bm9[0]; var m0: int = Store.save.money; pl.invuln = 1e9
 	var rb9 = en.raycast(en.part_centre(b1, b1.parts[1]) + Vector3(sin(b1.yaw), 0, cos(b1.yaw)) * 4.0, -Vector3(sin(b1.yaw), 0, cos(b1.yaw)), 10.0)
 	check("1-2: a ray at a bomber's chest finds the bomb", rb9 != null and rb9.enemy == b1 and rb9.bomb)
-	en.blow_vest(b1, Vector3(0, 0, -1)); check("1-2: a bullet in the bomb kills him and pays", not b1.alive and Store.save.money == m0 + 1000 and pr.list.size() == 1 and pr.list[0].kind == "bomb")
+	en.blow_vest(b1, Vector3(0, 0, -1)); check("1-2: a bullet in the bomb kills him and pays", not b1.alive and Store.save.money == m0 + 1000 * Store.PAY and pr.list.size() == 1 and pr.list[0].kind == "bomb")
 	for i in 60: pr.update(1.0 / 30.0)
 	check("1-2: and the vest goes off (others caught in it go off too)", pr.list.is_empty())
 	gm.begin(5); pl.invuln = 1e9; bm9 = en.list.filter(func(e8): return e8.kit == "bomber")
 	var b2 = bm9[1]; pl.reset(b2.pos.x + 1.2, b2.pos.z, 0.0); pl.pos.y = b2.pos.y; pl.invuln = 0.0; pl.hp = 1000.0; pl.update(0.0, cam, 0.0); en.alarm(b2); b2.state = "engage"; b2.react = 0.0; m0 = Store.save.money; var kills0 := gm.kills
 	for i in 60: en.update(1.0 / 30.0, 0.0); pr.update(1.0 / 30.0)
-	check("1-2: a bomber who reaches you blows himself up: it hurts, it counts, and he pays nothing (others caught in the blast do)", not b2.alive and b2.self_det and pl.hp < 1000.0 and gm.kills >= kills0 + 1 and Store.save.money == m0 + (gm.kills - kills0 - 1) * 1000,
+	check("1-2: a bomber who reaches you blows himself up: it hurts, it counts, and he pays nothing (others caught in the blast do)", not b2.alive and b2.self_det and pl.hp < 1000.0 and gm.kills >= kills0 + 1 and Store.save.money == m0 + (gm.kills - kills0 - 1) * 1000 * Store.PAY,
 		"hp %d kills +%d money +%d" % [int(pl.hp), gm.kills - kills0, Store.save.money - m0])
 	# a lightsaber and a bat hit hard and aim at the head; a helmet you wear stops one such blow
 	var sb9 = en.list.filter(func(e8): return e8.kit == "saber")[0]; Store.save.items.helmet = 1
@@ -1707,7 +1779,7 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	check("carrying it: the dart pistol and the ruler only, and a little slower", g.cur == "pistol" and g.lock_to == "pistol" and pl.carry_mul == ModeRush.CARRY_MUL)
 	g.switch_to("rifle"); run.call(0.5); check("...the rifle stays away", g.cur == "pistol")
 	var m1: int = Store.save.money; pl.pos = Vector3(0, 0, 50); run.call(0.2)
-	check("in our fortress, by the robot: it goes into its chest (1 of 3), you are paid, your hands are free", int(R.slots.us) == 1 and R.carry == null and g.lock_to == "" and pl.carry_mul == 1.0 and Store.save.money == m1 + ModeRush.DELIVER_PAY, [R.slots, Store.save.money - m1])
+	check("in our fortress, by the robot: it goes into its chest (1 of 3), you are paid, your hands are free", int(R.slots.us) == 1 and R.carry == null and g.lock_to == "" and pl.carry_mul == 1.0 and Store.save.money == m1 + ModeRush.DELIVER_PAY * Store.PAY, [R.slots, Store.save.money - m1])
 	# a carrier who falls drops it where he fell
 	R.cmd(["carry"]); pl.pos = Vector3(-6, 0, 20); pl.invuln = 0.0; pl.hp = 0.0; gm.update(0.02); pl.invuln = 1e9
 	var dropped: Array = R.batteries.filter(func(b): return b.state == "ground")
@@ -1752,7 +1824,7 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	var p_on := pl.pos; var t0 := E.time_left; var m4: int = Store.save.money
 	g.wstate.rifle.reserve = 0; run.call(4.0)
 	check("you on the wagon go with it (stood behind its block walls)", pl.pos.distance_to(p_on) > 4.0 and absf(pl.pos.y - (E.wagon_pos().y + 0.45)) < 0.2, pl.pos.distance_to(p_on))
-	check("past the corner after the tunnel: checkpoint 1, more time, paid", E.cp == 1 and E.time_left > t0 and Store.save.money == m4 + (0 if gm.replay else ModeEscort.CP_PAY))
+	check("past the corner after the tunnel: checkpoint 1, more time, paid", E.cp == 1 and E.time_left > t0 and Store.save.money == m4 + (0 if gm.replay else ModeEscort.CP_PAY * Store.PAY))
 	check("by the ammo box on the wagon every gun fills up", float(g.wstate.rifle.reserve) == float(Custom.weapon("rifle").reserve))
 	# traps
 	pl.pos = Vector3(-60, 0, 30); E.cmd(["at", "60"]); E.idle_t = 0.0; wp = E.wagon_pos(); pl.reset(wp.x, wp.z - 3.0, 0.0)
@@ -1791,16 +1863,19 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	check("...into the toy box: out of the fight, a point to them", pl.out and not pl.held and int(F.boxed.us) == box_us + 1 and int(tm.score.them) >= sc_them + 1 and absf(absf(pl.pos.x) - 47.0) < 3.0, [pl.pos, F.boxed])
 	run.call(ModeFreeze.BOX_BACK_YOU + 4.0)
 	check("...back at your base a long while later", not pl.out and pl.pos.z > 30.0 and pl.pos.x < 0.0, pl.pos)
-	# a toy of theirs moving while it looks is boxed: a point to us (everyone else keeping still)
+	# a toy of theirs moving while it looks is boxed: a point to us (everyone else keeping still: no soda on the floor or in the air, nobody still sliding)
 	for i in 20:
 		if F.grab == null: break
 		run.call(0.5)
+	for q in F.puddles + F.flying: (q.node as Node3D).queue_free()
+	F.puddles.clear(); F.flying.clear()
 	F.phase = "calm"; F.caught.clear(); F.cmd(["look"])
-	for u in tm.units("us") + tm.units("them"): u.k.freeze_at = 0.0; u.k.erase("can_at")
+	for u in tm.units("us") + tm.units("them"): u.k.freeze_at = 0.0; u.k.erase("can_at"); u.k.slip = Vector2.ZERO; u.k.slip_t = 0.0
 	var mover: Enemies.Foe = tm.units("them")[0]; mover.k.freeze_at = 99.0; mover.speed = 6.0; mover.k.hot = mover.pos + Vector3(8, 0, 0); mover.k.hot_t = 99.0
-	var sc_us := int(tm.score.us); var bx_them := int(F.boxed.them); tm.queue.clear()
-	run.call(ModeFreeze.GRACE + 5.0)
-	check("one of theirs that moves while it looks goes into the box: off the field, a point to us", int(F.boxed.them) == bx_them + 1 and int(tm.score.us) == sc_us + 1 and not en.list.has(mover), [F.boxed, tm.score])
+	var sc_us := int(tm.score.us); var bx_them := int(F.boxed.them); tm.queue.clear(); var mv_t := 0.0
+	while mv_t < 30.0 and (en.list.has(mover) or (F.grab != null and F.grab.get("unit") == mover)): run.call(0.5); mv_t += 0.5   # (the hand takes them one at a time: off the field when it is picked up, counted when it is dropped in the box)
+	check("one of theirs that moves while it looks goes into the box: off the field, a point to us (a point for every one of theirs boxed)",
+		not en.list.has(mover) and int(F.boxed.them) >= bx_them + 1 and int(tm.score.us) - sc_us == int(F.boxed.them) - bx_them, [F.boxed, tm.score, mv_t])
 	check("...and back on their side after a long wait", tm.queue.any(func(q): return q.team == "them" and float(q.t) > ModeFreeze.BOX_BACK - 3.0))
 	# soda cans: whoever is in the puddle slides about
 	for i in 20:

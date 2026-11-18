@@ -56,7 +56,7 @@ func brief_line() -> String: return ""   # the banner as the fight starts
 func trap_broken(_c: Dictionary) -> void: pass
 func win_title() -> String: return ""
 func pause_line() -> String: return ""
-func bonus() -> int: return 30000
+func bonus() -> int: return 30000 * Store.PAY   # the first win's bonus
 func record_key() -> String: return "t9" + key.substr(0, 1)
 func state() -> Dictionary: return {}   # for the tests: what the mode holds
 func cleanup() -> void: pass           # things of its own to free when the stage goes

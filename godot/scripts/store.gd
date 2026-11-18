@@ -94,6 +94,7 @@ func persist_settings() -> void:
 ## them all, and a stage once cleared stays open (every stage used to be open from the start). NEXT only says which stages follow
 ## on the stage tree
 const NEEDS := {6: 1, 5: 6, 7: 3, 8: 7}
+const PAY := 2   # every way of earning pays twice what the browser game pays (kills, bosses, ivory, stage 5's team modes): the owner's rule
 func stage_open(n: int) -> bool:
 	if not STAGE_TAG.has(n): return false
 	if bool(settings.get("dev", false)) or not NEEDS.has(n): return true

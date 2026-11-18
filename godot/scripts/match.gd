@@ -382,7 +382,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	var by := "ally" if bool(e.k.get("by_ally", false)) else "player"
 	if by == "player": game.kills += 1; game.stats.kills += 1
 	if weak and by == "player": game.stats.heads += 1
-	var pay := 0 if (game.replay or by != "player") else roundi(float(e.T.get("money", 1000)) * KILL_PAY * (1.5 if weak else 1.0))
+	var pay := 0 if (game.replay or by != "player") else roundi(float(e.T.get("money", 1000)) * KILL_PAY * (1.5 if weak else 1.0)) * Store.PAY
 	Store.save.money += pay; game.stats.earned += pay; Store.persist()
 	Snd.play("kill")
 	if pay > 0: Snd.play("coin"); game._say(game.on_pay, [pay])

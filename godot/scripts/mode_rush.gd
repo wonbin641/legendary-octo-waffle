@@ -299,7 +299,7 @@ func _deliver(b: Dictionary, team: String) -> void:
 	Snd.play("toy_mag_in", 1.0, ROBOT[team]); Snd.play("charge", 1.0, ROBOT[team])
 	if c is Player:
 		carry = null; _unlock()
-		var pay := 0 if m.game.replay else DELIVER_PAY
+		var pay := 0 if m.game.replay else DELIVER_PAY * Store.PAY
 		if pay > 0: Store.save.money += pay; m.game.stats.earned += pay; Store.persist(); Snd.play("coin"); m.game._say(m.game.on_pay, [pay])
 		m.game._say(m.game.feed, ["건전지 충전 · 아군 로봇 %d/%d" % [slots[team], NEED], pay, false])
 	elif c != null:
