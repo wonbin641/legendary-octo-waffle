@@ -241,8 +241,8 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		steps.push_back({"k": k, "ax": ax, "az": az, "y": -0.375 * k, "w": sw, "land": L > 0.0}); ax -= sw; az -= sw
 	pyr_bx = ax; pyr_bz = az
 	var solid := []; var glow := []
-	var kit_mat := StandardMaterial3D.new(); kit_mat.vertex_color_use_as_albedo = true; kit_mat.roughness = 0.5; kit_mat.metallic = 0.45   # (vertex colours, as AnimalKit merges)
-	var glow_mat := StandardMaterial3D.new(); glow_mat.vertex_color_use_as_albedo = true; glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED   # (MeshBasicMaterial: no light, no shadow)
+	var kit_mat := StandardMaterial3D.new(); kit_mat.vertex_color_use_as_albedo = true; kit_mat.vertex_color_is_srgb = true; kit_mat.roughness = 0.5; kit_mat.metallic = 0.45   # (vertex colours, as AnimalKit merges)
+	var glow_mat := StandardMaterial3D.new(); glow_mat.vertex_color_use_as_albedo = true; glow_mat.vertex_color_is_srgb = true; glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED   # (MeshBasicMaterial: no light, no shadow)
 	var box := func(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, col: String) -> void:
 		Phys.add_collider(x0, y0, z0, x1, y1, z1, "metal"); solid.push_back([x1 - x0, y1 - y0, z1 - z0, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, col])
 	# 1. the floor plan into a half-metre grid: every cell knows the ceiling over it (0 = outside the ship)
@@ -382,7 +382,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	for n: Node in [bow, kb]: MoonShadow.caster(n); MoonShadow.no_receive(n)
 	key_glow = MeshInstance3D.new(); var kq := QuadMesh.new(); kq.size = Vector2(1.4, 1.4); key_glow.mesh = kq; var kgm := StandardMaterial3D.new(); kgm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	kgm.albedo_texture = Gfx.glow_tex(Color(1, 220 / 255.0, 120 / 255.0, 0.95), Color(1, 170 / 255.0, 40 / 255.0, 0.2)); kgm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; kgm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	kgm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; kgm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; kgm.albedo_color = Color(1, 1, 1, 0.7); key_glow.material_override = kgm; key_glow.position.y = 0.38; key_obj.add_child(key_glow)
+	kgm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; kgm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; kgm.albedo_color = Color(1, 1, 1, 0.7); key_glow.material_override = Gfx.see_through(kgm); key_glow.position.y = 0.38; key_obj.add_child(key_glow)
 	for cz: float in [BR.z0 + 0.4, BR.z1 - 0.4]:
 		for cx: float in [-104.0, -99.0]: box.call(cx - 1.4, 0.0, cz - 0.3, cx + 1.4, 1.1, cz + 0.3, "2c3240"); screens.push_back([2.4, 0.9, 0.05, cx, 2.1, cz + (0.3 if cz < 0 else -0.3), "3fd0ff"])
 	# up on the gallery: consoles against the walls, and a big status board high on the east wall
@@ -390,7 +390,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 		for cz: float in [BR.z0 + 0.4, BR.z1 - 0.4]: box.call(cx - 1.4, GY, cz - 0.3, cx + 1.4, GY + 1.1, cz + 0.3, "2c3240"); screens.push_back([2.4, 0.9, 0.05, cx, GY + 2.1, cz + (0.3 if cz < 0 else -0.3), "3fd0ff"])
 	for cz: float in [-19.0, -11.0, -4.0, 4.0]: box.call(BR.x1 - 0.7, GY, cz - 1.4, BR.x1 - 0.1, GY + 1.1, cz + 1.4, "2c3240"); screens.push_back([0.05, 0.9, 2.4, BR.x1 - 0.4, GY + 2.1, cz, "3fd0ff"])
 	screens.push_back([0.06, 2.6, 9.0, BR.x1 - 0.05, 12.0, -7.5, "3fd0ff"])
-	var scr := MeshInstance3D.new(); scr.name = "Screens"; scr.mesh = Gfx.merge_boxes(screens); screens_mat = StandardMaterial3D.new(); screens_mat.vertex_color_use_as_albedo = true
+	var scr := MeshInstance3D.new(); scr.name = "Screens"; scr.mesh = Gfx.merge_boxes(screens); screens_mat = StandardMaterial3D.new(); screens_mat.vertex_color_use_as_albedo = true; screens_mat.vertex_color_is_srgb = true
 	screens_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; scr.material_override = screens_mat; G.add_child(scr); MoonShadow.no_receive(scr)
 	var bx_ := -120.0
 	while bx_ <= -95.0:
@@ -696,7 +696,7 @@ func update(dt: float, time: float) -> void:
 	if core_mat: var kk := 0.82 + 0.14 * sin(time * 2.6) + 0.04 * sin(time * 19.0); core_mat.albedo_color = World.lin(Color(0.45 * kk, 0.82 * kk, 1.0 * kk))   # (three.js's colour numbers are linear)
 	if ring: ring.rotation.y += dt * 0.35
 	if screens_mat: var sk := 0.85 + 0.15 * sin(time * 4.3); screens_mat.albedo_color = World.lin(Color(sk, sk, sk))
-	if key_obj != null and key_obj.visible: key_obj.rotation.y += dt * 1.2; (key_glow.material_override as StandardMaterial3D).albedo_color.a = 0.55 + 0.3 * sin(time * 4.0)
+	if key_obj != null and key_obj.visible: key_obj.rotation.y += dt * 1.2; Gfx.set_alpha(key_glow.material_override, 0.55 + 0.3 * sin(time * 4.0))
 	if save_t > 0.0:
 		save_t -= dt
 		if save_t <= 0.0 and not key: game.say_banner("운전실 문이 열렸습니다", "조종석에 꽂힌 메인홀 열쇠를 뽑으세요 · 뽑으면 세이브 포인트", 3.4)

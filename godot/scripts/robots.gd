@@ -37,7 +37,7 @@ var rocket_mm: MultiMeshInstance3D = null
 var _rocket_mesh: CylinderMesh = null
 var _rockets_drawn := 0
 var aim_line: MeshInstance3D = null; var beam: MeshInstance3D = null; var beam_core: MeshInstance3D = null; var beam_t := 0.0
-var _aim_mat: StandardMaterial3D; var _beam_mat: StandardMaterial3D; var _core_mat: StandardMaterial3D; var _fx_clock := 0.0
+var _aim_mat: Material; var _beam_mat: Material; var _core_mat: Material; var _fx_clock := 0.0
 var _mats := {}
 
 func rnd(a: float, b: float) -> float: return randf_range(a, b)
@@ -62,7 +62,7 @@ func shell_parts(R: float) -> Array: return [_part(Vector3.ZERO, R), _part(Vecto
 
 # ---- the browser game's buildShipBot: the same parts, colours and materials ----
 func _kit() -> StandardMaterial3D:   # the plating: vertex colours on a semi-metal (three.js roughness 0.42, metalness 0.55)
-	if not _mats.has("kit"): var m := StandardMaterial3D.new(); m.vertex_color_use_as_albedo = true; m.roughness = 0.42; m.metallic = 0.55; _mats.kit = m
+	if not _mats.has("kit"): var m := StandardMaterial3D.new(); m.vertex_color_use_as_albedo = true; m.vertex_color_is_srgb = true; m.roughness = 0.42; m.metallic = 0.55; _mats.kit = m
 	return _mats.kit
 func _basic(hex: String) -> StandardMaterial3D:   # a MeshBasicMaterial: lit by nothing, tone mapped
 	if not _mats.has("b" + hex): _mats["b" + hex] = Gfx.unlit(World.lin(hex))
@@ -74,18 +74,18 @@ func _add(parent: Node3D, mesh: Mesh, mat: Material, at: Vector3) -> MeshInstanc
 	var mi := MeshInstance3D.new(); mi.mesh = mesh; mi.material_override = mat; mi.position = at; parent.add_child(mi); return mi
 func _grp(parent: Node3D, at := Vector3.ZERO) -> Node3D: var n := Node3D.new(); n.position = at; parent.add_child(n); return n
 func _bx(sx: float, sy: float, sz: float) -> BoxMesh: var b := BoxMesh.new(); b.size = Vector3(sx, sy, sz); return b
-func _see(hex: String, alpha: float, add := false, two_sided := false) -> StandardMaterial3D:   # a see-through MeshBasicMaterial (no depth written)
+func _see(hex: String, alpha: float, add := false, two_sided := false) -> Material:   # a see-through MeshBasicMaterial (no depth written)
 	var m := Gfx.unlit(World.lin(hex)); m.albedo_color.a = alpha; m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	if add: m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	if two_sided: m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return m
+	return Gfx.see_through(m)
 func _shine(key: String, hex: String, rough: float, metal: float, env_k: float, map: Texture2D = null, emis := Color(0, 0, 0), two_sided := false) -> ShaderMaterial:
 	if not _mats.has(key): _mats[key] = BotLook.shine(hex, rough, metal, env_k, map, emis, two_sided)
 	return _mats[key]
 ## the boss's eye: blue and open, or red about to fire (shown as it is, without tone mapping); its glow follows
 func eye_tint(e: Enemies.Foe, red: bool) -> void:
 	var c := Color("ff1a10") if red else Color("1478ff"); (e.k.eye_mat as ShaderMaterial).set_shader_parameter("mul", Vector3(c.r, c.g, c.b))
-	(e.k.eye_glow as StandardMaterial3D).albedo_color = Color(World.lin("ff3a2a" if red else "2f8cff"), 0.34)
+	Gfx.tint(e.k.eye_glow, Color(World.lin("ff3a2a" if red else "2f8cff"), 0.34))
 
 func build(e: Enemies.Foe, type: String) -> void:
 	e.robot = true; e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; en.add_child(e.g)
@@ -176,7 +176,7 @@ func build(e: Enemies.Foe, type: String) -> void:
 			var ex := Gfx.exposure(float(World.STAGE_STYLE[4].get("exposure", 1.15)))
 			e.k.eye_mat = Gfx.untoned(Color("1478ff"), BotLook.iris_tex(), ex); var pupil := Gfx.untoned(Color("d8ecff"), null, ex)
 			var glow := StandardMaterial3D.new(); glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; glow.albedo_texture = BotLook.pool_tex(); glow.albedo_color = Color(World.lin("2f8cff"), 0.34)
-			glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; glow.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; glow.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; e.k.eye_glow = glow
+			glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; glow.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED; glow.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; e.k.eye_glow = Gfx.see_through(glow)
 			e.k.shells = []
 			var HOLE := asin(0.46)
 			for k in 3:
@@ -597,7 +597,7 @@ func _boss(e: Enemies.Foe, dt: float, dist: float, face_yaw: float) -> void:
 			k.aim += dv
 		var from := _eye(e); var dir: Vector3 = (k.aim - from).normalized(); var hit := Phys.raycast_static(from, dir, 160.0)
 		_make_fx(); aim_line.visible = true; _lay(aim_line, from, from + dir * (Phys.rh_t if hit else 160.0), 3.0 if left < 0.25 else 1.0)
-		_aim_mat.albedo_color.a = 1.0 if left < 0.25 else 0.45 + 0.3 * sin(_fx_clock * 30.0)   # (pulsing, then solid for the last quarter second)
+		Gfx.set_alpha(_aim_mat, 1.0 if left < 0.25 else 0.45 + 0.3 * sin(_fx_clock * 30.0))   # (pulsing, then solid for the last quarter second)
 		if k.t >= P.charge: aim_off(); _fire_laser(e); k.mode = "cool"; k.t = 0.0
 		return
 	if k.mode == "cool":
@@ -644,7 +644,7 @@ func tick(dt: float) -> void:
 		if b.t <= 0.0: blasts.remove_at(i); _blast(b.at)
 	_fx_clock += dt
 	if beam_t > 0.0:
-		beam_t -= dt; var bk := clampf(beam_t / 0.4, 0.0, 1.0); _beam_mat.albedo_color.a = 0.85 * bk; _core_mat.albedo_color.a = bk
+		beam_t -= dt; var bk := clampf(beam_t / 0.4, 0.0, 1.0); Gfx.set_alpha(_beam_mat, 0.85 * bk); Gfx.set_alpha(_core_mat, bk)
 		if beam_t <= 0.0: beam.visible = false; beam_core.visible = false
 	if rockets.is_empty() and _rockets_drawn == 0: return
 	var target := Vector3(player.pos.x, player.pos.y + 1.0, player.pos.z); var loud := 0

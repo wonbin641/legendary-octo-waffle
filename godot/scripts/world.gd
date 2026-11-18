@@ -81,6 +81,7 @@ var _lamp_t := 0.0
 var on_crate: Callable = Callable()   # called with the crate when one breaks
 var fx: Fx = null
 var toy: ToyRoom = null
+const TOY_FPLUS_SUN := 2.5   # (the toy room's sun on Forward+: see build_stage)
 var village: Village = null
 var lab: Lab = null
 var ship: Ship = null
@@ -178,6 +179,9 @@ var on_level: Callable = Callable()   # main: what a level asks of the picture i
 const UNDER_SHARE := [1.0, 0.75, 0.6]
 var gfx_under := 0
 var on_under: Callable = Callable()   # main: the picture's size and smoothing again
+## the web build is the taster: 자동 starts at level 0 there and climbs as the frame rate allows, and only there does it go
+## below level 0. The computer's game (the installer) has the browser game's whole ladder, from the top
+var web := OS.has_feature("web")
 func gfx_set_under(u: int) -> void:
 	gfx_under = clampi(u, 0, UNDER_SHARE.size() - 1)
 	if on_under.is_valid(): on_under.call(gfx_under)
@@ -187,15 +191,18 @@ func gfx_max() -> int:
 func gfx_apply(l: int) -> void:
 	gfx_level = clampi(l, 0, gfx_max()); var L: Dictionary = GFX_LEVELS[gfx_level]; gfx_under = 0
 	set_shadow_size(int(L.shadow)); use_ao = L.ao; set_ao(use_ao and toy == null)
+	if Gfx.fplus:   # (Forward+: the moon's own shadow, filtered more finely up the ladder)
+		var q: int = [RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM, RenderingServer.SHADOW_QUALITY_SOFT_HIGH, RenderingServer.SHADOW_QUALITY_SOFT_ULTRA][gfx_level]
+		RenderingServer.directional_soft_shadow_filter_set_quality(q)
 	if on_level.is_valid(): on_level.call(L)
 	Store.save_level(gfx_level)
-## at start: the top if told so, level 0 without a graphics card, else where the ladder last settled (the top at first)
+## at start: the top if told so, level 0 without a graphics card or on the web, else where the ladder last settled (the top at first)
 func gfx_init(saved: int) -> void:
-	gfx_apply(4 if gfx_mode == "high" else (0 if gfx_soft else (saved if saved >= 0 else 4)))
+	gfx_apply(4 if gfx_mode == "high" else (0 if (gfx_soft or web) else (saved if saved >= 0 else 4)))
 ## the setting changed: start the count again from the top ("프레임 우선": no higher than 1)
 func gfx_set_mode(m: String) -> void:
 	gfx_mode = m; _gv.good = 0; _gv.acc = 0.0; _gv.n = 0; _gv.hold = 0.0
-	gfx_apply(4 if m == "high" else (mini(gfx_level, 1) if m == "fast" else 4))
+	gfx_apply(4 if m == "high" else (mini(gfx_level, 1) if m == "fast" else (0 if web else 4)))
 func govern(delta: float) -> void:
 	if gfx_mode == "high": return
 	var G := _gv; G.t += delta; G.acc += delta; G.n += 1
@@ -204,7 +211,7 @@ func govern(delta: float) -> void:
 	if avg > 1.0 / 50.0 and gfx_level > 0:
 		if G.t - G.up_at < 10.0: G.hold = G.t + 60.0   # the last step up did not hold: stay put for a while
 		gfx_apply(gfx_level - (2 if avg > 1.0 / 30.0 and gfx_level > 1 else 1)); G.good = 0
-	elif avg > 1.0 / 50.0 and gfx_under < UNDER_SHARE.size() - 1:   # (at level 0 already: below it)
+	elif avg > 1.0 / 50.0 and web and gfx_under < UNDER_SHARE.size() - 1:   # (at level 0 already: below it, on the web)
 		gfx_set_under(gfx_under + 1); G.good = 0
 	elif avg < 1.0 / 57.0 and (gfx_under > 0 or gfx_level < gfx_max()):
 		G.good += 1
@@ -216,6 +223,7 @@ func govern(delta: float) -> void:
 
 ## the moon's shadow picture at this many texels a side (the browser game's shadowSize)
 func set_shadow_size(n: int) -> void:
+	if Gfx.fplus: RenderingServer.directional_shadow_atlas_set_size(n, true)   # (Forward+: the moon's own shadow map)
 	if moon_shadow.size.x == n: return
 	moon_shadow.size = Vector2i(n, n); shadow_mat.set_shader_parameter("map_size", float(n))
 
@@ -269,7 +277,7 @@ func _build_backdrop() -> void:
 	var sunq := QuadMesh.new(); sunq.size = Vector2(70, 70); var sunm := StandardMaterial3D.new(); sunm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sunm.albedo_texture = Gfx.glow_tex(Color(1, 244 / 255.0, 214 / 255.0, 1), Color(1, 190 / 255.0, 110 / 255.0, 0.35)); sunm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	sunm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; sunm.disable_fog = true; sunm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	sun_spr = MeshInstance3D.new(); sun_spr.mesh = sunq; sun_spr.material_override = sunm; sun_spr.visible = false; sun_spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(sun_spr)
+	sun_spr = MeshInstance3D.new(); sun_spr.mesh = sunq; sun_spr.material_override = Gfx.see_through(sunm); sun_spr.visible = false; sun_spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(sun_spr)
 	var night := Node3D.new(); night.name = "Night"; add_child(night)
 	# the skyline, its lit windows, the stars and the moon take no fog in the browser game: drawn after the fog layer
 	var sil_a := Gfx.backdrop(Gfx.unlit(lin(Color(0.007, 0.009, 0.017)), false)); var sil_b := Gfx.backdrop(Gfx.unlit(lin(Color(0.011, 0.014, 0.026)), false))
@@ -295,7 +303,7 @@ func _build_backdrop() -> void:
 	var mq := QuadMesh.new(); mq.size = Vector2(62, 62)
 	var mm := StandardMaterial3D.new(); mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mm.albedo_texture = Gfx.moon_tex(); mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; mm.disable_fog = true; mm.no_depth_test = false
-	var ms := MeshInstance3D.new(); ms.mesh = mq; ms.material_override = mm; ms.position = Vector3(-130, 160, -160); night.add_child(ms); moon_spr = ms
+	var ms := MeshInstance3D.new(); ms.mesh = mq; ms.material_override = Gfx.see_through(mm); ms.position = Vector3(-130, 160, -160); night.add_child(ms); moon_spr = ms
 	# water and a container ship moored beyond the quay (east side)
 	var wp := PlaneMesh.new(); wp.size = Vector2(260, 420)
 	var water := MeshInstance3D.new(); water.mesh = wp; water.material_override = Gfx.std(lin("0a1626"), 0.25, 0.2); water.position = Vector3(197, -2.4, 0); night.add_child(water); _port.push_back(water)
@@ -313,7 +321,7 @@ func _build_backdrop() -> void:
 			x += 2.5
 		z += 12.6
 	var bm2 := BoxMesh.new(); bm2.size = Vector3(2.44, 2.59, 12.19)
-	var deck := Gfx.multimesh(bm2, xf, cols); var dm := Gfx.std(lin("5a3a34"), 0.7); dm.vertex_color_use_as_albedo = true; deck.material_override = dm; night.add_child(deck); _port.push_back(deck)
+	var deck := Gfx.multimesh(bm2, xf, cols); var dm := Gfx.std(lin("5a3a34"), 0.7); dm.vertex_color_use_as_albedo = true; dm.vertex_color_is_srgb = true; deck.material_override = dm; night.add_child(deck); _port.push_back(deck)
 	var bw := PackedVector3Array()
 	for i in 80: bw.push_back(Vector3(96 + randf_range(-12, 12), randf_range(14, 36), 79 - randf_range(0, 0.5)))
 	var bwp := Gfx.points(bw, lin("fff0c8"), 2.2, 1.0, true); night.add_child(bwp); _port.push_back(bwp)   # the ship's windows do take fog
@@ -338,7 +346,9 @@ func build_stage(stage: int) -> void:
 	sky_mat.set_shader_parameter("glow", Vector3(S.glow[0], S.glow[1], S.glow[2]))
 	var fog_scene := Gfx.scene_for(fogc, e)   # three.js mixed the fog colour into the finished picture; this scene colour tone maps to it
 	fog_mat.set_shader_parameter("col", Gfx.albedo_of(fog_scene)); fog_mat.set_shader_parameter("density", float(S.density))
+	fog_mat.set_shader_parameter("disp", fogc); fog_mat.set_shader_parameter("exposure", Gfx.exposure(e))   # (Forward+: mixed as shown)
 	env.fog_light_color = Color(fog_scene.x, fog_scene.y, fog_scene.z).linear_to_srgb(); env.fog_depth_end = sqrt(3.0) / S.density
+	Gfx.set_view_globals(Gfx.exposure(e), Gfx.TONE_WHITE, float(S.density), fogc, fog_scene, env.fog_depth_end)   # (Forward+'s see-through layers)
 	var hs := Color(S.hemi[0]); var hg := Color(S.hemi[1]); var hi: float = S.hemi[2]
 	env.ambient_light_color = lin(Color((hs.r + hg.r) / 2, (hs.g + hg.g) / 2, (hs.b + hg.b) / 2)); env.ambient_light_energy = hi
 	var half := lin(Color((hs.r - hg.r) / 2, (hs.g - hg.g) / 2, (hs.b - hg.b) / 2))
@@ -352,7 +362,9 @@ func build_stage(stage: int) -> void:
 	shadow_mat.set_shader_parameter("hemi_sky", Vector3(hs.r, hs.g, hs.b) * hi); shadow_mat.set_shader_parameter("hemi_ground", Vector3(hg.r, hg.g, hg.b) * hi)
 	var lamp_c := Color(S.lamp[0]); shadow_mat.set_shader_parameter("lamp_col", Vector3(lamp_c.r, lamp_c.g, lamp_c.b)); shadow_mat.set_shader_parameter("exposure", Gfx.exposure(e))
 	_shadow_off = off; moon_shadow.place(start.x, start.z, off)
-	moon.shadow_enabled = false; shadow_layer.visible = true; moon_shadow.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	if Gfx.fplus:   # Forward+ lights a shadowed moon in the main pass, as three.js does: its own shadow, cast only by what casts there
+		moon.shadow_enabled = true; moon.shadow_caster_mask = 1 << (MoonShadow.CASTER - 1); shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	else: moon.shadow_enabled = false; shadow_layer.visible = true; moon_shadow.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	ao_mat.set_shader_parameter("strength", ao.tune(S)); ao_mat.set_shader_parameter("exposure", Gfx.exposure(e)); set_ao(use_ao)
 	for l in lights: l.light_color = lin(S.lamp[0]); l.light_energy = 0.0; l.set_meta("on", false)
 	_lamp_t = 0.0
@@ -362,8 +374,13 @@ func build_stage(stage: int) -> void:
 		# stage 5 is this port's own room, not the browser game's: it keeps the light it was made with
 		env.tonemap_white = 1.0; env.tonemap_exposure = e; fog_mat.set_shader_parameter("density", 0.0)
 		env.ambient_light_color = Color(S.hemi[0]).lerp(Color(S.hemi[1]), 0.35); env.ambient_light_energy = S.hemi[2]; env.fog_depth_end = 400.0; moon.light_color = Color(S.moon[0])
+		Gfx.set_view_globals(e, 1.0, 0.0, fogc, fog_scene, env.fog_depth_end)
+		# the room was made on the compatibility renderer, which draws the shadowed sun in a pass of its own and adds it on the
+		# screen: what it lights comes out near white. Forward+ lights in one pass, so its sun is TOY_FPLUS_SUN times as strong
+		# for the same room (measured against the compatibility picture: within 2.4% a pixel, 1% in brightness)
+		if Gfx.fplus: moon.light_energy = float(S.moon[1]) * TOY_FPLUS_SUN
 		hemi_up.light_energy = 0.0; hemi_dn.light_energy = 0.0
-		moon.shadow_enabled = true; shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED; set_ao(false)
+		moon.shadow_enabled = true; moon.shadow_caster_mask = 0xFFFFFFFF; shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED; set_ao(false)
 		toy = ToyRoom.new(); toy.build(self, G); return
 	(get_node("Night") as Node3D).visible = not S.get("day", false) and not S.get("indoor", false)
 	# the harbour skyline and ship only belong to the docks; the village gets the stars and a bigger moon
@@ -447,15 +464,16 @@ func build_stage(stage: int) -> void:
 	var heads := Gfx.multimesh(hm, head_x); heads.material_override = Gfx.unlit(lin("ffd08a")); G.add_child(heads)
 	var cm := CylinderMesh.new(); cm.top_radius = 0.0; cm.bottom_radius = 6.5; cm.height = 15; cm.radial_segments = 24; cm.cap_top = false; cm.cap_bottom = false
 	var csh := Shader.new()
-	csh.code = "shader_type spatial; render_mode unshaded, blend_add, cull_disabled, depth_draw_never, fog_disabled, shadows_disabled; uniform vec3 col; uniform float op; varying float h;\n" + Gfx.ALBEDO_GLSL \
+	csh.code = "shader_type spatial; render_mode unshaded, blend_add, cull_disabled, depth_draw_never, fog_disabled, shadows_disabled; uniform vec3 col; uniform float op; varying float h;\n#define SHOWN_ADD\n" + Gfx.ALBEDO_GLSL + Gfx.SHOWN_GLSL \
 		+ "void vertex(){ h = (VERTEX.y + 7.5) / 15.0; }\nvoid fragment(){ float t = 1.0 - h; float s = t < 0.5 ? mix(1.0, 0.33333, t * 2.0) : mix(0.33333, 0.0, t * 2.0 - 1.0);\n" \
-		+ "\tfloat g = s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4); ALBEDO = albedo_of(col * g); ALPHA = op; }"
+		+ "\tfloat g = s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4);\n#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\n\tALBEDO = albedo_of(col * g); ALPHA = op;\n" \
+		+ "#else\n\tALBEDO = shown(sh_show(col * g), op, SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX); ALPHA = 1.0;   // (as shown: Gfx.SHOWN_GLSL)\n#endif\n}"
 	var cmat := ShaderMaterial.new(); cmat.shader = csh; var lc := Color(S.lamp[0]); cmat.set_shader_parameter("col", Vector3(lc.r, lc.g, lc.b)); cmat.set_shader_parameter("op", 0.1)
 	var cones := Gfx.multimesh(cm, cone_x); cones.material_override = cmat; cones.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; G.add_child(cones)
 	var plm := PlaneMesh.new(); plm.size = Vector2(18, 18)
 	var pmat := StandardMaterial3D.new(); pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; pmat.albedo_texture = _tex.pool; pmat.albedo_color = lin(S.lamp[0])
 	pmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; pmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; pmat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	var pools := Gfx.multimesh(plm, pool_x); pools.material_override = pmat; pools.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; G.add_child(pools)
+	var pools := Gfx.multimesh(plm, pool_x); pools.material_override = Gfx.see_through(pmat); pools.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; G.add_child(pools)
 
 	# single containers dropped across lanes
 	var i := 0; var tries := 0

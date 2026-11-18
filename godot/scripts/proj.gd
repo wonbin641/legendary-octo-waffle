@@ -32,9 +32,11 @@ func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: 
 	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m})
 	if fx and stage != 9: fx.glow(from, Vector3.ZERO, 0.08, 0.45, 0.1, Color(1, 0.8, 0.5, 0.9))   # the flash at his muzzle
 
-var _bmat: StandardMaterial3D
-func _bullet_mat() -> StandardMaterial3D:
-	if _bmat == null: _bmat = Gfx.unlit(Color(1.0, 0.85, 0.63), false); _bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; _bmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+var _bmat: Material
+func _bullet_mat() -> Material:
+	if _bmat == null:
+		var m := Gfx.unlit(Color(1.0, 0.85, 0.63), false); m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_bmat = Gfx.see_through(m)
 	return _bmat
 
 ## enemy grenades: 'gl' rounds burst on impact, thrown 'nade's bounce and go off after a fuse

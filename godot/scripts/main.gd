@@ -35,6 +35,7 @@ var joy_id := -1; var look_id := -1; var fire_id := -1; var joy := Vector2.ZERO;
 var _js_cb
 
 func _ready() -> void:
+	Gfx.fplus = RenderingServer.get_current_rendering_method() != "gl_compatibility"   # (the computer's game: Forward+; the web: compatibility)
 	f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
 	f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
 	f_mono.fallbacks = [f_bold]; f_title.fallbacks = [f_bold]  # the mono and title fonts have gaps; the body font fills them
@@ -132,12 +133,12 @@ func _build_guns() -> void:
 	# the laser pointer's beam and its dot (stage 5's rifle, while you aim)
 	laser = MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(0.006, 0.006, 1.0); laser.mesh = lb
 	var lm := StandardMaterial3D.new(); lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; lm.albedo_color = Color(1, 0.1, 0.08, 0.55); lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; lm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; lm.disable_fog = true
-	laser.material_override = lm; laser.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; laser.visible = false; add_child(laser)
-	laser_dot = MeshInstance3D.new(); var ls := SphereMesh.new(); ls.radius = 0.05; ls.height = 0.1; laser_dot.mesh = ls; var dm: StandardMaterial3D = lm.duplicate(); dm.albedo_color = Color(1, 0.15, 0.1, 1); laser_dot.material_override = dm; laser_dot.visible = false; add_child(laser_dot)
+	laser.material_override = Gfx.see_through(lm); laser.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; laser.visible = false; add_child(laser)
+	laser_dot = MeshInstance3D.new(); var ls := SphereMesh.new(); ls.radius = 0.05; ls.height = 0.1; laser_dot.mesh = ls; var dm: StandardMaterial3D = lm.duplicate(); dm.albedo_color = Color(1, 0.15, 0.1, 1); laser_dot.material_override = Gfx.see_through(dm); laser_dot.visible = false; add_child(laser_dot)
 	flash = MeshInstance3D.new(); var q := QuadMesh.new(); q.size = Vector2(0.16, 0.16); flash.mesh = q
 	var fm := StandardMaterial3D.new(); fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; fm.albedo_texture = Gfx.glow_tex(Color(1, 0.95, 0.8, 1), Color(1, 0.7, 0.3, 0.6))
 	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED; fm.disable_fog = true
-	flash.material_override = fm; flash.visible = false; view.add_child(flash)
+	flash.material_override = Gfx.see_through(fm); flash.visible = false; view.add_child(flash)
 	flash_light = OmniLight3D.new(); flash_light.light_color = Color(1, 0.8, 0.5); flash_light.omni_range = 9.0; flash_light.light_energy = 0.0; cam.add_child(flash_light)
 
 static func _smooth(a: float, b: float, x: float) -> float:
@@ -146,7 +147,7 @@ static func _smooth(a: float, b: float, x: float) -> float:
 ## the antidote in the hands: a bare left forearm and a syringe of green
 func _build_needle(parent: Node3D) -> void:
 	needle = Node3D.new(); needle.visible = false; parent.add_child(needle)
-	var vm := StandardMaterial3D.new(); vm.vertex_color_use_as_albedo = true; vm.roughness = 0.8; vm.no_depth_test = false
+	var vm := StandardMaterial3D.new(); vm.vertex_color_use_as_albedo = true; vm.vertex_color_is_srgb = true; vm.roughness = 0.8; vm.no_depth_test = false
 	needle_arm = Node3D.new(); needle.add_child(needle_arm)
 	var am := MeshInstance3D.new(); am.mesh = Gfx.merge_boxes([[0.24, 0.058, 0.062, -0.13, 0, 0, "222a37"], [0.13, 0.048, 0.052, 0.055, 0.001, 0, "c99a7a"], [0.055, 0.06, 0.066, 0.145, 0, 0, "26292e"], [0.012, 0.062, 0.066, -0.006, 0, 0, "222a37"]]); am.material_override = vm; needle_arm.add_child(am)
 	needle_syr = Node3D.new(); needle.add_child(needle_syr)
@@ -233,7 +234,8 @@ func _build_hud() -> void:
 func _on_level(L: Dictionary) -> void:
 	if is_touch: return
 	var u := world.gfx_under   # (below level 0: smaller still, unsmoothed)
-	picture.share = minf(float(L.pr), dpr) / dpr * float(World.UNDER_SHARE[u]); picture.set_msaa(Viewport.MSAA_4X if u == 0 else Viewport.MSAA_DISABLED)
+	picture.share = level_share(float(L.pr), dpr, OS.has_feature("web")) * float(World.UNDER_SHARE[u])
+	picture.set_msaa(Viewport.MSAA_4X if u == 0 else Viewport.MSAA_DISABLED)
 	grade.level_post = L.post; grade.visible = grade.allowed and grade.level_post and world.toy == null
 
 ## the graphics card's name as the browser game reads it (WEBGL_debug_renderer_info), and whether it is a software one
@@ -267,6 +269,11 @@ func _perf_frame(dt: float, cpu_ms: float) -> void:
 	_pf.frames = 0; _pf.acc = 0.0; _pf.cpu = 0.0; _pf.worst = 0.0
 	var s := hud.size; var tall := s.y > s.x * 1.1
 	perf_box.reset_size(); perf_box.position = Vector2(12, 70) if tall else Vector2(12, s.y - 12.0 - perf_box.size.y)
+## the picture's size for a level's pixel ratio, as a share of the window. The web as the browser game: the ratio, at most the
+## screen's own. The computer's game draws its top levels finer than the screen (1.5 and 2 times the pixels each way, made
+## smaller on the way out: smoother edges and finer textures; Picture keeps that within 3840 pixels wide)
+static func level_share(pr: float, ratio: float, on_web: bool) -> float:
+	return minf(pr, ratio) / ratio if on_web else pr
 ## the level's name for the readout, and how far below level 0 (낮음 −1, 낮음 −2)
 func level_name() -> String:
 	return str(World.GFX_LEVELS[world.gfx_level].name) + (" −%d" % world.gfx_under if world.gfx_under > 0 else "")

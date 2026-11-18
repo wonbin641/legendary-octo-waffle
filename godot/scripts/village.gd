@@ -101,7 +101,7 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	var tm := CylinderMesh.new(); tm.top_radius = 0.16; tm.bottom_radius = 0.28; tm.height = 1.0; tm.radial_segments = 6; tm.rings = 0
 	var trunks := MeshInstance3D.new(); trunks.mesh = Gfx.bake(tm, trunk_x); trunks.material_override = Gfx.std(World.lin("3a2a1c"), 0.95); G.add_child(trunks); MoonShadow.caster(trunks)
 	var crowns := MeshInstance3D.new(); crowns.mesh = Gfx.bake(crown_mesh(), crown_x, crown_c); crowns.name = "Crowns"
-	var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crowns.material_override = crm; G.add_child(crowns); MoonShadow.caster(crowns)
+	var crm := Gfx.std(Color.WHITE, 0.9); crm.vertex_color_use_as_albedo = true; crm.vertex_color_is_srgb = true; crowns.material_override = crm; G.add_child(crowns); MoonShadow.caster(crowns)
 
 	# crates: two in every hut first, then the rest out in the village
 	var count := maxi(int(S.crates), inside.size() + 16); var hc := 0; var xs := []; var i := 0; tries = 0
@@ -117,7 +117,7 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	var mmi := Gfx.multimesh(Gfx.box(Vector3(1.2, 1.2, 1.2)), xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); MoonShadow.caster(mmi); w.crate_mm = mmi.multimesh; w.crate_mmi = mmi; w.crate_xf = xs.duplicate()
 
 	# everything built of logs, in one mesh
-	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.roughness = 0.92; mi.material_override = mat; G.add_child(mi); MoonShadow.caster(mi)
+	var mi := MeshInstance3D.new(); mi.mesh = Gfx.merge_boxes(parts); var mat := StandardMaterial3D.new(); mat.vertex_color_use_as_albedo = true; mat.vertex_color_is_srgb = true; mat.roughness = 0.92; mi.material_override = mat; G.add_child(mi); MoonShadow.caster(mi)
 	# fire: flames, sparks and smoke drawn as camera-facing cards; each fire also lends one of the six flickering lights
 	w.fire_mats = build_fires(G, fires, float(S.density), Gfx.exposure(float(S.get("exposure", 1.15))))
 	for f in fires: w.lamps.push_back({"x": f[0], "y": f[1] + 0.9 + f[3] * 0.3, "z": f[2]})
@@ -138,9 +138,15 @@ static func crown_mesh() -> ArrayMesh:
 ## buildFires). Its shaders write their colours untoned, so these turn them back through the tone mapping first
 const FIRE_SHADER := """
 shader_type spatial;
+%s
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 render_mode unshaded, %s, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled, skip_vertex_transform;
+#else
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled, skip_vertex_transform;
+#endif
 uniform float ft; uniform float rise; uniform float life = 1.0; uniform float spread; uniform float fogD; uniform float exposure = 1.0;
 varying vec2 vUv; varying float vSeed; varying float vK; varying float vFog;
+%s
 %s
 %s
 void vertex() {
@@ -157,7 +163,11 @@ void vertex() {
 void fragment() {
 	vec4 o = shade(vUv, vSeed, vK, vFog);
 	if (o.a < 0.0) discard;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 	ALBEDO = albedo_of(unshow(clamp(o.rgb, 0.0, 1.0))); ALPHA = clamp(o.a, 0.0, 1.0);
+#else
+	ALBEDO = shown(clamp(o.rgb, 0.0, 1.0), clamp(o.a, 0.0, 1.0), SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX); ALPHA = 1.0;   // (as shown: Gfx.SHOWN_GLSL)
+#endif
 }
 """
 const FLAME_FS := """
@@ -211,7 +221,7 @@ static func _fire_layer(G: Node3D, list: Array, fs: String, add: bool, opts: Dic
 	var arr := []; arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = vs; arr[Mesh.ARRAY_TEX_UV] = uvs; arr[Mesh.ARRAY_CUSTOM0] = cu; arr[Mesh.ARRAY_INDEX] = idx
 	var mesh := ArrayMesh.new(); mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
-	var sh := Shader.new(); sh.code = FIRE_SHADER % ["blend_add" if add else "blend_mix", Gfx.ALBEDO_GLSL, Gfx.UNSHOW_GLSL, fs]
+	var sh := Shader.new(); sh.code = FIRE_SHADER % ["#define SHOWN_ADD" if add else "", "blend_add" if add else "blend_mix", Gfx.ALBEDO_GLSL, Gfx.UNSHOW_GLSL, Gfx.SHOWN_GLSL, fs]
 	var mat := ShaderMaterial.new(); mat.shader = sh; mat.render_priority = order
 	mat.set_shader_parameter("rise", float(opts.get("rise", 0.0))); mat.set_shader_parameter("life", float(opts.get("life", 1.0))); mat.set_shader_parameter("spread", float(opts.get("spread", 0.0)))
 	mat.set_shader_parameter("fogD", density); mat.set_shader_parameter("exposure", exposure)

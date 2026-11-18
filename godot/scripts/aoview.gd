@@ -20,7 +20,7 @@ uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform float radius = 0.85; uniform float intensity = 1.3; uniform float bias = 0.012;
 uniform float max_dist = 42.0; uniform float max_px = 48.0;
 %s
-vec3 vpos(vec2 uv, mat4 ipm) { float d = texture(depth_tex, uv).r; vec4 c = ipm * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return c.xyz / c.w; }
+vec3 vpos(vec2 uv, mat4 ipm) { float d = texture(depth_tex, uv).r; vec4 c = ipm * vec4(uv * 2.0 - 1.0, ndc_z(d), 1.0); return c.xyz / c.w; }
 // the occlusion and the distance, as the browser game's aoMat (depth is reversed here: 0 is nothing drawn)
 vec2 occl(vec2 suv, vec2 vsize, vec2 fc, mat4 ipm, mat4 pm) {
 	if (texture(depth_tex, suv).r <= 0.000001) return vec2(1.0, 499.0);
@@ -124,6 +124,7 @@ uniform sampler2D ao_tex : filter_linear, repeat_disable;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform float strength = 0.9; uniform float flip = 0.0; uniform float exposure = 1.0;   // (screen to screen: the same way up)
 uniform float near_skip = 0.9;
+uniform float ao_gamma = 2.2;
 %s
 const float FA = 0.0245786; const float FB = 0.000090537; const float FC = 0.983729; const float FD = 0.432951; const float FE = 0.238081;
 const mat3 RRT = mat3(vec3(0.59719 * 1.8, 0.35458 * 1.8, 0.04823 * 1.8), vec3(0.07600 * 1.8, 0.90834 * 1.8, 0.01566 * 1.8), vec3(0.02840 * 1.8, 0.13383 * 1.8, 0.83777 * 1.8));
@@ -135,18 +136,23 @@ vec3 unshow(vec3 s) {
 	vec3 v = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
 	return max(v * inverse(RRT), vec3(0.0)) / exposure;
 }
-float apply(vec2 suv, mat4 ipm) {
+float apply(vec2 suv, mat4 ipm, mat4 iv) {
 	float d0 = texture(depth_tex, suv).r;
 	if (d0 <= 0.000001) return 1.0;
-	vec4 v = ipm * vec4(suv * 2.0 - 1.0, d0 * 2.0 - 1.0, 1.0);
+	vec4 v = ipm * vec4(suv * 2.0 - 1.0, ndc_z(d0), 1.0);
 	if (-v.z / v.w < near_skip) return 1.0;   // the gun in hand: drawn after the occlusion in the browser game
+	if (length((iv * vec4(v.xyz / v.w, 1.0)).xyz) > 370.0) return 1.0;   // the sky dome (solid on Forward+, Gfx.SKY_R)
 	vec2 uv = vec2(suv.x, mix(suv.y, 1.0 - suv.y, flip));
 	return mix(1.0, texture(ao_tex, uv).r, strength);
 }
 void vertex() { POSITION = vec4(VERTEX.xy, 0.0, 1.0); }
 void fragment() {
-	float m = apply(SCREEN_UV, INV_PROJECTION_MATRIX);
+	float m = apply(SCREEN_UV, INV_PROJECTION_MATRIX, INV_VIEW_MATRIX);
 	if (m >= 0.999) discard;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 	ALBEDO = albedo_of(unshow(vec3(m))); ALPHA = 1.0;   // tone mapped on the way out, it comes to m itself: the multiplier
+#else
+	ALBEDO = vec3(pow(m, ao_gamma)); ALPHA = 1.0;   // (Forward+ multiplies the light before tone mapping: m on the screen is about m^gamma of the light)
+#endif
 }
 """

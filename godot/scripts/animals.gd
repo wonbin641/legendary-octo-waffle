@@ -202,7 +202,7 @@ var _kong_mat: StandardMaterial3D = null
 ## a gorilla's build: a huge chest and shoulders, a silver saddle, long thick arms, short legs, the head sunk between the shoulders
 func kong_build(e: Enemies.Foe, boss: bool) -> void:
 	var fur := "1d1c1e"; var dark := "141315"; var skin := "37312e"; var silver := "9a9a9c" if boss else "4b4a4c"; var eye := "d33a1a" if boss else "c08a2a"
-	if _kong_mat == null: _kong_mat = StandardMaterial3D.new(); _kong_mat.vertex_color_use_as_albedo = true; _kong_mat.roughness = 0.88
+	if _kong_mat == null: _kong_mat = StandardMaterial3D.new(); _kong_mat.vertex_color_use_as_albedo = true; _kong_mat.vertex_color_is_srgb = true; _kong_mat.roughness = 0.88
 	var key := "kong_" + ("boss" if boss else "small")
 	var mesh := func(parent: Node3D, k2: String, list: Array) -> void:
 		var mi := MeshInstance3D.new(); var kk := key + "_" + k2
@@ -283,7 +283,7 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	var spec := quad_spec(type, mane); var tex := kit_tex(type)
 	var mat: Material = en._mat
 	if tex != null:   # (vertex colours times the picture)
-		if not _kit_mats.has(type): var km := Gfx.std(Color.WHITE, 0.85, 0.0, tex); km.vertex_color_use_as_albedo = true; _kit_mats[type] = km
+		if not _kit_mats.has(type): var km := Gfx.std(Color.WHITE, 0.85, 0.0, tex); km.vertex_color_use_as_albedo = true; km.vertex_color_is_srgb = true; _kit_mats[type] = km
 		mat = _kit_mats[type]
 	e.body = _kit(e.g, Vector3.ZERO, spec.P, "kit_%s%s" % [type, "_mane" if mane else ""], mat)
 	for sb in spec.subs:
