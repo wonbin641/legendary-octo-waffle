@@ -43,6 +43,8 @@ func _ready() -> void:
 	if OS.has_feature("web"):
 		dpr = float(JavaScriptBridge.eval("window.devicePixelRatio || 1"))
 		is_touch = bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
+	elif OS.has_feature("mobile"):   # the phone app: always touch, and laid out in the units a phone's browser would use
+		is_touch = true; dpr = phone_ratio(DisplayServer.screen_get_dpi())
 	if is_touch: look_mode = "touch"
 	get_window().content_scale_factor = dpr
 	gpu_name = _gpu_name()
@@ -121,6 +123,7 @@ func apply_settings() -> void:
 	if ui and ui.cur == "menu": ui.refresh_menu()
 
 func _on_resize() -> void:
+	if OS.has_feature("mobile"): safe_in = insets_of(Rect2(DisplayServer.get_display_safe_area()), Vector2(DisplayServer.window_get_size()), get_window().content_scale_factor)
 	var s := get_viewport().get_visible_rect().size; var aspect := s.x / maxf(1.0, s.y)
 	# a narrow screen keeps the same width of view by opening the lens (up to 86 degrees)
 	base_fov = BASE_FOV if aspect >= 1.25 else clampf(rad_to_deg(2.0 * atan(tan(deg_to_rad(33.0)) / aspect)), BASE_FOV, 86.0)
@@ -324,14 +327,23 @@ func _ride_act() -> String:
 	return "내리기" if an.m != null else ""
 
 ## the touch layout of the browser game: the D-pad at the left middle, the pause button top left, the map top right
-func _touch_rects() -> Dictionary:
-	var s := hud.size
-	return {"pad": Rect2(10, s.y / 2.0 - 78.0, 156, 156), "pause": Rect2(16, 14, 42, 42), "map": Rect2(s.x - 14.0 - 46.0, 14, 46, 46)}
+func _touch_rects() -> Dictionary: return touch_rects_for(hud.size, safe_in)
+static func touch_rects_for(s: Vector2, ins: Array) -> Dictionary:
+	return {"pad": Rect2(10 + ins[0], s.y / 2.0 - 78.0, 156, 156), "pause": Rect2(16 + ins[0], 14 + ins[1], 42, 42), "map": Rect2(s.x - 14.0 - 46.0 - ins[2], 14 + ins[1], 46, 46)}
+
+## the phone app's safe area (a camera hole in the screen, which Android lets the game draw round): how far in from the left,
+## top, right and bottom the touch controls keep, in the UI's units. Nothing anywhere else (a phone's browser keeps the page
+## out of it itself)
+var safe_in := [0.0, 0.0, 0.0, 0.0]
+static func insets_of(safe: Rect2, win: Vector2, scale: float) -> Array:
+	var k := 1.0 / maxf(0.01, scale)
+	return [maxf(0.0, safe.position.x * k), maxf(0.0, safe.position.y * k), maxf(0.0, (win.x - safe.end.x) * k), maxf(0.0, (win.y - safe.end.y) * k)]
 
 ## the round buttons on the right: [centre, radius, label] (a little smaller and closer on a very short screen)
-func _touch_buttons() -> Dictionary:
-	var s := hud.size; var short := s.y <= 340.0
-	var at := func(right: float, bottom: float, d: float) -> Vector2: return Vector2(s.x - right - d / 2.0, s.y - bottom - d / 2.0)
+func _touch_buttons() -> Dictionary: return touch_buttons_for(hud.size, safe_in, player.jet_on)
+static func touch_buttons_for(s: Vector2, ins: Array, jet: bool) -> Dictionary:
+	var short := s.y <= 340.0
+	var at := func(right: float, bottom: float, d: float) -> Vector2: return Vector2(s.x - right - ins[2] - d / 2.0, s.y - bottom - ins[3] - d / 2.0)
 	var b := {}
 	if short:
 		b = {"fire": [at.call(26, 104, 78), 39.0, "사격"], "ads": [at.call(116, 152, 50), 25.0, "조준"], "jump": [at.call(116, 90, 50), 25.0, "점프"], "melee": [at.call(116, 28, 50), 25.0, "근접"],
@@ -339,7 +351,7 @@ func _touch_buttons() -> Dictionary:
 	else:
 		b = {"fire": [at.call(28, 120, 84), 42.0, "사격"], "ads": [at.call(128, 170, 54), 27.0, "조준"], "jump": [at.call(128, 100, 54), 27.0, "점프"], "melee": [at.call(128, 30, 54), 27.0, "근접"],
 			"reload": [at.call(52, 220, 54), 27.0, "장전"], "swap": [at.call(116, 240, 54), 27.0, "교체"]}
-	if player.jet_on: b["down"] = [at.call(200, 96, 60), 30.0, "내려가기"]
+	if jet: b["down"] = [at.call(200, 96, 60), 30.0, "내려가기"]
 	return b
 
 ## the pill buttons low in the middle: the antidote (while infected or poisoned), getting on or the hall's key, getting off.
@@ -349,7 +361,7 @@ func _touch_pills(all := false) -> Dictionary:
 	var s := hud.size; var p := {}; var tall := s.y > s.x * 1.1; var row := s.y / 2.0 + 78.0 + 24.0
 	var pill := func(text: String, bottom: float, h: float, pad: float, fs: int, tall_y: float) -> Rect2:
 		var w := f_bold.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + pad * 2.0
-		return Rect2(16.0, tall_y, w, h) if tall else Rect2(s.x / 2.0 - w / 2.0, s.y - bottom - h, w, h)
+		return Rect2(16.0 + safe_in[0], tall_y, w, h) if tall else Rect2((s.x + safe_in[0] - safe_in[2]) / 2.0 - w / 2.0, s.y - bottom - safe_in[3] - h, w, h)
 	if all or ((game.infected or game.poison_t > 0.0) and not game.inject_on):
 		var at := "해독약 사용 (%d)" % game.antidotes if game.antidotes > 0 or all else "해독약 없음"; p["anti"] = [pill.call(at, 150, 54, 24, 15, row), at]
 	var key := world.ship != null and world.ship.key_near(); var act := "메인홀 열쇠 줍기" if key or all else _ride_act()
@@ -672,7 +684,36 @@ func _process(delta: float) -> void:
 	_perf_frame(delta, (Time.get_ticks_usec() - cpu0) / 1000.0)
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT: pause_game()
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED: pause_game()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST: _back()
+
+## a phone's page units: its screen's density over Android's 160 dpi (420 dpi: 2.625, what its browser calls the pixel ratio)
+static func phone_ratio(dpi: int) -> float: return clampf(dpi / 160.0, 1.0, 4.0)
+
+## the phone's back button (or gesture), as Esc: in a fight the pause; the map, a screen opened from another, the pause
+## itself closed; the briefing and the results back to the menu; from the menu itself, out of the app
+static func back_action(st: String, cur: String, has_back: bool) -> String:
+	match st:
+		"cutscene": return "skip"
+		"playing": return "pause"
+		"paused":
+			if cur == "map": return "close_map"
+			return "close" if has_back else "resume"
+	if has_back: return "close"
+	if st == "brief" or st == "gameover": return "menu"
+	if st == "menu": return "quit"
+	return "none"
+
+func _back() -> void:
+	if ui == null: return
+	match back_action(state, ui.cur, not ui.back_stack.is_empty()):
+		"skip": cut.skip()
+		"pause": pause_game()
+		"close_map": close_map()
+		"close": ui.close_sub()
+		"resume": resume_game()
+		"menu": ui.do_menu.call()
+		"quit": get_tree().quit()
 
 # ---------------- a door for the browser tests: window.__yarr("command") returns a small object ----------------
 func _bridge() -> void:

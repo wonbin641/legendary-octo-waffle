@@ -882,6 +882,7 @@ func _ready() -> void:
 	pr.clear()
 	_team_modes(gm, en, pl, g, pr, w, cam)
 	_music(gm, en, pl, w)
+	_mobile()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -2011,6 +2012,42 @@ func _music(gm: Game, en: Enemies, pl: Player, w: World) -> void:
 	check("a wind-up car's battery bursting by you: the music's tape stretches", t_rc, M.log)
 	run.call({}, 2.5)
 	M.volume = keep_vol; Snd.volume = keep_svol; Snd.listener = keep_lis; M.keep_log = false; pl.invuln = 0.0
+
+## the phone app (tools/build_android.sh): what the game does differently there, and how its export is set up
+func _mobile() -> void:
+	var mn = load("res://scripts/main.gd")
+	var acts := [mn.back_action("playing", "", false), mn.back_action("paused", "map", false), mn.back_action("paused", "pause", false), mn.back_action("paused", "shop", true),
+		mn.back_action("menu", "shop", true), mn.back_action("menu", "menu", false), mn.back_action("brief", "brief", false), mn.back_action("gameover", "over", false),
+		mn.back_action("cutscene", "", false), mn.back_action("shot", "", false)]
+	check("the phone's back button, as Esc: a fight pauses; the map, a screen opened from another and the pause itself close; the briefing and the results go back to the menu; the menu leaves the app; a cutscene is skipped",
+		acts == ["pause", "close_map", "resume", "close", "close", "quit", "menu", "menu", "skip", "none"], acts)
+	check("a phone app's page units are its screen's density over 160 dpi (a 420 dpi phone: 2.625, its browser's pixel ratio)",
+		is_equal_approx(mn.phone_ratio(420), 2.625) and mn.phone_ratio(100) == 1.0 and mn.phone_ratio(160) == 1.0 and mn.phone_ratio(2000) == 4.0)
+	check("the phone app: landscape either way round (as the old app), the back button left to the game, ETC2/ASTC as Android's export asks",
+		int(ProjectSettings.get_setting("display/window/handheld/orientation")) == DisplayServer.SCREEN_SENSOR_LANDSCAPE and not bool(ProjectSettings.get_setting("application/config/quit_on_go_back"))
+		and bool(ProjectSettings.get_setting("rendering/textures/vram_compression/import_etc2_astc")))
+	var cfg := ConfigFile.new(); var err := cfg.load("res://export_presets.cfg"); var sec := ""
+	for s9 in cfg.get_sections():
+		if s9.begins_with("preset.") and not s9.ends_with(".options") and cfg.get_value(s9, "platform", "") == "Android": sec = s9 + ".options"
+	var keys: PackedStringArray = cfg.get_section_keys(sec) if sec != "" else PackedStringArray()
+	var secret := false
+	for k in keys:
+		if (k.begins_with("keystore/") or k.contains("password")) and str(cfg.get_value(sec, k)) != "": secret = true
+	check("the Android export: the old app's package (the new app updates it), signed, a version code past the old app's 29, vibration, full screen, 64-bit and 32-bit ARM; no key or password in the file",
+		err == OK and sec != "" and cfg.get_value(sec, "package/unique_name") == "app.yard07.game" and cfg.get_value(sec, "package/signed") == true and int(cfg.get_value(sec, "version/code")) > 29
+		and cfg.get_value(sec, "permissions/vibrate") == true and cfg.get_value(sec, "screen/immersive_mode") == true and cfg.get_value(sec, "architectures/arm64-v8a") == true
+		and cfg.get_value(sec, "architectures/armeabi-v7a") == true and not secret, sec)
+	var ins: Array = mn.insets_of(Rect2(96, 0, 2304, 1080), Vector2(2400, 1080), 2.625)   # (a camera hole on the left: 96 px of a 2400 x 1080 screen)
+	var s9 := Vector2(914, 411); var z4 := [0.0, 0.0, 0.0, 0.0]
+	var r0: Dictionary = mn.touch_rects_for(s9, z4); var r1: Dictionary = mn.touch_rects_for(s9, ins)
+	var b0: Dictionary = mn.touch_buttons_for(s9, z4, false); var b1: Dictionary = mn.touch_buttons_for(s9, [0.0, 0.0, 30.0, 12.0], false)
+	check("a phone app keeps its touch controls clear of a camera hole (Android 15 on draws the game under it): the pad and the pause move in by the hole; without one, all where they were",
+		absf(ins[0] - 96.0 / 2.625) < 1e-4 and ins[1] == 0.0 and ins[2] == 0.0 and ins[3] == 0.0 and r0.pad == Rect2(10, s9.y / 2.0 - 78.0, 156, 156) and r0.pause == Rect2(16, 14, 42, 42)
+		and r0.map == Rect2(s9.x - 60.0, 14, 46, 46) and is_equal_approx(r1.pad.position.x, 10.0 + ins[0]) and is_equal_approx(r1.pause.position.x, 16.0 + ins[0])
+		and is_equal_approx((b1.fire[0] as Vector2).x, (b0.fire[0] as Vector2).x - 30.0) and is_equal_approx((b1.fire[0] as Vector2).y, (b0.fire[0] as Vector2).y - 12.0), [ins, r1.pad])
+	var fg := Image.load_from_file("res://mobile/icon_fg.png"); var bg := Image.load_from_file("res://mobile/icon_bg.png")
+	check("the app's adaptive icon: the old app's foreground on its night blue, 432 px each", fg != null and bg != null and fg.get_size() == Vector2i(432, 432) and bg.get_size() == Vector2i(432, 432)
+		and bg.get_pixel(10, 10).is_equal_approx(Color("0d1220")))
 
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)

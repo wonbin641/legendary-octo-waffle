@@ -17,7 +17,7 @@ static func save0() -> Dictionary:
 	return {"v": 4, "money": 0, "cleared": [], "best": {}, "loadout": ["pistol", null, null, null, null, null, null], "rented": [], "owned": [], "items": {"helmet": 0, "vest": 0, "jet": 0, "ivory": 0}, "custom": {}, "toy_order": Toys.ORDER.duplicate()}
 
 func _ready() -> void:
-	var touch: bool = OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
+	var touch: bool = OS.has_feature("mobile") or OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
 	settings = {"sens": 1.0, "vol": 0.7, "music": 0.7, "autoFire": touch, "gfx": "auto", "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8", "mailTo": ""}
 	var s = _read("settings")
 	if s is Dictionary: settings.merge(s, true)
