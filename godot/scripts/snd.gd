@@ -4,7 +4,8 @@ extends Node
 ## noise and a few pitches are drawn afresh every time), one of which plays each time, at its own pitch. A sound with a
 ## place is panned as the browser game's StereoPanner pans it and quietened with distance as there, and everything goes
 ## through the browser game's master compressor (as measured: +0.74 dB below about -8 dB, a little held back above).
-## Stage 5's toys (tools/make_sounds.py) play as they always have.
+## Stage 5's toys (tools/make_sounds.py) play as they always have. Stage 5's music (scripts/music.gd) has a bus of its own,
+## straight to the master, with a low-pass for under the bed.
 ## The web build plays each sound as a sample of the browser's own Web Audio, where Godot's buses carry no effects: there
 ## the browser game's own nodes go into the mix instead (WEB_MIX), so the pan and the compressor are the browser game's to the letter.
 
@@ -14,6 +15,9 @@ var _players: Array[AudioStreamPlayer] = []
 var _panners: Array[AudioEffectPanner] = []
 var _voice_bus: Array[int] = []
 var _web: JavaScriptObject = null   # the web build's mix (WEB_MIX), when the sounds are the browser's samples there
+var music_bus := -1
+var _music_lp: AudioEffectLowPassFilter
+var _lp_hz := -1.0
 var _next := 0
 var volume := 0.7
 var listener := Vector3.ZERO
@@ -25,7 +29,7 @@ func _ready() -> void:
 	# the mix and a bus for each voice, all made at once (the web build's own list of them, in the browser, keeps Godot's order so;
 	# added one by one with add_bus() each new one goes in there before the last, the sends then join the wrong buses and the
 	# sound feeds round on itself)
-	var mix := AudioServer.bus_count; AudioServer.bus_count = mix + 13
+	var mix := AudioServer.bus_count; AudioServer.bus_count = mix + 14
 	AudioServer.set_bus_name(mix, "Mix"); AudioServer.set_bus_send(mix, "Master")
 	# the browser game's master compressor (threshold -14 dB, ratio 6, Web Audio's soft knee), fitted to what it measures
 	var comp := AudioEffectCompressor.new(); comp.threshold = -5.6; comp.ratio = 1.3; comp.gain = 0.74; comp.attack_us = 3000.0; comp.release_ms = 250.0
@@ -34,6 +38,9 @@ func _ready() -> void:
 		var b := mix + 1 + i; AudioServer.set_bus_name(b, "Voice%d" % i); AudioServer.set_bus_send(b, "Mix")
 		var pn := AudioEffectPanner.new(); AudioServer.add_bus_effect(b, pn); _panners.push_back(pn); _voice_bus.push_back(b)
 		var p := AudioStreamPlayer.new(); p.bus = "Voice%d" % i; add_child(p); _players.push_back(p)
+	music_bus = mix + 13; AudioServer.set_bus_name(music_bus, "Music"); AudioServer.set_bus_send(music_bus, "Master")
+	_music_lp = AudioEffectLowPassFilter.new(); _music_lp.cutoff_hz = 20000.0; _music_lp.resonance = 0.5
+	AudioServer.add_bus_effect(music_bus, _music_lp); AudioServer.set_bus_effect_enabled(music_bus, 0, false)
 	# the web build (single-threaded) plays sounds as samples ("audio/general/default_playback_type" 1 there), its buses bare
 	if OS.has_feature("web") and int(ProjectSettings.get_setting_with_override("audio/general/default_playback_type")) == 1:
 		JavaScriptBridge.eval(WEB_MIX, false)   # (in the engine's own context, where its audio is: GodotAudio)
@@ -65,8 +72,54 @@ const WEB_MIX := """window.__yarrSnd = (function (A) {
 		p.channelCount = placed ? 1 : 2; p.pan.value = placed ? pan : 0;
 		return true;
 	};
+	o.now = () => (A.ctx ? A.ctx.currentTime : 0);   // the browser's audio clock
+	o.musicIds = new Set();
+	o.loopMusic = (ids) => {   // the music's samples loop in the browser's own audio, to the sample (Godot's web runtime starts a loop
+		for (const id of String(ids).split(',')) if (id) o.musicIds.add(id);   // over when it hears it has ended: the layers would drift apart)
+		const P = A.SampleNode && A.SampleNode.prototype;
+		if (!P) return false;
+		if (!P.__yarrLoop) {
+			const add = P._addEndedListener;
+			P._addEndedListener = function () {
+				add.call(this);
+				if (this._source && o.musicIds.has(String(this.streamObjectId))) { this._source.loop = true; this._source.loopStart = 0; this._source.loopEnd = 0; }
+			};
+			P.__yarrLoop = true;
+		}
+		return true;
+	};
+	o.lowpass = (bus, hz) => {   // the music's bus: a low-pass, gliding to its new frequency
+		const b = A.ctx && A.buses ? A.buses[bus] : null;
+		if (!b) return false;
+		let f = b.__yarr;
+		if (!f) { f = put(b, [A.ctx.createBiquadFilter()]); f.type = 'lowpass'; f.Q.value = 0.7; f.frequency.value = hz; }
+		f.frequency.setTargetAtTime(hz, A.ctx.currentTime, 0.05);
+		return true;
+	};
 	return o;
 })(GodotAudio);"""
+
+## the audio's clock, in seconds: the browser's own on the web (it runs whatever the frame rate, and stands still while the
+## page's audio sleeps), the wall clock elsewhere
+func audio_clock() -> float:
+	if _web != null: return float(_web.now())
+	return Time.get_ticks_usec() / 1000000.0
+
+## the music's loops, on the web: looped by the browser itself (see WEB_MIX), so the layers stay together
+func music_loops(streams: Array) -> void:
+	if _web == null: return
+	var ids := PackedStringArray()
+	for st: AudioStream in streams: ids.push_back(str(st.get_instance_id()))
+	_web.loopMusic(",".join(ids))
+
+## the music's low-pass (under the bed): Godot's filter on the bus, the browser's own on the web (where the bus carries none)
+func music_lowpass(hz: float) -> void:
+	if absf(hz - _lp_hz) < maxf(1.0, _lp_hz * 0.01): return
+	_lp_hz = hz
+	if _web != null:
+		if not _web.lowpass(music_bus, hz): _lp_hz = -1.0   # (the browser's audio not up yet: again next time)
+		return
+	_music_lp.cutoff_hz = hz; AudioServer.set_bus_effect_enabled(music_bus, 0, hz < 18000.0)
 
 ## a sound's takes: name.wav and name__1..3.wav
 func takes(name: String) -> Array:

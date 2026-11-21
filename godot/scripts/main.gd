@@ -115,7 +115,7 @@ func apply_settings() -> void:
 	if look_mode == "touch" and world.use_ao: world.use_ao = false; world.set_ao(false)
 	if not is_touch and str(Store.settings.gfx) != world.gfx_mode: world.gfx_set_mode(str(Store.settings.gfx))   # the 그래픽 setting
 	enemies.phone = look_mode == "touch"   # no enemy casts the moon's shadow on a phone, as there
-	Snd.volume = float(Store.settings.vol); player.sens = float(Store.settings.sens)
+	Snd.volume = float(Store.settings.vol); Music.volume = float(Store.settings.get("music", 0.7)); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
 	for id in Weapons.ORDER: gm_models.apply_look(id, Custom.setup(id))   # parts and paint
 	if ui and ui.cur == "menu": ui.refresh_menu()
@@ -599,9 +599,32 @@ func _cut_step(dt: float) -> void:
 	if world.ship != null: world.ship.anim_door(dt)
 	Snd.listener = cam.global_position; Snd.listener_yaw = cam.rotation.y
 
+## stage 5's music (scripts/music.gd): the briefing's and the results' music box, the match's march and what it should
+## follow (waiting to come back, under the bed, enemies about you, your shots and hurts, the last 30 seconds of the clock)
+var _near_t := 0.0; var _near := 0
+func music_ctx(dt: float) -> Dictionary:
+	if world.toy == null or (state != "playing" and state != "paused"): return music_for(state, world.toy != null, null, false, Vector3.ZERO, false, 0, 0, 0.0)
+	_near_t -= dt
+	if _near_t <= 0.0:
+		_near_t = 0.3; _near = 0
+		for e in enemies.list:   # (a team match's are all theirs and all fighting; the sweep's count once they are after you)
+			if e.alive and (game.tm != null or e.alert) and Vector2(e.pos.x - player.pos.x, e.pos.z - player.pos.z).length() < 20.0: _near += 1
+	return music_for(state, true, game.tm, game.ended, player.pos, player.out, _near, guns.shots, player.hp)
+
+static func music_for(st: String, toy: bool, tm, ended: bool, pos: Vector3, out: bool, near: int, shots: int, hp: float) -> Dictionary:
+	if not toy: return {}
+	if st == "brief" or st == "gameover": return {"what": "lobby"}
+	if st != "playing" and st != "paused": return {}
+	var ot := false
+	if tm != null and not ended:
+		var tl: float = tm.mode.time_left
+		ot = (tl > 0.0 and tl <= Music.OT_AT) or bool(tm.mode.get("overtime"))
+	return {"what": "march", "paused": st == "paused", "spawn": out, "bed": ToyRoom.under_bed(pos), "near": near, "shots": shots, "hp": hp, "ot": ot, "teams": tm != null}
+
 var hold := false
 func _process(delta: float) -> void:
 	var cpu0 := Time.get_ticks_usec()   # (the frame's own work, as the browser game's readout counts it)
+	Music.update(minf(delta, 0.1), music_ctx(minf(delta, 0.1)))
 	if not is_touch and state == "playing": world.govern(delta)   # (the browser game's ladder runs while you play)
 	enemies.esh = Enemies.ESH[world.gfx_level]   # (how far enemies still cast the moon's shadow, by the quality level)
 	var dt := minf(delta, 0.05)
@@ -720,6 +743,9 @@ func command(line: String) -> Dictionary:
 			var bl: Array = enemies.list.filter(func(e): return e.type == "brick")
 			enemies.toys._build_wall(bl[0], Vector2(0, 1))
 		"takekey": world.ship.take_key()
+		"music":   # stage 5's music: how it stands ('music blast': a blast right by you)
+			if a.size() > 1 and a[1] == "blast": Music.blast(Snd.listener)
+			return Music.status()
 		"hurt": player.invuln = 0.0; player.hurt(float(a[1]), Vector3.ZERO)
 		"loop": Snd.loop(a[1], float(a[2]))   # a sound that keeps going (rotor, jet_lo, jet_hi) at this level, stopped at 0
 		"sound":   # a sound by name, without a place, or this far to the right (x) and ahead (-z) of the camera: "sound boom 6 0"

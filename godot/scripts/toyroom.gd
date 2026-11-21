@@ -7,6 +7,8 @@ extends RefCounted
 
 const HALF := 70.0
 const BED_Y := 6.0
+const BED := [10.0, -30.0, 62.0, 30.0, 4.0]   # under the bed: [minx, minz, maxx, maxz] and below this height (the frame is at 4.4)
+static func under_bed(p: Vector3) -> bool: return p.x > BED[0] and p.x < BED[2] and p.z > BED[1] and p.z < BED[3] and p.y < BED[4]
 const DESK_Y := 9.0
 const BUNK_Y := 15.0
 const SHELF_Y := 20.0

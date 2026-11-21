@@ -355,7 +355,7 @@ func _rc(e: Enemies.Foe, dt: float, dist: float, to: Vector2) -> void:
 func rc_burst(e: Enemies.Foe) -> void:
 	var c := Vector3(e.pos.x, e.pos.y + 0.4, e.pos.z)
 	if fx: fx.spark(c); fx.spark(c + Vector3(0.3, 0.2, 0)); fx.spark(c + Vector3(-0.2, 0.3, 0.2))
-	Snd.play("toy_boom", 0.7, c)
+	Snd.play("toy_boom", 0.7, c); Music.blast(c)
 	var r = e.k.get("rider", null)
 	if r != null and r.alive: dismount(r)
 	var d := c.distance_to(Vector3(player.pos.x, player.pos.y + 0.9, player.pos.z))

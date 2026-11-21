@@ -83,7 +83,7 @@ func _rocket_hit(p: Dictionary, e) -> void:
 	var c: Vector3 = p.pos
 	if stage == 9:   # a bottle rocket: a pop of coloured stars
 		if fx: fx.firework(c)
-		Snd.play("toy_boom", 1.0, c)
+		Snd.play("toy_boom", 1.0, c); Music.blast(c)
 	else:
 		if fx: fx.explode(c, true); fx.explode(c + Vector3(0.5, 0.4, -0.4), true)
 		Snd.play("boom", 1.0, c)
@@ -100,6 +100,7 @@ func _explode(p: Dictionary) -> void:
 	var c: Vector3 = p.pos
 	if fx: fx.explode(c, true)
 	Snd.play("boom", 1.0, c); enemies.noise(c, 60)
+	if stage == 9: Music.blast(c)   # (the toy room's music: the tape stretches)
 	player.shake = maxf(player.shake, clampf(0.5 - c.distance_to(player.pos) * 0.02, 0.0, 0.5))
 	enemies.splash(c, p.radius, p.dmg)
 	_crates_near(c, p.radius)

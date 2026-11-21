@@ -881,6 +881,7 @@ func _ready() -> void:
 	check("stage 5: all hundred down is a clear", gm.ended and gm.result == "clear" and gm.kills == 100, [gm.kills, gm.result])
 	pr.clear()
 	_team_modes(gm, en, pl, g, pr, w, cam)
+	_music(gm, en, pl, w)
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -1861,7 +1862,9 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	check("the hand comes down and picks you up", pl.out and (pl.held or int(F.boxed.us) > box_us))
 	run.call(4.0)
 	check("...into the toy box: out of the fight, a point to them", pl.out and not pl.held and int(F.boxed.us) == box_us + 1 and int(tm.score.them) >= sc_them + 1 and absf(absf(pl.pos.x) - 47.0) < 3.0, [pl.pos, F.boxed])
-	run.call(ModeFreeze.BOX_BACK_YOU + 4.0)
+	for i in roundi((ModeFreeze.BOX_BACK_YOU + 4.0) / 0.5):   # (no new visit meanwhile: coming back while it looks in would be another catch)
+		if F.phase == "calm": F.next_t = 999.0
+		run.call(0.5)
 	check("...back at your base a long while later", not pl.out and pl.pos.z > 30.0 and pl.pos.x < 0.0, pl.pos)
 	# a toy of theirs moving while it looks is boxed: a point to us (everyone else keeping still: no soda on the floor or in the air, nobody still sliding)
 	for i in 20:
@@ -1892,6 +1895,122 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	# back to the sweep for whatever follows
 	Store.settings.toyMode = "sweep"; Store.save.money = money0; Store.save.best = best0; pl.in_f = 0.0
 	gm.begin(9); check("the sweep again: the hundred toys, no team mode", gm.tm == null and en.list.size() == 100)
+
+## stage 5's music (tools/make_music.py, scripts/music.gd): the files, and the player's states fed by hand with the audio's
+## time (Music.update's dt), as Main feeds them a frame at a time
+func _music(gm: Game, en: Enemies, pl: Player, w: World) -> void:
+	var M := Music; M.keep_log = true; M.log.clear()
+	var keep_vol := M.volume; var keep_svol := Snd.volume; var keep_lis := Snd.listener; M.volume = 0.6; Snd.volume = 0.7
+	# the files: the march's six layers are 16 bars at 120 (32 s), the overtime's seven the same 16 bars at 150 (25.6 s), the
+	# briefing's music box 24 s, each looping whole; the drum's lead-in, the bell and the two trumpets once
+	var bad := []
+	for k in Music.LAYERS + ["alarm"]:
+		for pre in ["m_", "o_"]:
+			if pre == "m_" and k == "alarm": continue
+			var s: AudioStream = (M._n if pre == "m_" else M._o)[k].stream
+			var want := Music.LOOP if pre == "m_" else Music.OT_LOOP
+			if s == null or not (s is AudioStreamOggVorbis) or absf(s.get_length() - want) > 0.001 or not (s as AudioStreamOggVorbis).loop: bad.push_back(pre + k)
+	for one in ["leadin", "ot_bell", "trumpet_us", "trumpet_them"]:
+		if not ResourceLoader.exists("res://music/%s.ogg" % one): bad.push_back(one)
+	var lob: AudioStream = M._lobby.stream
+	check("stage 5's music: the march's six layers 16 bars at 120 (32 s), the overtime's seven at 150 (25.6 s), the briefing's music box (24 s), all looping; the lead-in, bell and trumpets",
+		bad.is_empty() and lob != null and absf(lob.get_length() - 24.0) < 0.001 and (lob as AudioStreamOggVorbis).loop and Music.LOOP == 32.0 and is_equal_approx(Music.OT_LOOP, 25.6), bad)
+	var mb := AudioServer.get_bus_index("Music"); var mlp := AudioServer.get_bus_effect(mb, 0) as AudioEffectLowPassFilter
+	check("the music has its own bus, straight to the master (past the sounds' compressor), with a low-pass that is off until needed",
+		mb == Snd.music_bus and mb > 0 and AudioServer.get_bus_send(mb) == "Master" and mlp != null and not AudioServer.is_bus_effect_enabled(mb, 0) and M._n.war.bus == &"Music", mb)
+	var run := func(ctx: Dictionary, sec: float) -> void:
+		for i in roundi(sec / 0.05): M.update(0.05, ctx, 0.05)
+	var base := {"what": "march", "paused": false, "spawn": false, "bed": false, "near": 0, "shots": 0, "hp": 1000.0, "ot": false, "teams": true}
+	run.call({}, 3.0)
+	run.call({"what": "lobby"}, 1.5); var s_lob: Dictionary = M.status()
+	check("the music: the briefing plays the music box alone", s_lob.what == "lobby" and s_lob.playing == ["lobby"], s_lob.playing)
+	run.call(base, 0.05); var s_lead: Dictionary = M.status()
+	check("going in: the tin drum, the march's six layers already going round with it, silent, two bars before their first",
+		s_lead.what == "leadin" and s_lead.playing.has("leadin") and Music.LAYERS.all(func(k): return s_lead.playing.has("m_" + k)) and absf(s_lead.t - (Music.LOOP - Music.LEADIN + 0.05)) < 1e-3
+		and M.fade == 0.0 and M._n.war.volume_db < -80.0, s_lead)
+	run.call(base, Music.LEADIN - 0.05); var s_kick: Dictionary = M.status()
+	check("the drum done: the march from its first bar, the whole band for its first four bars", s_kick.what == "march" and s_kick.state == "battle" and s_kick.t < 0.06 and s_kick.level.war == 1.0 and M.fade == 1.0
+		and M._n.war.volume_db > -30.0, s_kick)
+	run.call(base, Music.KICKOFF + 3.0); var s_ex: Dictionary = M.status()
+	check("then, on the move: the xylophone and pizzicato over the wood block, the boomwhackers lightly; no kazoos, no music box",
+		s_ex.state == "explore" and absf(s_ex.level.xylo - 1.0) < 0.02 and absf(s_ex.level.beat - 0.85) < 0.02 and absf(s_ex.level.bass - 0.55) < 0.02 and s_ex.level.war < 0.02 and s_ex.level.box < 0.02, s_ex)
+	var bed := base.duplicate(); bed.bed = true; run.call(bed, 3.0); var s_bed: Dictionary = M.status()
+	check("under the bed: only the boomwhackers and the clock's tick-tock, the music's bus through a low-pass (900 Hz)",
+		s_bed.state == "bed" and s_bed.level.bass > 0.98 and s_bed.level.tick > 0.98 and s_bed.level.xylo < 0.02 and s_bed.level.war < 0.02 and absf(s_bed.lp - 900.0) < 5.0
+		and AudioServer.is_bus_effect_enabled(mb, 0) and absf(mlp.cutoff_hz / s_bed.lp - 1.0) < 0.02, s_bed)
+	run.call(base, 3.0)
+	check("out from under it: the filter opens and goes off", M.lp > 18000.0 and not AudioServer.is_bus_effect_enabled(mb, 0), M.lp)
+	var fight := base.duplicate(); fight.near = 3; run.call(fight, 2.0); var f1: String = M.state; var fw: float = M.level.war
+	fight.near = 0; run.call(fight, 1.0); var f2: String = M.state; run.call(fight, 8.0); var f3: String = M.state
+	check("three enemies about you: the whole band (kazoos and recorders, tin drum, toy piano); it holds a moment after, then back to the march on the move",
+		f1 == "battle" and fw > 0.9 and f2 == "battle" and f3 == "explore", [f1, fw, f2, f3])
+	var shoot := base.duplicate(); var sh := 0
+	for i in 40: sh += 1; shoot.shots = sh; M.update(0.05, shoot, 0.05)
+	var f4: String = M.state; run.call(shoot, 10.0)
+	var hurt := base.duplicate(); hurt.shots = sh; run.call(hurt, 0.5)
+	for i in 3: hurt.hp = 1000.0 - 100.0 * (i + 1); run.call(hurt, 0.3)
+	check("firing away (20 shots in two seconds) is a fight too, and so is being hit", f4 == "battle" and M.state == "battle", [f4, M.state, M.heat])
+	run.call(hurt, 10.0)
+	var down := base.duplicate(); down.spawn = true; run.call(down, 3.0); var s_sp: Dictionary = M.status()
+	run.call(base, 2.0); var sp2: String = M.state; run.call(base, 4.0); var sp3: String = M.state
+	check("down and waiting to come back: the music box, its wood block, a clock far off; back at your base a few seconds more, then the march on the move",
+		s_sp.state == "spawn" and s_sp.level.box > 0.9 and absf(s_sp.level.tick - 0.45) < 0.03 and s_sp.level.xylo < 0.05 and sp2 == "spawn" and sp3 == "explore", [s_sp.state, sp2, sp3])
+	# the overtime: the other set started silent where it will be at the next bar line, heard from that bar line
+	var ot := base.duplicate(); ot.ot = true; M.log.clear()
+	M.update(0.05, ot, 0.05); var o_prep: bool = M.switching; var o_at: float = M.t_next; var o_in: float = M.switch_in; var o_play: bool = M._o.war.playing and M._o.alarm.playing
+	var o_wait := 0.0
+	while not M.ot and o_wait < 3.0: M.update(0.05, ot, 0.05); o_wait += 0.05
+	run.call(ot, 0.3); var s_ot: Dictionary = M.status()
+	check("the last 30 seconds: the march 1.25 times as fast and a semitone up, its set started silent and taken over at the next bar line (the same bar), the alarm clock hurrying, the bell",
+		o_prep and o_play and o_in > -0.06 and o_in <= Music.BAR + 1e-6 and absf(o_at / Music.OT_BAR - roundf(o_at / Music.OT_BAR)) < 1e-6 and o_wait <= Music.BAR + 0.06 and s_ot.ot and s_ot.w_ot == 1.0
+		and not M._n.war.playing and M._o.alarm.playing and M._o.alarm.volume_db > -40.0 and M.log.has("shot ot_bell") and absf(s_ot.t - (o_at + 0.3)) < 0.06, [o_in, o_at, o_wait, s_ot.t, M.log])
+	run.call(ot, 12.0)
+	check("and the two sides' toy trumpets now and then", M.log.any(func(l): return str(l).begins_with("shot trumpet_")), M.log)
+	var back := base.duplicate(); var b_wait := 0.0
+	while M.ot and b_wait < 3.0: M.update(0.05, back, 0.05); b_wait += 0.05
+	run.call(back, 0.3)
+	check("time put back on the clock (a checkpoint): the march as it was, at the next bar line", not M.ot and b_wait <= Music.OT_BAR + 0.06 and M._n.war.playing and not M._o.war.playing, [b_wait, M.ot])
+	# a blast close by: the tape stretches
+	Snd.listener = Vector3.ZERO; M.blast(Vector3(10, 0, 0)); run.call(base, 0.5); var tp0: float = M.pitch
+	M.blast(Vector3(3, 0, 0)); run.call(base, 0.5); var tp1: float = M.pitch; var tpv: float = M._n.xylo.pitch_scale
+	run.call(base, 1.1); var tp2: float = M.pitch
+	check("a blast within 6 m: the music's tape stretches (down to 0.62 and back up over 1.5 s); one 10 m off leaves it be",
+		tp0 == 1.0 and absf(tp1 - Music.TAPE_LOW) < 1e-6 and absf(tpv - tp1) < 1e-5 and tp2 == 1.0 and Music.tape_pitch(0.0) == 1.0 and Music.tape_pitch(Music.TAPE) == 1.0 and Music.tape_pitch(1.1) > Music.TAPE_LOW, [tp0, tp1, tp2])
+	var ps := base.duplicate(); ps.paused = true; var v_play: float = M._n.xylo.volume_db; run.call(ps, 0.2); var v_pause: float = M._n.xylo.volume_db
+	M.volume = 0.0; run.call(base, 0.2); var v_off: float = M._n.xylo.volume_db; M.volume = 0.6
+	check("paused, the music goes quieter (-8 dB); the 음악 setting at 0, silent", absf((v_pause - v_play) - linear_to_db(0.4)) < 0.2 and v_off < -90.0, [v_play, v_pause, v_off])
+	var st_ui := Ui.new(); add_child(st_ui); var st_box := VBoxContainer.new(); st_ui.add_child(st_box); st_ui._settings_rows(st_box, true)
+	var st_labels := []
+	for n9 in st_box.find_children("*", "Label", true, false): st_labels.push_back((n9 as Label).text)
+	st_ui.queue_free()
+	check("the settings: 음악 under 음량 (stage 5's music, 70 to start with)", st_labels.has("음악") and st_labels.find("음악") == st_labels.find("음량") + 2 and float(Store.settings.get("music", -1.0)) >= 0.0
+		and str(load("res://scripts/store.gd").source_code).contains('"music": 0.7'), st_labels)
+	run.call({}, 2.5); var s_end: Dictionary = M.status()
+	check("anywhere but stage 5: nothing", s_end.what == "" and s_end.playing.is_empty(), s_end.playing)
+	# what Main tells it (Main.music_for), and the blasts that reach it from the toy room
+	var mn = load("res://scripts/main.gd")
+	Store.settings.toyMode = "escort"; gm.begin(9); var m_tm = gm.tm
+	var c_play: Dictionary = mn.music_for("playing", true, m_tm, false, Vector3(30, 0, 0), false, 2, 5, 900.0)
+	var c_bed_up: Dictionary = mn.music_for("playing", true, m_tm, false, Vector3(30, 6.5, 0), false, 0, 0, 1000.0)
+	var c_out: Dictionary = mn.music_for("playing", true, m_tm, false, Vector3(5, 0, 0), true, 0, 0, 1000.0)
+	var under := Phys.raycast_static(Vector3(30, 1, 0), Vector3.UP, 10.0); var under_t := Phys.rh_t
+	check("Main's word to it: the briefing's and the results' music box; in play the march, under the bed beneath the bed's frame (not on the mattress), down and waiting, paused; nothing elsewhere",
+		mn.music_for("brief", true, null, false, Vector3.ZERO, false, 0, 0, 0.0) == {"what": "lobby"} and mn.music_for("gameover", true, null, false, Vector3.ZERO, false, 0, 0, 0.0) == {"what": "lobby"}
+		and mn.music_for("playing", false, null, false, Vector3.ZERO, false, 0, 0, 0.0).is_empty() and mn.music_for("menu", true, null, false, Vector3.ZERO, false, 0, 0, 0.0).is_empty()
+		and c_play.what == "march" and c_play.bed and c_play.near == 2 and c_play.shots == 5 and not c_play.spawn and not c_bed_up.bed and not c_out.bed and c_out.spawn
+		and mn.music_for("paused", true, null, false, Vector3.ZERO, false, 0, 0, 0.0).paused and under and absf(under_t - 3.4) < 0.01, [c_play, under_t])
+	if m_tm != null:
+		m_tm.mode.time_left = 25.0; var c_ot: Dictionary = mn.music_for("playing", true, m_tm, false, Vector3.ZERO, false, 0, 0, 0.0)
+		m_tm.mode.time_left = 31.0; var c_no: Dictionary = mn.music_for("playing", true, m_tm, false, Vector3.ZERO, false, 0, 0, 0.0)
+		var c_end: Dictionary = mn.music_for("playing", true, m_tm, true, Vector3.ZERO, false, 0, 0, 0.0)
+		check("the overtime is the clock's last 30 seconds of a team mode (not after it is over)", c_ot.ot and not c_no.ot and not c_end.ot and c_ot.teams, [c_ot.ot, c_no.ot])
+	# a wind-up car's battery bursting by you, in a match: the tape
+	Store.settings.toyMode = "sweep"; gm.begin(9); run.call(base, Music.LEADIN + 0.5); M.log.clear()
+	var rc = en.list.filter(func(e): return e.type == "rc")[0]
+	pl.pos = Vector3(rc.pos.x + 1.5, rc.pos.y, rc.pos.z); Snd.listener = pl.pos; pl.invuln = 1e9; en.toys.rc_burst(rc); var t_rc: bool = M.log.has("tape")
+	check("a wind-up car's battery bursting by you: the music's tape stretches", t_rc, M.log)
+	run.call({}, 2.5)
+	M.volume = keep_vol; Snd.volume = keep_svol; Snd.listener = keep_lis; M.keep_log = false; pl.invuln = 0.0
 
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)

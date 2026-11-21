@@ -555,6 +555,7 @@ const GFX := [["auto", "자동"], ["high", "최고 화질"], ["fast", "프레임
 func _settings_rows(into: VBoxContainer, _full: bool) -> void:
 	into.add_child(_slider("터치 감도" if is_touch else "마우스 감도", "sens", 0.2, 3.0, 0.1, func(v: float) -> String: return "%.1f" % v))
 	into.add_child(_slider("음량", "vol", 0.0, 1.0, 0.05, func(v: float) -> String: return str(roundi(v * 100))))
+	into.add_child(_slider("음악", "music", 0.0, 1.0, 0.05, func(v: float) -> String: return str(roundi(v * 100))))   # (stage 5's music)
 	if is_touch: into.add_child(_check("자동 사격", "autoFire"))
 	else:
 		var gr := hbox(10); into.add_child(gr); var gl := lbl("그래픽", f_body, 14, INK); gl.custom_minimum_size = Vector2(96, 0); gr.add_child(gl)

@@ -441,7 +441,7 @@ func _wake(dt: float) -> void:
 		if fx() and randf() < 0.5: fx().puff(p, 1, 0.9, 0.4)
 		if f >= 1.0:
 			if fx(): fx().explode(q.to, false, [1.0, 0.6, 0.2])
-			Snd.play("toy_boom", 1.0, q.to); (q.node as Node3D).queue_free(); missiles.remove_at(i)
+			Snd.play("toy_boom", 1.0, q.to); Music.blast(q.to); (q.node as Node3D).queue_free(); missiles.remove_at(i)
 	if before < 4.1 and wake_t >= 4.1: _crumble(other)
 	if wake_t >= 6.6 and phase == "wake":
 		phase = "done"

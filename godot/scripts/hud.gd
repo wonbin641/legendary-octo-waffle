@@ -325,11 +325,13 @@ func _targets(ci: Control, c: Vector2, g: Game, pl: Player) -> void:
 ## theirs that carry one
 func _friends(ci: Control, g: Game) -> void:
 	var cam: Camera3D = m.cam; var T: ToyMatch = g.tm
+	var room := Rect2(Vector2(-200, -200), ci.size + Vector2(400, 400))   # (a mark right by the lens projects to nowhere: none drawn there)
 	for a in T.allies:
 		if not a.alive or bool(a.k.get("gone", false)): continue
 		var top: Vector3 = a.pos + Vector3(0, a.H + 0.6, 0)
 		if cam.is_position_behind(top) or top.distance_to(cam.global_position) > 80.0: continue
 		var p := cam.unproject_position(top); var col := Color("5f9cff")
+		if not p.is_finite() or not room.has_point(p): continue
 		ci.draw_colored_polygon(PackedVector2Array([p + Vector2(-6, -8), p + Vector2(6, -8), p + Vector2(0, 0)]), col)
 		if a.k.carrying != null: ci.draw_rect(Rect2(p.x - 4, p.y - 22, 8, 12), Color("ffd23a"))
 	for e in m.enemies.list:
@@ -337,6 +339,7 @@ func _friends(ci: Control, g: Game) -> void:
 		var top2: Vector3 = e.pos + Vector3(0, e.H + 0.9, 0)
 		if cam.is_position_behind(top2): continue
 		var q := cam.unproject_position(top2)
+		if not q.is_finite() or not room.has_point(q): continue
 		ci.draw_rect(Rect2(q.x - 5, q.y - 16, 10, 14), Color("ff5260")); ci.draw_rect(Rect2(q.x - 2, q.y - 19, 4, 3), Color("ff5260"))
 
 ## the rocket launcher's lock: a turning red diamond on the enemy the next rocket would chase

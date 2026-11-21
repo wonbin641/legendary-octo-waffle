@@ -345,7 +345,7 @@ func _cans(dt: float) -> void:
 			var gy := Phys.ground_at(np.x, np.y + 1.0, np.z, 0.3); _burst(Vector3(np.x, gy, np.z))
 
 func _burst(at: Vector3) -> void:
-	Snd.play("toy_glug", 1.0, at); Snd.play("hiss", 1.0, at)
+	Snd.play("toy_glug", 1.0, at); Snd.play("hiss", 1.0, at); Music.blast(at)   # (a can bursting by you: the music's tape stretches)
 	if m.fx: m.fx.puff(at + Vector3(0, 0.4, 0), 10, 0.95, 0.9); m.fx.sparks(at + Vector3(0, 0.3, 0), 12, [0.85, 0.6, 0.3], 3.0)
 	var n := MeshInstance3D.new(); var c := CylinderMesh.new(); c.top_radius = PUDDLE_R; c.bottom_radius = PUDDLE_R; c.height = 0.04; n.mesh = c
 	var mat := StandardMaterial3D.new(); mat.albedo_color = Color(0.55, 0.3, 0.12, 0.6); mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.roughness = 0.05; mat.metallic = 0.2
