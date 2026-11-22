@@ -98,6 +98,7 @@ godot --headless --path godot res://tests/run.tscn   # 브라우저판에서 뽑
 godot --headless --path godot res://tests/fight.tscn # 스테이지마다 자동으로 싸워 보기 (1분 남짓)
 node godot/tests/web_sound.js                   # 웹판(build/godot-web)의 소리 섞기: 좌우 패닝, 압축기, 버스 연결, 스테이지 5 음악
 python3 tools/make_music.py                     # 스테이지 5의 배경 음악(godot/music/*.ogg)을 다시 만들기 (numpy, ffmpeg의 libvorbis)
+python3 tools/make_review_bundle.py             # 다른 AI에게 코드 리뷰를 맡길 묶음(build/review/: 안내 REVIEW.md, 분야별 코드 9묶음, 압축 파일)
 node tests/dump_reference.js                    # 기준 자료(godot/tests/reference_stage1.json)를 브라우저판에서 다시 뽑기
 ```
 
