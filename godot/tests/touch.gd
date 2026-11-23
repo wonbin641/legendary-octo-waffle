@@ -21,6 +21,10 @@ func _lift(p: Vector2) -> void:
 	var e := InputEventScreenTouch.new(); e.position = p * K; e.pressed = false; Input.parse_input_event(e); await _frames()
 func _tap(p: Vector2) -> void:
 	await _press(p); await _lift(p)
+## the Esc key pressed and let go, as a keyboard sends it
+func _esc() -> void:
+	for down in [true, false]:
+		var e := InputEventKey.new(); e.keycode = KEY_ESCAPE; e.physical_keycode = KEY_ESCAPE; e.pressed = down; Input.parse_input_event(e); await _frames()
 ## a finger pressed at p, moved by `by` over ten frames and lifted there
 func _drag(p: Vector2, by: Vector2) -> void:
 	await _press(p)
@@ -113,6 +117,13 @@ func _ready() -> void:
 		main.look_mode == "touch" and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and held and not main.guns.trigger and main.guns.shots - sh0 >= 1, [main.look_mode, held, main.guns.shots - sh0])
 	# the weapon layout in the pause of a stage (where it was first seen not to scroll)
 	main.pause_game(); await _frames(); ui.open_sub("loadout"); await _frames(); await _layout_checks("a stage's pause")
+	# there, emptied, the layout is not shut by the phone's back button or by Esc either (as by 완료); with a gun put back, Esc shuts it
+	var lo_keep: Array = (Store.save.loadout as Array).duplicate(); Store.save.loadout = [null, null, null, null, null, null, null]; ui.render_loadout(); await _frames()
+	main._back(); await _frames(); var by_back: String = ui.cur
+	await _esc(); var by_esc: String = ui.cur
+	Store.save.loadout = lo_keep; await _esc()
+	check("in a fight the emptied weapon layout stays open by the phone's back button and by Esc (as by 완료); with a gun put back, Esc shuts it",
+		by_back == "loadout" and by_esc == "loadout" and ui.cur == "pause", [by_back, by_esc, ui.cur])
 	main.to_menu(); Store.save = keep_save; Store.settings = keep_settings; Store.persist(); Store.persist_settings()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)

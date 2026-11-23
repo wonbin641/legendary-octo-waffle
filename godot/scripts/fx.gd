@@ -94,13 +94,18 @@ static func _dot_tex() -> ImageTexture:
 ## one speck of light (FX.glow.emit): where, how fast, how long, width at start and end, colour with alpha, gravity, drag
 ## the browser game's specks are drawn by a shader of its own that writes their colour straight to the screen, with no tone
 ## mapping: here every material is tone mapped, so a speck gets the colour that tone maps to the one asked for
-## (stage 5's own bits keep theirs). Cached per colour; the stage's exposure is set by World
+## (stage 5's own bits keep theirs). Cached per colour, to 1/255 a channel (a speck's colour on the screen has 8 bits a channel
+## anyway), so colours picked at random a speck at a time come to a few hundred, worked out once each (about 0.26 ms each);
+## and the cache is let go of past SHOWN_MAX colours rather than growing for ever. The stage's exposure is set by World
 static var exposure := 1.15
 static var _shown := {}
+const SHOWN_MAX := 2048
 static func shown(c: Color) -> Color:
-	var k := Vector4(c.r, c.g, c.b, exposure)
+	var q := Vector3(roundf(c.r * 255.0), roundf(c.g * 255.0), roundf(c.b * 255.0))
+	var k := Vector4(q.x, q.y, q.z, exposure)
 	if not _shown.has(k):
-		var t := Vector3(minf(c.r, 0.97), minf(c.g, 0.97), minf(c.b, 0.97))   # tone mapping never quite reaches white
+		if _shown.size() >= SHOWN_MAX: _shown.clear()
+		var t := Vector3(minf(q.x / 255.0, 0.97), minf(q.y / 255.0, 0.97), minf(q.z / 255.0, 0.97))   # tone mapping never quite reaches white
 		var a := Gfx.albedo_of(Gfx.scene_for(t, exposure)); _shown[k] = Color(a.x, a.y, a.z)
 	var r: Color = _shown[k]
 	return Color(r.r, r.g, r.b, c.a)

@@ -898,6 +898,7 @@ func _ready() -> void:
 	_team_modes(gm, en, pl, g, pr, w, cam)
 	_music(gm, en, pl, w)
 	_mobile()
+	_fixes_153(gm, en, pl, g, pr, cam, fxn)
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -2128,6 +2129,106 @@ func _mobile() -> void:
 	var fg := Image.load_from_file("res://mobile/icon_fg.png"); var bg := Image.load_from_file("res://mobile/icon_bg.png")
 	check("the app's adaptive icon: the old app's foreground on its night blue, 432 px each", fg != null and bg != null and fg.get_size() == Vector2i(432, 432) and bg.get_size() == Vector2i(432, 432)
 		and bg.get_pixel(10, 10).is_equal_approx(Color("0d1220")))
+
+# ---------------- the bug note's 15-20 (godot/BUGS.md), fixed in 1.5.3 ----------------
+func _fixes_153(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, cam: Camera3D, fxn: Fx) -> void:
+	var keep_save: Dictionary = Store.save.duplicate(true); var keep_cam := cam.global_transform
+	# 15: the briefing and the result sheet are drawn again when you come back to them
+	Store.save = Store.save0(); Store.save.loadout = [null, null, null, null, null, null, null]; Store.save.money = 50000
+	var fu := Ui.new(); var fg := Game.new(); fu.game = fg   # (with the game's own fonts; freed at once when done, so it is never drawn without its map)
+	fu.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); fu.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+	fu.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); fu.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
+	add_child(fu); fu._build_brief(); fu._build_loadout(); fu._build_shop(); fu._build_over(); fu._build_dialog()
+	fu.sel = 1; fu.show_screen("brief"); var b_shut: bool = fu.br_go.disabled
+	fu.open_sub("loadout"); Store.save.loadout[0] = "pistol"; fu.back()   # (a gun put in, the layout left by Esc or the back button)
+	check("bug 15: a briefing come back to from the weapon layout is drawn again: the gun put in is listed and 출동 opens",
+		b_shut and fu.cur == "brief" and not fu.br_go.disabled and fu.br_gear.text.contains("1 " + Weapons.LIST.pistol.short), [b_shut, fu.cur, fu.br_go.disabled, fu.br_gear.text])
+	fu.show_result("dead"); var ov0: String = (fu.ov.best as Label).text
+	fu.shop_ctx = 1; fu.open_sub("shop"); Store.save.money += 120000; fu.back()   # (as if ivory were sold in the shop)
+	check("bug 15: the result sheet come back to from the shop shows the bag as it is now",
+		ov0.ends_with("가방 " + Store.won(50000)) and fu.cur == "over" and (fu.ov.best as Label).text.ends_with("가방 " + Store.won(170000)), [ov0, (fu.ov.best as Label).text])
+	# 16: the reset and the save start on 취소/닫기, the load and the password on 확인 (and then their box)
+	var focus_on := {}
+	for kd in ["reset", "save", "load", "dev"]:
+		fu.open_dialog(kd); fu._focus_first(fu.screens.dlg)
+		focus_on[kd] = "cancel" if fu.dlg_cancel.has_focus() else ("ok" if fu.dlg_ok.has_focus() else "none")
+		fu.close_sub()
+	check("bug 16: the reset's and the save's first focus is 취소/닫기 (one Enter or Space wipes nothing), as the browser game's; the load and the password start on their own button",
+		focus_on == {"reset": "cancel", "save": "cancel", "load": "ok", "dev": "ok"}, focus_on)
+	# 17: in a fight the weapon layout is not left with no gun in it, however it is closed
+	fu.in_stage = true; fu.show_screen("brief"); fu.back_stack.clear(); Store.save.loadout = [null, null, null, null, null, null, null]
+	fu.open_sub("loadout"); fu.lo_msg.text = ""; fu.back(); var l_back: String = fu.cur; var l_msg: String = fu.lo_msg.text
+	var done_b: Button = null
+	for b9 in (fu.screens.loadout as Control).find_children("*", "Button", true, false):
+		if (b9 as Button).text == "완료": done_b = b9
+	fu.lo_msg.text = ""; done_b.pressed.emit(); var l_done: String = fu.cur; var l_msg2: String = fu.lo_msg.text
+	Store.save.loadout[0] = "pistol"; fu.back(); var l_ok: String = fu.cur; fu.in_stage = false
+	check("bug 17: in a fight the weapon layout is not shut with no gun in it, by Esc or the back button as by 완료; with a gun in it, it shuts",
+		l_back == "loadout" and l_done == "loadout" and l_msg == "싸우는 중에는 무기를 하나 이상 넣어야 합니다" and l_msg2 == l_msg and l_ok == "brief", [l_back, l_done, l_msg, l_ok])
+	# 18: stage 5's shop rents no gun (the toy room hands you its nine toy guns), and what you rented waits for the next stage
+	var presses := func() -> Array:
+		var out := []
+		for b9 in fu.shop_list.find_children("*", "Button", true, false):
+			var t9: String = (b9 as Button).text
+			if t9 == "대여" or t9 == "대여 취소" or t9 == "무기 편성" or t9.begins_with("총알 +100") or t9.begins_with("로켓 +1"): out.push_back(t9)
+		return out
+	var says := func() -> String:
+		var out := ""
+		for l9 in fu.shop_list.get_children():
+			if l9 is Label: out += (l9 as Label).text + "|"
+		return out
+	Store.save = Store.save0(); Store.save.money = 1000000; Store.save.rented = ["gl"]; Store.save.loadout = ["pistol", "gl", null, null, null, null, null]
+	fg.stage = 9; fu.back_stack = ["brief"]; fu.shop_ctx = 9; fu.render_shop(); var t_brief: Array = presses.call(); var t_say: String = says.call()
+	fu.in_stage = true; fu.back_stack = ["pause"]; fu.render_shop(); var t_pause: Array = presses.call(); fu.in_stage = false
+	fg.stage = 1; fu.back_stack = ["brief"]; fu.shop_ctx = 1; fu.render_shop(); var t_one: Array = presses.call()
+	check("bug 18: stage 5's shop (from its briefing or its pause) has no gun to rent, cancel, load or put in the layout, and says why; another stage's has",
+		t_brief.is_empty() and t_pause.is_empty() and t_say.contains("장난감 방에서는 장난감 총만 씁니다") and t_one.has("대여") and t_one.has("대여 취소"), [t_brief, t_pause, t_one.size(), t_say.left(160)])
+	var rr := Game.new(); rr.stage = 9; rr.deployed = true; rr.return_rentals(); var r9: Array = (Store.save.rented as Array).duplicate()
+	rr.stage = 1; rr.deployed = true; rr.return_rentals()
+	check("bug 18: a rental is not used up by stage 5 (its toy guns only): it waits for the next stage, and goes back when that one ends",
+		r9 == ["gl"] and not rr.deployed and (Store.save.rented as Array).is_empty(), [r9, Store.save.rented])
+	fu.back_stack.clear(); fu.free()
+	# 19: what the guided rocket locks on to
+	var fk := Enemies.Foe.new(); fk.g = Node3D.new(); fk.dist = 100.0
+	var lk := [en.lockable(fk)]
+	fk.ridden = true; lk.push_back(en.lockable(fk)); fk.ridden = false
+	fk.caged = true; lk.push_back(en.lockable(fk)); fk.caged = false
+	fk.g.visible = false; lk.push_back(en.lockable(fk)); fk.g.visible = true
+	fk.T = {"mode": "mine"}; fk.bs = "hidden"; lk.push_back(en.lockable(fk)); fk.bs = ""; lk.push_back(en.lockable(fk)); fk.bs = "run"; lk.push_back(en.lockable(fk)); fk.T = {}; fk.bs = ""
+	fk.toy = true; fk.type = "soldier"; fk.k = {"still": ToyFoes.CAMO_AFTER + 1.0, "reveal": 0.0, "gone": false}; lk.push_back(en.lockable(fk))
+	fk.dist = 5.0; lk.push_back(en.lockable(fk)); fk.k.gone = true; lk.push_back(en.lockable(fk)); fk.g.free()
+	check("bug 19: what a guided rocket may lock on to, as the browser game's: not a beast you ride, one in a cage, one too far off to be drawn, a spider mine lying buried or not yet set (one running at you it may), nor in stage 5 a toy soldier gone in its blink or hiding farther off than its bar shows",
+		lk == [true, false, false, false, false, false, true, false, true, false], lk)
+	Store.save = Store.save0(); gm.begin(4); var lm = null; var lo := Vector3.ZERO
+	for e9 in en.list:
+		if not (e9.alive and e9.type == "mine" and e9.bs == "hidden"): continue
+		e9.pos.y = float(e9.k.baseY)   # (on the floor, as when it wakes: only its state differs between the two looks)
+		var c9: Vector3 = pr.rocket_centre(e9)
+		for off: Vector3 in [Vector3(0, 1.6, 6), Vector3(6, 1.6, 0), Vector3(0, 1.6, -6), Vector3(-6, 1.6, 0)]:
+			if Phys.line_of_sight(c9 + off, c9): lm = e9; lo = c9 + off; break
+		if lm != null: break
+		e9.pos.y = float(e9.k.baseY) - 0.16
+	var lk_hid = null; var lk_run = null
+	if lm != null:
+		cam.global_position = lo; cam.look_at(pr.rocket_centre(lm)); lk_hid = g.rocket_lock(); lm.bs = "run"; lk_run = g.rocket_lock(); lm.bs = "hidden"
+	check("bug 19: in stage 4 the lock passes over a spider mine lying buried in the middle of the sights, and takes it once it is up and running",
+		lm != null and lk_hid != lm and lk_run == lm, [lm != null, lk_hid == lm, lk_run == lm])
+	# 20: 1-2's flamethrower man's fire, and the cache of screen colours
+	var keep_fx = en.fx; en.fx = fxn; gm.begin(5); pl.invuln = 1e9; var fm = null
+	for e9 in en.list:
+		if e9.alive and e9.kit == "flame": fm = e9; break
+	Fx._shown.clear(); var f_cols := -1; var f_specks := 0
+	if fm != null:
+		for i in 120: fm.flame_on = 1.0; en._fight(fm, 1.0 / 60.0, 5.0)
+		f_cols = Fx._shown.size(); f_specks = fxn._glow.p.size()
+	en.fx = keep_fx
+	Fx._shown.clear()
+	for i in 200: Fx.shown(Color(1.0, 0.5 + i * 1e-5, 0.1))
+	var f_near := Fx._shown.size()
+	for i in Fx.SHOWN_MAX + 40: Fx.shown(Color(float(i & 63) / 63.0, float((i >> 6) & 63) / 63.0, 0.5))
+	check("bug 20: 1-2's flamethrower man's fire (360 specks in 2 s) has its screen colours worked out six times at most; colours nearer than 1/255 share one; and the cache is let go of past 2,048 colours",
+		fm != null and f_specks > 0 and f_cols >= 1 and f_cols <= Enemies.FLAME_COLS.size() and f_near == 1 and Fx._shown.size() <= Fx.SHOWN_MAX, [f_cols, f_specks, f_near, Fx._shown.size()])
+	Fx._shown.clear(); Store.save = keep_save; cam.global_transform = keep_cam
 
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)

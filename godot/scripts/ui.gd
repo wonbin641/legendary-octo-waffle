@@ -116,6 +116,8 @@ func show_screen(key: String) -> void:
 		"codex": render_codex()
 		"settings": render_settings()
 		"pause": render_pause()
+		"brief": _brief_gear()   # (back from the layout or the shop: the guns to deploy with, the kit, whether 출동 can be pressed)
+		"over": _over_money()    # (back from the shop: the bag as it is now)
 	if key != "": _focus_first.call_deferred(screens[key])
 
 func _focus_first(n: Node) -> void:
@@ -344,19 +346,25 @@ func _row(title: String, tag: String, desc: String, state: String, price: String
 func _head(t: String, color := STEEL) -> Label:
 	return lbl(t, f_mono, 12, color)
 
+## the shop in stage 5's run (its briefing, its pause, its result sheet): the toy room hands you its nine toy guns, so there no gun is
+## rented, given bullets or put in the layout (what you rented before waits for the next stage: Game.return_rentals)
+func toy_shop() -> bool:
+	return game != null and game.stage == 9 and (in_stage or back_stack.has("brief") or back_stack.has("over"))
+
 func _gun_row(id: String, rec := false) -> Control:
 	var W: Dictionary = Custom.weapon(id); var rented: bool = Store.save.rented.has(id); var owned: bool = Store.save.owned.has(id); var free: bool = id == "pistol" or Store.settings.dev
-	var has: bool = free or rented or owned; var fee := Weapons.rent(id); var mid := in_stage
+	var has: bool = free or rented or owned; var fee := Weapons.rent(id); var mid := in_stage; var toy := toy_shop()
 	var price := "무료" if id == "pistol" else ("무료 · 개발자 모드" if Store.settings.dev else ("보유 · 영구 (보물상자)" if owned else ("대여 중" if rented else "대여료 " + Store.won(fee))))
 	var bs := []
-	if not has: bs.push_back(["대여", func() -> void: shop_msg.text = Meta.rent(id, mid); _after_buy(), Store.save.money < fee])
+	if toy: pass   # (the row as it is, with nothing to press)
+	elif not has: bs.push_back(["대여", func() -> void: shop_msg.text = Meta.rent(id, mid); _after_buy(), Store.save.money < fee])
 	elif rented and not owned and not mid and not Store.settings.dev: bs.push_back(["대여 취소", func() -> void: shop_msg.text = Meta.cancel_rent(id); _after_buy()])
-	if has and mid and Weapons.AMMO100.has(id):
+	if has and mid and not toy and Weapons.AMMO100.has(id):
 		var c: int = 0 if Store.settings.dev else Weapons.AMMO100[id]; var rk: bool = W.get("rocket", false); var st: Dictionary = guns.wstate[id]
 		bs.push_back([("로켓 +1 · " if rk else "총알 +100 · ") + (Store.won(c) if c > 0 else "무료") + (" (%d/12)" % int(st.mag + st.reserve) if rk else ""), func() -> void: shop_msg.text = Meta.buy_ammo(id, guns); _after_buy(), Store.save.money < c])
 	var in_lo: bool = Store.save.loadout.has(id)
-	var state := "" if not has else ("%d번 칸" % (Store.save.loadout.find(id) + 1) if in_lo else "빈 칸이 없어 무기 편성에서 넣어 주세요" if not Store.save.loadout.has(null) else "무기 편성에서 넣어 주세요")
-	if has and not in_lo and Store.save.loadout.has(null): bs.push_back(["무기 편성", func() -> void: Meta.place(id); _after_buy()])
+	var state := "" if (not has or toy) else ("%d번 칸" % (Store.save.loadout.find(id) + 1) if in_lo else "빈 칸이 없어 무기 편성에서 넣어 주세요" if not Store.save.loadout.has(null) else "무기 편성에서 넣어 주세요")
+	if has and not toy and not in_lo and Store.save.loadout.has(null): bs.push_back(["무기 편성", func() -> void: Meta.place(id); _after_buy()])
 	return _row(W.name, W.model, W.cls + " · 총알 " + ("무제한" if W.reserve == INF else "%d발" % int(W.reserve)) + (" · " + W.note if W.has("note") else ""), state, price, bs, has,
 		[["피해", (W.dmg * W.pellets) / 170.0], ["연사", (1.0 / W.rate) / 22.2], ["탄창", log(W.mag) / log(1200.0)]], rec)
 
@@ -372,7 +380,8 @@ func _after_buy() -> void:
 func render_shop() -> void:
 	clear(shop_list); var mid := in_stage
 	shop_money.text = "가방 " + Store.won(Store.save.money)
-	shop_head.text = "상점 · 개발자 모드: 모두 무료" if Store.settings.dev else ("상점 · 대여는 이번 스테이지 동안" if mid else "상점 · 아이템과 무기 대여")
+	var toy := toy_shop()
+	shop_head.text = "상점 · 개발자 모드: 모두 무료" if Store.settings.dev else ("상점 · 장난감 방" if toy else ("상점 · 대여는 이번 스테이지 동안" if mid else "상점 · 아이템과 무기 대여"))
 	# the stage's recommended kit, when something in it is missing
 	var miss: Array = Meta.missing(shop_ctx) if shop_ctx > 0 else []
 	if not miss.is_empty():
@@ -384,18 +393,27 @@ func render_shop() -> void:
 	var ib := [["1개 팔기", func() -> void: shop_msg.text = Meta.sell_ivory(1); render_shop(), can < 1]]
 	if can > 1: ib.push_back(["모두 팔기 · " + Store.won(Meta.ivory_price() * can), func() -> void: shop_msg.text = Meta.sell_ivory(can); render_shop()])
 	shop_list.add_child(_row("상아", "팔기", "스테이지 3의 코끼리를 잡으면 얻습니다(다시 하기에서는 안 나옴). 1개에 " + Store.won(Meta.ivory_price()) + "에 삽니다.", "%d개 가지고 있음" % have if have > 0 else "없음", "1개 " + Store.won(Meta.ivory_price()), ib, have > 0))
-	shop_list.add_child(_head("무기 대여 · 이번 스테이지 동안" if mid else "무기 대여 · 다음 스테이지 한 번"))
+	shop_list.add_child(_head("무기 대여 · 장난감 방에서는 장난감 총만 씁니다" if toy else ("무기 대여 · 이번 스테이지 동안" if mid else "무기 대여 · 다음 스테이지 한 번")))
+	if toy: shop_list.add_child(lbl("대여한 무기는 여기서 반납되지 않고 다음에 다른 스테이지에서 씁니다", f_body, 13, INK, true))
 	for id in Weapons.ORDER: shop_list.add_child(_gun_row(id, miss.has(id)))
 
 # ================= the weapon layout =================
 func _build_loadout() -> void:
 	var s := sheet("loadout", "무기 편성 · 1-7번 키에 놓을 총", "YRD-LOAD", 620.0); lo_list = s[1]; lo_msg = s[3]
-	var b := btn("완료", "primary", func() -> void:
-		if in_stage and game.layout().all(func(x): return x == null): lo_msg.text = "싸우는 중에는 무기를 하나 이상 넣어야 합니다"; return
-		close_sub()); b.set_meta("first", true)
+	var b := btn("완료", "primary", close_loadout); b.set_meta("first", true)
 	var r := btn("무기 대여", "ghost", func() -> void: shop_ctx = sel; open_sub("shop"))
 	var c := btn("총기 커스텀", "ghost", func() -> void: open_sub("custom")); s[0].set_meta("cu", c)
 	s[2].add_child(b); s[2].add_child(r); s[2].add_child(c); s[2].move_child(b, 0); s[2].move_child(r, 1); s[2].move_child(c, 2)
+
+## the weapon layout closed (its 완료, Esc, the phone's back button: all come here): in a fight, not with no gun at all in it
+func close_loadout() -> void:
+	if in_stage and game.layout().all(func(x): return x == null): lo_msg.text = "싸우는 중에는 무기를 하나 이상 넣어야 합니다"; return
+	close_sub()
+
+## back from the screen on top (Esc, the phone's back button): the weapon layout through its own check
+func back() -> void:
+	if cur == "loadout": close_loadout()
+	else: close_sub()
 
 ## the weapon order changed in the pause or on the loadout screen: the number keys follow at once, the gun in hand stays in hand
 func _relayout() -> void:
@@ -660,6 +678,10 @@ func open_dialog(kind: String) -> void:
 		"dev":
 			dlg_head.text = "개발자 모드"; dlg_title.text = "비밀번호"; dlg_ok.text = "켜기"; dlg_cancel.text = "취소"; dlg_in.placeholder_text = "비밀번호"
 			dlg_text.text = "개발자 모드를 켜려면 비밀번호를 넣으세요. 켜면 모든 스테이지와 모든 총, 아이템을 무료로 쓸 수 있고 무적이 됩니다(무적은 설정에서 끌 수 있습니다)."
+	# the first press: as there, the reset and the save start on 취소/닫기 (so one Enter or Space wipes nothing), the load and the
+	# password on their box (focused below, after the screen's first button)
+	var calm := kind == "save" or kind == "reset"
+	(dlg_cancel if calm else dlg_ok).set_meta("first", true); (dlg_ok if calm else dlg_cancel).remove_meta("first")
 	open_sub("dlg")
 	if dlg_in.visible: dlg_in.grab_focus.call_deferred()
 
@@ -714,7 +736,7 @@ func _build_brief() -> void:
 	for i in 4: s[2].add_child([br_go, b1, b2, b3][i]); s[2].move_child([br_go, b1, b2, b3][i], i)
 
 func open_brief(stage: int) -> void:
-	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); show_screen("brief"); _brief_gear(); _legend(br_leg_h, br_leg_v, false)
+	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); show_screen("brief"); _legend(br_leg_h, br_leg_v, false)
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name + (" · " + ToyMatch.SHORT[game.tm.key] if game.tm != null else "")
 	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else "")
 	if game.tm != null: br_note.text = game.tm.mode.brief() + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.tm.mode.bonus()))
@@ -842,9 +864,13 @@ func show_result(kind: String) -> void:
 		var b: Button = [ov.next, ov.next2][i]; b.visible = i < nx.size()
 		if i < nx.size(): b.set_meta("st", nx[i]); b.text = "스테이지 %s%s" % [Store.STAGE_TAG[nx[i]], "으로" if Store.STAGE_TAG[nx[i]].ends_with("1") or Store.STAGE_TAG[nx[i]].ends_with("3") else "로"]; b.disabled = not BUILT.has(nx[i])
 	var all_done: bool = Store.STAGE_ORDER.all(func(s): return Store.save.cleared.has(s))
-	(ov.best as Label).text = (("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ") if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else "")) + "가방 " + Store.won(Store.save.money)
-	if game.tm != null: (ov.best as Label).text = (("이겨서 번 돈을 챙겼습니다 · 최고 기록 " + Store.fmt_time(float(Store.save.best.get(game.tm.mode.record_key(), 0)))) if clear_ else ("져서 이번에 번 %s을 잃었습니다" % Store.won(st.earned) if st.earned > 0 else "다시 도전해 보세요")) + " · 가방 " + Store.won(Store.save.money)
-	back_stack.clear(); show_screen("over")
+	ov.best_head = (("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ") if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else ""))
+	if game.tm != null: ov.best_head = (("이겨서 번 돈을 챙겼습니다 · 최고 기록 " + Store.fmt_time(float(Store.save.best.get(game.tm.mode.record_key(), 0)))) if clear_ else ("져서 이번에 번 %s을 잃었습니다" % Store.won(st.earned) if st.earned > 0 else "다시 도전해 보세요")) + " · "
+	back_stack.clear(); show_screen("over")   # (which writes the bag on the last line: _over_money)
+
+## the result sheet's last line: how the run ended, then the bag as it is now (written again back from the shop)
+func _over_money() -> void:
+	(ov.best as Label).text = str(ov.get("best_head", "")) + "가방 " + Store.won(Store.save.money)
 
 ## a look over the screen on show (for the checks at five screen sizes): anything off the edge of the screen (outside a
 ## scrolling list), anything squeezed below the size its contents need, things to press lying on one another, and things

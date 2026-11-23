@@ -510,7 +510,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif state == "paused" and ui.cur == "map" and (e.physical_keycode == KEY_M or e.physical_keycode == KEY_ESCAPE): close_map()
 		elif state == "paused" and ui.cur == "pause" and e.physical_keycode == KEY_M: open_map("pause")
 		elif state == "paused" and ui.cur == "pause" and (e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P): resume_game()
-		elif e.physical_keycode == KEY_ESCAPE and not ui.back_stack.is_empty(): ui.close_sub()
+		elif e.physical_keycode == KEY_ESCAPE and not ui.back_stack.is_empty(): ui.back()   # (the weapon layout through its check)
 	if state != "playing": return
 	if e is InputEventMouseMotion and look_mode != "touch":
 		if look_mode == "lock" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
@@ -715,7 +715,7 @@ func _back() -> void:
 		"skip": cut.skip()
 		"pause": pause_game()
 		"close_map": close_map()
-		"close": ui.close_sub()
+		"close": ui.back()
 		"resume": resume_game()
 		"menu": ui.do_menu.call()
 		"quit": get_tree().quit()
@@ -742,7 +742,7 @@ func command(line: String) -> Dictionary:
 		"screen": ui.shop_ctx = ui.sel; ui.open_sub(a[1])
 		"select": ui.sel = int(a[1]); ui.refresh_menu()
 		"brief": state = "brief"; ui.open_brief(int(a[1]))
-		"back": ui.close_sub()
+		"back": ui.back()
 		"pause": pause_game()
 		"map": open_map(a[1] if a.size() > 1 else "play")
 		"mapclose": close_map()

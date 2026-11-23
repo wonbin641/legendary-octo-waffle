@@ -508,10 +508,12 @@ func _leave_animals() -> void:
 	if player.toss_on: player.toss_on = false; player.pos.y = Phys.ground_at(player.pos.x, player.pos.y, player.pos.z, Player.R); player.vel.y = 0.0
 
 ## rented guns go back when the stage ends, however it ends; a stage never deployed into (the briefing left, the app
-## started again) keeps them for the next one, as the browser game's
+## started again) keeps them for the next one, as the browser game's. So does stage 5: the toy room hands you its nine toy
+## guns, not the layout, so what you rented is not used there and waits for the next stage
 func return_rentals() -> void:
 	if not deployed: return
 	deployed = false
+	if stage == 9: return
 	if (Store.save.rented as Array).is_empty(): return
 	Store.save.rented = []; Store.persist()
 

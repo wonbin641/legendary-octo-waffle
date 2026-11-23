@@ -670,7 +670,7 @@ func _fight(e: Foe, dt: float, dist: float) -> bool:
 			if e.flame_on > 0.0:
 				e.flame_on -= dt; var mz := muzzle_of(e); var fx_ := sin(e.yaw); var fz := cos(e.yaw)
 				if fx:
-					for k in 3: fx.glow(mz, Vector3(fx_ * randf_range(8, 11) + randf_range(-1, 1), randf_range(-0.3, 0.8), fz * randf_range(8, 11) + randf_range(-1, 1)), randf_range(0.45, 0.7), 0.15, randf_range(0.9, 1.4), Color(1, randf_range(0.35, 0.6), 0.1, 0.8), -2.0, 2.2)
+					for k in 3: fx.glow(mz, Vector3(fx_ * randf_range(8, 11) + randf_range(-1, 1), randf_range(-0.3, 0.8), fz * randf_range(8, 11) + randf_range(-1, 1)), randf_range(0.45, 0.7), 0.15, randf_range(0.9, 1.4), FLAME_COLS[int(randf() * FLAME_COLS.size()) % FLAME_COLS.size()], -2.0, 2.2)
 				# you are in the cone: inside 9.5 m and within about 20 degrees of where the nozzle points
 				var c := ((player.pos.x - e.pos.x) * fx_ + (player.pos.z - e.pos.z) * fz) / maxf(dist, 0.001)
 				if dist < 9.5 and c > 0.94 and dy < 2.2:
@@ -769,9 +769,22 @@ func _keep_out(e: Foe) -> void:
 	# whatever you could not give (a wall behind you), the enemy gives
 	e.pos = Phys.move_xz(e.pos, moved.x - wx, moved.z - wz, e.R, e.H, 0.0)[0]
 
+## how far off an enemy is drawn at all (a phone's screen three quarters as far; a boss half as far again, see update)
+func sight_r() -> float:
+	return (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+
+## what a guided rocket may lock on to: as there, not the beast you ride, nor one in a cage (glass or bars), nor one too far
+## off to be drawn, nor a spider mine lying buried (or not yet woken); and in stage 5 not a toy soldier gone in its blink, nor
+## one hiding in its camouflage farther off than its health bar shows (half the drawing distance)
+func lockable(e: Foe) -> bool:
+	if not e.alive or e.ridden or e.caged or not e.g.visible: return false
+	if e.T.get("mode", "") == "mine" and (e.bs == "hidden" or e.bs == ""): return false
+	if e.toy and toys != null and (toys.gone(e) or (toys.camo(e) and e.dist >= sight_r() * 0.5)): return false
+	return true
+
 ## after a jump (pictures from a free camera): who is in sight of where you now stand, at once rather than within half a second
 func sight_all() -> void:
-	var vis: float = (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	var vis := sight_r()
 	for e in list:
 		e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length(); e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0)
 		if not e.g.visible: e.bar.visible = false
@@ -782,6 +795,9 @@ const BURN_T := 3.0
 const BURN_EVERY := 0.5
 const BURN_DMG := 12.0
 const BURN_COLS := [Color(1.0, 0.62, 0.14, 0.85), Color(1.0, 0.38, 0.08, 0.85)]   # (two set colours: each is worked out once)
+## 1-2's flamethrower man's fire: six set oranges across what the browser game picks at random (green 0.35-0.6), so its specks'
+## screen colours are worked out six times in all rather than three times a frame
+const FLAME_COLS := [Color(1, 0.35, 0.1, 0.8), Color(1, 0.4, 0.1, 0.8), Color(1, 0.45, 0.1, 0.8), Color(1, 0.5, 0.1, 0.8), Color(1, 0.55, 0.1, 0.8), Color(1, 0.6, 0.1, 0.8)]
 func ignite(e: Foe) -> void:
 	if not e.alive: return
 	if e.burn_t <= 0.0: e.burn_tick = BURN_EVERY
@@ -802,7 +818,7 @@ func _burns(dt: float) -> void:
 func update(dt: float, _time: float) -> void:
 	_burns(dt)
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
-	var vis: float = (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	var vis := sight_r()
 	var lab: bool = World.STAGE_STYLE.get(stage, {}).get("lab", false)
 	if _rage_mat != null: Gfx.tint(_rage_mat, World.lin(Color(0.3 + sin(_time * 9.0) * 0.14, 0.02, 0.01)))
 	for e in list:

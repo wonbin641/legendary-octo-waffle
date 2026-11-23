@@ -81,11 +81,12 @@ func current_spread() -> float:
 	if not player.grounded: s += 0.03
 	return s
 
-## the rocket's lock: the living enemy nearest the middle of the screen, within about 10 degrees, 200 m and in sight
+## the rocket's lock: the enemy it may lock on to (Enemies.lockable) nearest the middle of the screen, within about 10 degrees,
+## 200 m and in sight
 func rocket_lock():
 	var f := -cam.global_basis.z; var o := cam.global_position; var best = null; var best_a := 0.18
 	for e in enemies.list:
-		if not e.alive: continue
+		if not enemies.lockable(e): continue
 		var c: Vector3 = proj.rocket_centre(e); var v := c - o; var d := v.length()
 		if d < 2.5 or d > 200.0: continue
 		var a := acos(clampf(v.dot(f) / d, -1.0, 1.0))
