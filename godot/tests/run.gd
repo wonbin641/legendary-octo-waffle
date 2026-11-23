@@ -825,7 +825,8 @@ func _ready() -> void:
 	var s5_c2 = en.list.filter(func(e): return e.type == "rc" and e.alive and e.k.get("rider", null) != null)[0]; var s5_r2 = s5_c2.k.rider; var s5_h0: float = s5_c2.hp
 	en.damage(s5_r2, 30, s5_r2.pos, Vector3(0, 0, 1), false)
 	check("stage 5: the rider and his car each have their own health: a shot at the rider leaves the car whole", s5_r2.hp == s5_r2.max_hp - 30.0 and s5_c2.hp == s5_h0 and s5_r2.alive and s5_c2.alive)
-	s5_c2.pos = Vector3(-30, 0, 48.5); s5_c2.yaw = PI / 2; s5_c2.k.v = 0.0; s5_c2.k.back_t = 0.0; s5_c2.vel = Vector3.ZERO; s5_c2.alert = true; s5_c2.los = false
+	seed(5149)   # (out of sight the car drives about at random from here on: the same draws every run, so the car below starts where it always does)
+	s5_c2.pos = Vector3(-30, 0, 48.5); s5_c2.yaw = PI / 2; s5_c2.k.v = 0.0; s5_c2.k.back_t = 0.0; s5_c2.k.wander_t = 0.0; s5_c2.vel = Vector3.ZERO; s5_c2.alert = true; s5_c2.los = false
 	s5_r2.alert = true; s5_r2.los = true; s5_r2.react = 0.0; s5_r2.fire_t = 0.0; s5_r2.burst = 0; pl.pos = Vector3(-30, 0, 70.0); pr.clear(); var s5_shot := 0; var s5_off2 := 0.0
 	for i in 90:
 		var s5_tc := Vector2(pl.pos.x - s5_c2.pos.x, pl.pos.z - s5_c2.pos.z); s5_tf.update(s5_c2, 0.02, s5_tc.length(), s5_tc, atan2(s5_tc.x, s5_tc.y))
@@ -2045,6 +2046,33 @@ func _mobile() -> void:
 		absf(ins[0] - 96.0 / 2.625) < 1e-4 and ins[1] == 0.0 and ins[2] == 0.0 and ins[3] == 0.0 and r0.pad == Rect2(10, s9.y / 2.0 - 78.0, 156, 156) and r0.pause == Rect2(16, 14, 42, 42)
 		and r0.map == Rect2(s9.x - 60.0, 14, 46, 46) and is_equal_approx(r1.pad.position.x, 10.0 + ins[0]) and is_equal_approx(r1.pause.position.x, 16.0 + ins[0])
 		and is_equal_approx((b1.fire[0] as Vector2).x, (b0.fire[0] as Vector2).x - 30.0) and is_equal_approx((b1.fire[0] as Vector2).y, (b0.fire[0] as Vector2).y - 12.0), [ins, r1.pad])
+	# a finger on the menus (the phone app, a phone's browser): Godot's lists, sliders, gun boxes and text boxes follow a finger
+	# only as the mouse it also comes as; the game itself reads the finger (tests/touch.tscn drags a real finger over them)
+	var fm := InputEventMouseButton.new(); fm.device = InputEvent.DEVICE_ID_EMULATION; var rm := InputEventMouseButton.new(); var ft := InputEventScreenTouch.new()
+	check("a finger also comes as the mouse, so the menus' lists scroll, sliders slide, gun boxes pick and text boxes type; the game itself reads only the finger (its mouse copy never aims or fires)",
+		bool(ProjectSettings.get_setting("input_devices/pointing/emulate_mouse_from_touch")) and not mn.game_reads(fm) and mn.game_reads(rm) and mn.game_reads(ft))
+	var tu := Ui.new(); tu.is_touch = true; add_child(tu); tu._build_loadout(); tu._build_shop(); tu._build_settings(); tu._build_dialog()
+	tu.render_loadout(); tu.shop_ctx = 1; tu.render_shop(); tu.render_settings(); tu.open_dialog("load")
+	var t_lists: Array = []
+	for k9 in ["loadout", "shop", "settings", "dlg"]:   # (each sheet's own list, not those inside a gun box's drop-down, a window of its own)
+		t_lists.append_array((tu.screens[k9] as Control).find_children("*", "ScrollContainer", true, false).filter(func(s): return (s as Node).get_viewport() == tu.get_viewport()))
+	var t_pass := true; var t_keep := 0; var t_obs := 0; var t_rel := true; var t_slop := true; var t_rows := 0
+	for sc9 in t_lists:
+		t_slop = t_slop and is_equal_approx((sc9 as ScrollContainer).scroll_deadzone, Ui.TOUCH_SLOP)
+		for c9 in (sc9 as Node).find_children("*", "Control", true, false):
+			if c9 is ScrollBar or (c9 as Node).get_viewport() != tu.get_viewport(): continue
+			if c9 is Slider or c9 is LineEdit:
+				if (c9 as Control).mouse_filter == Control.MOUSE_FILTER_STOP: t_keep += 1
+				else: t_pass = false
+				continue
+			if (c9 as Control).mouse_filter == Control.MOUSE_FILTER_STOP: t_pass = false
+			if c9 is PanelContainer: t_rows += 1
+			if c9 is OptionButton: t_obs += 1; t_rel = t_rel and (c9 as BaseButton).action_mode == BaseButton.ACTION_MODE_BUTTON_RELEASE
+	var du := Ui.new(); add_child(du); du._build_loadout(); du.render_loadout(); var d_obs: Array = (du.screens.loadout as Control).find_children("*", "OptionButton", true, false)
+	var d_press := d_obs.size() == 7 and d_obs.all(func(o): return (o as BaseButton).action_mode == BaseButton.ACTION_MODE_BUTTON_PRESS and (o as Control).mouse_filter == Control.MOUSE_FILTER_PASS)
+	check("the menus' lists on a phone: all in them (buttons, gun boxes, shop rows) lets a finger's press through to the list, so a drag that starts on any of it scrolls; sliders and text boxes keep their own; a gun box opens as the finger lifts; a finger moves 10 points before it scrolls; a computer's gun boxes still open as the mouse goes down",
+		t_lists.size() == 4 and t_pass and t_keep >= 4 and t_obs >= 7 and t_rel and t_slop and t_rows > 10 and d_press, [t_lists.size(), t_pass, t_keep, t_obs, t_rel, t_slop, t_rows, d_press])
+	tu.close_sub(); tu.queue_free(); du.queue_free()
 	var fg := Image.load_from_file("res://mobile/icon_fg.png"); var bg := Image.load_from_file("res://mobile/icon_bg.png")
 	check("the app's adaptive icon: the old app's foreground on its night blue, 432 px each", fg != null and bg != null and fg.get_size() == Vector2i(432, 432) and bg.get_size() == Vector2i(432, 432)
 		and bg.get_pixel(10, 10).is_equal_approx(Color("0d1220")))

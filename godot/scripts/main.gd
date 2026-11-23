@@ -479,7 +479,12 @@ func request_lock() -> void:
 	lock_wait = 1.4  # if the browser has not locked the pointer by then, aim by moving the mouse instead
 
 # ---------------- input ----------------
+## what the game itself reads: everything but the mouse a finger also comes as (project.godot sends a finger on as the
+## mouse too, so that the menus' lists, sliders and text boxes follow it); the game reads the finger itself
+static func game_reads(e: InputEvent) -> bool: return not (e is InputEventMouse and e.device == InputEvent.DEVICE_ID_EMULATION)
+
 func _unhandled_input(e: InputEvent) -> void:
+	if not game_reads(e): return
 	# on a computer (the browser has its own): F11 or Alt+Enter between a window and the whole screen
 	if e is InputEventKey and e.pressed and not e.echo and not OS.has_feature("web") and (e.physical_keycode == KEY_F11 or (e.alt_pressed and e.physical_keycode in [KEY_ENTER, KEY_KP_ENTER])):
 		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN

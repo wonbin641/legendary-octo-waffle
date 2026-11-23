@@ -89,7 +89,7 @@ func sheet(key: String, title: String, code: String, max_w := 760.0) -> Array:
 	var head := hbox(); v.add_child(head)
 	var t := lbl(title, f_mono, 12, STEEL); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL; t.clip_text = true; head.add_child(t); var c := lbl(code, f_mono, 12, SODIUM); head.add_child(c)
 	root.set_meta("title", t); root.set_meta("code", c)
-	var sc := ScrollContainer.new(); sc.size_flags_vertical = Control.SIZE_EXPAND_FILL; sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; v.add_child(sc)
+	var sc := ScrollContainer.new(); sc.size_flags_vertical = Control.SIZE_EXPAND_FILL; sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; sc.scroll_deadzone = TOUCH_SLOP; v.add_child(sc)
 	var body := vbox(10); sc.add_child(body)
 	# the buttons along the bottom go on to a second line when they do not fit (the browser game's .actions wrap)
 	var foot := HFlowContainer.new(); foot.add_theme_constant_override("h_separation", 8); foot.add_theme_constant_override("v_separation", 8); v.add_child(foot)
@@ -126,6 +126,28 @@ func open_sub(key: String) -> void:   # a screen opened from another: closing it
 	back_stack.push_back(cur); show_screen(key)
 func close_sub() -> void:
 	show_screen(back_stack.pop_back() if not back_stack.is_empty() else "menu")
+
+## a finger on a list (a phone, a touch screen): Godot's lists scroll as a dragged finger, sent on as the mouse, moves them,
+## but only when the press gets to the list. So what is in a list (a button, a shop row's panel) lets the press through to it,
+## all but what a finger drags itself (a slider, a text box), and a gun box opens when the finger lifts, not as it lands.
+## A finger that moves more than TOUCH_SLOP (in the screen's points) scrolls, and the button under it lets go; one that
+## stays put is a tap.
+const TOUCH_SLOP := 10.0
+func _touch_fit(n: Node) -> void:
+	if not n is Control or not is_ancestor_of(n): return
+	var c := n as Control
+	if c.get_viewport() != get_viewport(): return   # (a gun box's drop-down is a window of its own: left as Godot makes it)
+	if c.mouse_filter == Control.MOUSE_FILTER_IGNORE or c is ScrollContainer or c is Slider or c is ScrollBar or c is LineEdit or c is TextEdit or c is SpinBox: return
+	var p := n.get_parent()
+	while p != null and p != self:
+		if p is ScrollContainer:
+			c.mouse_filter = Control.MOUSE_FILTER_PASS
+			if c is OptionButton and is_touch: (c as BaseButton).action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+			return
+		p = p.get_parent()
+
+func _ready() -> void:
+	get_tree().node_added.connect(_touch_fit)
 
 func build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); mouse_filter = Control.MOUSE_FILTER_IGNORE   # (already in the tree: the offsets must be set too)
