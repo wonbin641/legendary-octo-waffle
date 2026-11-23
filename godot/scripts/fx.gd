@@ -133,10 +133,16 @@ func explode(at: Vector3, big := true, col: Array = BOOM_COL) -> void:
 	_boom.position = at + Vector3(0, 0.5, 0); _boom.light_energy = 8.0 if big else 5.2; _boom.visible = true; _boom_t = 0.35
 
 ## a lick of flame from a spray can: a small bright ball that runs out along the jet and fades
-func flame(from: Vector3, dir: Vector3) -> void:
-	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 1.0; s.height = 2.0; s.radial_segments = 8; s.rings = 5; m.mesh = s
+## the spray can's fire: a ball of flame thrown out along a shot, slowing and swelling as it goes, gone after FLAME_LIFE s,
+## by when it has gone about as far as the fire burns (reach): it travels 0.7 of its first speed times its life
+const FLAME_LIFE := 0.55
+static var _flame_mesh: SphereMesh = null
+func flame(from: Vector3, dir: Vector3, reach := 9.5) -> void:
+	if _flame_mesh == null: _flame_mesh = SphereMesh.new(); _flame_mesh.radius = 1.0; _flame_mesh.height = 2.0; _flame_mesh.radial_segments = 8; _flame_mesh.rings = 5
+	var m := MeshInstance3D.new(); m.mesh = _flame_mesh
 	var mat: StandardMaterial3D = _bmat.duplicate(); mat.albedo_color = World.lin(Color(1.0, randf_range(0.45, 0.8), 0.15)); m.material_override = Gfx.see_through(mat); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; m.position = from; add_child(m)
-	_flames.push_back([m, 0.0, dir * randf_range(18.0, 24.0) + Vector3(randf_range(-1, 1), randf_range(-0.5, 1.5), randf_range(-1, 1))])
+	var v := reach / (0.7 * FLAME_LIFE)
+	_flames.push_back([m, 0.0, dir * v * randf_range(0.85, 1.05) + Vector3(randf_range(-1, 1), randf_range(-0.5, 1.5), randf_range(-1, 1)), 0.35 + reach * 0.05])
 
 # the toy room's bits go into the same pools; their sizes are radii (a speck as wide as twice that)
 func _bit(at: Vector3, color: Color, life: float, vel: Vector3, s0: float, s1: float, grav := 0.0, add := true, drag := 0.0) -> void:
@@ -254,9 +260,9 @@ func update(dt: float) -> void:
 		_lights[i][1] -= dt; (_lights[i][0] as OmniLight3D).light_energy = 6.0 * maxf(0.0, _lights[i][1] / 0.3)
 		if _lights[i][1] <= 0.0: _lights[i][0].queue_free(); _lights.remove_at(i)
 	for i in range(_flames.size() - 1, -1, -1):
-		var f: Array = _flames[i]; f[1] += dt; var u: float = f[1] / 0.38
+		var f: Array = _flames[i]; f[1] += dt; var u: float = f[1] / FLAME_LIFE
 		if u >= 1.0: f[0].queue_free(); _flames.remove_at(i); continue
-		(f[0] as MeshInstance3D).position += (f[2] as Vector3) * dt * (1.0 - u * 0.6); (f[0] as MeshInstance3D).scale = Vector3.ONE * lerpf(0.06, 0.55, u)
+		(f[0] as MeshInstance3D).position += (f[2] as Vector3) * dt * (1.0 - u * 0.6); (f[0] as MeshInstance3D).scale = Vector3.ONE * lerpf(0.06, float(f[3]), u)
 		Gfx.set_alpha((f[0] as MeshInstance3D).material_override, 1.0 - u)
 
 func clear() -> void:

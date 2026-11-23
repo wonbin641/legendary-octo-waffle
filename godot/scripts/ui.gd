@@ -735,19 +735,20 @@ func _pick_mode(k: String) -> void:
 	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("press"); open_brief(9)
 
 func _brief_gear() -> void:
+	if sel == 9:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
+		var k := ToyMatch.picked()
+		br_gear.text = "장난감 무기 9종 · 1-9번 키" + {"rush": " · 건전지를 들면 다트 권총과 30cm 자만", "escort": " · 화물칸 탄약 상자에서 보급", "freeze": " · 탄산 캔 G"}.get(k, ""); br_go.disabled = false; return
 	var ready := []; var lo := game.layout()
 	for i in 7:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
-	if sel == 9:
-		var k := ToyMatch.picked()
-		br_gear.text = "장난감 무기 9종 · 1-9번 키" + {"rush": " · 건전지를 들면 다트 권총과 30cm 자만", "escort": " · 화물칸 탄약 상자에서 보급", "freeze": " · 탄산 캔 G"}.get(k, ""); br_go.disabled = false; return
 	br_gear.text = ("지도 왼쪽 아래 구석(서남쪽 끝)에 내립니다\n" if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
 func _deploy() -> void:
 	game.guns.reset(game.layout())   # what the shop and the layout changed since the briefing opened
 	if game.guns.none: return
+	game.deployed = true   # (from here on the rentals are used: they go back when the stage ends)
 	back_stack.clear(); show_screen(""); do_deploy.call()
 
 # ================= the tactical map =================

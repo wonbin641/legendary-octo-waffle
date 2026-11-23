@@ -167,7 +167,7 @@ func _build_needle(parent: Node3D) -> void:
 	needle_juice = MeshInstance3D.new(); var jm := BoxMesh.new(); jm.size = Vector3(0.12, 0.022, 0.022); needle_juice.mesh = jm; needle_juice.material_override = Gfx.unlit(Color("58ff7a"), false); needle_syr.add_child(needle_juice)
 
 func _pose_gun(dt: float) -> void:
-	var W := guns.w(); var a := guns.ads * guns.ads * (3.0 - 2.0 * guns.ads); var d: Array = GUN_SHAPE[guns.cur]
+	var W := guns.w(); var a := guns.ads * guns.ads * (3.0 - 2.0 * guns.ads); var d: Array = GUN_SHAPE.get(guns.cur, [0.5, 0.07, 0.05])   # (the toy room's own spray can has no plain shape: a toy's length is set below)
 	var toy := game.stage == 9; var shown: bool = not guns.scoped() and not guns.none and not player.out
 	if carry_view != null: carry_view.visible = game.tm != null and game.tm.key == "rush" and game.tm.mode.carry != null and not player.out   # the battery under your arm
 	for id in gun_models: (gun_models[id] as Node3D).visible = not toy and id == guns.cur and shown
@@ -207,8 +207,8 @@ func _pose_gun(dt: float) -> void:
 		needle_juice.scale.x = maxf(0.04, 1.0 - push); needle_juice.position.x = 0.002 - push * 0.058
 	else: needle.visible = false
 	if inspect: pos = Vector3(0.02, -0.03, -0.62 - d[0] * 0.25); rot = Vector3(0.18, 1.15, 0.0)   # held out to look at
-	var GM: Dictionary = gm_models.models[guns.cur]
-	if GM.tip != null: (GM.tip as Node3D).visible = guns.st().mag > 0   # the rocket's nose shows while one is loaded
+	var GM: Dictionary = gm_models.models.get(guns.cur, {})   # (none for the toy room's spray can: it is a toy only)
+	if GM.get("tip") != null: (GM.tip as Node3D).visible = guns.st().mag > 0   # the rocket's nose shows while one is loaded
 	view.position = pos; view.rotation = rot
 	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5 and (not toy or guns.cur == "smg"); flash.position = Vector3(0, 0, -d[0] - 0.05) if toy else Vector3(0, GunModels.MUZZLE[guns.cur][1], GM.flash_z)
 	flash_light.light_energy = (3.0 if not toy else (1.2 if guns.cur == "smg" else 0.0)) if guns.flash_t > 0.0 else flash_light.light_energy * exp(-dt * 30)

@@ -41,6 +41,7 @@ var _chest_wait := false
 var flow_t := 0.0
 var mid: Enemies.Foe = null   # the gold commander drone
 var sp = null                 # stage 4's save point
+var deployed := false         # out of the briefing into the stage (or back at the save point): rented guns go back only then
 var spawned := 0
 var clock := 0.0
 var calm := 0   # animals you have ridden: tamed, and counted as dealt with
@@ -94,7 +95,7 @@ func begin(stage_: int) -> void:
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
 	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
-	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false
+	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false
 	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
 	# down in the corner at the bottom left of the map (the west and south ends), facing in
 	if stage == 5:
@@ -330,7 +331,7 @@ func take_save() -> void:
 func from_save() -> void:
 	var s = sp
 	if s == null: begin(stage); return
-	begin(s.stage); sp = s; boss_msg = ""
+	begin(s.stage); sp = s; deployed = true; boss_msg = ""
 	for e in enemies.list.duplicate():
 		if e.sid >= 0 and (s.dead as Array).has(e.sid): enemies.vanish(e)
 	for e in enemies.dying: e.g.queue_free(); e.bar.queue_free()
@@ -400,6 +401,10 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	Store.save.money += pay; stats.earned += pay; Store.persist()
 	Snd.play("kill")
 	if pay > 0: Snd.play("coin"); _say(on_pay, [pay])
+	# an elephant leaves its tusks: ivory, which the shop buys for a lot (not on a replay, like the money), as the browser game's
+	if e.type == "elephant" and pay > 0:
+		Store.save.items.ivory = mini(63, int(Store.save.items.ivory) + 1); Store.persist()
+		_say(banner, ["상아 획득", "상점에서 " + Store.won(Meta.ivory_price()) + "에 팔 수 있습니다", 2.6])
 	if e.boss:
 		_say(feed, ["보스 " + e.name + " 처치", pay, true])
 		_say(banner, ["보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "보물상자가 떨어졌습니다", 3.0])
@@ -502,8 +507,11 @@ func _leave_animals() -> void:
 	an.bleed_stop(true); player.fear_t = 0.0
 	if player.toss_on: player.toss_on = false; player.pos.y = Phys.ground_at(player.pos.x, player.pos.y, player.pos.z, Player.R); player.vel.y = 0.0
 
-## rented guns go back when the stage ends, however it ends
+## rented guns go back when the stage ends, however it ends; a stage never deployed into (the briefing left, the app
+## started again) keeps them for the next one, as the browser game's
 func return_rentals() -> void:
+	if not deployed: return
+	deployed = false
 	if (Store.save.rented as Array).is_empty(): return
 	Store.save.rented = []; Store.persist()
 

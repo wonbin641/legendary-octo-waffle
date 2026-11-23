@@ -129,7 +129,10 @@ func populate() -> void:
 	for i in SQUAD.size(): m.add_unit("them", SQUAD[i][0], SPAWN_THEM[i % 6] + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)), {"gun": SQUAD[i][1], "job": "push", "idx": i, "tint": i % 4})
 
 func on_respawn(u, _team: String) -> void:
-	if u is Player: cans = CANS; return
+	if u is Player:
+		# back at your base, perhaps in the middle of a look: seen standing there now (not where you fell), and your shots counted
+		# from now (the guns start over), so only a move or a shot after you are back gets you caught
+		cans = CANS; ref[m.player] = m.player.pos; ref_shots = m.guns.shots; return
 	u.k.hot = HOT[randi() % HOT.size()]; u.k.hot_t = randf_range(14.0, 24.0); u.k.freeze_at = 0.0; u.k.slip = Vector2.ZERO; u.k.slip_t = 0.0
 
 func spawn_at(team: String, _who := "") -> Vector3:

@@ -323,12 +323,11 @@ func _unlock() -> void:
 func _you(dt: float) -> void:
 	pull = 0.0
 	if carry != null:
-		if not m.player_in(): return
-		if Vector2(m.player.pos.x - ZONE.us.x, m.player.pos.z - ZONE.us.z).length() < ZONE_R and absf(m.player.pos.y) < 2.0: _deliver(carry, "us")
-		return
-	for b in batteries:
-		if b.state == "ground" and b.pull_team == "us" and _beside(m.player.pos, b.pos): pull = float(b.pull)
-	# their carriers, at their gate
+		if m.player_in() and Vector2(m.player.pos.x - ZONE.us.x, m.player.pos.z - ZONE.us.z).length() < ZONE_R and absf(m.player.pos.y) < 2.0: _deliver(carry, "us")
+	else:
+		for b in batteries:
+			if b.state == "ground" and b.pull_team == "us" and _beside(m.player.pos, b.pos): pull = float(b.pull)
+	# the toys' carriers, each at its own gate (whether or not you carry one yourself)
 	for u in m.units("them") + m.units("us"):
 		var b = u.k.carrying
 		if b == null: continue

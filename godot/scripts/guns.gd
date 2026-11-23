@@ -188,9 +188,10 @@ func fire() -> void:
 		# the rocket takes the enemy nearest the crosshair with it; with nothing marked it flies straight
 		proj.rocket(muz, (f + up * 0.01).normalized(), W, rocket_lock())
 	else:
-		for k in int(W.pellets):
-			var a := randf() * TAU; var rr := sqrt(randf()) * spr
+		for k in int(W.pellets):   # (shot spreads evenly over its circle; the spray can's fire is thickest in the middle of its cone)
+			var a := randf() * TAU; var rr := (randf() if W.get("flame", false) else sqrt(randf())) * spr
 			var d := (f + right * cos(a) * rr + up * sin(a) * rr).normalized()
+			if W.get("flame", false) and k < 2 and fx: fx.flame(muz, d, W.range)   # the spray can's fire, out as far as it burns (on an enemy too)
 			var s_hit := Phys.raycast_static(o, d, W.range)
 			var s_t := Phys.rh_t; var s_box := Phys.rh_box; var s_n := Phys.rh_n
 			var eh = enemies.raycast(o, d, s_t)
@@ -200,6 +201,7 @@ func fire() -> void:
 				if W.has("falloff"): dmg *= lerpf(1.0, 0.35, clampf((eh.t - W.falloff[0]) / (W.falloff[1] - W.falloff[0]), 0.0, 1.0))
 				if eh.get("bomb", false) and eh.enemy.alive: enemies.blow_vest(eh.enemy, d); killed = true
 				elif enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
+				if W.get("flame", false) and eh.enemy.alive: enemies.ignite(eh.enemy)   # and sets it alight: it burns on for a while
 				hit_any = true
 				if eh.weak: head = true
 				if toy: hit_snd = _toy_hit(muz, at, k, hit_snd)
@@ -213,9 +215,7 @@ func fire() -> void:
 					fx.puff(at, 1, 0.5 if (s_box != null and s_box.kind == "concrete") else 0.3, 0.25)
 				if s_hit and fx and not toy: fx.decal(at, s_n)
 				if toy:
-					if W.get("flame", false):
-						if k == 0 and fx: fx.flame(muz, d)
-					else: hit_snd = _toy_hit(muz, at, k, hit_snd if s_hit else true)
+					if not W.get("flame", false): hit_snd = _toy_hit(muz, at, k, hit_snd if s_hit else true)
 				elif k < 3 and fx: fx.tracer(muz, at)
 	if hit_any: hits += 1; _say(hitmark, [killed, head])
 	var rk: float = W.recoil * (1.0 - ads * 0.35)

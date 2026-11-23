@@ -322,11 +322,24 @@ func _ready() -> void:
 	check("developer mode's invincibility is shown on the screen while it is on", dv_chips.size() > 0 and dv_chips[0][0] == "무적 · 개발자 모드" and not dv_off.any(func(c): return c[0] == "무적 · 개발자 모드"), [dv_chips, dv_off])
 	Store.save.cleared = dv_cl
 	Store.settings.dev = false
-	# rentals go back when a stage ends
-	Store.save.loadout = ["pistol", "gl", null, null, null, null, null]; gm.begin(1)
+	# rentals go back when a stage you went into ends; a briefing left, or the app started again, keeps them for the next (as the browser game's)
+	Store.save.loadout = ["pistol", "gl", null, null, null, null, null]; gm.begin(1); gm.return_rentals()
+	var rt_brief: bool = Store.save.rented == ["gl"]
+	var rt_app := Game.new(); rt_app.return_rentals(); var rt_start: bool = Store.save.rented == ["gl"]   # (a fresh game, as when the app starts)
+	check("a rental is kept when you leave the briefing (or the back button) and when the app starts again: it is for the next stage you go into", rt_brief and rt_start and not gm.deployed, Store.save.rented)
+	gm.deployed = true   # (출동: into the stage)
 	check("a rented gun is in your hands for the stage", g.slots == ["pistol", "gl"])
 	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); sim.call(1.2)
 	check("and goes back when the stage ends", Store.save.rented.is_empty() and gm.layout() == ["pistol", null, null, null, null, null, null])
+	# an elephant's ivory, as the browser game's: one for each elephant killed for pay (a first clear), none on a replay
+	var iv_cl: Array = Store.save.cleared.duplicate(); Store.save.cleared = []; Store.save.items.ivory = 0; gm.begin(7)
+	var iv_el: Array = en.list.filter(func(e): return e.alive and e.type == "elephant")
+	if not iv_el.is_empty(): en.damage(iv_el[0], 1e6, iv_el[0].pos, Vector3(0, 0, 1), false)
+	var iv1 := int(Store.save.items.ivory)
+	Store.save.cleared = [7]; gm.begin(7); var iv_el2: Array = en.list.filter(func(e): return e.alive and e.type == "elephant")
+	if not iv_el2.is_empty(): en.damage(iv_el2[0], 1e6, iv_el2[0].pos, Vector3(0, 0, 1), false)
+	check("an elephant killed leaves its ivory, one to sell at the shop (100,000원); none on a replay", iv_el.size() > 0 and iv1 == 1 and int(Store.save.items.ivory) == 1, [iv_el.size(), iv1, Store.save.items.ivory])
+	Store.save.cleared = iv_cl; Store.save.items.ivory = 0; Store.ivory_lock = null
 	# ---------------- stages 1-1 and 1-2 ----------------
 	for stn in [6, 5, 2, 3, 7, 4, 8]:
 		var R9: Dictionary = ref.stages[str(stn)]; Store.save = Store.save0(); gm.begin(stn)
@@ -689,6 +702,7 @@ func _ready() -> void:
 	en.damage(en.list[5], 1e6, en.list[5].pos, Vector3(0, 0, 1), false); pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); gm.update(0.02)
 	check("stage 4: you fall after the save point", gm.ended and gm.result == "dead" and gm.sp != null)
 	gm.from_save()
+	check("stage 4: back at the save point you are in the stage again (a rental goes back when it ends)", gm.deployed)
 	check("stage 4: back at the save point: on the bridge, the key in your pocket, the bee still dead, kills and bag as they were", not gm.ended and gm.kills == s4_k4 and Store.save.money == s4_bag4 and w.ship.key and w.ship.doors[0].mode == "open"
 		and absf(pl.pos.x - Ship.SAVE.x) < 1e-4 and en.list.filter(func(e): return e.type == "gdrone").is_empty() and en.list.size() == 99 and pl.hp == Player.MAX_HP, en.list.size())
 	s4_sh = w.ship; boss4 = gm.boss
@@ -1027,6 +1041,32 @@ func _ready() -> void:
 	for nm in ["toy_hit_rifle", "toy_hit_shotgun", "toy_hit_sniper", "toy_boom", "toy_ruler", "toy_pump", "toy_stretch"]:
 		if not ResourceLoader.exists("res://sounds/%s.wav" % nm): missing_snd.push_back(nm)
 	check("every toy sound exists", missing_snd.is_empty(), missing_snd)
+	# the spray-can flamethrower: a wide cone every way round, 15 m, six jets of 2.5 a shot, and what it hits burns on
+	var FW: Dictionary = Custom.weapon("flame")
+	check("the spray-can flamethrower: 15 m, a cone 0.24 wide every way round (0.18 down the sights), eight jets of 2.5 a shot, 20 shots a second (400 a second when all of it lands; it was 75)",
+		FW.range == 15.0 and FW.spread == 0.24 and FW.adsSpread == 0.18 and int(FW.pellets) == 8 and FW.dmg == 2.5 and FW.rate == 0.05 and FW.flame)
+	var fl_t = en.list.filter(func(e): return e.alive and e.type == "soldier")[0]; fl_t.hp = 2000.0; fl_t.max_hp = 2000.0; fl_t.burn_t = 0.0
+	pl.reset(0.0, 56.0, 0.0); pl.update(0.0, cam, 0.0); var fl_eye := cam.global_position; fl_t.pos = Vector3(fl_eye.x, 0.0, fl_eye.z - 7.0)
+	var fl_aim: Vector3 = Vector3(fl_t.pos.x, fl_t.pos.y + 1.0, fl_t.pos.z) - fl_eye; pl.pitch = atan2(fl_aim.y, Vector2(fl_aim.x, fl_aim.z).length()); pl.update(0.0, cam, 0.0)
+	g.reset(Toys.ORDER.duplicate()); g.cur = "flame"; g.cooldown = 0.0; var fl_n0: int = fxn._flames.size(); var fl_h0: float = fl_t.hp
+	seed(5300); g.trigger = true; g.trigger_edge = true
+	for i in 18: g.update(1.0 / 60.0)   # (0.3 s: six sprays, the fire thickest in the middle of its cone)
+	g.trigger = false
+	var fl_v: Vector3 = fxn._flames[fxn._flames.size() - 1][2] if fxn._flames.size() > fl_n0 else Vector3.ZERO; var fl_reach: float = fl_v.length() * Fx.FLAME_LIFE * 0.7
+	check("0.3 s of spray at a toy 7 m off hurts it, sets it alight, and its fire is drawn on every spray (two balls of flame, on a hit too) out about as far as it burns",
+		fl_t.hp < fl_h0 and fl_t.burn_t > 2.6 and fxn._flames.size() >= fl_n0 + 10 and fl_reach > 11.0 and fl_reach < 17.5, [fl_h0 - fl_t.hp, fl_t.burn_t, fxn._flames.size() - fl_n0, fl_reach])
+	var fl_h1: float = fl_t.hp
+	for i in 160: en._burns(0.02)
+	check("a toy alight burns on for 3 s after the fire leaves it: 12 every half second, six times", is_equal_approx(fl_h1 - fl_t.hp, 6.0 * Enemies.BURN_DMG) and fl_t.burn_t == 0.0 and Enemies.BURN_DMG == 12.0, fl_h1 - fl_t.hp)
+	en.ignite(fl_t); for i in 50: en._burns(0.02)
+	en.ignite(fl_t); for i in 60: en._burns(0.02)
+	check("each touch of the fire starts its 3 s over (it does not stack)", fl_t.burn_t > 1.7 and fl_t.burn_t < 1.9, fl_t.burn_t)
+	fl_t.burn_t = 0.0; fl_t.hp = 10.0; var fl_k0: int = gm.kills; en.ignite(fl_t); for i in 30: en._burns(0.02)
+	check("a toy the burning finishes is your kill", not fl_t.alive and gm.kills == fl_k0 + 1, [fl_t.alive, gm.kills - fl_k0])
+	var bu := Ui.new(); bu.game = gm; add_child(bu); bu._build_brief(); var bu_keep: Array = (Store.save.toy_order as Array).duplicate()
+	Store.save.toy_order = ["pistol", "shotgun", "rifle", "smg", "sniper", "gl", "flame", "lmg", "rocket"]; bu.sel = 9; bu.br_gear.text = ""; bu.br_go.disabled = true; bu._brief_gear()
+	check("stage 5's briefing with the spray can moved onto keys 1-7: its toy guns as ever, and 출동 open", bu.br_gear.text.begins_with("장난감 무기 9종") and not bu.br_go.disabled, bu.br_gear.text)
+	Store.save.toy_order = bu_keep; bu.free()
 	for id in ["rifle", "shotgun", "sniper", "smg", "rocket"]:
 		g.reset(Toys.ORDER.duplicate()); g.cur = id; g.cooldown = 0.0; Snd.played.clear(); pl.pitch = -0.25; pl.update(0.0, cam, 0.0)
 		g.trigger = true; g.trigger_edge = true; simt.call(0.1); g.trigger = false; simt.call(2.5); pr.update(3.0)
@@ -1788,6 +1828,11 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	var dropped: Array = R.batteries.filter(func(b): return b.state == "ground")
 	check("down with a battery: it falls where you fell", dropped.size() >= 1 and Vector2(dropped[dropped.size() - 1].pos.x + 6.0, dropped[dropped.size() - 1].pos.z - 20.0).length() < 1.0 and R.carry == null and g.lock_to == "")
 	run.call(ToyMatch.PLAYER_BACK + 0.2)
+	# their carrier at their gate plugs his in, whether or not you are carrying one yourself
+	pl.pos = Vector3(-6, 0, 20); R.cmd(["carry"]); R._drop(); var rb_b: Dictionary = R.batteries[R.batteries.size() - 1]; R._land(rb_b, (rb_b.land as Vector3).y)
+	var rb_u = tm.units("them")[0]; R._take(rb_b, rb_u); rb_u.pos = ModeRush.ZONE.them; var rb_s0 := int(R.slots.them); run.call(0.2)
+	check("battery rush: their carrier at their gate plugs his battery in even while you carry one", R.carry != null and int(R.slots.them) == rb_s0 + 1 and rb_u.k.carrying == null, [R.slots, R.carry != null])
+	pl.pos = Vector3(0, 0, 50); run.call(0.2)   # (and yours goes in too, so the rest starts with your hands free)
 	# three in: the robot wakes and burns their fortress down; you win
 	var fort_box: Phys.Box = R.forts.them.boxes[0]; var m2: int = Store.save.money; Store.save.best.erase("t9r")
 	R.cmd(["give", "us", "3"]); run.call(1.0)
@@ -1868,6 +1913,13 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 		if F.phase == "calm": F.next_t = 999.0
 		run.call(0.5)
 	check("...back at your base a long while later", not pl.out and pl.pos.z > 30.0 and pl.pos.x < 0.0, pl.pos)
+	# back at your base in the middle of a look: it sees you where you are now (not where you were when it looked in), so standing still is safe
+	for i in 20:
+		if F.grab == null and F.caught.is_empty(): break
+		run.call(0.5)
+	F.phase = "calm"; F.caught.clear(); pl.reset(-20.0, 0.0, 0.0); pl.update(0.0, cam, 0.0); F.cmd(["look"]); run.call(0.1)
+	var lk_on: bool = F.phase == "look"; pl.out = true; tm.down_t = 0.0; tm._player_back(); run.call(1.5)
+	check("bedtime: back at your base while it looks in (40 m from where it first saw you), standing still: not caught", lk_on and not F._is_caught(pl) and not pl.out and not pl.held, [lk_on, F._is_caught(pl), pl.pos])
 	# a toy of theirs moving while it looks is boxed: a point to us (everyone else keeping still: no soda on the floor or in the air, nobody still sliding)
 	for i in 20:
 		if F.grab == null: break

@@ -26,6 +26,7 @@ func _ready() -> void:
 	Store.save.items.helmet = 1; Store.save.items.vest = 10; Store.fix_save()
 	Store.settings.dev = false; Store.settings.god = false
 	for st in STAGES: _fight(st)
+	_toy_flame()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)
 
@@ -105,6 +106,16 @@ func _fight(st: int) -> void:
 		walked > 1.0 and shots > 0 and hits > 0 and kills > 0 and hurt and not Store.settings.god,
 		{"seconds": snappedf(ticks * DT, 0.1), "walked": snappedf(walked, 0.1), "shots": shots, "hits": hits, "kills": kills, "hurt": hurt, "hp": snappedf(pl.hp, 1.0),
 			"aim_error": snappedf(aim_err / maxi(aim_n, 1), 0.001), "ended": g.result if g.ended else ""})
+	main.command("menu")
+
+## stage 5's spray-can flamethrower (key 9) in hand: drawn, and no other toy gun (it once stopped the gun's posing every
+## frame on a missing table entry, and the dart pistol stayed in your hands)
+func _toy_flame() -> void:
+	main.command("start 9")
+	var g = main.guns; g.switch_slot(g.slots.find("flame"))
+	for i in 30: main.tick(DT); main._pose_gun(DT)
+	var others: Array = main.toy_models.keys().filter(func(k): return k != "flame" and (main.toy_models[k] as Node3D).visible)
+	check("stage 5: the spray-can flamethrower in hand is the toy drawn, and no other", g.cur == "flame" and (main.toy_models.flame as Node3D).visible and others.is_empty(), [g.cur, others])
 	main.command("menu")
 
 ## at a hand's speed: no more than about 6 radians a second, as mouse movement in pixels

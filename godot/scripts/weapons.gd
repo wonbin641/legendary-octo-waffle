@@ -33,8 +33,8 @@ const LIST := {
 
 # guns only the toy room has
 const EXTRA := {
-	"flame": {"name": "스프레이 화염방사기", "model": "TOY", "short": "화염방사기", "tab": "화염", "cls": "스프레이 + 라이터", "price": 0, "real": 0, "dmg": 1.25, "rate": 0.05, "auto": true, "mag": 120, "reserve": 480, "reload": 2.4,
-		"spread": 0.12, "adsSpread": 0.1, "moveSpread": 0.0, "pellets": 3, "recoil": 0.0, "kick": 0.004, "range": 9.5, "adsFov": 66, "sound": "flame", "flash": 0, "head": 1, "bloom": 0, "ammoCost": 0, "moveMul": 0.95, "flame": true},
+	"flame": {"name": "스프레이 화염방사기", "model": "TOY", "short": "화염방사기", "tab": "화염", "cls": "스프레이 + 라이터", "price": 0, "real": 0, "dmg": 2.5, "rate": 0.05, "auto": true, "mag": 120, "reserve": 480, "reload": 2.4,
+		"spread": 0.24, "adsSpread": 0.18, "moveSpread": 0.0, "pellets": 8, "recoil": 0.0, "kick": 0.004, "range": 15.0, "adsFov": 66, "sound": "flame", "flash": 0, "head": 1, "bloom": 0, "ammoCost": 0, "moveMul": 0.95, "flame": true},
 }
 static func all_ids() -> Array:
 	return ORDER + EXTRA.keys()

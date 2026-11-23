@@ -66,6 +66,7 @@ class Foe:
 	var detour_t := 0.0; var dx2 := 0.0; var dz2 := 0.0; var stuck_t := 0.0; var bx0 := 0.0; var bz0 := 0.0; var last_x := 0.0; var last_z := 0.0; var has_last := false; var pin_t := 0.0; var ghost_t := 0.0
 	var zig_t := 0.0; var fx_ := 0.0; var fz_ := 0.0; var bit := false; var roared := false; var tossed := false; var v0 := 0.0; var pass_v := 0.0; var slot = null; var claim_t := 0.0; var sg_cd := 0.0
 	var bleed_n := 0; var bleed_t := 0.0; var bleed_acc := 0.0; var k := {}; var legs: Array = []; var body: Node3D = null; var head: Node3D = null; var jaw: Node3D = null; var rig: Dictionary = {}; var neck_base: Array = []; var yaw_off := 0.0
+	var burn_t := 0.0; var burn_tick := 0.0   # set alight by the spray-can flamethrower: how long it burns on, the next tick
 	var fuse := 0.0; var beep2 := false; var flame_on := 0.0; var flame_acc := 0.0; var flame_snd := 0.0; var aim_t := 0.0; var laser: MeshInstance3D = null   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
 	var far: MeshInstance3D = null; var is_far := false; var no_far := false; var casts := -1   # far away: one baked mesh (see bake_far); the moon's shadow (-1 not yet set)
 
@@ -775,7 +776,31 @@ func sight_all() -> void:
 		e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length(); e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0)
 		if not e.g.visible: e.bar.visible = false
 
+## the spray-can flamethrower's fire sets what it hits alight: it burns for BURN_T after the last hit (each hit starts it
+## over, it does not stack), BURN_DMG every BURN_EVERY s, small flames rising off it; a toy it burns down is your kill
+const BURN_T := 3.0
+const BURN_EVERY := 0.5
+const BURN_DMG := 12.0
+const BURN_COLS := [Color(1.0, 0.62, 0.14, 0.85), Color(1.0, 0.38, 0.08, 0.85)]   # (two set colours: each is worked out once)
+func ignite(e: Foe) -> void:
+	if not e.alive: return
+	if e.burn_t <= 0.0: e.burn_tick = BURN_EVERY
+	e.burn_t = BURN_T
+func _burns(dt: float) -> void:
+	for e in list.duplicate():   # (a burn can kill: the list changes)
+		if e.burn_t <= 0.0: continue
+		if not e.alive: e.burn_t = 0.0; continue
+		e.burn_t = maxf(0.0, e.burn_t - dt); e.burn_tick -= dt
+		if fx and e.g.visible and randf() < 0.7:
+			fx.glow(Vector3(e.pos.x + randf_range(-e.R, e.R), e.pos.y + randf() * e.H, e.pos.z + randf_range(-e.R, e.R)), Vector3(randf_range(-0.2, 0.2), randf_range(0.9, 1.7), randf_range(-0.2, 0.2)),
+				randf_range(0.25, 0.45), 0.2, 0.05, BURN_COLS[randi() % 2], -1.0, 1.5)
+		if e.burn_tick <= 1e-4:   # (every half second, the last as the burn ends: six in all)
+			e.burn_tick += BURN_EVERY
+			var away := Vector3(e.pos.x - player.pos.x, 0.0, e.pos.z - player.pos.z)
+			damage(e, BURN_DMG, Vector3(e.pos.x, e.pos.y + e.H * 0.5, e.pos.z), away.normalized() if away.length_squared() > 1e-6 else Vector3(0, 0, 1), false, true)
+
 func update(dt: float, _time: float) -> void:
+	_burns(dt)
 	var eye_cam := cam.global_position if cam else Vector3(player.pos.x, player.pos.y + Player.EYE, player.pos.z)
 	var vis: float = (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
 	var lab: bool = World.STAGE_STYLE.get(stage, {}).get("lab", false)
