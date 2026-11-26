@@ -34,13 +34,13 @@ PARTS = [
      '메시·재질 도우미와 톤 매핑, 마무리 효과, 달빛 그림자, AO, 입자, 손에 든 총 모델.',
      [S + 'gfx.gd', S + 'grade.gd', S + 'moonshadow.gd', S + 'aoview.gd', S + 'fx.gd', S + 'gunmodels.gd']),
     ('part7_tests', '7 · 시험',
-     '자동 시험(run.gd, 브라우저판에서 뽑은 기준 자료와 비교하는 것 포함), 스테이지마다 봇이 싸우는 자동 플레이(fight.gd), 휴대폰 크기 창에서 손가락으로 메뉴를 써 보는 시험(touch.gd), 빌드된 웹판의 소리·음악 시험(web_sound.js).',
-     ['godot/tests/run.gd', 'godot/tests/fight.gd', 'godot/tests/touch.gd', 'godot/tests/web_sound.js']),
+     '자동 시험(run.gd, 브라우저판에서 뽑은 기준 자료와 비교하는 것 포함), 스테이지마다 봇이 싸우는 자동 플레이(fight.gd), 휴대폰 크기 창에서 손가락으로 메뉴를 써 보는 시험(touch.gd), 정조준한 총이 조준점을 가리지 않는지 보는 시험(aim.gd), 빌드된 웹판의 소리·음악 시험(web_sound.js).',
+     ['godot/tests/run.gd', 'godot/tests/fight.gd', 'godot/tests/touch.gd', 'godot/tests/aim.gd', 'godot/tests/web_sound.js']),
     ('part8_audio_tools', '8 · 소리·음악을 만드는 도구',
      '스테이지 5의 배경 음악(make_music.py), 장난감 효과음(make_sounds.py), 브라우저판 Sound 코드로 효과음을 굽는 도구(render_sounds.js).',
      ['tools/make_music.py', 'tools/make_sounds.py', 'tools/render_sounds.js']),
 ]
-EXTRA = ['godot/README.md', 'godot/REVIEW.md', 'godot/tests/run.tscn', 'godot/tests/fight.tscn', 'godot/tests/touch.tscn', 'godot/tests/reference_stage1.json']
+EXTRA = ['godot/README.md', 'godot/REVIEW.md', 'godot/tests/run.tscn', 'godot/tests/fight.tscn', 'godot/tests/touch.tscn', 'godot/tests/aim.tscn', 'godot/tests/reference_stage1.json']
 LANG = {'.gd': 'gdscript', '.py': 'python', '.js': 'javascript', '.sh': 'bash', '.nsi': 'nsis', '.cfg': 'ini', '.godot': 'ini', '.tscn': 'ini', '.md': 'markdown', '.json': 'json'}
 
 def read(rel): return open(os.path.join(ROOT, rel), encoding='utf-8').read()

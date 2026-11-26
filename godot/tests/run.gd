@@ -900,6 +900,7 @@ func _ready() -> void:
 	_mobile()
 	_fixes_153(gm, en, pl, g, pr, cam, fxn)
 	_fixes_154(gm, en, pl, w)
+	_aim_clear()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -2270,6 +2271,55 @@ func _fixes_154(gm: Game, en: Enemies, pl: Player, w: World) -> void:
 	check("bug 13: the jetpack does not start (nor use up its one go) on an animal or thrown, as the browser game's, nor down or held in stage 5; on your feet it does",
 		jt == [[true, 0], [false, 1], [false, 1], [false, 1], [false, 1]], jt)
 	Store.save = keep_save
+
+# ---------------- aimed, no gun hides what you aim at (1.5.5) ----------------
+## the triangles of what is drawn under root (but not under skip, nor a part marked "no_clear"), in the eye's space with root at `at`
+func _tris(root: Node3D, at: Vector3, skip: Node = null) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or mi.has_meta("no_clear") or (skip != null and skip.is_ancestor_of(mi)): continue
+		var t := mi.transform; var p := mi.get_parent(); var shown := mi.visible
+		while p != null and p != root: shown = shown and (p as Node3D).visible; t = (p as Node3D).transform * t; p = p.get_parent()
+		if not shown: continue
+		for v in mi.mesh.get_faces(): out.push_back(t * v + at)
+	return out
+## the rays from the eye through the middle of the screen and two rings about it (radius r, a tangent): those that hit something
+func _hits(tris: PackedVector3Array, r: float) -> int:
+	var dirs := [Vector3(0, 0, -1)]
+	for ring: float in [0.5, 0.97]:
+		for i in 12: dirs.push_back(Vector3(cos(i * TAU / 12.0) * r * ring, sin(i * TAU / 12.0) * r * ring, -1.0).normalized())
+	var hit := 0
+	for d: Vector3 in dirs:
+		for i in range(0, tris.size(), 3):
+			if Geometry3D.ray_intersects_triangle(Vector3.ZERO, d, tris[i], tris[i + 1], tris[i + 2]) != null: hit += 1; break
+	return hit
+func _aim_clear() -> void:
+	var holder := Node3D.new(); add_child(holder); var gmm := GunModels.new(); gmm.build(holder); var bad := []; var lifted := 0
+	for id in Weapons.ORDER:
+		var M: Dictionary = gmm.models[id]; var g: Node3D = M.g; g.visible = true
+		var sights := ["iron"]
+		for pid in (M.parts.sight as Dictionary).keys(): sights.push_back(pid)
+		for sg in sights:
+			gmm.apply_look(id, {"sight": sg, "muzzle": "none", "under": "none", "paint": "base"})
+			for slot in ["muzzle", "under"]:   # (the biggest of each on at once: the worst it can be)
+				for k in M.parts[slot]: (M.parts[slot][k] as Node3D).visible = true
+			var optic: Node3D = M.parts.sight.get(sg)
+			var at: Vector3 = gmm.ads(id); var n := _hits(_tris(g, at, optic), GunModels.CLEAR * 0.999)
+			if sg == "iron" and _hits(_tris(g, Vector3(0, -GunModels.MUZZLE[id][2], GunModels.HIP[id][3])), GunModels.CLEAR * 0.999) > 0: lifted += 1   # (held as before: on the sight line)
+			if n > 0: bad.push_back("%s %s: %d" % [id, sg, n])
+			if optic != null and _hits(_tris(optic, at + optic.position), 0.0) == 0: bad.push_back("%s %s: the optic is off the eye line" % [id, sg])
+		g.visible = false
+	var MS = load("res://scripts/main.gd")
+	for id in Toys.ORDER:
+		var t := Toys.build(id); holder.add_child(t)
+		var off: Vector2 = GunModels.clear_offset(t, MS.TOY_ADS, GunModels.CLEAR, MS.TOY_TURNS)
+		var n2 := _hits(_tris(t, MS.TOY_ADS + Vector3(off.x, off.y, 0)), GunModels.CLEAR * 0.999); var n0 := _hits(_tris(t, MS.TOY_ADS), GunModels.CLEAR * 0.999)
+		if n2 > 0: bad.push_back("toy %s: %d" % [id, n2])
+		if n0 > 0: lifted += 1
+	check("aimed, no gun hides what you aim at: nothing of the eight guns (iron sights or any optic, the biggest muzzle and under-barrel parts on) nor the nine toy guns comes within 6 %% of the screen's height of the middle, by rays through the middle; an optic's window stays on the eye line; held as before, %d of the 17 covered it" % lifted,
+		bad.is_empty() and lifted >= 12, bad)
+	holder.free()
 
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)

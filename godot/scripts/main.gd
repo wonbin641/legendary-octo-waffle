@@ -25,7 +25,7 @@ var needle: Node3D; var needle_arm: Node3D; var needle_syr: Node3D; var needle_j
 var gm_models: GunModels
 var jet_puff_t := 0.0
 var cut: Cut   # the cutscenes: in by helicopter, out by helicopter, the lab, the ship, the look behind a sealed door
-var view: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
+var view: Node3D; var view_lens: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var fps_label: Label
 var hudd: Hud   # the fight's screen (scripts/hud.gd)
 var heat_k := -1.0
@@ -131,13 +131,19 @@ func _on_resize() -> void:
 	if guns: guns.base_fov = base_fov
 
 # ---------------- the gun in your hands (plain shapes for now) ----------------
+const TOY_ADS := Vector3(0.0, -0.07 / 2 - 0.012, -0.24)   # a toy gun aimed, before it is moved to leave the aim in sight (toy_off)
+const TOY_TURNS := [0.0, 0.35, 0.7, 1.05]   # a toy may go down, or down and out to the right (a tall water bottle, a fat tube): the least move
+var toy_off := {}
 const GUN_SHAPE := {"pistol": [0.2, 0.05, 0.035], "shotgun": [0.62, 0.06, 0.05], "rifle": [0.6, 0.065, 0.045], "smg": [0.4, 0.07, 0.045], "sniper": [0.8, 0.055, 0.045],
 	"gl": [0.5, 0.11, 0.09], "lmg": [0.72, 0.09, 0.07], "rocket": [0.85, 0.12, 0.12]}
 func _build_guns() -> void:
-	view = Node3D.new(); world.hand_root = view; cam.add_child(view); _build_needle(cam)
+	view_lens = Node3D.new(); cam.add_child(view_lens)   # (the gun's own lens: see _gun_lens)
+	view = Node3D.new(); world.hand_root = view; view_lens.add_child(view); _build_needle(cam)
 	gm_models = GunModels.new(); gm_models.build(view)
 	for id in Weapons.ORDER: gun_models[id] = gm_models.models[id].g
-	for id in Toys.ORDER: var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
+	for id in Toys.ORDER:
+		var t := Toys.build(id); view.add_child(t); t.visible = false; toy_models[id] = t
+		toy_off[id] = GunModels.clear_offset(t, TOY_ADS, GunModels.CLEAR, TOY_TURNS)   # (aimed, moved just as far as it must be to leave what you aim at in sight: see GunModels.ads)
 	ruler = Toys.build("ruler"); view.add_child(ruler); ruler.visible = false
 	# stage 5's battery rush: the AA cell you carry, held low on the left of the view
 	carry_view = ModeRush.battery_node(); carry_view.scale = Vector3.ONE * 0.22; carry_view.position = Vector3(-0.3, -0.42, -0.62); carry_view.rotation = Vector3(0.35, 0.25, 1.25); carry_view.visible = false; cam.add_child(carry_view)
@@ -183,8 +189,9 @@ func _pose_gun(dt: float) -> void:
 		laser_dot.position = end - f * 0.03; laser_dot.scale = Vector3.ONE * clampf(Phys.rh_t * 0.05, 0.6, 6.0)
 		if from.distance_to(end) > 0.5: laser.look_at_from_position((from + end) / 2, end, Vector3.UP if absf(f.y) < 0.99 else Vector3.RIGHT); laser.scale = Vector3(1, 1, from.distance_to(end))
 	var hip_scale := clampf((hud.size.x / maxf(1.0, hud.size.y)) / 1.5, 0.55, 1.0)
-	var pos := Vector3(0.17 * lerpf(hip_scale, 1.0, a), -0.16, -0.3).lerp(Vector3(0.0, -d[1] / 2 - 0.012, -0.24), a)
-	if not toy: pos = GunModels.hip(guns.cur).lerp(GunModels.ads(guns.cur), a); pos.x *= lerpf(hip_scale, 1.0, a)
+	var t_off: Vector2 = toy_off.get(guns.cur, Vector2.ZERO)
+	var pos := Vector3(0.17 * lerpf(hip_scale, 1.0, a), -0.16, -0.3).lerp(TOY_ADS + Vector3(t_off.x, t_off.y, 0), a)
+	if not toy: pos = GunModels.hip(guns.cur).lerp(gm_models.ads(guns.cur), a); pos.x *= lerpf(hip_scale, 1.0, a)
 	var bob := clampf(player.speed_xz / 6.0, 0.0, 1.4) * (1.0 if player.grounded else 0.2) * (1.0 - a * 0.85); var ph := player.step_phase; var sprint := player.sprint_blend
 	pos.x += sin(ph) * 0.012 * bob + sprint * 0.04; pos.y += -absf(cos(ph)) * 0.012 * bob - sprint * 0.05 + player.land_dip * 0.4; pos.z += guns.kick_z * (1.0 - a * 0.5)
 	var rot := Vector3(guns.kick_rot * (1.0 - a * 0.5) - sprint * 0.35, sprint * 0.55, sin(ph) * 0.01 * bob)
@@ -701,8 +708,16 @@ func _process(delta: float) -> void:
 			var bas := Basis(Vector3.UP, cu_ang); var mid := Vector3(0, 0, GunModels.MUZZLE[ui.cu_gun][0] / 2.0 + 0.12)
 			view.rotation = Vector3(0, cu_ang, 0); view.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x), 0.02, -dist) - bas * mid
 			cu_light.position = Vector3(-hw * (0.5 + 310.0 / hud.size.x) + 0.3, 0.5, -dist + 0.7)
+	_gun_lens()
 	cut.tick_fade(dt)
 	_perf_frame(delta, (Time.get_ticks_usec() - cpu0) / 1000.0)
+
+## the gun is drawn as if through a lens of its own at the hip's angle of view, as the browser game draws it with a camera of
+## its own: the world zooms when you aim, the gun in your hands does not, so it covers no more of the target than at the hip.
+## A squeeze across the view (not along it) does that: what the zoom makes bigger is made as much smaller again
+func _gun_lens() -> void:
+	var s := tan(deg_to_rad(cam.fov) * 0.5) / tan(deg_to_rad(base_fov) * 0.5)
+	view_lens.scale = Vector3(s, s, 1.0)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED: pause_game()

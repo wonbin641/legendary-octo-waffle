@@ -22,9 +22,57 @@ const MOUNT_GEO := {
 }
 
 var models := {}   # id -> {g, mats, body, hot, iron, hands, parts, tip, flash_z}
+var lift := {}     # id -> how much lower than its sight line the gun is held, aimed (see clear_lift)
+## aimed, nothing of the gun comes within this of the middle of the screen, where the red dot is: a tangent, about 6 % of the
+## screen's height at the hip's 74 degrees (the gun is drawn at that angle of view however the world zooms: main._gun_lens)
+const CLEAR := 0.09
 
 static func hip(id: String) -> Vector3: return Vector3(HIP[id][0], HIP[id][1], HIP[id][2])
-static func ads(id: String) -> Vector3: return Vector3(0, -MUZZLE[id][2], HIP[id][3])
+## aimed: in the middle, and low enough that nothing of it hides what you aim at (the browser game holds it with the sight line
+## on the eye, which puts the top of most guns right under the aim; an optic is raised by as much, so you still look through it)
+func ads(id: String) -> Vector3: return Vector3(0, -MUZZLE[id][2] - float(lift.get(id, 0.0)), HIP[id][3])
+
+## how far a gun (or a toy) held at `at` (its root's place, -z forward) must go down so that nothing of it, seen from the eye,
+## lies within `clear` of the middle of the screen (see clear_offset)
+static func clear_lift(root: Node3D, at: Vector3, clear: float) -> float:
+	return -clear_offset(root, at, clear).y
+
+## the smallest move of a gun (or toy) held at `at`, straight down or down and out to the right (each of `turns`, radians
+## from straight down), after which nothing of it lies within `clear` of the middle of the screen: every drawn part's box,
+## at its far end (where the perspective brings it nearest the middle), either `clear` times its distance below the line
+## of sight or as far off to the side. (right, up) in metres. Parts marked "no_clear" (a faint laser beam) do not count
+static func clear_offset(root: Node3D, at: Vector3, clear: float, turns: Array = [0.0]) -> Vector2:
+	var boxes := []
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or mi.has_meta("no_clear"): continue
+		var t := mi.transform; var p := mi.get_parent()
+		while p != null and p != root: t = (p as Node3D).transform * t; p = p.get_parent()
+		boxes.push_back(t * mi.mesh.get_aabb())
+	var best := Vector2.ZERO; var best_k := INF
+	for a: float in turns:
+		var d := Vector2(sin(a), -cos(a)); var cand := [0.0]
+		for bb: AABB in boxes: cand.push_back(_clear_from(bb, at, clear, d))
+		cand.sort()
+		for k: float in cand:   # (a box off to the left can come into the way as the gun goes right: each step is tried whole)
+			if k >= best_k: break
+			if boxes.all(func(bb: AABB) -> bool: return _clear_at(bb, at, clear, d, k)): best_k = k; best = d * k; break
+	return best
+
+static func _clear_at(bb: AABB, at: Vector3, clear: float, d: Vector2, k: float) -> bool:
+	var far := -(bb.position.z + at.z)
+	if far <= 0.0: return true
+	var band := clear * far
+	return bb.position.x + d.x * k >= band or bb.end.x + d.x * k <= -band or bb.end.y + at.y + d.y * k <= -band
+
+## how far along d a box is out of the way for good (to the right of the middle, or under it)
+static func _clear_from(bb: AABB, at: Vector3, clear: float, d: Vector2) -> float:
+	var far := -(bb.position.z + at.z)
+	if far <= 0.0: return 0.0
+	var band := clear * far; var k := INF
+	if d.x > 1e-6: k = minf(k, (band - bb.position.x) / d.x)
+	if d.y < -1e-6: k = minf(k, (bb.end.y + at.y + band) / -d.y)
+	return maxf(0.0, k) + 1e-6
 
 func _mat(color: String, rough: float, metal := 0.0, emit := "") -> StandardMaterial3D:
 	var m := Gfx.std(World.lin(color), rough, metal)
@@ -120,23 +168,6 @@ func _parts(id: String, M: Dictionary) -> void:
 		var s := SphereMesh.new(); s.radius = r; s.height = r * 2; s.radial_segments = 8; s.rings = 4; _add(p, s, red, at)
 	var disc := func(p: Node3D, r: float, at: Vector3) -> void:   # a lens, facing along the barrel
 		var c := CylinderMesh.new(); c.top_radius = r; c.bottom_radius = r; c.height = 0.0004; c.radial_segments = 18; _add(p, c, glass, at, Vector3(PI / 2, 0, 0))
-	if MT.sight != null:
-		var y0: float = MT.sight.y; var z0: float = MT.sight.z
-		# red dot: a short open tube on a riser, a faint lens at the front and the dot itself on the eye line
-		var p: Node3D = add.call("sight", "dot"); _box(p, 0.022, maxf(0.004, ys - y0 - 0.012), 0.03, dk, 0, (y0 + ys - 0.012) / 2, z0)
-		_cyl(p, 0.0135, 0.04, tube_m, 0, ys, z0, true); disc.call(p, 0.0128, Vector3(0, ys, z0 - 0.02)); dot.call(p, 0.0011, Vector3(0, ys, z0 - 0.019))
-		# holographic: a square window in a frame, a red ring and dot floating in it
-		p = add.call("sight", "holo"); _box(p, 0.03, maxf(0.004, ys - y0 - 0.017), 0.045, dk, 0, (y0 + ys - 0.017) / 2, z0)
-		_box(p, 0.042, 0.005, 0.016, dk, 0, ys + 0.017, z0 - 0.012)
-		for sx: float in [-1.0, 1.0]: _box(p, 0.005, 0.036, 0.016, dk, sx * 0.0205, ys, z0 - 0.012)
-		var win := QuadMesh.new(); win.size = Vector2(0.036, 0.03); _add(p, win, glass, Vector3(0, ys, z0 - 0.014))
-		var ring := TorusMesh.new(); ring.inner_radius = 0.0037; ring.outer_radius = 0.0047; ring.rings = 24; ring.ring_segments = 6; _add(p, ring, red, Vector3(0, ys, z0 - 0.0145), Vector3(PI / 2, 0, 0))
-		dot.call(p, 0.0008, Vector3(0, ys, z0 - 0.0145))
-		# 2x: a longer tube with flared ends on two rings, a dark crosshair on the front lens
-		p = add.call("sight", "x2")
-		for dz: float in [0.02, -0.02]: _box(p, 0.012, maxf(0.004, ys - y0 - 0.014), 0.012, dk, 0, (y0 + ys - 0.014) / 2, z0 + dz)
-		_cyl(p, 0.0155, 0.075, tube_m, 0, ys, z0, true); _cyl(p, 0.0185, 0.014, tube_m, 0, ys, z0 + 0.04, true); _cyl(p, 0.0185, 0.014, tube_m, 0, ys, z0 - 0.04, true)
-		disc.call(p, 0.015, Vector3(0, ys, z0 - 0.0375)); _box(p, 0.028, 0.0006, 0.0006, dk, 0, ys, z0 - 0.037); _box(p, 0.0006, 0.028, 0.0006, dk, 0, ys, z0 - 0.037); dot.call(p, 0.0007, Vector3(0, ys, z0 - 0.0368))
 	if MT.muzzle != null:
 		var r: float = MT.muzzle.r; var L: float = MT.muzzle.len
 		var q: Node3D = add.call("muzzle", "sup"); _cyl(q, r * 1.5, L, dk, 0, mzy, mzz - L / 2); _cyl(q, r * 1.55, 0.006, dk2, 0, mzy, mzz - L + 0.004)
@@ -150,7 +181,29 @@ func _parts(id: String, M: Dictionary) -> void:
 			var u: Node3D = add.call("under", "vgrip"); _box(u, 0.024, 0.085, 0.028, dk2, 0, uy - 0.044, uz); _box(u, 0.028, 0.008, 0.032, dk, 0, uy - 0.003, uz); _box(u, 0.028, 0.006, 0.032, dk, 0, uy - 0.087, uz)
 			u = add.call("under", "agrip"); _box(u, 0.026, 0.008, 0.06, dk, 0, uy - 0.003, uz); _box(u, 0.024, 0.032, 0.07, dk2, 0, uy - 0.022, uz + 0.004, -0.55)
 		var l: Node3D = add.call("under", "laser"); _box(l, 0.02, 0.018, 0.05, dk, 0, uy - 0.012, uz); dot.call(l, 0.0028, Vector3(0, uy - 0.012, uz - 0.026))
-		_box(l, 0.0016, 0.0016, 0.9, beam, 0, uy - 0.012, uz - 0.026 - 0.45)   # a faint beam out ahead of the gun
+		_box(l, 0.0016, 0.0016, 0.9, beam, 0, uy - 0.012, uz - 0.026 - 0.45).set_meta("no_clear", true)   # a faint beam out ahead of the gun
+	# aimed, the gun goes down far enough to leave what you aim at in sight (with the biggest muzzle and under-barrel parts on);
+	# an optic stands taller on its riser by as much, so its window is still on the eye
+	lift[id] = clear_lift(g, Vector3(0, -ys, HIP[id][3]), CLEAR); var ys0 := ys; ys += lift[id]; var up: float = lift[id]
+	var post := func(p: Node3D, w: float, from_y: float, z: float) -> void:   # the riser's thin post from the old sight line up to the new
+		if up > 0.0005: _box(p, w, up, w, dk, 0, from_y + up / 2.0, z)
+	if MT.sight != null:
+		var y0: float = MT.sight.y; var z0: float = MT.sight.z
+		# red dot: a short open tube on a riser, a faint lens at the front and the dot itself on the eye line
+		var p: Node3D = add.call("sight", "dot"); _box(p, 0.022, maxf(0.004, ys0 - y0 - 0.012), 0.03, dk, 0, (y0 + ys0 - 0.012) / 2, z0); post.call(p, 0.008, ys0 - 0.012, z0)
+		_cyl(p, 0.0135, 0.04, tube_m, 0, ys, z0, true); disc.call(p, 0.0128, Vector3(0, ys, z0 - 0.02)); dot.call(p, 0.0011, Vector3(0, ys, z0 - 0.019))
+		# holographic: a square window in a frame, a red ring and dot floating in it
+		p = add.call("sight", "holo"); _box(p, 0.03, maxf(0.004, ys0 - y0 - 0.017), 0.045, dk, 0, (y0 + ys0 - 0.017) / 2, z0); post.call(p, 0.008, ys0 - 0.017, z0)
+		_box(p, 0.042, 0.005, 0.016, dk, 0, ys + 0.017, z0 - 0.012)
+		for sx: float in [-1.0, 1.0]: _box(p, 0.005, 0.036, 0.016, dk, sx * 0.0205, ys, z0 - 0.012)
+		var win := QuadMesh.new(); win.size = Vector2(0.036, 0.03); _add(p, win, glass, Vector3(0, ys, z0 - 0.014))
+		var ring := TorusMesh.new(); ring.inner_radius = 0.0037; ring.outer_radius = 0.0047; ring.rings = 24; ring.ring_segments = 6; _add(p, ring, red, Vector3(0, ys, z0 - 0.0145), Vector3(PI / 2, 0, 0))
+		dot.call(p, 0.0008, Vector3(0, ys, z0 - 0.0145))
+		# 2x: a longer tube with flared ends on two rings, a dark crosshair on the front lens
+		p = add.call("sight", "x2")
+		for dz: float in [0.02, -0.02]: _box(p, 0.012, maxf(0.004, ys0 - y0 - 0.014), 0.012, dk, 0, (y0 + ys0 - 0.014) / 2, z0 + dz); post.call(p, 0.006, ys0 - 0.014, z0 + dz)
+		_cyl(p, 0.0155, 0.075, tube_m, 0, ys, z0, true); _cyl(p, 0.0185, 0.014, tube_m, 0, ys, z0 + 0.04, true); _cyl(p, 0.0185, 0.014, tube_m, 0, ys, z0 - 0.04, true)
+		disc.call(p, 0.015, Vector3(0, ys, z0 - 0.0375)); _box(p, 0.028, 0.0006, 0.0006, dk, 0, ys, z0 - 0.037); _box(p, 0.0006, 0.028, 0.0006, dk, 0, ys, z0 - 0.037); dot.call(p, 0.0007, Vector3(0, ys, z0 - 0.0368))
 
 ## the gun's look: which parts show, the iron sights under an optic, the muzzle flash at the end of whatever is on the muzzle, and the paint
 ## (the receiver takes the colour, the furniture a darker shade of it; silver and gold are shinier)
