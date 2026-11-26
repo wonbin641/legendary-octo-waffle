@@ -12,9 +12,9 @@ OUT = os.path.join(ROOT, 'build', 'review')
 S = 'godot/scripts/'
 PARTS = [
     ('part0_platform_build_save_audio', '0 · 플랫폼·빌드·저장·소리',
-     '세 버전(웹·다운로드·앱)이 갈리는 곳: 프로젝트와 내보내기 설정, 빌드 스크립트 넷. 그리고 설정·저장(Store), 저장 코드, 상점 규칙, 총 수치, 효과음(Snd, 웹판의 WEB_MIX 포함)과 스테이지 5 음악(Music).',
+     '세 버전(웹·다운로드·앱)이 갈리는 곳: 프로젝트와 내보내기 설정, 빌드 스크립트 넷. 그리고 설정·저장(Store), 계정(Cloud와 server/의 계정 서버), 저장 코드, 상점 규칙, 총 수치, 효과음(Snd, 웹판의 WEB_MIX 포함)과 스테이지 5 음악(Music).',
      ['godot/project.godot', 'godot/export_presets.cfg', 'godot/main.tscn', 'tools/build_godot.sh', 'tools/build_windows.sh', 'tools/windows_installer.nsi',
-      'tools/build_android.sh', S + 'store.gd', S + 'savecode.gd', S + 'meta.gd', S + 'weapons.gd', S + 'custom.gd', S + 'snd.gd', S + 'music.gd']),
+      'tools/build_android.sh', 'server/src/index.js', 'server/schema.sql', 'server/wrangler.toml', S + 'store.gd', S + 'cloud.gd', S + 'savecode.gd', S + 'meta.gd', S + 'weapons.gd', S + 'custom.gd', S + 'snd.gd', S + 'music.gd']),
     ('part1_loop_combat', '1 · 게임 루프와 전투',
      '화면 상태·입력·터치·프레임(main.gd, 앱판의 뒤로 버튼과 안전 영역 포함), 스테이지 진행과 처치·돈·결과(game.gd), 플레이어, 총, 날아가는 것, 전리품, 충돌과 길 찾기, 3D 뷰포트.',
      [S + 'main.gd', S + 'game.gd', S + 'player.gd', S + 'guns.gd', S + 'proj.gd', S + 'loot.gd', S + 'phys.gd', S + 'picture.gd']),
@@ -35,13 +35,13 @@ PARTS = [
      [S + 'gfx.gd', S + 'grade.gd', S + 'moonshadow.gd', S + 'aoview.gd', S + 'fx.gd', S + 'gunmodels.gd']),
     ('part7_tests', '7 · 시험',
      '자동 시험(run.gd, 브라우저판에서 뽑은 기준 자료와 비교하는 것 포함), 스테이지마다 봇이 싸우는 자동 플레이(fight.gd), 휴대폰 크기 창에서 손가락으로 메뉴를 써 보는 시험(touch.gd), 정조준한 총이 조준점을 가리지 않는지 보는 시험(aim.gd), 빌드된 웹판의 소리·음악 시험(web_sound.js).',
-     ['godot/tests/run.gd', 'godot/tests/fight.gd', 'godot/tests/touch.gd', 'godot/tests/aim.gd', 'godot/tests/web_sound.js']),
+     ['godot/tests/run.gd', 'godot/tests/fight.gd', 'godot/tests/touch.gd', 'godot/tests/aim.gd', 'godot/tests/web_sound.js', 'godot/tests/cloud.gd', 'server/test/server.test.mjs', 'server/test/game.test.mjs', 'server/test/web.test.mjs']),
     ('part8_audio_tools', '8 · 소리·음악을 만드는 도구',
      '스테이지 5의 배경 음악(make_music.py), 장난감 효과음(make_sounds.py), 브라우저판 Sound 코드로 효과음을 굽는 도구(render_sounds.js).',
      ['tools/make_music.py', 'tools/make_sounds.py', 'tools/render_sounds.js']),
 ]
-EXTRA = ['godot/README.md', 'godot/REVIEW.md', 'godot/tests/run.tscn', 'godot/tests/fight.tscn', 'godot/tests/touch.tscn', 'godot/tests/aim.tscn', 'godot/tests/reference_stage1.json']
-LANG = {'.gd': 'gdscript', '.py': 'python', '.js': 'javascript', '.sh': 'bash', '.nsi': 'nsis', '.cfg': 'ini', '.godot': 'ini', '.tscn': 'ini', '.md': 'markdown', '.json': 'json'}
+EXTRA = ['godot/README.md', 'godot/REVIEW.md', 'godot/tests/run.tscn', 'godot/tests/fight.tscn', 'godot/tests/touch.tscn', 'godot/tests/aim.tscn', 'godot/tests/cloud.tscn', 'godot/tests/reference_stage1.json', 'server/README.md', 'server/package.json']
+LANG = {'.gd': 'gdscript', '.py': 'python', '.js': 'javascript', '.mjs': 'javascript', '.sql': 'sql', '.toml': 'toml', '.sh': 'bash', '.nsi': 'nsis', '.cfg': 'ini', '.godot': 'ini', '.tscn': 'ini', '.md': 'markdown', '.json': 'json'}
 
 def read(rel): return open(os.path.join(ROOT, rel), encoding='utf-8').read()
 

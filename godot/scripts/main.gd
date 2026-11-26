@@ -95,6 +95,7 @@ func _ready() -> void:
 		state = "brief"; ui.in_stage = false; ui.open_brief(stage)
 	ui.on_settings = apply_settings; ui.do_map = open_map; ui.do_map_close = close_map
 	hud.get_parent().add_child(ui); ui.build(); ui.tac.cam = cam
+	Cloud.idle = func() -> bool: return state == "menu" and (ui.cur == "menu" or ui.cur == "account" or ui.cur == "settings")   # (the account's newer progress comes down only here)
 	get_viewport().size_changed.connect(_on_resize); _on_resize()
 	apply_settings(); to_menu(); _bridge()
 	if OS.get_cmdline_user_args().has("--smoke"): _smoke.call_deferred()
@@ -793,6 +794,15 @@ func command(line: String) -> Dictionary:
 			var T: ToyMatch = game.tm
 			return {"tm": true, "mode": T.key, "allies": T.allies.size(), "them": T.units("them").size(), "queue": T.queue.size(), "score": T.score, "down": T.down_t, "out": player.out,
 				"pos": [player.pos.x, player.pos.y, player.pos.z], "hp": player.hp, "gun": guns.cur, "lock": guns.lock_to, "ended": game.ended, "result": game.result, "money": Store.save.money, "state": T.mode.state()}
+		"acct":   # the account (Cloud), for the browser checks: 'acct up id password', 'in', 'out', 'choose device|account', 'sync'; always answers how it stands
+			match a[1] if a.size() > 1 else "":
+				"up": Cloud.sign_up(a[2], a[3])
+				"in": Cloud.sign_in(a[2], a[3])
+				"out": Cloud.sign_out()
+				"choose": Cloud.choose(a[2])
+				"sync": Cloud.sync_now()
+			return {"on": Cloud.enabled(), "id": Cloud.id, "in": Cloud.signed_in(), "rev": Cloud.rev, "dirty": Cloud.dirty, "ask": Cloud.asking(), "busy": Cloud.busy, "offline": Cloud.offline, "lost": Cloud.lost,
+				"money": Store.save.money, "cleared": Store.save.cleared, "badge": ui.account_badge()}
 		"dev": Store.settings.dev = a[1] == "1"; Store.settings.god = a.size() > 2 and a[2] == "1"; ui.refresh_menu()
 		"reset": Store.save = Store.save0(); Store.fix_save(); Store.persist(); ui.refresh_menu()
 		"at": player.pos = Vector3(float(a[1]), 0, float(a[2])); player.vel = Vector3.ZERO; player.yaw = float(a[3]); player.pitch = float(a[4]) if a.size() > 4 else 0.0

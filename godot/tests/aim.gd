@@ -28,6 +28,7 @@ func _differs(a: Image, b: Image) -> float:
 	return float(hit) / maxf(1.0, n)
 
 func _ready() -> void:
+	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	main = load("res://main.tscn").instantiate(); add_child(main)
 	await _frames(3)
 	if DisplayServer.get_name() == "headless": print("FAIL needs a real window: run under xvfb-run as at the top of this file"); get_tree().quit(1); return

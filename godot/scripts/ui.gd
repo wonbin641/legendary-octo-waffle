@@ -115,6 +115,7 @@ func show_screen(key: String) -> void:
 		"custom": render_custom()
 		"codex": render_codex()
 		"settings": render_settings()
+		"account": render_account()
 		"pause": render_pause()
 		"brief": _brief_gear()   # (back from the layout or the shop: the guns to deploy with, the kit, whether 출동 can be pressed)
 		"over": _over_money()    # (back from the shop: the bag as it is now)
@@ -154,7 +155,7 @@ func _ready() -> void:
 func build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); mouse_filter = Control.MOUSE_FILTER_IGNORE   # (already in the tree: the offsets must be set too)
 	tac = TacMap.new(); tac.game = game; tac.f_mono = f_mono; tac.f_bold = f_bold
-	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_brief(); _build_map(); _build_pause(); _build_over()
+	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_account(); _build_brief(); _build_map(); _build_pause(); _build_over()
 	resized.connect(layout); layout()
 
 # ================= the main menu: the harbour control console =================
@@ -162,7 +163,7 @@ func _build_menu() -> void:
 	var root := Control.new(); root.set_anchors_preset(Control.PRESET_FULL_RECT); root.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(root); screens["menu"] = root
 	strip = PanelContainer.new(); strip.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.92), LINE, 0, 8)); root.add_child(strip)
 	var sh := hbox(18); strip.add_child(sh)
-	strip_l = lbl("● 7번 야드 관제", f_mono, 12, SODIUM); strip_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL; sh.add_child(strip_l)
+	strip_l = lbl("● 7번 야드 관제", f_mono, 12, SODIUM); strip_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL; strip_l.clip_text = true; strip_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; sh.add_child(strip_l)
 	strip_r = lbl("", f_mono, 12, INK); sh.add_child(strip_r)
 	rail = PanelContainer.new(); rail.add_theme_stylebox_override("panel", _box(Color(0.04, 0.055, 0.1, 0.9), LINE, 0, 0)); root.add_child(rail)
 	var rv := vbox(0); rail.add_child(rv)
@@ -294,9 +295,11 @@ func refresh_menu() -> void:
 	if strip == null: return
 	var n_clear: int = Store.save.cleared.size()
 	strip_r.text = "가방 %s    클리어 %d / %d" % [Store.won(Store.save.money), n_clear, Store.STAGE_ORDER.size()]
-	strip_l.text = "● 7번 야드 관제" + ("  ·  개발자 모드 켜짐" if Store.settings.dev else "")
+	strip_l.text = "● 7번 야드 관제" + ("  ·  개발자 모드 켜짐" if Store.settings.dev else "") + ("  ·  " + account_badge() if Cloud.enabled() else "")
 	var cxb: Button = rail_btns[4]; var cx_ok := Codex.ready()   # the book opens with your first clear (always in developer mode)
 	if cxb.disabled == cx_ok: cxb.disabled = not cx_ok; cxb.set_meta("label", "도감" if cx_ok else "도감 · 첫 클리어 후"); _layout_menu()
+	var set_label := "설정 · 계정" if Cloud.enabled() else "설정 · 저장"   # (the account is in with the settings and the save codes)
+	if str(rail_btns[5].get_meta("label")) != set_label: rail_btns[5].set_meta("label", set_label); _layout_menu()
 	var open := Store.stage_open(sel); var st: Array = _status(sel); var best := int(Store.save.best.get("t%d" % sel, 0)); var done: bool = Store.save.cleared.has(sel)
 	d_code.text = "스테이지 " + Store.STAGE_TAG[sel] + "  ·  " + st[1]
 	d_name.text = Game.STAGES[sel].name
@@ -413,6 +416,7 @@ func close_loadout() -> void:
 ## back from the screen on top (Esc, the phone's back button): the weapon layout through its own check
 func back() -> void:
 	if cur == "loadout": close_loadout()
+	elif cur == "account": close_account()
 	else: close_sub()
 
 ## the weapon order changed in the pause or on the loadout screen: the number keys follow at once, the gun in hand stays in hand
@@ -620,6 +624,12 @@ func _settings_rows(into: VBoxContainer, _full: bool) -> void:
 
 func render_settings() -> void:
 	clear(set_body)
+	((screens.settings as Control).get_meta("title") as Label).text = "설정 · 계정 · 저장" if Cloud.enabled() else "설정 · 저장"
+	if Cloud.enabled() and not in_stage:   # the account: who is signed in, and the way to its screen (from the menu only: never in a fight)
+		set_body.add_child(_head("계정"))
+		set_body.add_child(lbl((Cloud.id + " · " if Cloud.signed_in() else "") + Cloud.status_text(), f_body, 13, ALARM if Cloud.asking() else INK, true))
+		var ar := HFlowContainer.new(); ar.add_theme_constant_override("h_separation", 8); ar.add_theme_constant_override("v_separation", 8); set_body.add_child(ar)
+		ar.add_child(btn("진행 상황 고르기" if Cloud.asking() else ("계정 · 로그아웃" if Cloud.signed_in() else "로그인 · 회원가입"), "small", open_account))
 	set_body.add_child(_head("설정")); _settings_rows(set_body, true)
 	set_body.add_child(_head("저장"))
 	var row := HFlowContainer.new(); row.add_theme_constant_override("h_separation", 8); row.add_theme_constant_override("v_separation", 8); set_body.add_child(row)
@@ -674,10 +684,10 @@ func open_dialog(kind: String) -> void:
 			mail_in.text = str(Store.settings.get("mailTo", ""))
 		"load":
 			dlg_head.text = "진행 상황 불러오기"; dlg_title.text = "불러오기"; dlg_ok.text = "불러오기"; dlg_cancel.text = "취소"; dlg_in.placeholder_text = "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXX"
-			dlg_text.text = "저장할 때 받은 코드를 넣으세요. 지금 진행 상황은 코드의 내용으로 바뀌고, 대여 중인 무기는 반납됩니다(대여료는 돌려받지 않습니다)."
+			dlg_text.text = "저장할 때 받은 코드를 넣으세요. 지금 진행 상황은 코드의 내용으로 바뀌고, 대여 중인 무기는 반납됩니다(대여료는 돌려받지 않습니다)." + (" 로그인 중이라 계정의 진행 상황도 코드의 내용으로 바뀝니다." if Cloud.signed_in() else "")
 		"reset":
 			dlg_head.text = "진행 상황 초기화"; dlg_title.text = "모두 지울까요?"; dlg_ok.text = "초기화"; dlg_cancel.text = "취소"
-			dlg_text.text = "돈, 열린 스테이지, 깬 기록, 최단 기록, 무기 편성, 대여 중인 무기, 가진 총, 아이템과 상아, 총기 커스텀을 모두 지우고 처음 상태로 돌아갑니다. 되돌릴 수 없으니 필요하면 먼저 저장 코드를 받아 두세요. 설정(감도, 음량, 개발자 모드)은 그대로입니다."
+			dlg_text.text = "돈, 열린 스테이지, 깬 기록, 최단 기록, 무기 편성, 대여 중인 무기, 가진 총, 아이템과 상아, 총기 커스텀을 모두 지우고 처음 상태로 돌아갑니다. 되돌릴 수 없으니 필요하면 먼저 저장 코드를 받아 두세요. 설정(감도, 음량, 개발자 모드)은 그대로입니다." + (" 로그인 중이라 계정에 저장된 진행 상황도 함께 지워집니다." if Cloud.signed_in() else "")
 		"dev":
 			dlg_head.text = "개발자 모드"; dlg_title.text = "비밀번호"; dlg_ok.text = "켜기"; dlg_cancel.text = "취소"; dlg_in.placeholder_text = "비밀번호"
 			dlg_text.text = "개발자 모드를 켜려면 비밀번호를 넣으세요. 켜면 모든 스테이지와 모든 총, 아이템을 무료로 쓸 수 있고 무적이 됩니다(무적은 설정에서 끌 수 있습니다)."
@@ -722,6 +732,203 @@ func _dialog_ok() -> void:
 		"dev":
 			if SaveCode.dev_hash(dlg_in.text.strip_edges()) != SaveCode.DEV_HASH: dlg_msg.text = "비밀번호가 틀렸습니다"; Snd.play("empty"); return
 			Store.settings.dev = true; Store.settings.god = true; Store.persist_settings(); close_sub(); set_msg.text = "개발자 모드 · 모든 스테이지와 모든 총을 쓸 수 있고 무적입니다"; render_settings()
+
+# ================= the account (Cloud): sign in with an id, and the progress is kept on the server too =================
+## in: sign in. up: sign up. rc: the recovery code sets a new password. code: the recovery code, shown this once.
+## ask: this device's progress or the account's. me: signed in. del: delete the account
+var ac_mode := "in"
+var ac_body: VBoxContainer; var ac_msg: Label; var ac_head: Label; var ac_ok: Button; var ac_close: Button
+var ac_id: LineEdit; var ac_pw: LineEdit; var ac_pw2: LineEdit; var ac_rc: LineEdit; var ac_state: Label
+var ac_code := ""; var ac_last_id := ""
+func _build_account() -> void:
+	var s := sheet("account", "계정", "YRD-ID", 560.0); ac_body = s[1]; ac_msg = s[3]; ac_head = s[0].get_meta("title")
+	ac_ok = btn("로그인", "primary", _account_ok); ac_ok.set_meta("first", true); ac_close = btn("닫기", "ghost", back)
+	s[2].add_child(ac_ok); s[2].add_child(ac_close); s[2].move_child(ac_ok, 0); s[2].move_child(ac_close, 1)
+	Cloud.changed.connect(_account_changed)
+
+## who is signed in, for the menu's top line
+func account_badge() -> String:
+	if not Cloud.signed_in(): return "게스트"
+	return Cloud.id + (" · 골라야 함" if Cloud.asking() else (" · 연결 안 됨" if Cloud.offline else ""))
+
+func open_account() -> void:
+	if not Cloud.enabled() or in_stage: return
+	ac_mode = "ask" if Cloud.asking() else ("me" if Cloud.signed_in() else "in"); ac_msg.text = "다시 로그인해 주세요" if Cloud.lost else ""
+	open_sub("account")
+
+## Esc, the phone's back button, 닫기: not while the recovery code is still on show, and from the delete question back to the account
+func close_account() -> void:
+	if Cloud.busy: return
+	if ac_mode == "code": ac_msg.text = "복구 코드를 적어 두었으면 '적어 두었습니다'를 눌러 주세요"; return
+	if ac_mode == "del": _account_mode("me"); return
+	close_sub()
+
+func _account_mode(m: String) -> void:
+	if ac_id != null: ac_last_id = ac_id.text
+	ac_mode = m; ac_msg.text = ""; render_account()
+	if not is_touch and ac_id != null: _focus_box.call_deferred(ac_id)   # (a phone's keyboard comes up when the box is tapped, not before)
+
+func _focus_box(e) -> void:
+	if is_instance_valid(e) and (e as Control).is_inside_tree() and (e as Control).is_visible_in_tree(): (e as Control).grab_focus()
+
+## a box to type in. On a phone the list moves the box to the top when it is tapped, clear of the keyboard
+func _field(hint: String, secret := false, max_len := 64) -> LineEdit:
+	var e := LineEdit.new(); e.custom_minimum_size = Vector2(0, 46); e.placeholder_text = hint; e.secret = secret; e.max_length = max_len
+	e.add_theme_font_override("font", f_bold); e.add_theme_font_size_override("font_size", 16)
+	if secret: e.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
+	e.text_submitted.connect(func(_t: String) -> void: _account_ok())
+	e.focus_entered.connect(func() -> void:
+		if not is_touch: return
+		var sc := ac_body.get_parent() as ScrollContainer
+		if sc != null: sc.set_deferred("scroll_vertical", maxi(0, int(e.position.y) - 6)))
+	return e
+
+func _note(t: String, color := STEEL) -> void:
+	ac_body.add_child(lbl(t, f_body, 12, color, true))
+
+func _row8() -> HFlowContainer:
+	var r := HFlowContainer.new(); r.add_theme_constant_override("h_separation", 8); r.add_theme_constant_override("v_separation", 8); ac_body.add_child(r)
+	return r
+
+func render_account() -> void:
+	clear(ac_body); ac_id = null; ac_pw = null; ac_pw2 = null; ac_rc = null; ac_state = null
+	if ac_mode != "code":   # (the recovery code stays on show until it is put away)
+		if Cloud.signed_in(): ac_mode = "ask" if Cloud.asking() else ("del" if ac_mode == "del" else "me")
+		elif ac_mode != "up" and ac_mode != "rc": ac_mode = "in"
+	_danger(ac_ok, ac_mode == "del"); ac_ok.visible = ac_mode != "ask"; ac_close.visible = ac_mode != "code" and ac_mode != "me"; ac_close.text = "닫기"
+	match ac_mode:
+		"in":
+			ac_head.text = "계정 · 로그인"; ac_ok.text = "로그인"
+			ac_id = _field("아이디", false, Cloud.ID_MAX); ac_id.text = ac_last_id; ac_body.add_child(ac_id)
+			ac_pw = _field("비밀번호", true, Cloud.PW_MAX); ac_body.add_child(ac_pw)
+			var row := _row8()
+			row.add_child(btn("회원가입", "small", func() -> void: _account_mode("up")))
+			row.add_child(btn("비밀번호를 잊었어요 (복구 코드)", "small", func() -> void: _account_mode("rc")))
+			_note("로그인하면 진행 상황이 계정에도 저장되어 휴대폰, PC, 웹 어디서든 같은 아이디로 이어서 할 수 있습니다. 로그인하지 않아도 지금처럼 이 기기에 저장하며 계속 할 수 있습니다.")
+		"up":
+			ac_head.text = "계정 · 회원가입"; ac_ok.text = "가입하기"
+			ac_id = _field("아이디 (영문 소문자, 숫자, 밑줄 · %d~%d자)" % [Cloud.ID_MIN, Cloud.ID_MAX], false, Cloud.ID_MAX); ac_id.text = ac_last_id; ac_body.add_child(ac_id)
+			ac_pw = _field("비밀번호 (%d자 이상)" % Cloud.PW_MIN, true, Cloud.PW_MAX); ac_body.add_child(ac_pw)
+			ac_pw2 = _field("비밀번호 한 번 더", true, Cloud.PW_MAX); ac_body.add_child(ac_pw2)
+			_row8().add_child(btn("이미 계정이 있어요 (로그인)", "small", func() -> void: _account_mode("in")))
+			_note("이메일이나 이름은 받지 않습니다. 서버에는 아이디, 알아볼 수 없게 바꾼 비밀번호, 게임 진행 상황만 저장됩니다. 가입하면 이 기기의 지금 진행 상황이 계정에 저장됩니다.")
+		"rc":
+			ac_head.text = "계정 · 비밀번호 다시 정하기"; ac_ok.text = "새 비밀번호로 바꾸기"
+			ac_id = _field("아이디", false, Cloud.ID_MAX); ac_id.text = ac_last_id; ac_body.add_child(ac_id)
+			ac_rc = _field("복구 코드 (XXXX-XXXX-XXXX-XXXX)", false, 40); ac_rc.add_theme_font_override("font", f_mono); ac_body.add_child(ac_rc)
+			ac_pw = _field("새 비밀번호 (%d자 이상)" % Cloud.PW_MIN, true, Cloud.PW_MAX); ac_body.add_child(ac_pw)
+			ac_pw2 = _field("새 비밀번호 한 번 더", true, Cloud.PW_MAX); ac_body.add_child(ac_pw2)
+			_row8().add_child(btn("로그인으로 돌아가기", "small", func() -> void: _account_mode("in")))
+			_note("가입할 때 받은 복구 코드로 새 비밀번호를 정합니다. 바꾸면 복구 코드도 새것으로 바뀌고, 로그인해 둔 다른 기기는 모두 로그아웃됩니다.")
+		"code":
+			ac_head.text = "계정 · 복구 코드"; ac_ok.text = "적어 두었습니다"
+			ac_body.add_child(lbl("복구 코드", f_title, 30, INK))
+			var cb := PanelContainer.new(); cb.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.9), LINE, 1, 12)); ac_body.add_child(cb)
+			cb.add_child(lbl(ac_code, f_mono, 22, SODIUM))
+			_row8().add_child(btn("코드 복사", "small", func() -> void:
+				DisplayServer.clipboard_set(ac_code)
+				if OS.has_feature("web"): JavaScriptBridge.eval("try{navigator.clipboard.writeText(%s)}catch(e){}" % JSON.stringify(ac_code))
+				ac_msg.text = "복사했습니다"))
+			_note("비밀번호를 잊었을 때 새 비밀번호를 정할 수 있는 하나뿐인 방법입니다. 지금 한 번만 보여 드리니 꼭 적어 두거나 복사해 두세요. 이 코드를 아는 사람은 비밀번호를 바꿀 수 있으니 남에게 보여 주지 마세요.", INK)
+		"ask":
+			ac_head.text = "계정 · 진행 상황 고르기"; ac_close.text = "나중에"
+			_note("이 기기와 계정(%s)의 진행 상황이 다릅니다. 어느 쪽으로 이어서 할지 골라 주세요. 고르지 않은 쪽의 진행 상황은 사라집니다." % Cloud.id, INK)
+			var two := GridContainer.new(); two.columns = 2 if size.x >= 560.0 else 1; two.add_theme_constant_override("h_separation", 10); two.add_theme_constant_override("v_separation", 10)   # side by side where there is room: both in sight at once
+			two.size_flags_horizontal = Control.SIZE_EXPAND_FILL; ac_body.add_child(two)
+			for side in ["device", "account"]:
+				var pn := PanelContainer.new(); pn.add_theme_stylebox_override("panel", _box(Color(NIGHT, 0.6), LINE, 1, 10)); pn.size_flags_horizontal = Control.SIZE_EXPAND_FILL; two.add_child(pn)
+				var pv := vbox(6); pn.add_child(pv)
+				var saved_at := Cloud.when(int(Cloud.ask.get("updated", 0)))
+				pv.add_child(lbl("이 기기" if side == "device" else ("계정" + (" · 마지막 저장 " + saved_at if saved_at != "" else "")), f_bold, 14, SODIUM))
+				pv.add_child(lbl(Cloud.summary(Store.stored() if side == "device" else Cloud.ask.get("data", {})).replace(" · ", "\n"), f_body, 13, INK, true))   # (a line each: the bag, the stages, the guns)
+				pv.add_child(btn("이 기기 것으로 이어 하기" if side == "device" else "계정 것으로 이어 하기", "ghost", func() -> void: _account_choose(side)))
+		"me":
+			ac_head.text = "계정"; ac_ok.text = "닫기"
+			ac_body.add_child(lbl(Cloud.id, f_title, 30, INK))
+			ac_state = lbl(Cloud.status_text(), f_body, 13, INK, true); ac_body.add_child(ac_state)
+			var row5 := _row8()
+			row5.add_child(btn("지금 저장", "small", func() -> void: _account_sync()))
+			row5.add_child(btn("로그아웃", "small", func() -> void: _account_out()))
+			row5.add_child(btn("계정 삭제", "small", func() -> void: _account_mode("del")))
+			_note("진행 상황은 바뀔 때마다 계정에 저장됩니다. 다른 기기에서도 같은 아이디로 로그인하면 이어서 할 수 있습니다. 로그아웃해도 이 기기의 진행 상황은 그대로 남습니다. 비밀번호를 바꾸려면 로그아웃한 뒤 '비밀번호를 잊었어요'에서 복구 코드로 새로 정하세요.")
+		"del":
+			ac_head.text = "계정 · 삭제"; ac_ok.text = "계정 삭제"; ac_close.text = "취소"
+			ac_body.add_child(lbl("계정을 지울까요?", f_title, 30, INK))
+			_note("계정(%s)과 계정에 저장된 진행 상황을 서버에서 모두 지웁니다. 되돌릴 수 없습니다. 이 기기에 있는 진행 상황은 그대로 남습니다. 비밀번호를 넣어 확인해 주세요." % Cloud.id, INK)
+			ac_pw = _field("비밀번호", true, Cloud.PW_MAX); ac_body.add_child(ac_pw)
+	if is_touch and (ac_id != null or ac_pw != null):   # room to move a box up clear of the phone's keyboard
+		var sp := Control.new(); sp.custom_minimum_size = Vector2(0, 240); sp.mouse_filter = Control.MOUSE_FILTER_IGNORE; ac_body.add_child(sp)
+	_account_busy()
+
+func _account_busy() -> void:
+	ac_ok.disabled = Cloud.busy
+	for b in ac_body.find_children("*", "Button", true, false): (b as Button).disabled = Cloud.busy
+	if Cloud.busy: ac_msg.text = ("비밀번호를 암호로 바꾸는 중… %d%%" % roundi(Cloud.progress * 100.0)) if (Cloud.progress > 0.0 and Cloud.progress < 1.0) else "서버와 이야기하는 중…"
+
+func _account_fail(r: Dictionary) -> void:
+	ac_msg.text = str(r.get("error", ""))
+	if ac_msg.text != "": Snd.play("empty")
+	_account_busy()
+
+func _account_ok() -> void:
+	if Cloud.busy: return
+	match ac_mode:
+		"in":
+			ac_last_id = ac_id.text
+			var r: Dictionary = await Cloud.sign_in(ac_id.text, ac_pw.text)
+			if not r.ok: _account_fail(r); return
+			Snd.play("buy"); ac_mode = "me"; ac_msg.text = "" if Cloud.asking() else "로그인했습니다"; render_account()
+		"up":
+			ac_last_id = ac_id.text
+			if ac_pw.text != ac_pw2.text: _account_fail({"error": "비밀번호가 서로 다릅니다"}); return
+			var r2: Dictionary = await Cloud.sign_up(ac_id.text, ac_pw.text)
+			if not r2.ok: _account_fail(r2); return
+			Snd.play("buy"); ac_code = str(r2.get("recovery", "")); ac_mode = "code"; ac_msg.text = "가입했습니다 · 복구 코드를 적어 두세요"; render_account()
+		"rc":
+			ac_last_id = ac_id.text
+			if ac_pw.text != ac_pw2.text: _account_fail({"error": "비밀번호가 서로 다릅니다"}); return
+			var r3: Dictionary = await Cloud.recover(ac_id.text, ac_rc.text, ac_pw.text)
+			if not r3.ok: _account_fail(r3); return
+			Snd.play("buy"); ac_code = str(r3.get("recovery", "")); ac_mode = "code"; ac_msg.text = "비밀번호를 바꿨습니다 · 새 복구 코드를 적어 두세요"; render_account()
+		"code":
+			ac_code = ""; ac_mode = "me"; ac_msg.text = "" if Cloud.asking() else "로그인했습니다 · 진행 상황이 계정에 저장됩니다"; render_account()
+		"me": close_sub()
+		"del":
+			var r4: Dictionary = await Cloud.delete_account(ac_pw.text)
+			if not r4.ok: _account_fail(r4); return
+			Snd.play("reload0"); ac_mode = "in"; ac_msg.text = "계정을 지웠습니다 · 이 기기의 진행 상황은 그대로입니다"; render_account()
+
+func _account_choose(side: String) -> void:
+	if Cloud.busy: return
+	await Cloud.choose(side)
+	if Cloud.asking(): ac_msg.text = "서버에 연결하지 못했습니다. 잠시 뒤에 다시 골라 주세요."; Snd.play("empty"); render_account(); return
+	Snd.play("buy"); ac_mode = "me"; ac_msg.text = "이 기기의 진행 상황을 계정에 저장했습니다" if side == "device" else "계정의 진행 상황을 불러왔습니다"; render_account()
+
+func _account_sync() -> void:
+	if Cloud.busy: return
+	await Cloud.sync_now()
+	ac_msg.text = "" if (Cloud.asking() or not Cloud.signed_in()) else ("서버에 연결하지 못했습니다" if Cloud.offline else "계정에 저장했습니다"); render_account()
+
+func _account_out() -> void:
+	if Cloud.busy: return
+	await Cloud.sign_out()
+	ac_mode = "in"; ac_msg.text = "로그아웃했습니다 · 이 기기의 진행 상황은 그대로입니다"; render_account()
+
+## the account has changed under the screens: the menu's top line and the settings follow, the account's own screen keeps
+## what is being typed, and a choice that turns up while the menu is on show opens by itself
+func _account_changed(what: String) -> void:
+	if what == "busy":
+		if cur == "account": _account_busy()
+		return
+	if what == "applied": on_settings.call()   # (the guns' parts and paint, the menu's numbers)
+	if cur == "menu":
+		refresh_menu()
+		if what == "ask" and not in_stage: open_account()
+	elif cur == "settings": render_settings()
+	elif cur == "account" and not Cloud.busy:
+		if what == "sync" and ac_mode != "ask":
+			if ac_state != null: ac_state.text = Cloud.status_text()
+		elif ac_mode != "code": render_account()
 
 # ================= the briefing =================
 func _build_brief() -> void:

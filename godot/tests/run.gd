@@ -31,6 +31,7 @@ func check(name: String, ok: bool, info = "") -> void:
 	if not ok: fails += 1
 
 func _ready() -> void:
+	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	Store.settings.dev = false; Store.settings.god = false; Store.settings.gfx = "auto"; Store.settings.toyMode = "sweep"   # (whatever this machine kept from playing: the checks start from a fresh player's settings)
 	var ref: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/reference_stage1.json"))
 	var r := World.Rng.new(7)
@@ -902,6 +903,7 @@ func _ready() -> void:
 	_fixes_154(gm, en, pl, w)
 	_aim_clear()
 	_corpse_shot(gm, en, pl, g, cam)
+	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -2464,3 +2466,210 @@ func _ref_ray(o: Vector3, d: Vector3, max_t: float) -> bool:
 			_rr_n = Vector3(sg if ax == 0 else 0.0, sg if ax == 1 else 0.0, sg if ax == 2 else 0.0)
 	_rr_t = best
 	return hit
+
+# ---------------- the account: sign in with an id, the progress kept on the server too (1.6.0) ----------------
+## stands in for the account server in these checks (server/src/index.js, checked on its own in server/test): the same
+## answers, kept in memory
+class Accounts:
+	var users := {}; var sessions := {}; var down := false; var wait := 0; var calls: Array = []; var bodies: Array = []; var n := 0
+	func _j(x): return JSON.parse_string(JSON.stringify(x))   # (as over the wire: every number comes back a float)
+	func _open(id: String) -> String:
+		n += 1; var t := "t%042d" % n; sessions[t] = id; return t
+	func _end(id: String) -> void:
+		for t in sessions.keys():
+			if sessions[t] == id: sessions.erase(t)
+	func handle(method: String, path: String, body, tok: String) -> Dictionary:
+		calls.push_back(method + " " + path); bodies.push_back(JSON.stringify(body))
+		if down: return {"status": 0, "json": {}}
+		var b: Dictionary = _j(body) if body is Dictionary else {}
+		var id := str(b.get("id", ""))
+		match path:
+			"/register":
+				if users.has(id): return {"status": 409, "json": {"error": "taken"}}
+				n += 1; users[id] = {"key": b.get("key"), "code": "CODE-%04d-AAAA-BBBB" % n, "save": null}
+				return {"status": 201, "json": {"id": id, "token": _open(id), "recovery": users[id].code}}
+			"/login":
+				if wait > 0: return {"status": 429, "json": {"error": "wait", "wait": wait}}
+				if not users.has(id) or users[id].key != b.get("key"): return {"status": 401, "json": {"error": "wrong"}}
+				return {"status": 200, "json": {"id": id, "token": _open(id), "save": _j(users[id].save)}}
+			"/recover":
+				if not users.has(id) or users[id].code != b.get("recovery"): return {"status": 401, "json": {"error": "wrong"}}
+				n += 1; users[id].key = b.get("key"); users[id].code = "CODE-%04d-CCCC-DDDD" % n; _end(id)
+				return {"status": 200, "json": {"id": id, "token": _open(id), "recovery": users[id].code, "save": _j(users[id].save)}}
+		if not sessions.has(tok): return {"status": 401, "json": {"error": "auth"}}
+		var me: String = sessions[tok]
+		match method + " " + path:
+			"GET /save": return {"status": 200, "json": {"save": _j(users[me].save)}}
+			"PUT /save": return put(me, b.get("data"), int(b.get("base", 0)), bool(b.get("force", false)))
+			"POST /logout": sessions.erase(tok); return {"status": 200, "json": {"ok": true}}
+			"POST /delete":
+				if users[me].key != b.get("key"): return {"status": 401, "json": {"error": "wrong"}}
+				users.erase(me); _end(me)
+				return {"status": 200, "json": {"ok": true}}
+		return {"status": 404, "json": {"error": "nope"}}
+	## a save written: by this device, or (called by the checks) by another device of the same account
+	func put(me: String, data, base: int, force := false) -> Dictionary:
+		var cur = users[me].save; var rev := int(cur.rev) if cur != null else 0
+		if cur != null and not force and base != rev: return {"status": 409, "json": {"error": "conflict", "save": _j(cur)}}
+		users[me].save = {"data": _j(data), "rev": rev + 1, "updated": 1795000000 + rev * 60}
+		return {"status": 200, "json": {"rev": rev + 1, "updated": 1795000000 + rev * 60}}
+
+func _accounts() -> void:
+	var C = Cloud; var K = load("res://scripts/cloud.gd")
+	var v1 = K.Kdf.new("password".to_utf8_buffer(), "salt".to_utf8_buffer(), 1); var v2 = K.Kdf.new("password".to_utf8_buffer(), "salt".to_utf8_buffer(), 4096); v2.step(v2.left)
+	var k_all: String = K.key_of("someone", "correct horse")
+	C.rounds = K.ROUNDS; var t_k := Time.get_ticks_msec(); var k_parts: String = await C.stretch("  SomeOne ", "correct horse"); t_k = Time.get_ticks_msec() - t_k
+	check("the account's key is PBKDF2-HMAC-SHA256 as the standard has it (its known answers for 1 and 4096 rounds; a password longer than a hash block; one in Korean), salted with the id in lower case, 100,000 rounds, the same worked out a part each frame",
+		v1.out().hex_encode() == "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b" and v2.out().hex_encode() == "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a"
+		and K.key_of("someone", "p".repeat(80), 50) == "cf688ec702d574e984a811c122bad245d3697ba59de47fc8d7529237d85ae233" and K.key_of("someone", "비밀번호 한글", 50) == "14236e01f17c6e8279a15daee04875f3e902b5bebff28527bea1b7335f92b62f"
+		and k_all == "2891b140f4147d4ea1a2f5cc779f1cb15a3e2fcdf76d61be2c908745fa65c6a9" and k_parts == k_all and K.key_of("someone", "Correct horse", 50) != K.key_of("someone", "correct horse", 50), "%d ms" % t_k)
+	check("an id is 3 to 16 of a-z, 0-9 and _, a password 8 to 64 letters of any kind",
+		K.id_error("ab") != "" and K.id_error("has space") != "" and K.id_error("한글아이디") != "" and K.id_error("a".repeat(17)) != "" and K.id_error("Upper") != "" and K.id_error("good_id_1") == ""
+		and K.pw_error("1234567") != "" and K.pw_error("12345678") == "" and K.pw_error("한글 비밀번호도") == "" and K.pw_error("p".repeat(65)) != "")
+	var keep_save: Dictionary = Store.save.duplicate(true); var keep_locks := [Store.money_lock, Store.ivory_lock, Store.own_lock]
+	Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null   # (not in a stage, whatever the checks before left)
+	var srv := Accounts.new(); var events: Array = []; var on_ev := func(w: String) -> void: events.push_back(w)
+	C.changed.connect(on_ev)
+	C.store_key = "account_check"; C.base = "http://check"; C.transport = srv.handle; C.rounds = 300; C.idle = Callable(); C._forget()
+	var progress := func(money: int, cleared: Array) -> void:   # this device's progress, written as the game writes it
+		Store.save = Store.save0(); Store.save.money = money; Store.save.cleared = cleared.duplicate(); Store.fix_save(); Store.persist()
+	var acct := func() -> Dictionary: return srv.users.get("mina_07", {})
+	# ---- signing up; saves go up by themselves
+	progress.call(5000, [1])
+	var up: Dictionary = await C.sign_up("Mina_07", "pass word 1")
+	check("signing up: the id in lower case, a recovery code to keep, and this device's progress on the account as its first save; the server is sent a key, never the password",
+		up.ok and str(up.recovery).begins_with("CODE-") and C.signed_in() and C.id == "mina_07" and acct.call().get("key") == K.key_of("mina_07", "pass word 1", 300) and acct.call().save != null
+		and int(acct.call().save.rev) == 1 and int(acct.call().save.data.money) == 5000 and C.rev == 1 and not C.dirty and not srv.bodies.any(func(b): return str(b).contains("pass word 1")), [up, C.id, C.rev, C.dirty])
+	Store.save.money = 7000; Store.persist()
+	var was_dirty: bool = C.dirty; var n_before := srv.calls.size()
+	C._process(1.0); var held_back: bool = srv.calls.size() == n_before   # (a moment first, so a run of saves goes up as one)
+	C._process(1.5)
+	check("a save on the device goes up to the account by itself a moment later, as the next rev",
+		was_dirty and held_back and not C.dirty and int(acct.call().save.rev) == 2 and int(acct.call().save.data.money) == 7000 and C.rev == 2 and C.status_text().begins_with("계정에 저장됨"), [was_dirty, held_back, C.dirty, C.rev, C.status_text()])
+	Store.money_lock = 7000; Store.save.money = 9999; Store.persist(); C._process(3.0)   # in a stage: what you pick up there is not yours yet
+	var in_stage_money := int(acct.call().save.data.money); Store.money_lock = null; Store.save.money = 7000
+	check("inside a stage the account gets what the device keeps: what you came in with, not what you have picked up there", in_stage_money == 7000 and int(acct.call().save.rev) == 3, [in_stage_money, acct.call().save.rev])
+	await C.sign_out()
+	var n_out := srv.calls.size(); Store.save.money = 7100; Store.persist(); C._process(9.0)
+	check("signing out: the device forgets the account and its sign-in is ended on the server; the progress stays on the device, and saves after that go nowhere",
+		not C.signed_in() and srv.sessions.is_empty() and int(Store.save.money) == 7100 and srv.calls.size() == n_out and srv.calls[-1] == "POST /logout" and C.status_text().begins_with("게스트"), [C.signed_in(), srv.sessions.size(), srv.calls.slice(-2)])
+	# ---- signing in: which progress
+	progress.call(0, [])   # a device with no progress of its own
+	events.clear()
+	var in1: Dictionary = await C.sign_in("MINA_07", "pass word 1")
+	var aside = Store._read("account_check_before")
+	check("signing in on a device with no progress of its own: the account's comes down, and is written on the device",
+		in1.ok and int(Store.save.money) == 7000 and Store.save.cleared == [1] and C.rev == 3 and not C.dirty and not C.asking() and events.has("applied") and aside is Dictionary and int(Store._read("save").money) == 7000, [in1, Store.save.money, C.rev, events])
+	await C.sign_out()
+	var n_bad := srv.calls.size()
+	var bad: Dictionary = await C.sign_in("mina_07", "not the one"); var nobody: Dictionary = await C.sign_in("nobody_here", "pass word 1")
+	srv.wait = 840; var slow: Dictionary = await C.sign_in("mina_07", "pass word 1"); srv.wait = 0
+	var taken: Dictionary = await C.sign_up("mina_07", "another pass"); var n_asked := srv.calls.size() - n_bad
+	var short: Dictionary = await C.sign_up("new_one", "short"); var odd: Dictionary = await C.sign_up("Bad Id!", "long enough pw")
+	check("a wrong password and an unknown id get the same words and sign nobody in; too many tries: how long to wait; an id already taken is refused; a short password or an id of other letters does not even go to the server",
+		not bad.ok and bad.error == nobody.error and str(bad.error).contains("맞지 않습니다") and not slow.ok and str(slow.error).contains("14분") and not taken.ok and str(taken.error).contains("이미 있는")
+		and not short.ok and str(short.error).contains("8자") and not odd.ok and str(odd.error).contains("아이디는") and srv.calls.size() - n_bad == n_asked and n_asked == 4 and not C.signed_in(), [bad, slow, taken, short, odd, n_asked])
+	progress.call(100, [2])   # this device has gone its own way
+	events.clear(); var n_ask := srv.calls.size()
+	var in2: Dictionary = await C.sign_in("mina_07", "pass word 1")
+	Store.save.money = 150; Store.persist(); C._process(9.0)   # (a save while the question stands)
+	check("signing in where the device and the account both have progress: neither is written over, the player is asked, and until the answer no save goes up",
+		in2.ok and C.asking() and events.has("ask") and int(Store.save.money) == 150 and int(acct.call().save.data.money) == 7000 and int(acct.call().save.rev) == 3 and not srv.calls.slice(n_ask).has("PUT /save") and C.status_text().contains("골라야"),
+		[in2, C.asking(), events, srv.calls.slice(n_ask)])
+	await C.choose("account")
+	check("the answer 'the account's': its progress is now this device's", not C.asking() and int(Store.save.money) == 7000 and Store.save.cleared == [1] and C.rev == 3 and not C.dirty and int(acct.call().save.rev) == 3, [C.asking(), Store.save.money, C.rev])
+	await C.sign_out(); progress.call(100, [2]); await C.sign_in("mina_07", "pass word 1"); var asked2: bool = C.asking()
+	await C.choose("device")
+	check("the answer 'this device's': it goes over the account's, as the next rev", asked2 and not C.asking() and int(acct.call().save.data.money) == 100 and int(acct.call().save.rev) == 4 and C.rev == 4 and not C.dirty and int(Store.save.money) == 100, [asked2, C.asking(), acct.call().save.rev, C.rev])
+	await C.sign_out(); events.clear(); await C.sign_in("mina_07", "pass word 1")
+	check("signing in where both hold the same progress asks nothing and moves nothing", C.signed_in() and not C.asking() and not events.has("ask") and not events.has("applied") and C.rev == 4 and not C.dirty, [events, C.rev])
+	# ---- two devices
+	var other := func(money: int) -> void:   # another device of the same account plays on and saves
+		var d: Dictionary = Store.save0(); d.money = money; d.cleared = [1, 2]; srv.put("mina_07", d, int(acct.call().save.rev))
+	other.call(900)
+	C.idle = func() -> bool: return false   # (this device is in a stage)
+	await C.refresh(); var waits: bool = int(Store.save.money) == 100 and not C.incoming.is_empty()
+	C.idle = func() -> bool: return true
+	C._process(0.1)
+	check("another device has played on: its newer progress comes down here, but only when the game is at rest in the menu, never under a stage in play",
+		waits and int(Store.save.money) == 900 and Store.save.cleared == [1, 2] and C.rev == 5 and C.incoming.is_empty() and not C.asking() and not C.dirty, [waits, Store.save.money, C.rev])
+	other.call(1200); Store.save.money = 950; Store.persist(); C._process(3.0)   # both have played since
+	check("both devices have played since: this one's save is not written over the other's (the server refuses it), and the player is asked",
+		C.asking() and int(C.ask.data.money) == 1200 and int(acct.call().save.data.money) == 1200 and int(acct.call().save.rev) == 6 and int(Store.save.money) == 950 and C.dirty, [C.asking(), acct.call().save.rev, C.dirty])
+	await C.choose("device")
+	# ---- the server out of reach; the device signed out by the server
+	srv.down = true; Store.save.money = 1000; Store.persist(); C._process(3.0)
+	var w1: float = C._wait; var off1: bool = C.offline and C.dirty and C.status_text().begins_with("서버에 연결하지 못했습니다")
+	C._process(16.0); var w2: float = C._wait
+	srv.down = false; C._process(31.0)
+	check("the server out of reach: the save is on the device all the same and the game says so; it tries again after 15 seconds, then 30, and when the server answers the save goes up",
+		off1 and is_equal_approx(w1, 15.0) and is_equal_approx(w2, 30.0) and int(Store._read("save").money) == 1000 and not C.offline and not C.dirty and int(acct.call().save.data.money) == 1000, [off1, w1, w2, C.offline, C.dirty])
+	var kept = Store._read("account_check"); var n_again := srv.calls.size()
+	var again = K.new(); again.store_key = "account_check"; again.base = "http://check"; again.transport = srv.handle; add_child(again)
+	for i in 2: await get_tree().process_frame   # (its first look at the account comes right after it starts)
+	check("the sign-in is kept on the device (the id and a token, never the password): the game started again is still signed in, and looks at once at what the account holds",
+		kept is Dictionary and kept.get("id") == "mina_07" and str(kept.get("token")) == C.token and not JSON.stringify(kept).contains("pass") and again.signed_in() and again.id == "mina_07" and again.rev == C.rev and srv.calls.slice(n_again).has("GET /save"),
+		[kept is Dictionary, again.signed_in(), srv.calls.slice(n_again)])
+	again.free()
+	srv.sessions.clear(); Store.save.money = 1100; Store.persist(); C._process(3.0)
+	check("the server no longer knows this device (the password was set again elsewhere, or half a year away): it is signed out and told to sign in again, its progress untouched",
+		not C.signed_in() and C.lost and int(Store.save.money) == 1100 and C.status_text().begins_with("다시 로그인"), [C.signed_in(), C.lost, C.status_text()])
+	# ---- the recovery code; deleting
+	var code: String = acct.call().code
+	var rc_bad: Dictionary = await C.recover("mina_07", "WRONG-CODE-0000-0000", "new pass word"); var rc: Dictionary = await C.recover("Mina_07", code, "new pass word")
+	check("the recovery code sets a new password and signs in, and a new code comes back in its place; a wrong code is refused",
+		not rc_bad.ok and str(rc_bad.error).contains("복구 코드") and rc.ok and str(rc.recovery) != code and str(rc.recovery).begins_with("CODE-") and C.signed_in() and not C.lost and acct.call().key == K.key_of("mina_07", "new pass word", 300),
+		[rc_bad, rc, C.signed_in()])
+	if C.asking(): await C.choose("device")
+	var del_bad: Dictionary = await C.delete_account("not it"); var still: bool = C.signed_in() and srv.users.has("mina_07"); var mine := int(Store.save.money)
+	var del: Dictionary = await C.delete_account("new pass word")
+	check("deleting the account asks for the password again; then the id, its progress and its sign-ins are gone from the server, and the device, signed out, keeps its own progress",
+		not del_bad.ok and str(del_bad.error).contains("비밀번호가 맞지") and still and del.ok and not srv.users.has("mina_07") and srv.sessions.is_empty() and not C.signed_in() and not C.lost and int(Store.save.money) == mine and mine == 1100,
+		[del_bad, still, del, srv.users.keys()])
+	# ---- the screens
+	var au := Ui.new(); au.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); au.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+	au.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); au.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"); au.on_settings = func() -> void: pass
+	add_child(au); au._build_menu(); au._build_settings(); au._build_dialog(); au._build_account()
+	var shown := func(t: String) -> bool: return (au.screens[au.cur] as Control).find_children("*", "Button", true, false).any(func(b): return (b as Button).text == t and (b as Button).is_visible_in_tree())
+	au.show_screen("menu"); var badge0: String = au.strip_l.text; var rail0 := str(au.rail_btns[5].get_meta("label"))
+	au.open_sub("settings"); var set_in: bool = shown.call("로그인 · 회원가입"); au.close_sub()
+	au.in_stage = true; au.open_sub("settings"); var set_stage: bool = not shown.call("로그인 · 회원가입"); au.open_account(); var no_open: bool = au.cur == "settings"; au.close_sub(); au.in_stage = false
+	C.base = ""; au.open_sub("settings"); var set_off: bool = not shown.call("로그인 · 회원가입"); au.close_sub(); var badge_off: String = au.strip_l.text; var rail_off := str(au.rail_btns[5].get_meta("label")); C.base = "http://check"
+	check("the menu: the top line says 게스트 and the settings (now 설정 · 계정) have the way to sign in; in a stage, or with no server set for the game, there is no account to see",
+		badge0.contains("게스트") and rail0 == "설정 · 계정" and set_in and set_stage and no_open and set_off and not badge_off.contains("게스트") and rail_off == "설정 · 저장", [badge0, rail0, set_in, set_stage, no_open, set_off, badge_off, rail_off])
+	progress.call(300, [1])
+	au.show_screen("menu"); au.open_account(); var m0: String = au.ac_mode
+	au._account_mode("up"); au.ac_id.text = "Screen_Kid"; au.ac_pw.text = "screen pass"; au.ac_pw2.text = "screen pasS"
+	await au._account_ok(); var mismatch: String = au.ac_msg.text; var not_yet: bool = not C.signed_in()
+	au.ac_pw2.text = "screen pass"; await au._account_ok()
+	var code_shown: bool = au.ac_mode == "code" and (au.screens.account as Control).find_children("*", "Label", true, false).any(func(l): return (l as Label).text == srv.users.screen_kid.code)
+	au.back(); var stays: bool = au.cur == "account" and au.ac_mode == "code"   # (Esc, the phone's back button)
+	await au._account_ok(); var me_now: bool = au.ac_mode == "me" and au.ac_code == ""
+	au.back(); var badge1: String = au.strip_l.text
+	au.open_dialog("reset"); var warned: bool = au.dlg_text.text.contains("계정에 저장된 진행 상황도"); au.close_sub()
+	check("the account screen: signing up needs the password twice the same; then the recovery code is on show, and stays until 적어 두었습니다 is pressed (Esc and the back button do not put it away); the menu's top line then has the id, and the reset says the account's progress goes too",
+		m0 == "in" and mismatch.contains("서로 다릅니다") and not_yet and code_shown and stays and me_now and au.cur == "menu" and badge1.contains("screen_kid") and C.signed_in() and warned, [m0, mismatch, not_yet, code_shown, stays, me_now, au.cur, badge1, warned])
+	var d2: Dictionary = Store.save0(); d2.money = 4444; srv.put("screen_kid", d2, 1)   # another device saves
+	Store.save.money = 350; Store.persist(); C._process(3.0)                            # and this one has earned something too
+	var popped: bool = au.cur == "account" and au.ac_mode == "ask"
+	var sides: Array = (au.screens.account as Control).find_children("*", "Button", true, false).filter(func(b): return (b as Button).is_visible_in_tree() and (b as Button).text.ends_with("이어 하기")).map(func(b): return (b as Button).text)
+	var bags: Array = (au.screens.account as Control).find_children("*", "Label", true, false).filter(func(l): return (l as Label).text.begins_with("가방 ")).map(func(l): return (l as Label).text.get_slice("\n", 0))
+	au.back(); var later: bool = au.cur == "menu" and C.asking() and au.strip_l.text.contains("골라야 함")
+	au.open_sub("settings"); var set_ask: bool = shown.call("진행 상황 고르기"); au.open_account()
+	await au._account_choose("account")
+	check("the question of which progress opens by itself over the menu, with each side's bag and a button for each; put off (나중에), the menu and the settings go on saying it must be answered; answered, the account's progress is on the device",
+		popped and sides == ["이 기기 것으로 이어 하기", "계정 것으로 이어 하기"] and bags == ["가방 " + Store.won(350), "가방 " + Store.won(4444)] and later and set_ask and not C.asking() and int(Store.save.money) == 4444 and au.ac_mode == "me",
+		[popped, sides, bags, later, set_ask, C.asking(), Store.save.money, au.ac_mode])
+	au._account_mode("del"); au.back(); var del_back: bool = au.cur == "account" and au.ac_mode == "me"   # (취소, Esc)
+	au._account_mode("del"); au.ac_pw.text = "screen pass"; await au._account_ok()
+	var gone: bool = au.ac_mode == "in" and not C.signed_in() and not srv.users.has("screen_kid") and au.ac_msg.text.contains("지웠습니다")
+	srv.users["old_hand"] = {"key": K.key_of("old_hand", "hand pass 1", 300), "code": "CODE-0000-EEEE-FFFF", "save": {"data": d2, "rev": 9, "updated": 1795000000}}
+	progress.call(0, []); au.ac_id.text = "old_hand"; au.ac_pw.text = "wrong pass"; await au._account_ok(); var said: String = au.ac_msg.text
+	au.ac_pw.text = "hand pass 1"; await au._account_ok()
+	check("deleting from the account screen: 취소 goes back to the account, the password again deletes it; signing in there: a wrong password says so, the right one signs in and brings the account's progress",
+		del_back and gone and said.contains("맞지 않습니다") and C.signed_in() and C.id == "old_hand" and au.ac_mode == "me" and int(Store.save.money) == 4444 and C.rev == 9, [del_back, gone, said, C.id, au.ac_mode, Store.save.money, C.rev])
+	au.free()
+	C.changed.disconnect(on_ev); C._forget()
+	for f in ["account_check", "account_check_before"]: DirAccess.remove_absolute(ProjectSettings.globalize_path("user://%s.json" % f))
+	C.store_key = "account"; C.rounds = K.ROUNDS; C.idle = Callable(); C.mute()   # (and nothing goes to a server for the rest of the checks either)
+	Store.save = keep_save; Store.fix_save(); Store.money_lock = keep_locks[0]; Store.ivory_lock = keep_locks[1]; Store.own_lock = keep_locks[2]; Store.persist()

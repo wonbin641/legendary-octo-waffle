@@ -22,6 +22,7 @@ func check(name: String, ok: bool, info = "") -> void:
 	if not ok: fails += 1
 
 func _ready() -> void:
+	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	main = load("res://main.tscn").instantiate(); add_child(main)
 	# a player a few stages in: an AR-7 bought, a helmet and a whole vest. Nothing from developer mode, no invincibility
 	Store.save = Store.save0(); Store.save.owned = ["rifle"]; Store.save.loadout = ["rifle", "pistol", null, null, null, null, null]

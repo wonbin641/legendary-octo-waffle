@@ -1,0 +1,14 @@
+{
+  "name": "yarr07-accounts",
+  "private": true,
+  "type": "module",
+  "description": "Yarr! 07 account server: sign in with an id, keep your progress (Cloudflare Workers + D1)",
+  "scripts": {
+    "test": "node test/server.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.168.0"
+  }
+}

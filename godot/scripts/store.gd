@@ -6,6 +6,8 @@ const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # 9 is stage 5, the toy room
 const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4", 9: "5"}
 const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [9], 9: []}
 
+signal saved   # the save has just been written on the device (the account, Cloud, sends it on)
+
 var save := {}
 var settings := {}
 # inside a stage, what you earned there is only yours once you get out: storage keeps what you came in with
@@ -83,13 +85,17 @@ func fix_save() -> void:
 	save.toy_order = to.duplicate() if (to.size() == Toys.ORDER.size() and Toys.ORDER.all(func(id): return to.has(id))) else Toys.ORDER.duplicate()
 	save.v = 4
 
-func persist() -> void:
-	if money_lock == null and ivory_lock == null and own_lock == null: _write("save", save); return
+## the save as it is kept (inside a stage: with what you came in with, not what you have picked up there)
+func stored() -> Dictionary:
+	if money_lock == null and ivory_lock == null and own_lock == null: return save
 	var o: Dictionary = save.duplicate(true)
 	if money_lock != null: o.money = maxi(0, mini(save.money, money_lock))
 	if ivory_lock != null: o.items.ivory = maxi(0, mini(save.items.ivory, ivory_lock))
 	if own_lock != null: o.owned = save.owned.filter(func(id): return own_lock.has(id))
-	_write("save", o)
+	return o
+
+func persist() -> void:
+	_write("save", stored()); saved.emit()
 
 func persist_settings() -> void:
 	_write("settings", settings)

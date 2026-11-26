@@ -18,6 +18,7 @@ Godot 4로 옮긴 판이 따로 있습니다: [godot/](godot/README.md) (소스)
 | `tools/` | `build.sh`(조각을 하나로), `build_site.sh`(이 저장소 맨 위의 사이트 파일), `build_app.sh`(앱 파일), `subset_fonts.py` |
 | `tests/` | Playwright로 돌리는 시험. `tests/run_all.sh`가 전부 만들고 모두 돌립니다 |
 | `android/` | 안드로이드 앱 프로젝트와 글꼴 원본. 서명 키는 저장소에 없습니다 |
+| `server/` | Godot판의 계정 서버(아이디 로그인, 진행 상황 저장): Cloudflare Workers + D1. 설명은 [server/README.md](server/README.md). 비밀값은 저장소에 없습니다 |
 
 맨 위의 `index.html`, `game.js`, `minigame-claim.txt`는 `tools/build_site.sh`가 만든 결과물이고, GitHub Pages가 이 파일들을 보여 줍니다. 직접 고치지 말고 `src/`를 고친 뒤 다시 만드세요.
 

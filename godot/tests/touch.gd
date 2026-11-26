@@ -63,6 +63,7 @@ func _layout_checks(where: String) -> void:
 		not on_press and open and was == null and Store.save.loadout[1] == "pistol", [on_press, open, was, Store.save.loadout[1]])
 
 func _ready() -> void:
+	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	get_window().size = Vector2i(2400, 1080); get_window().content_scale_factor = K
 	main = load("res://main.tscn").instantiate(); add_child(main)
 	await _frames(3)
@@ -107,6 +108,34 @@ func _ready() -> void:
 	ui.close_sub(); await _frames()
 	ui.open_dialog("load"); await _frames(); ui.dlg_in.release_focus(); await _frames(); await _tap(ui.dlg_in.get_global_rect().get_center())
 	check("the save-code box takes a finger's tap (and so the phone's keyboard)", ui.dlg_in.has_focus()); ui.close_sub(); await _frames()
+	# the account's screens under a finger (with a stand-in server that answers nothing: no request leaves this machine)
+	Cloud.store_key = "account_check"; Cloud.base = "http://check"; Cloud.transport = func(_m: String, _p: String, _b, _t: String) -> Dictionary: return {"status": 0, "json": {}}
+	var named := func(t: String) -> Button:
+		for b in (ui.screens[ui.cur] as Control).find_children("*", "Button", true, false):
+			if (b as Button).text == t and (b as Button).is_visible_in_tree(): return b
+		return null
+	ui.show_screen("menu"); ui.open_sub("settings"); await _frames(); _list().scroll_vertical = 0; await _frames()
+	await _tap((named.call("로그인 · 회원가입") as Button).get_global_rect().get_center())
+	var ac_open: bool = ui.cur == "account" and ui.ac_mode == "in"; var ac_issues := {"in": ui.audit()}
+	ui.ac_id.release_focus(); ui.ac_pw.release_focus(); await _frames()
+	await _tap(ui.ac_pw.get_global_rect().get_center()); await _frames(3)
+	var box_top: float = ui.ac_pw.get_global_rect().position.y - _list().get_global_rect().position.y; var box_on: bool = ui.ac_pw.has_focus()
+	for ch in "ab1":
+		for down in [true, false]:
+			var ke := InputEventKey.new(); ke.unicode = ch.unicode_at(0); ke.keycode = ch.to_upper().unicode_at(0) as Key; ke.pressed = down; Input.parse_input_event(ke); await _frames(1)
+	var typed: String = ui.ac_pw.text
+	var to_up: Button = named.call("회원가입"); _list().ensure_control_visible(to_up); await _frames(); await _tap(to_up.get_global_rect().get_center())
+	var up_open: bool = ui.ac_mode == "up" and ui.ac_pw2 != null; _list().scroll_vertical = 0; await _frames(); ac_issues["up"] = ui.audit()
+	ui._account_mode("rc"); await _frames(); ac_issues["rc"] = ui.audit()
+	ui.ac_code = "ABCD-EFGH-JKLM-NPQR"; ui.ac_mode = "code"; ui.render_account(); await _frames(); ac_issues["code"] = ui.audit()
+	main._back(); await _frames(); var code_stays: bool = ui.cur == "account" and ui.ac_mode == "code"   # (the phone's back button)
+	ui.ac_code = ""; Cloud.id = "finger_kid"; Cloud.token = "t"; ui.ac_mode = "me"; ui.render_account(); await _frames(); ac_issues["me"] = ui.audit()
+	ui._account_mode("del"); await _frames(); ac_issues["del"] = ui.audit()
+	Cloud.ask = {"data": Store.save0(), "rev": 3, "updated": 1795000000}; ui.render_account(); await _frames(); ac_issues["ask"] = ui.audit()
+	main._back(); await _frames(); var ask_shut: bool = ui.cur == "settings"
+	Cloud.mute(); Cloud.store_key = "account"; ui.back(); await _frames()
+	check("the account's screens on the phone: the way in from the settings by a tap; in every one of them nothing off the screen, squeezed, overlapping or too small to press; a tapped box takes the finger (and so the phone's keyboard), goes to the top of the list clear of it, and takes what is typed; the recovery code is not put away by the back button, the question of which progress is",
+		ac_open and ac_issues.values().all(func(a): return (a as Array).is_empty()) and box_on and box_top < 12.0 and typed == "ab1" and up_open and code_stays and ask_shut and ui.cur == "menu", [ac_open, ac_issues, box_on, box_top, typed, up_open, code_stays, ask_shut, ui.cur])
 	# a fight: the finger works the touch controls, and its mouse copy neither aims, fires nor grabs the pointer
 	Store.save.rented = []; Store.save.loadout = ["pistol", null, null, null, null, null, null]
 	main.command("start 1"); await get_tree().create_timer(0.8).timeout

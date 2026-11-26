@@ -16,6 +16,7 @@ Phys="*res://scripts/phys.gd"
 Snd="*res://scripts/snd.gd"
 Store="*res://scripts/store.gd"
 Music="*res://scripts/music.gd"
+Cloud="*res://scripts/cloud.gd"
 
 [display]
 window/size/viewport_width=1280
