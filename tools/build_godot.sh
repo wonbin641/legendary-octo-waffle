@@ -11,7 +11,8 @@ rm -rf "$OUT" "$ART"; mkdir -p "$OUT" "$ART" "$SITE"
 "$G" --headless --path "$ROOT/godot" --export-release Web "$OUT/index.html" > "$ROOT/build/godot-export.log" 2>&1
 [ -s "$OUT/index.pck" ] && [ -s "$OUT/index.wasm" ] || { echo "export failed, see build/godot-export.log"; exit 1; }
 # GitHub Pages: the engine file only changes with the Godot version, so it is copied only when it differs
-for f in index.html index.js index.pck index.audio.worklet.js index.audio.position.worklet.js index.wasm; do cmp -s "$OUT/$f" "$SITE/$f" || cp "$OUT/$f" "$SITE/$f"; done
+# (index.png is the page's icon: the page asks for it, and without it every visit logged a 404)
+for f in index.html index.js index.pck index.png index.audio.worklet.js index.audio.position.worklet.js index.wasm; do cmp -s "$OUT/$f" "$SITE/$f" || cp "$OUT/$f" "$SITE/$f"; done
 # the artifact
 cp "$OUT/index.js" "$OUT/index.audio.worklet.js" "$OUT/index.audio.position.worklet.js" "$ART/"
 gzip -9 -n -c "$OUT/index.wasm" > "$ART/engine.wasm"; cp "$OUT/index.pck" "$ART/game.wasm"
