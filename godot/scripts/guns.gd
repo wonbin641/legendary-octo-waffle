@@ -11,6 +11,7 @@ var proj: Proj
 var look_mode := "lock"
 var auto_fire := false       # touch: the gun fires by itself when the crosshair is on an enemy or a crate within 12 m
 var auto_jab := false        # touch: a crate that comes within the jab's reach is jabbed by itself
+var corpse_shot := false     # touch, stage 2 (an option, on at first): a zombie you knock down gets the aim turned on it and one shot
 var stage := 1
 var base_fov := 74.0
 var time := 0.0
@@ -68,6 +69,7 @@ func reset(layout: Array) -> void:
 	since_shot = 9.0; _reload_f = 0.0; shots = 0; hits = 0   # the result sheet's accuracy is this stage's alone, as the browser game's
 	cooldown = 0.0; reload_t = 0.0; switch_t = 0.0; pending = null; ads = 0.0; ads_held = false; bloom = 0.0; kick_z = 0.0; kick_rot = 0.0; flash_t = 0.0
 	trigger = false; trigger_edge = false; melee_on = false; melee_t = 0.0; melee_cd = 0.0; _melee_target = null; _pump_t = -1.0; _auto_reload_t = -1.0
+	_cs_phase = ""; _cs = null
 	loadout = layout.duplicate(); slots = loadout.filter(func(x): return x != null); none = slots.is_empty(); lock_to = ""
 	cur = slots[0] if not none else "pistol"
 
@@ -100,6 +102,59 @@ func melee_start(target = null) -> void:
 	melee_on = true; melee_t = 0.0; melee_cd = 0.62; _melee_hit = false; _melee_target = target
 	reload_t = 0.0; trigger = false; ads_held = false
 	Snd.play("swing")
+
+## stage 2 on a touch screen (an option in the settings, on at first): a zombie you knock down to the ground gets the aim turned
+## onto its body and one shot straight at it, so it does not get up again (as a second shot within 3 s would), then the aim
+## goes back to where it was. In the order they fell; not one behind a wall, out of the gun's reach, or more than 70 degrees
+## off where you look; not with the grenade launcher or the rocket; while you reload or change guns it waits, as long as the
+## body lies there
+var _cs = null; var _cs_phase := ""; var _cs_t := 0.0; var _cs_from := Vector2.ZERO; var _cs_home := Vector2.ZERO   # (yaw, pitch)
+const CS_TURN := 0.16; const CS_BACK := 0.18
+func _corpse_shot(dt: float) -> void:
+	if not corpse_shot or look_mode != "touch" or stage != 2: enemies.downs.clear(); _cs_phase = ""; _cs = null; return
+	match _cs_phase:
+		"":
+			enemies.downs = enemies.downs.filter(func(e): return _cs_lying(e))
+			if enemies.downs.is_empty() or not _cs_ready(): return
+			for i in enemies.downs.size():
+				var e = enemies.downs[i]
+				if _cs_sees(e):
+					enemies.downs.remove_at(i); _cs = e; _cs_phase = "turn"; _cs_t = 0.0; _cs_from = Vector2(player.yaw, player.pitch); _cs_home = _cs_from; return
+		"turn", "aim":
+			if not _cs_lying(_cs) or not _cs_ready(): _cs_back(); return
+			var want := _cs_aim(_cs)
+			if _cs_phase == "turn":
+				_cs_t += dt; var k := minf(1.0, _cs_t / CS_TURN); k = k * k * (3.0 - 2.0 * k)
+				player.yaw = lerp_angle(_cs_from.x, want.x, k); player.pitch = lerpf(_cs_from.y, want.y, k)
+				if _cs_t >= CS_TURN: _cs_phase = "aim"
+			else:
+				player.yaw = want.x; player.pitch = want.y
+				if cooldown <= 0.0: fire((_cs_point(_cs) - cam.global_position).normalized()); _cs_back()
+		"back":
+			_cs_t += dt; var k2 := minf(1.0, _cs_t / CS_BACK); k2 = k2 * k2 * (3.0 - 2.0 * k2)
+			player.yaw = lerp_angle(_cs_from.x, _cs_home.x, k2); player.pitch = lerpf(_cs_from.y, _cs_home.y, k2)
+			if _cs_t >= CS_BACK: _cs_phase = ""; _cs = null
+func _cs_back() -> void:
+	_cs_phase = "back"; _cs_t = 0.0; _cs_from = Vector2(player.yaw, player.pitch)
+## still lying there (it gets up from REVIVE on)
+func _cs_lying(e) -> bool: return e != null and e.alive and e.downed and e.down_t < Enemies.REVIVE
+func _cs_ready() -> bool:
+	var W := w()
+	return not none and busy <= 0.0 and not melee_on and switch_t <= 0.0 and reload_t <= 0.0 and st().mag > 0 and not player.out and player.stun_t <= 0.0 \
+		and not W.get("grenade", false) and not W.get("rocket", false)
+## the middle of the body on the ground: its biggest part
+func _cs_point(e) -> Vector3:
+	var best = e.down_parts[0]
+	for p in e.down_parts:
+		if float(p.r) > float(best.r): best = p
+	return enemies.part_centre(e, best)
+func _cs_sees(e) -> bool:
+	var o := cam.global_position; var c := _cs_point(e); var v := c - o
+	return v.length() <= float(w().range) and v.normalized().dot(-cam.global_basis.z) > cos(deg_to_rad(70.0)) and Phys.line_of_sight(o, c)
+## the yaw and pitch that look at the body
+func _cs_aim(e) -> Vector2:
+	var v := _cs_point(e) - cam.global_position; var l := maxf(v.length(), 0.001)
+	return Vector2(atan2(-v.x, -v.z), clampf(asin(clampf(v.y / l, -1.0, 1.0)), -1.5, 1.5))
 
 ## touch: a crate within the jab's reach and not behind you, while you are not busy with anything else, is jabbed by itself
 func _auto_crate() -> void:
@@ -164,7 +219,7 @@ func _heat_update(dt: float) -> void:
 	s.smoke_t = 2.5 if s.hot else maxf(0.0, s.smoke_t - dt)
 
 # ---------- firing ----------
-func fire() -> void:
+func fire(exact = null) -> void:   # exact: a direction to send the shot along as it is (no spread, no aim help): the corpse shot
 	var W := w(); var s := st()
 	if none or busy > 0.0 or melee_on or switch_t > 0.0 or reload_t > 0.0 or cooldown > 0.0 or player.out: return
 	if player.sprinting: player.sprint_lock = 0.25
@@ -176,9 +231,9 @@ func fire() -> void:
 	s.mag -= 1; cooldown = W.rate; shots += 1; since_shot = 0.0; var hit_snd := false
 	if W.get("heat", false): _heat_shot(W, s)
 	enemies.noise(cam.global_position, 42.0 * float(W.get("noise", 1.0)))   # a suppressor carries less far
-	var spr := current_spread(); var muz := muzzle()
-	var b := cam.global_basis; var f := -b.z; var right := b.x; var up := b.y; var o := cam.global_position
-	if look_mode == "touch" and not W.get("grenade", false) and not W.get("rocket", false):
+	var spr := current_spread() if exact == null else 0.0; var muz := muzzle()
+	var b := cam.global_basis; var f: Vector3 = -b.z if exact == null else exact; var right := b.x; var up := b.y; var o := cam.global_position
+	if exact == null and look_mode == "touch" and not W.get("grenade", false) and not W.get("rocket", false):
 		var ad = enemies.assist(o, f, 0.03 if ads > 0.5 else 0.045, W.range)
 		if ad != null: f = ad
 	var hit_any := false; var killed := false; var head := false
@@ -286,6 +341,7 @@ func update(dt: float) -> void:
 	var W := w()
 	_auto_crate(); _melee_update(dt); _heat_update(dt)
 	cooldown = maxf(0.0, cooldown - dt)
+	_corpse_shot(dt)
 	bloom = maxf(0.0, bloom - dt * (0.02 if (trigger and W.auto) else 0.09))
 	if _pump_t > 0.0:
 		_pump_t -= dt

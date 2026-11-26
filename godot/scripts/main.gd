@@ -119,6 +119,7 @@ func apply_settings() -> void:
 	enemies.phone = look_mode == "touch"   # no enemy casts the moon's shadow on a phone, as there
 	Snd.volume = float(Store.settings.vol); Music.volume = float(Store.settings.get("music", 0.7)); player.sens = float(Store.settings.sens)
 	guns.auto_fire = look_mode == "touch" and bool(Store.settings.autoFire); guns.auto_jab = look_mode == "touch"
+	guns.corpse_shot = look_mode == "touch" and bool(Store.settings.get("corpseShot", true))   # (stage 2's zombie corpse shot: Guns._corpse_shot)
 	for id in Weapons.ORDER: gm_models.apply_look(id, Custom.setup(id))   # parts and paint
 	if ui and ui.cur == "menu": ui.refresh_menu()
 

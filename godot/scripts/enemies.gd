@@ -72,6 +72,7 @@ class Foe:
 
 var list: Array[Foe] = []
 var dying: Array[Foe] = []
+var downs: Array[Foe] = []   # zombies just knocked down, in the order they fell: stage 2's corpse shot takes them (Guns._corpse_shot)
 var skip_calm := false
 ## the browser game's isTouch, for drawing: on a phone no person, animal or robot casts the moon's shadow, and in the lab a beast
 ## is drawn baked from nearer (main sets it with the phone's settings)
@@ -321,7 +322,7 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool, quiet :=
 
 ## zombies do not stay dead: they drop, and unless shot again within 3 seconds they get back up at full health
 func _down(e: Foe, dir) -> void:
-	e.downed = true; e.down_t = 0.0; e.hp = 0.0; e.state = "down"; e.vel = Vector3.ZERO; e.flinch = 0.0; e.rising = false
+	e.downed = true; e.down_t = 0.0; e.hp = 0.0; e.state = "down"; e.vel = Vector3.ZERO; e.flinch = 0.0; e.rising = false; downs.push_back(e)
 	e.fall_dir = 1.0
 	if dir != null: e.fall_dir = 1.0 if sin(e.yaw) * dir.x + cos(e.yaw) * dir.z > 0.0 else -1.0
 	# where the body is once it lies flat, for bullets: along the fall direction, just off the ground
@@ -594,7 +595,7 @@ func clear() -> void:
 		e.g.queue_free(); e.bar.queue_free()
 		if e.laser: e.laser.queue_free()
 	for f in flying: f[0].queue_free()
-	list.clear(); dying.clear(); flying.clear()
+	list.clear(); dying.clear(); flying.clear(); downs.clear()
 	if animals.player != null: animals.reset()
 	robots.clear(); toys.clear()
 

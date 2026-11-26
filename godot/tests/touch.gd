@@ -115,6 +115,11 @@ func _ready() -> void:
 	await _press(fire); await get_tree().create_timer(0.4).timeout; var held: bool = main.guns.trigger; await _lift(fire); await get_tree().create_timer(0.2).timeout
 	check("in a fight a tap turns the touch controls on and the fire button fires while held, the mouse left free",
 		main.look_mode == "touch" and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and held and not main.guns.trigger and main.guns.shots - sh0 >= 1, [main.look_mode, held, main.guns.shots - sh0])
+	# the phone's own option: stage 2's zombie corpse shot, on at first, off when the setting is turned off (Guns._corpse_shot)
+	Store.settings.corpseShot = Store.settings0(true).corpseShot; main.apply_settings()   # (as a new player has it)
+	var cs_on: bool = main.guns.corpse_shot; Store.settings.corpseShot = false; main.apply_settings(); var cs_off: bool = main.guns.corpse_shot
+	Store.settings.corpseShot = true; main.apply_settings()
+	check("on the phone the zombie corpse shot is on at first in a fight, and off once its setting is turned off", cs_on and not cs_off and main.guns.corpse_shot, [cs_on, cs_off])
 	# a finger on the jump or the down button (flying) as the pause comes, lifted only in the pause: let go with the pause, so
 	# neither stays held when the fight goes on (bug-note 14: it once flew on up, or down, by itself)
 	main.player.jet_on = true; main.player.jet_t = 10.0; await _frames(); var tb: Dictionary = main._touch_buttons(); var still := []   # (flying, with fuel: the down button shows)

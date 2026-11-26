@@ -596,7 +596,10 @@ func _settings_rows(into: VBoxContainer, _full: bool) -> void:
 	into.add_child(_slider("터치 감도" if is_touch else "마우스 감도", "sens", 0.2, 3.0, 0.1, func(v: float) -> String: return "%.1f" % v))
 	into.add_child(_slider("음량", "vol", 0.0, 1.0, 0.05, func(v: float) -> String: return str(roundi(v * 100))))
 	into.add_child(_slider("음악", "music", 0.0, 1.0, 0.05, func(v: float) -> String: return str(roundi(v * 100))))   # (stage 5's music)
-	if is_touch: into.add_child(_check("자동 사격", "autoFire"))
+	if is_touch:
+		into.add_child(_check("자동 사격", "autoFire"))
+		into.add_child(_check("좀비 시체 자동 사격 · 스테이지 2", "corpseShot"))   # (Guns._corpse_shot)
+		into.add_child(lbl("서 있는 좀비를 쓰러뜨리면 조준이 저절로 그 시신으로 가서 한 발 쏘고(다시 일어나지 않게), 원래 보던 곳으로 돌아옵니다.", f_body, 12, STEEL, true))
 	else:
 		var gr := hbox(10); into.add_child(gr); var gl := lbl("그래픽", f_body, 14, INK); gl.custom_minimum_size = Vector2(96, 0); gr.add_child(gl)
 		var gi := 0

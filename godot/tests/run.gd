@@ -901,6 +901,7 @@ func _ready() -> void:
 	_fixes_153(gm, en, pl, g, pr, cam, fxn)
 	_fixes_154(gm, en, pl, w)
 	_aim_clear()
+	_corpse_shot(gm, en, pl, g, cam)
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -2320,6 +2321,50 @@ func _aim_clear() -> void:
 	check("aimed, no gun hides what you aim at: nothing of the eight guns (iron sights or any optic, the biggest muzzle and under-barrel parts on) nor the nine toy guns comes within 6 %% of the screen's height of the middle, by rays through the middle; an optic's window stays on the eye line; held as before, %d of the 17 covered it" % lifted,
 		bad.is_empty() and lifted >= 12, bad)
 	holder.free()
+
+# ---------------- stage 2's zombie corpse shot on a touch screen (1.5.6) ----------------
+## a zombie knocked down 30 degrees off to the side, then the game's frames for a second: the most the aim came onto the body (degrees
+## off), the shots fired, whether the body is gone, and how far the aim is from where it was (degrees)
+func _cs_try(gm: Game, en: Enemies, pl: Player, g: Guns, cam: Camera3D, look: String, on: bool, stage_as := 2) -> Array:
+	gm.begin(2); pl.invuln = 1e9; g.look_mode = look; g.corpse_shot = on; g.auto_fire = false; g.stage = stage_as
+	pl.update(0.0, cam, 0.0)
+	var eye := cam.global_position; var spot := Vector3.ZERO; var face := 0.0
+	for i in 16:   # an open way from where you stand
+		var a := pl.yaw + i * TAU / 16.0; var p := Vector3(pl.pos.x - sin(a) * 7.0, 0.0, pl.pos.z - cos(a) * 7.0)
+		p.y = Phys.ground_at(p.x, 1.0, p.z, 0.4)
+		if Phys.line_of_sight(eye, p + Vector3(0, 0.3, 0)) and Phys.line_of_sight(eye, p + Vector3(0, 1.4, 0)): spot = p; face = a; break
+	var z = null
+	for e in en.list:
+		if e.alive and e.type == "zombie" and not e.boss: z = e; break
+	z.pos = spot; z.g.position = spot; pl.yaw = face + deg_to_rad(30.0); pl.pitch = 0.0; pl.update(0.0, cam, 0.0)
+	var home := Vector2(pl.yaw, pl.pitch); var shots0 := g.shots
+	en.damage(z, z.hp + 1.0, z.pos + Vector3(0, 1, 0), Vector3(0, 0, 1), false)
+	var best := 180.0; var t := 0.0
+	for i in 60:
+		t += 1.0 / 60.0; pl.update(1.0 / 60.0, cam, t); g.update(1.0 / 60.0)   # (the enemies stand still: none walks into the shot; the body would lie 3 s)
+		if z.alive and z.downed: best = minf(best, rad_to_deg((-cam.global_basis.z).angle_to(g._cs_point(z) - cam.global_position)))
+	var back := rad_to_deg(Vector2(wrapf(pl.yaw - home.x, -PI, PI), pl.pitch - home.y).length())
+	g.look_mode = "drag"; g.corpse_shot = false; g.stage = 2
+	return [snappedf(best, 0.1), g.shots - shots0, not z.alive, snappedf(back, 0.1)]
+func _corpse_shot(gm: Game, en: Enemies, pl: Player, g: Guns, cam: Camera3D) -> void:
+	var keep_save: Dictionary = Store.save.duplicate(true); Store.save = Store.save0()
+	var on := _cs_try(gm, en, pl, g, cam, "touch", true)
+	check("stage 2 on a touch screen: a zombie you knock down gets the aim turned onto its body and one shot, so it is gone for good, and the aim goes back to where it was",
+		on[0] < 2.0 and on[1] == 1 and on[2] and on[3] < 0.5, on)
+	var off := _cs_try(gm, en, pl, g, cam, "touch", false); var mouse := _cs_try(gm, en, pl, g, cam, "drag", true); var other := _cs_try(gm, en, pl, g, cam, "touch", true, 1)
+	check("the corpse shot does nothing with the option off, on a computer (mouse) or in another stage",
+		[off, mouse, other].all(func(r): return r[1] == 0 and not r[2] and r[3] < 0.01), [off, mouse, other])
+	var cu := Ui.new(); cu.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); cu.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+	cu.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); cu.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"); add_child(cu)
+	var found := func(touch: bool) -> Array:
+		cu.is_touch = touch; var box := VBoxContainer.new(); cu.add_child(box); cu._settings_rows(box, true); var out := []
+		for c in box.find_children("*", "CheckBox", true, false):
+			if (c as CheckBox).text.begins_with("좀비 시체 자동 사격"): out.push_back((c as CheckBox).button_pressed)
+		box.free(); return out
+	var on_touch: Array = found.call(true); var on_pc: Array = found.call(false); cu.free()
+	check("the corpse shot is a setting on a touch screen (the phone app), on for a new player; a computer's settings do not show it",
+		bool(Store.settings0(true).corpseShot) and bool(Store.settings0(false).corpseShot) and on_touch == [bool(Store.settings.get("corpseShot", true))] and on_pc.is_empty(), [on_touch, on_pc])
+	Store.save = keep_save
 
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)

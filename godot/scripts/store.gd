@@ -18,13 +18,18 @@ static func save0() -> Dictionary:
 
 func _ready() -> void:
 	var touch: bool = OS.has_feature("mobile") or OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
-	settings = {"sens": 1.0, "vol": 0.7, "music": 0.7, "autoFire": touch, "gfx": "auto", "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8", "mailTo": ""}
+	settings = settings0(touch)
 	var s = _read("settings")
 	if s is Dictionary: settings.merge(s, true)
 	save = save0()
 	var d = _read("save")
 	if d is Dictionary: save.merge(d, true)
 	fix_save()
+
+## the settings a new player starts with (touch: a phone or a touch screen). corpseShot: stage 2's zombie corpse shot (Guns,
+## touch only), on until you turn it off
+static func settings0(touch: bool) -> Dictionary:
+	return {"sens": 1.0, "vol": 0.7, "music": 0.7, "autoFire": touch, "corpseShot": true, "gfx": "auto", "fps": false, "dev": false, "god": false, "cross": "cross", "crossColor": "ece6d8", "mailTo": ""}
 
 ## where the computer's quality ladder last settled (the browser game keeps it as yard07.gfxlvl); -1 when never
 func level_saved() -> int:
