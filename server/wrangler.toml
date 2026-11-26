@@ -1,7 +1,7 @@
 # Yarr! 07 accounts on Cloudflare Workers (free plan) with a D1 database.
 # No secret is in this file: the worker's secret (PEPPER) is set with `wrangler secret put PEPPER` and kept only there
 # and in the owner's private notes. The account id is given when deploying (CLOUDFLARE_ACCOUNT_ID), not written here.
-name = "yarr07-accounts"
+name = "accounts"   # the address: https://accounts.yarr07.workers.dev
 main = "src/index.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
@@ -14,7 +14,7 @@ ORIGINS = "https://wonbin641.github.io"
 [[d1_databases]]
 binding = "DB"
 database_name = "yarr07-accounts"
-database_id = "00000000-0000-0000-0000-000000000000"   # set when the database is made (tools/deploy_server.sh prints it)
+database_id = "2db1519a-a768-4bda-b6a3-4c92b8b98e13"   # (an id, not a secret: nothing reaches the database without the account's own token)
 
 [triggers]
 # once a day (19:17 UTC, 04:17 in Korea): counts of wrong tries that have run out, devices not seen for 180 days

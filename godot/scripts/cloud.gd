@@ -12,7 +12,7 @@ extends Node
 ## device has written in between and this one has changes too, the player is asked (ask). A device with no progress of
 ## its own takes the account's; an account with none takes the device's.
 
-const BASE := ""          # the server's address (https://...); "" while there is none: then the game shows no account at all
+const BASE := "https://accounts.yarr07.workers.dev"   # the server (server/ at the top of the repository); "" would mean none: then the game shows no account at all
 const ROUNDS := 100000    # the key's stretching (the server's kdf 1)
 const ID_MIN := 3; const ID_MAX := 16; const PW_MIN := 8; const PW_MAX := 64
 const RETRY := 15.0; const RETRY_MAX := 300.0   # the server not reached: again in 15 s, then twice as long each time, 5 minutes at most

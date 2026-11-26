@@ -2523,6 +2523,8 @@ func _accounts() -> void:
 		v1.out().hex_encode() == "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b" and v2.out().hex_encode() == "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a"
 		and K.key_of("someone", "p".repeat(80), 50) == "cf688ec702d574e984a811c122bad245d3697ba59de47fc8d7529237d85ae233" and K.key_of("someone", "비밀번호 한글", 50) == "14236e01f17c6e8279a15daee04875f3e902b5bebff28527bea1b7335f92b62f"
 		and k_all == "2891b140f4147d4ea1a2f5cc779f1cb15a3e2fcdf76d61be2c908745fa65c6a9" and k_parts == k_all and K.key_of("someone", "Correct horse", 50) != K.key_of("someone", "correct horse", 50), "%d ms" % t_k)
+	var web_re := RegEx.new(); web_re.compile("^https://[a-z0-9.-]+\\.[a-z]+$")
+	check("the game's account server is an https address out on the net (never one on this machine), and the checks have it switched off", web_re.search(K.BASE) != null and not K.BASE.contains("127.0.0.1") and not K.BASE.contains("localhost") and not C.enabled(), K.BASE)
 	check("an id is 3 to 16 of a-z, 0-9 and _, a password 8 to 64 letters of any kind",
 		K.id_error("ab") != "" and K.id_error("has space") != "" and K.id_error("한글아이디") != "" and K.id_error("a".repeat(17)) != "" and K.id_error("Upper") != "" and K.id_error("good_id_1") == ""
 		and K.pw_error("1234567") != "" and K.pw_error("12345678") == "" and K.pw_error("한글 비밀번호도") == "" and K.pw_error("p".repeat(65)) != "")

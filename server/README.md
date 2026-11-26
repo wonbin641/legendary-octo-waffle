@@ -2,6 +2,8 @@
 
 아이디로 로그인해서 게임 진행 상황을 서버에도 저장해 두는 작은 서버입니다. Cloudflare Workers(무료 플랜)와 D1 데이터베이스에서 돕니다. 게임 쪽 코드는 [`godot/scripts/cloud.gd`](../godot/scripts/cloud.gd)입니다.
 
+지금 돌고 있는 주소: `https://accounts.yarr07.workers.dev` (워커 이름 `accounts`, 계정의 workers.dev 이름 `yarr07`, D1 데이터베이스 `yarr07-accounts`, 아시아·태평양 지역). 게임 여러 판에 이 주소가 들어 있으므로 워커 이름과 workers.dev 이름은 바꾸지 않습니다(바꾸면 이미 나간 게임에서 로그인이 되지 않습니다).
+
 ## 무엇을 저장하나
 
 - **아이디**: 플레이어가 지은 것. 영문 소문자·숫자·밑줄 3~16자. 이메일이나 이름은 받지 않습니다.
@@ -37,6 +39,7 @@ npm install
 npm test                                        # 서버만: Cloudflare 런타임(workerd)과 진짜 D1로 33가지
 GODOT=/path/to/godot node test/game.test.mjs    # 게임(godot/tests/cloud.tscn)이 이 서버에 실제 HTTP로 붙어서 가입·저장·로그인·충돌·복구·삭제
 node test/web.test.mjs                          # 웹판을 Chromium에서 띄워 같은 서버에 붙임 (먼저 tools/build_godot.sh)
+python3 test/live.py https://accounts.yarr07.workers.dev   # 실제로 돌고 있는 서버를 밖에서: 쓰고 버리는 계정 하나로 가입·저장·충돌·복구·CORS·삭제 (남기는 것 없음)
 ```
 
 ## 올리기
@@ -45,10 +48,15 @@ Cloudflare 계정과 API 토큰(Account · Workers Scripts · Edit, Account · D
 
 ```bash
 export CLOUDFLARE_API_TOKEN=...   CLOUDFLARE_ACCOUNT_ID=...
-npx wrangler d1 create yarr07-accounts                      # 나온 database_id를 wrangler.toml에 적음
-npx wrangler d1 execute yarr07-accounts --remote --file schema.sql
+npx wrangler deploy                                         # 코드를 고친 뒤에는 이것만 (비밀값과 데이터베이스는 그대로)
+```
+
+처음 한 번(이미 해 둠): 계정의 workers.dev 이름을 `yarr07`로 정하고(Cloudflare가 저절로 붙이는 이름은 가입한 이메일에서 따오므로 미리 정함), 데이터베이스를 만들어 `schema.sql`을 넣고, 비밀값을 정했습니다.
+
+```bash
+npx wrangler d1 create yarr07-accounts --location apac      # 나온 database_id를 wrangler.toml에 적음
+npx wrangler d1 execute yarr07-accounts --remote --command "$(grep -v '^--' schema.sql)"
 openssl rand -hex 32 | npx wrangler secret put PEPPER       # 서버의 비밀값. 한 번만 정하고, 사본을 비공개 저장소에 둠
-npx wrangler deploy
 ```
 
 - `PEPPER`를 잃어버리거나 바꾸면 **누구도 비밀번호나 복구 코드로 로그인할 수 없게 됩니다**(이미 로그인해 둔 기기만 계속 됩니다). 공개 저장소에는 절대 넣지 않습니다.
