@@ -659,7 +659,7 @@ func key_near() -> bool:   # only once the bee is down
 	return Vector2(player.pos.x - KEY.x, player.pos.z - KEY.z).length() < 2.6 and player.pos.y < 2.5
 
 func take_key() -> bool:
-	if not key_near(): return false
+	if (game != null and game.ended) or not key_near(): return false   # (a run already over takes no key: no save point without a bag to go back to)
 	key = true; key_obj.visible = false; Snd.play("pickup_ammo"); Snd.play("buy")
 	game.take_save()   # the save point: from here on, with the key in your pocket
 	game.say_banner("세이브 포인트", "메인홀 열쇠 획득 · 이제 쓰러져도 열쇠를 가진 채 여기서 다시 시작합니다", 3.6); game.say_feed("메인홀 열쇠 획득 · 세이브 포인트")

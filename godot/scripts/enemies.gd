@@ -938,12 +938,16 @@ func update(dt: float, _time: float) -> void:
 	if animals.m != null and animals.m.alive: animals.seat()
 	if robots.world != null: robots.tick(dt)
 	if toys.world != null: toys.tick(dt)
+	update_dying(dt)
+
+## helmets tumbling away, and the fallen tipping over, lying a while, then sinking away (as the browser game's updateDying:
+## this goes on once you have fallen too, while the fight itself stands still)
+func update_dying(dt: float) -> void:
 	for i in range(flying.size() - 1, -1, -1):   # helmets tumbling away
 		var f: Array = flying[i]; f[2] += dt; f[1].y -= 12.0 * dt; var n: Node3D = f[0]
 		n.position += (f[1] as Vector3) * dt; n.rotation.x += 10.0 * dt
 		if n.position.y <= 0.2: n.position.y = 0.2; f[1] = Vector3(f[1].x * 0.6, absf(f[1].y) * 0.25, f[1].z * 0.6)
 		if f[2] > 4.0: n.queue_free(); flying.remove_at(i)
-	# the fallen tip over, lie a while, then sink away
 	for i in range(dying.size() - 1, -1, -1):
 		var e := dying[i]; e.dead_t += dt
 		var t := minf(1.0, e.dead_t / 0.5); var ease := t * t * (3.0 - 2.0 * t)

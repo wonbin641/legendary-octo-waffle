@@ -115,6 +115,16 @@ func _ready() -> void:
 	await _press(fire); await get_tree().create_timer(0.4).timeout; var held: bool = main.guns.trigger; await _lift(fire); await get_tree().create_timer(0.2).timeout
 	check("in a fight a tap turns the touch controls on and the fire button fires while held, the mouse left free",
 		main.look_mode == "touch" and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and held and not main.guns.trigger and main.guns.shots - sh0 >= 1, [main.look_mode, held, main.guns.shots - sh0])
+	# a finger on the jump or the down button (flying) as the pause comes, lifted only in the pause: let go with the pause, so
+	# neither stays held when the fight goes on (bug-note 14: it once flew on up, or down, by itself)
+	main.player.jet_on = true; main.player.jet_t = 10.0; await _frames(); var tb: Dictionary = main._touch_buttons(); var still := []   # (flying, with fuel: the down button shows)
+	for bn in ["jump", "down"]:
+		var bp: Vector2 = tb[bn][0]
+		await _press(bp); var on: bool = main.player.in_up if bn == "jump" else main.player.in_down
+		main.pause_game(); await _frames(); await _lift(bp); main.resume_game(); await _frames()
+		still.push_back([on, main.player.in_up or main.player.in_down])
+	main.player.jet_end()
+	check("a finger on the jump or the down button as the pause comes is let go with it: neither stays held when the fight goes on", still == [[true, false], [true, false]], still)
 	# the weapon layout in the pause of a stage (where it was first seen not to scroll)
 	main.pause_game(); await _frames(); ui.open_sub("loadout"); await _frames(); await _layout_checks("a stage's pause")
 	# there, emptied, the layout is not shut by the phone's back button or by Esc either (as by 완료); with a gun put back, Esc shuts it

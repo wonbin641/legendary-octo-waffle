@@ -899,6 +899,7 @@ func _ready() -> void:
 	_music(gm, en, pl, w)
 	_mobile()
 	_fixes_153(gm, en, pl, g, pr, cam, fxn)
+	_fixes_154(gm, en, pl, w)
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
 	var hm_mi: MeshInstance3D = (hm.helmet_node as Node3D).get_child(0); var hm_mat: StandardMaterial3D = hm_mi.material_override
@@ -2229,6 +2230,46 @@ func _fixes_153(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, cam: Camer
 	check("bug 20: 1-2's flamethrower man's fire (360 specks in 2 s) has its screen colours worked out six times at most; colours nearer than 1/255 share one; and the cache is let go of past 2,048 colours",
 		fm != null and f_specks > 0 and f_cols >= 1 and f_cols <= Enemies.FLAME_COLS.size() and f_near == 1 and Fx._shown.size() <= Fx.SHOWN_MAX, [f_cols, f_specks, f_near, Fx._shown.size()])
 	Fx._shown.clear(); Store.save = keep_save; cam.global_transform = keep_cam
+
+# ---------------- the bug note's 11-14 (godot/BUGS.md), fixed in 1.5.4 (the fight standing still once you fall, and the
+# touch buttons let go in a pause, are checked with the whole game in tests/fight.gd and tests/touch.gd) ----------------
+func _fixes_154(gm: Game, en: Enemies, pl: Player, w: World) -> void:
+	var keep_save: Dictionary = Store.save.duplicate(true); var keep_down: Callable = gm.on_down
+	# 11: falling tells the game's frame at once (it stops the fight there and then), and a run already over gets nothing
+	Store.save = Store.save0(); gm.begin(1); var downs := []
+	gm.on_down = func(k: String) -> void: downs.push_back(k)
+	pl.jet_on = true; gm.over("dead")
+	var c_owned: Array = (Store.save.owned as Array).duplicate(); gm.open_chest()
+	check("bug 11: falling tells the game's frame at once (as the browser game's, the fight stops there and then) and ends the jetpack; a chest opened after takes nothing",
+		downs == ["dead"] and not pl.jet_on and Store.save.owned == c_owned, [downs, pl.jet_on, Store.save.owned])
+	gm.on_down = keep_down
+	gm.begin(4); var shp: Ship = w.ship
+	for o in en.list:
+		if o.type == "gdrone": o.alive = false   # (the key lies there only once the gold bee is down)
+	pl.pos = Vector3(Ship.KEY.x + 1.0, Phys.ground_at(Ship.KEY.x + 1.0, 1.0, Ship.KEY.z, Player.R), Ship.KEY.z)
+	gm.ended = true; var k_over: bool = shp.take_key(); var k_had: bool = shp.key
+	gm.ended = false; var k_live: bool = shp.take_key()
+	check("bug 11: stage 4's key is not taken once the run is over (no save point without a bag to go back to); in the fight it is",
+		not k_over and not k_had and k_live and shp.key, [k_over, k_had, k_live])
+	var mn = load("res://scripts/main.gd")
+	check("bug 11: in the second after you fall the phone's back button does nothing (the result is on its way)", mn.back_action("down", "", false) == "none", mn.back_action("down", "", false))
+	# 12: a stage cleared in the air: the jetpack off and down on the floor for the way out
+	Store.save = Store.save0(); gm.begin(1); pl.invuln = 1e9
+	var gy := Phys.ground_at(pl.pos.x, pl.pos.y + 1.0, pl.pos.z, Player.R); var g_exp := Phys.ground_at(pl.pos.x, gy + 7.0, pl.pos.z, Player.R)
+	pl.pos.y = gy + 7.0; pl.jet_on = true; pl.grounded = false; pl.vel.y = 2.0
+	gm.finish()
+	check("bug 12: a stage cleared while flying turns the jetpack off and sets you on the floor for the way out, as the browser game's",
+		gm.ended and not pl.jet_on and g_exp < gy + 6.0 and absf(pl.pos.y - g_exp) < 1e-4 and pl.vel.y == 0.0, [gm.ended, pl.jet_on, pl.pos.y, g_exp])
+	# 13: the jetpack does not start on an animal, thrown, down (stage 5) or held (bedtime); on your feet it does
+	Store.save = Store.save0(); gm.begin(1); var fake := Enemies.Foe.new(); var jt := []
+	for how in ["none", "ride", "toss", "out", "held"]:
+		pl.jet_end(); Store.save.items.jet = 1; pl.stun_t = 0.0; pl.jet_last_tap = -9.0
+		en.animals.m = fake if how == "ride" else null; pl.toss_on = how == "toss"; pl.out = how == "out"; pl.held = how == "held"
+		pl.jet_tap(100.0); pl.jet_tap(100.1); jt.push_back([pl.jet_on, int(Store.save.items.jet)])
+	en.animals.m = null; pl.toss_on = false; pl.out = false; pl.held = false; pl.jet_end()
+	check("bug 13: the jetpack does not start (nor use up its one go) on an animal or thrown, as the browser game's, nor down or held in stage 5; on your feet it does",
+		jt == [[true, 0], [false, 1], [false, 1], [false, 1], [false, 1]], jt)
+	Store.save = keep_save
 
 func _ref_flow(px: float, pz: float) -> PackedInt32Array:
 	var n: int = Phys.nav_n; var dist := PackedInt32Array(); dist.resize(n * n); dist.fill(-1); var q := PackedInt32Array(); q.resize(n * n)

@@ -95,7 +95,8 @@ func launch(v: Vector3) -> void:
 ## a press of jump at time now (seconds): the second within 0.35 s lights the jetpack, if you have one
 func jet_tap(now: float) -> void:
 	var dbl := now - jet_last_tap < 0.35; jet_last_tap = now
-	if not dbl or jet_on or int(Store.save.items.jet) == 0 or stun_t > 0.0: return
+	# not on an animal or thrown (as there), nor down or held in stage 5: it would burn its one go for nothing
+	if not dbl or jet_on or int(Store.save.items.jet) == 0 or stun_t > 0.0 or (rider != null and rider.m != null) or toss_on or out or held: return
 	jet_on = true; jet_t = 10.0; Store.save.items.jet = 0; Store.persist(); Snd.jet(0.8)
 	vel.y = maxf(vel.y, 3.0); grounded = false; jet_last_tap = -9.0
 	if say.is_valid(): say.call("제트백팩 · 점프 위로 · 내려가기 아래로")

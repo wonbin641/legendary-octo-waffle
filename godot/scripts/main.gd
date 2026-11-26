@@ -74,7 +74,7 @@ func _ready() -> void:
 	proj.player = player; proj.world = world; proj.enemies = enemies; proj.fx = fx; proj.hitmark = guns.hitmark
 	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player; loot.fx = fx; enemies.fx = fx; enemies.hitmark = guns.hitmark; enemies.say = func(t: String) -> void: feed(t, 0)
 	game.world = world; game.player = player; game.enemies = enemies; game.guns = guns; game.proj = proj; game.loot = loot; game.fx = fx
-	game.banner = banner; game.feed = feed; game.on_result = _on_result
+	game.banner = banner; game.feed = feed; game.on_result = _on_result; game.on_down = _on_down
 	enemies.on_bite = game.bitten; enemies.on_poison = game.poison; enemies.on_stun = game.stun; enemies.banner = banner; game.hint = hint
 	game.on_flash = func(a: float, from: Vector3) -> void: hudd.hurt(a, from)
 	game.on_pay = func(n: int) -> void: if look_mode != "touch": hudd.money_pop(n)
@@ -405,11 +405,13 @@ func _draw_touch() -> void:
 # ---------------- states ----------------
 func _set_state(s: String) -> void:
 	state = s
-	hud.visible = s == "playing"; touch_ui.visible = s == "playing" and look_mode == "touch"
+	hud.visible = s == "playing" or s == "down"; touch_ui.visible = s == "playing" and look_mode == "touch"   # (fallen: the screen as it was, the touch controls gone, as there)
 	if s != "playing" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	joy = Vector2.ZERO; joy_id = -1; look_id = -1; fire_id = -1; pad_sprint = false
+	set_meta("jump_id", -1); set_meta("down_id", -1)   # (the jump and down buttons let go too: a finger lifted meanwhile never reaches them)
+	if player: player.in_up = false; player.in_down = false
 	if guns: guns.trigger = false; guns.ads_held = false
-	if view: view.visible = s == "playing" or s == "paused"
+	if view: view.visible = s == "playing" or s == "paused" or s == "down"
 
 func to_menu() -> void:
 	game.sp = null   # leaving for the menu ends the run, save point and all
@@ -446,6 +448,18 @@ func _on_result(kind: String) -> void:
 	if kind == "clear" and state == "playing" and world.toy == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_outro(func() -> void: _show_result("clear")); return
 	_show_result(kind)
+
+## you have fallen (not in a team mode): as the browser game's, the fight stops there and then (no one walks or shoots, no
+## chest is opened, no key taken), and the result follows when the game's second is up (_fallen_step, Game.result_tick)
+func _on_down(_kind: String) -> void:
+	_set_state("down")
+
+## fallen, and behind the result sheet after: as there, what is dying finishes falling, the world's lights and specks go
+## on, and the view sinks to the floor and tips over
+func _fallen_step(dt: float) -> void:
+	time += dt; fx.update(dt); enemies.update_dying(dt); world.update_world(dt, time, player.pos.x, player.pos.z)
+	var k := 1.0 - exp(-dt * 3.0)
+	cam.position.y = lerpf(cam.position.y, player.pos.y + 0.4, k); cam.rotation.z = lerpf(cam.rotation.z, 0.5, k)
 
 func _show_result(kind: String) -> void:
 	_set_state("gameover"); ui.in_stage = false; ui.show_result(kind); cut.fade_to = 0.0
@@ -661,8 +675,10 @@ func _process(delta: float) -> void:
 			if touch_ui.visible: touch_ui.queue_redraw()   # the pills come and go with what is happening
 	elif state == "cutscene":
 		_cut_step(dt)
+	elif state == "down":
+		_fallen_step(dt); game.result_tick(dt)
 	elif state == "gameover" and game.result != "clear":
-		pass
+		_fallen_step(dt)
 	elif state == "shot":
 		world.update_world(dt, time, cam.position.x, cam.position.z)
 	elif state != "paused":

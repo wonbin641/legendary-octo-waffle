@@ -5,6 +5,8 @@ extends Node
 ## _unhandled_input). It turns onto the nearest enemy it can see at a hand's speed and fires once it is on it, side-steps
 ## while it fights, reloads when the magazine runs dry, injects an antidote when infected, and with nothing in sight walks
 ## the walking grid towards the nearest enemy. A stage passes when the bot has hit and killed and the enemies have hurt it.
+## Last, falling: the fight stands still at once, as the browser game's (no walking, firing or chest in the second before
+## the result), the view sinks, then the result sheet.
 ## Run: godot --headless --path godot res://tests/fight.tscn
 
 const STAGES := [1, 6, 5, 2, 3, 7, 8, 4]
@@ -27,6 +29,7 @@ func _ready() -> void:
 	Store.settings.dev = false; Store.settings.god = false
 	for st in STAGES: _fight(st)
 	_toy_flame()
+	_death_stops()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)
 
@@ -116,6 +119,26 @@ func _toy_flame() -> void:
 	for i in 30: main.tick(DT); main._pose_gun(DT)
 	var others: Array = main.toy_models.keys().filter(func(k): return k != "flame" and (main.toy_models[k] as Node3D).visible)
 	check("stage 5: the spray-can flamethrower in hand is the toy drawn, and no other", g.cur == "flame" and (main.toy_models.flame as Node3D).visible and others.is_empty(), [g.cur, others])
+	main.command("menu")
+
+## falling stops the fight there and then, as the browser game's: in the second before the result you neither walk nor fire
+## (the keys and the mouse still pressed) and a chest at your feet stays shut, the view sinks to the floor and tips over, and
+## then the result sheet comes. It once ran on for that second. The game's own frame (_process) runs it, as a real one would
+func _death_stops() -> void:
+	main.command("start 1"); var pl = main.player; var g = main.game; var gn = main.guns
+	for i in 3: main._process(DT)
+	pl.hp = 0.0; main._process(DT)   # the frame that finds you fallen
+	var st0: String = main.state; var p0 := Vector3(pl.pos); var shots0: int = gn.shots; var cy0: float = main.cam.position.y
+	var owned0: Array = (Store.save.owned as Array).duplicate(); main.loot.chest(pl.pos.x, pl.pos.z, pl.pos.y)
+	_key(KEY_W, true); _fire(true)
+	for i in 15: main._process(DT)   # half a second
+	var moved: float = (pl.pos as Vector3).distance_to(p0); var fired: int = gn.shots - shots0; var st1: String = main.state
+	var sunk: float = cy0 - main.cam.position.y; var roll: float = main.cam.rotation.z
+	for i in 30: main._process(DT)   # past the second
+	_let_go()
+	check("falling stops the fight there and then (as the browser game's): in the second before the result you neither walk nor fire and a chest at your feet stays shut, the view sinks and tips over; then the result",
+		st0 == "down" and st1 == "down" and moved < 0.01 and fired == 0 and Store.save.owned == owned0 and sunk > 0.3 and roll > 0.1 and main.state == "gameover" and main.ui.cur == "over" and g.result == "dead",
+		{"states": [st0, st1, main.state], "moved": snappedf(moved, 0.001), "fired": fired, "sunk": snappedf(sunk, 0.01), "roll": snappedf(roll, 0.01), "screen": main.ui.cur, "owned": Store.save.owned})
 	main.command("menu")
 
 ## at a hand's speed: no more than about 6 radians a second, as mouse movement in pixels

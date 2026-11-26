@@ -25,6 +25,7 @@ const BOSS := {
 
 var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var proj: Proj; var loot: Loot; var fx: Fx
 var banner: Callable = Callable(); var feed: Callable = Callable(); var on_result: Callable = Callable()   # on_result(kind) shows the result sheet
+var on_down: Callable = Callable()   # on_down(kind): you have fallen (not in a team mode): the fight stops there and then
 var stage := 1
 var goal := 100
 var kills := 0
@@ -256,9 +257,7 @@ func update(dt: float) -> void:
 	if Phys.flow_busy: Phys.flow_step(3000)
 	stats.shots = guns.shots; stats.hits = guns.hits
 	if _chest_wait and loot.pending() == null: _chest_wait = false; finish()
-	if _result_t > 0.0:
-		_result_t -= dt
-		if _result_t <= 0.0: _say(on_result, [_result_kind])
+	result_tick(dt)
 	if not ended and player.hp <= 0.0:
 		if tm != null: tm.player_down()   # (a team mode: you are back at your base in a few seconds)
 		else: over("dead")
@@ -281,6 +280,12 @@ func update(dt: float) -> void:
 	if not ended and poison_t > 0.0 and not inject_on:
 		poison_t = maxf(0.0, poison_t - dt)
 		if poison_t <= 0.0: over("poison")
+
+## the wait before the result sheet: counted in the fight's frame, and once you have fallen in main's (the fight stands still)
+func result_tick(dt: float) -> void:
+	if _result_t <= 0.0: return
+	_result_t -= dt
+	if _result_t <= 0.0: _say(on_result, [_result_kind])
 
 func _god() -> bool:
 	return Store.settings.dev and Store.settings.god
@@ -452,6 +457,7 @@ func take_loot(kind: String) -> bool:
 
 ## the boss's chest: a gun you do not own yet, yours for good (once you are out alive), and every gun's ammo filled
 func open_chest() -> void:
+	if ended: return   # (a run already over gets nothing from a chest: as there, you can no longer reach one)
 	for id in guns.slots: guns.wstate[id].mag = Weapons.LIST[id].mag; guns.wstate[id].reserve = Weapons.LIST[id].reserve
 	var pool: Array = Weapons.ORDER.filter(func(id): return id != "pistol" and not Store.save.owned.has(id))
 	if pool.is_empty():
@@ -473,6 +479,8 @@ func finish() -> void:
 		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if stage == 4 else "상자를 열어야 헬기가 옵니다", 3.0])
 		return
 	_leave_animals()
+	if player.jet_on:   # still in the air when the last one falls: the jetpack off and down for the way out, as there
+		player.jet_end(); player.pos.y = Phys.ground_at(player.pos.x, player.pos.y, player.pos.z, Player.R); player.vel.y = 0.0
 	ended = true; player.invuln = 1e9; infected = false; infect_t = 0.0; poison_t = 0.0; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
 	if not Store.save.cleared.has(stage): Store.save.cleared.push_back(stage); Store.save.cleared.sort()
 	return_rentals()
@@ -490,14 +498,14 @@ func win_match() -> void:
 	var extra: int = tm.mode.bonus() if first else 0
 	Store.save.money += extra; stats.earned += extra
 	if first or t < int(Store.save.best[key]): Store.save.best[key] = t
-	return_rentals(); Store.persist(); Snd.play("clear")
+	return_rentals(); Store.persist(); Snd.play("clear"); player.jet_end()
 	_say(banner, [tm.mode.win_title(), ("첫 승리 보너스 +" + Store.won(extra) if extra > 0 else "다시 하기라 보상 없음") + " · 가방 " + Store.won(Store.save.money), 2.6])
 	result = "clear"; _result_kind = "clear"; _result_t = 2.2
 
 ## a team mode lost: what you earned in it is gone, as when you fall anywhere else
 func lose_match() -> void:
 	if ended: return
-	ended = true; player.invuln = 1e9; forfeit(); _leave_animals(); return_rentals()
+	ended = true; player.invuln = 1e9; forfeit(); _leave_animals(); return_rentals(); player.jet_end()
 	_say(banner, [tm.mode.lose_stamp, tm.mode.lose_title, 2.6]); Snd.play("hurt")
 	result = "lost"; _result_kind = "lost"; _result_t = 2.2
 
@@ -527,6 +535,7 @@ func forfeit() -> void:
 func over(reason: String) -> void:
 	if ended: return
 	if Store.settings.dev and Store.settings.god: infected = false; infect_t = 0.0; poison_t = 0.0; player.hp = maxf(player.hp, 1.0); return   # developer mode's invincibility
-	ended = true; forfeit(); _leave_animals()
+	ended = true; forfeit(); _leave_animals(); player.jet_end()
 	if sp == null: return_rentals()
 	result = reason; _result_kind = reason; _result_t = 1.0
+	_say(on_down, [reason])   # (main stops the fight there and then, as the browser game's: no walking, shooting, chest or key in that second)
