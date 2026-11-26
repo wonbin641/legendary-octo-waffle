@@ -102,6 +102,7 @@
 GODOT=/path/to/godot ./tools/build_godot.sh     # build/godot-web, build/godot-artifact, 그리고 ../godot-web(GitHub Pages)
 GODOT=/path/to/godot ./tools/build_windows.sh   # build/windows: Yarr07.exe, 설치 파일 Yarr07-Setup.exe(NSIS), 설치 없는 Yarr07-windows.zip
 GODOT=/path/to/godot VERSION=1.5.0 ./tools/build_android.sh   # build/android/Yarr07.apk (Godot의 안드로이드 템플릿, Android SDK, JDK 17+, 서명 키 필요)
+cp build/windows/Yarr07-Setup.exe build/android/Yarr07.apk download/   # 내놓기: GitHub Pages의 download/에서 설치 파일과 앱을 바로 내려받음
 build/linux/Yarr07.x86_64 --headless -- --smoke  # 만든 게임(내보내기 설정 "Linux")이 자기 데이터로 모든 스테이지를 시작해 보는지
 godot --headless --path godot res://tests/run.tscn   # 브라우저판에서 뽑은 기준 자료와 비교
 godot --headless --path godot res://tests/fight.tscn # 스테이지마다 자동으로 싸워 보기 (1분 남짓)

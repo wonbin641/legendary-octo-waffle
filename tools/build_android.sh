@@ -4,6 +4,7 @@
 # 필요한 것: Godot 4.7과 그 안드로이드 내보내기 템플릿, Android SDK(build-tools의 apksigner·aapt2; Godot 편집기 설정의
 # export/android/android_sdk_path), JDK 17 이상, 서명 키 android/app/yard07-release.jks와 android/app/keystore.properties(저장소에 없음).
 #   GODOT=/path/to/godot VERSION=1.5.0 ./tools/build_android.sh   →  build/android/Yarr07.apk
+# 내놓을 때는 그 파일을 download/Yarr07.apk로 옮겨 둡니다(GitHub Pages에서 바로 내려받는 주소; Windows 설치 파일과 같은 자리).
 # 버전 코드는 버전에서 셉니다(1.5.0 → 10500, 늘 커짐; 예전 앱의 마지막은 29). 비밀번호는 환경 변수로만 Godot에 건네고 어디에도 찍지 않습니다.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd); G=${GODOT:-godot}; VERSION=${VERSION:-1.0.0}

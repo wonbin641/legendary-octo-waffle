@@ -18,7 +18,7 @@
 
 | | 웹판 | 다운로드판 (Windows) | 앱판 (Android) |
 |---|---|---|---|
-| 받는 곳 | GitHub Pages `/godot-web/` | Pages `download/Yarr07-Setup.exe` | APK (예전 앱 `app.yard07.game` 위에 업데이트) |
+| 받는 곳 | GitHub Pages `/godot-web/` | Pages `download/Yarr07-Setup.exe` | Pages `download/Yarr07.apk` (예전 앱 `app.yard07.game` 위에 업데이트) |
 | 내보내기 설정 | "Web" (스레드 없음, 소리는 브라우저 샘플) | "Windows Desktop" | "Android" (Gradle 없이 템플릿 APK, arm64·armv7) |
 | 렌더러 | Compatibility (WebGL2) | Forward+ (D3D12/Vulkan) | Compatibility (GLES3) |
 | 만드는 법 | `tools/build_godot.sh` | `tools/build_windows.sh`, `tools/windows_installer.nsi` (NSIS) | `tools/build_android.sh` (서명 키는 저장소 밖, 환경 변수로만 건넴) |
