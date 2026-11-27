@@ -33,7 +33,7 @@ const SWORD := {"dmg": [65.0, 65.0, 80.0], "step": 0.75, "lands": 0.3, "reach": 
 	"wave": 45.0, "wave_range": 12.0, "wave_speed": 34.0, "wave_r": 1.3,
 	"axe": 55.0, "axe_speed": 46.0, "axe_range": 30.0, "axe_cd": 6.0, "axe_dash": 32.0, "stop_ms": [30.0, 30.0, 55.0]}
 # the demons' hellfire staff: embers by heat, not by a magazine; a beam that costs its own health
-const STAFF := {"dmg": 15.0, "head": 1.5, "rate": 9.0, "speed": 75.0, "life": 0.8, "heat": 2.6, "cool": 28.0, "cool_wait": 0.5,   # (ours: heat a shot, how it cools)
+const STAFF := {"dmg": 15.0, "head": 1.5, "rate": 9.0, "speed": 75.0, "life": 0.8, "heat": 1.6, "cool": 28.0, "cool_wait": 0.5,   # (ours: heat a shot, so that 80% to 100% is twelve shots, room for the papers' 1.15 s at critical heat; how it cools)
 	"crit": 80.0, "burn": 18.0, "burn_t": 1.0, "seal": 2.0, "seal_to": 55.0,
 	"beam": 70.0, "beam_cost": 14.0, "beam_range": 30.0, "beam_floor": 30.0}                                                     # (ours: the beam's numbers)
 const WEAPON := {"elf": XBOW, "dwarf": CANNON, "orc": SWORD, "demon": STAFF}
@@ -43,7 +43,7 @@ const DAGGER := {"dmg": 45.0, "reach": 2.5, "arc": 0.8, "cd": 0.7, "execute": 40
 const BOMBS := ["oil", "gravity", "smoke"]
 const BOMB := {
 	"oil": {"name": "기름 & 점화 플라스크", "r": 4.0, "t": 10.0, "slow": 0.75, "fire": 45.0, "fire_t": 5.0, "text": "기름이 발을 늦춥니다 · 불씨나 증기 탄환이 닿으면 5초 동안 초당 45의 불바다"},
-	"gravity": {"name": "중력 붕괴 구체", "r": 5.0, "t": 1.5, "dmg": 30.0, "pull": 7.0, "text": "피해 30 · 반경 5 m 안의 모두와 투사체를 1.5초 동안 한가운데로"},
+	"gravity": {"name": "중력 붕괴 구체", "r": 5.0, "t": 1.5, "dmg": 30.0, "pull": 3.4, "text": "피해 30 · 반경 5 m 안의 모두와 투사체를 1.5초 동안 한가운데로"},
 	"smoke": {"name": "비전 연막탄", "r": 5.5, "t": 9.0, "text": "보라색 안개가 시야를 가립니다 · 안에서는 엘프의 투시가 통하지 않습니다"},
 }
 const BOMB_CD := 16.0      # ours: a thrown bomb is back in the pouch this long after

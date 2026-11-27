@@ -66,8 +66,11 @@ var marks: Array = []              # what you were shown on your screen: hits, h
 var flash := {}                    # the screen's own moments: {"execute": seconds left, "head": .., "wave": ..}
 var altar_open := false           # you are at the rune altar: the preparation's clock waits for you
 var duck_t := 0.0                  # an ultimate just called: the music steps back this long
-var music_break := 0               # the sanctum's resonance: the music holds its breath a bar (RealmMusic takes this)
+var music_break := 0               # the resonances so far: the music holds its breath a bar for each (Music takes this)
+var fight_t := 99.0                # seconds since there was a fight about you (a foe in sight near by, you shooting or hurt)
+var _fight_look := 0.0
 var auto := false                  # your fighter plays itself, as the others do (the checks' matches, a match left to run)
+var ai_off := false                # the others stand where they are and press nothing (the checks set a fight up by hand)
 var _id := 0
 var _was_grounded := true
 var log_on := false; var log: Array = []   # the checks read what happened: [what, ...]
@@ -213,9 +216,9 @@ func slay(v: Fighter, by: Fighter, o := {}) -> void:
 
 func heal(f: Fighter, amount: float, by: Fighter = null) -> float:
 	if f == null or not f.alive or amount <= 0.0: return 0.0
-	var m := 1.0
-	if f.burn_t > 0.0: m *= Races.BURN_HEAL
-	if kit.in_furnace(f): m *= float(Races.ULT.demon.heal_cut)
+	var m := 1.0   # (burning: 30% less of it; in a demon's furnace: half, the worse of the two and not both)
+	if kit.in_furnace(f): m = float(Races.ULT.demon.heal_cut)
+	elif f.burn_t > 0.0: m = Races.BURN_HEAL
 	var a := minf(amount * m, f.max_hp - f.hp)
 	if a <= 0.0: return 0.0
 	f.hp += a
@@ -326,6 +329,13 @@ func by_id(id: int) -> Fighter:
 		if f.id == id: return f
 	return null
 
+## whole again and nothing on him: health, the weapon, Shift and the bombs; no fire, slows, marks, shields or stacks
+func mend(f: Fighter) -> void:
+	f.alive = true; f.back_t = 0.0; f.hp = f.max_hp; f.burn_t = 0.0; f.burn = 0.0; f.burn_by = null; f.slows.clear(); f.stacks = 0; f.stack_t = 0.0; f.shield = 0.0; f.over = 0.0; f.ult_t = 0.0; f.ult_more = 0; f.cast_t = 0.0
+	f.stun_t = 0.0; f.mark_t = 0.0; f.carrying = false; f.push = Vector3.ZERO; f.inv = 0.0; f.haste_t = 0.0; f.ley_t = 0.0; f.phased_t = 0.0; f.delay_t = 0.0; f.port_t = 0.0; f.parry_t = 0.0; f.parry_cd = 0.0; f.dag_t = 0.0; f.alt_cd = 0.0
+	f.hold_t = 0.0; f.quick = false; f.since_swing = 9.0; f.idle_t = 9.0; f.fired_t = 9.0; f.hits.clear()
+	refit(f)
+
 ## back at the base circle: whole, the weapon full, and quick on his feet for a few seconds
 func back(f: Fighter) -> void:
 	var p := mode.spawn_at(f)
@@ -343,7 +353,7 @@ func back(f: Fighter) -> void:
 # ---------------- the frame ----------------
 func update(dt: float) -> void:
 	clock += dt
-	stop_t = maxf(0.0, stop_t - dt); duck_t = maxf(0.0, duck_t - dt)
+	stop_t = maxf(0.0, stop_t - dt); duck_t = maxf(0.0, duck_t - dt); fight_t += dt
 	for k in flash.keys():
 		flash[k] = float(flash[k]) - dt
 		if float(flash[k]) <= 0.0: flash.erase(k)
@@ -360,12 +370,29 @@ func update(dt: float) -> void:
 			continue
 		_state(f, dt)
 		if f.me and not auto: kit.act(f, _hands(), dt)
+		elif ai_off: kit.act(f, {}, dt)
 		else: ai.turn(f, dt)
 	press.clear()
 	kit.step(dt)
 	_circles(dt)
 	_you_out(dt)
+	_heat(dt)
 	look.update(dt)
+
+## a fight about you, for the music: you shooting, you hurt, or a foe in sight within 35 m (looked for three times a second)
+func _heat(dt: float) -> void:
+	if me == null or not me.alive: return
+	if me.fired_t < 0.3 or player != null and player.since_hurt < 0.3: fight_t = 0.0
+	_fight_look -= dt
+	if _fight_look > 0.0: return
+	_fight_look = 0.33
+	for e: Fighter in all:
+		if e.alive and e.team != me.team and e.pos.distance_to(me.pos) < 35.0 and kit.sees(me, e, 35.0): fight_t = 0.0; return
+
+## what the music should follow (Music): the set, how far the match has come, a fight about you, the resonances, an
+## ultimate near you, the overtime's climb
+func music() -> Dictionary:
+	return {"what": "realm", "set": mode.music_set(), "stage": mode.music_stage(), "fight": fight_t < 2.0, "breaks": music_break, "duck": duck_t > 0.0, "semis": mode.music_semis()}
 
 ## you: where the player is, into your fighter
 func _you_in() -> void:
@@ -376,7 +403,7 @@ func _you_in() -> void:
 	if cam != null: me.aim = -cam.global_basis.z
 	else: me.aim = Vector3(-sin(player.yaw) * cos(player.pitch), sin(player.pitch), -cos(player.yaw) * cos(player.pitch))
 	# an orc's bound ends where he lands
-	if me.leaping and player.grounded and not _was_grounded: me.leaping = false; kit.landed(me)
+	if me.leaping and player.grounded and not _was_grounded: me.leaping = false; player.vel.x = 0.0; player.vel.z = 0.0; kit.landed(me)   # (he comes down where the bound ends: no sliding on)
 	_was_grounded = player.grounded
 
 func _hands() -> Dictionary:
@@ -396,6 +423,8 @@ func _you_out(dt: float) -> void:
 	if me.alive and player.pos != me.pos: player.pos = me.pos; player.vel = Vector3.ZERO if auto else me.vel   # (a portal, a pull: the fight moved you)
 	if auto: player.yaw = atan2(-me.aim.x, -me.aim.z); player.pitch = asin(clampf(me.aim.y, -1.0, 1.0)); player.grounded = true; player.vel = Vector3.ZERO
 	player.move_mul = speed_of(me) / 5.4 * (0.0 if (mode.held(me) and mode.rooted()) else 1.0); player.no_sprint = true; player.ads = 0.0; player.ads_slow = 1.0; player.sens_mul = 1.0
+	guns.ads = 0.0   # (the right button is your people's own: no gun comes up to the eye)
+	if cam != null: cam.fov = guns.base_fov + 2.0 * clampf(float(flash.get("wave", 0.0)) / 0.18, 0.0, 1.0)   # (the orc's wave: the view opens 2 degrees and comes back)
 	if me.push.length() > 0.05:
 		var q := Phys.move_xz(player.pos, me.push.x * dt, me.push.z * dt, Player.R, Player.HEIGHT, 0.5); player.pos = q[0]; me.pos = player.pos
 	me.push *= exp(-dt * 6.0)

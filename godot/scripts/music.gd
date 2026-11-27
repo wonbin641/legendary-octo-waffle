@@ -14,6 +14,13 @@ extends Node
 ## layers start with the drum, two bars before their first bar; the overtime's set starts before the bar line it takes over at.
 ## On the web the layers started in one frame begin at one moment of the browser's audio clock, a little ahead (lead): the
 ## music reckons with it, so a set still meets its bar line.
+##
+## Stage 6's team battles have music of their own (tools/make_realm_music.py): two sets of four stems at 90 BPM, the elves'
+## wood (rf) for the sanctum and the Archmage's tower (rt) for the siege. The four go round together and are heard one on
+## another as the match heats up: 1 on its own exploring; 2 over it in a skirmish (back to 1 over six seconds once it stops);
+## 3 with the fight for the objective (the sanctum resounded, the siege's second part); 4 at the climax (a gauge at 90%,
+## overtime, the nucleus nearly broken). The sanctum's resonance: a bar's silence from the next bar line, then the drums at
+## once. In overtime it climbs a semitone each time the hold shortens. An ultimate called near you: 6 dB under for 1.5 s.
 
 const DIR := "res://music/"
 const BPM := 120.0; const OT_BPM := 150.0; const BARS := 16
@@ -68,19 +75,40 @@ var _warm_t := 0.0
 var _clock := -1.0           # the audio's clock at the last frame
 var keep_log := false; var log: Array = []
 
+# stage 6's team battles
+const R_SETS := ["rf", "rt"]
+const R_BAR := 240.0 / 90.0; const R_LOOP := R_BAR * 16.0   # (90 BPM, 16 bars: 42.67 s)
+const R_GAIN := 0.32         # the battle's music under its sounds (음량 and 음악 on top)
+const R_DUCK := 0.5          # an ultimate near you: 6 dB under
+const R_UP := 0.8; const R_DOWN := 2.0; const R_OFF := 6.0   # a stem comes in this quickly; goes this quickly (the skirmish's over six seconds)
+var r_set := ""              # the set heard ("rf", "rt"), or ""
+var _r := {}                 # set -> its four players
+var r_level := [0.0, 0.0, 0.0, 0.0]
+var r_t := 0.0               # where the set is: seconds into its loop
+var r_fade := 0.0
+var r_breaks := 0            # the resonances heard so far (the match counts them: one more asks for a break)
+var r_break_in := -1.0       # music-seconds to the bar line a break begins at (-1: none to come)
+var r_break := 0.0           # seconds of the break left
+var r_duck := 1.0
+var r_semis := 0; var r_pitch := 1.0
+var _warmed := {}
+
 func _ready() -> void:
 	for k in LAYERS: _n[k] = _player("m_" + k, true)
 	for k in LAYERS + ["alarm"]: _o[k] = _player("o_" + k, true)
 	_lobby = _player("lobby", true); _leadin = _player("leadin", false)
+	for s: String in R_SETS:
+		_r[s] = []
+		for i in 4: (_r[s] as Array).push_back(_player("%s_%d" % [s, i + 1], true))
 	for i in 2:
 		var p := AudioStreamPlayer.new(); p.bus = "Music"; add_child(p); _shot.push_back(p)
 	for k in LAYERS: level[k] = 0.0
 	var loops := []
-	for p: AudioStreamPlayer in _n.values() + _o.values() + [_lobby]:
+	for p: AudioStreamPlayer in _n.values() + _o.values() + [_lobby] + _r.rf + _r.rt:
 		if p.stream != null: loops.push_back(p.stream)
 	Snd.music_loops(loops)
 	var together := []
-	for p: AudioStreamPlayer in _n.values() + _o.values() + [_leadin]:
+	for p: AudioStreamPlayer in _n.values() + _o.values() + [_leadin] + _r.rf + _r.rt:
 		if p.stream != null: together.push_back(p.stream)
 	lead = Snd.music_together(together)
 
@@ -135,6 +163,7 @@ func update(_frame_dt: float, ctx: Dictionary, dt := -1.0) -> void:
 	var want: String = ctx.get("what", "")
 	if want == "march" and what != "march" and what != "leadin": _start_match()
 	elif want == "lobby" and what != "lobby": _start_lobby()
+	elif want == "realm" and (what != "realm" or r_set != str(ctx.get("set", "rf"))): _start_realm(str(ctx.get("set", "rf")))
 	elif want == "" and what != "": _say("stop"); what = ""
 	var master := GAIN * volume * Snd.volume
 	# the lobby's music box
@@ -153,6 +182,18 @@ func update(_frame_dt: float, ctx: Dictionary, dt := -1.0) -> void:
 		fade = move_toward(fade, 0.0, env_dt / 2.0)
 		if fade <= 0.0: _stop_march()
 	var paused: bool = ctx.get("paused", false)
+	# stage 6's battles: the set's four stems (made ready on the web while the briefing is open)
+	var wm: String = ctx.get("warm", "")
+	if wm != "" and _r.has(wm):
+		if not _warmed.has(wm): _warmed[wm] = true; _warm(_r[wm])
+		_warm_step()
+	if what == "realm": _realm(dt, env_dt, ctx)
+	else:
+		r_fade = move_toward(r_fade, 0.0, env_dt / 1.5)
+		if r_fade <= 0.0 and r_set != "": _stop_realm()
+	var rm2 := R_GAIN * volume * Snd.volume * r_fade * r_duck * (0.4 if paused else 1.0)
+	for s: String in _r:
+		for i in 4: _vol(_r[s][i], r_level[i] * rm2 if s == r_set else 0.0)
 	var m2 := master * fade * (0.4 if paused else 1.0)
 	_tape(env_dt)
 	for k in LAYERS:
@@ -265,6 +306,52 @@ func _quiet_other() -> void:
 	for k in other:
 		if other[k].playing: other[k].stop()
 
+# ---------------- stage 6's team battles ----------------
+## the set's four stems, started in the one frame from their start: they go round together
+func _start_realm(s: String) -> void:
+	if not _r.has(s): s = "rf"
+	_stop_realm(); _say("realm " + s)
+	what = "realm"; r_set = s; r_fade = 1.0; r_breaks = 0; r_break_in = -1.0; r_break = 0.0; r_duck = 1.0; r_semis = 0; r_pitch = 1.0; r_level = [0.0, 0.0, 0.0, 0.0]
+	for p: AudioStreamPlayer in _r[s]: p.pitch_scale = 1.0; _vol(p, 0.0); p.play(0.0)
+	r_t = -lead   # (the web: they begin that much later)
+
+func _stop_realm() -> void:
+	for s: String in _r:
+		for p: AudioStreamPlayer in _r[s]:
+			if p.playing: p.stop()
+	r_set = ""
+
+## a frame of it. ctx: stage (1..4: how far the match has come), fight (a fight about you: the skirmish's stem), breaks (the
+## resonances so far), duck (an ultimate near you), semis (the overtime's climb)
+func _realm(adt: float, dt: float, ctx: Dictionary) -> void:
+	r_t = fposmod(r_t + adt * r_pitch, R_LOOP)
+	var stage := clampi(int(ctx.get("stage", 1)), 1, 4); var fight: bool = ctx.get("fight", false)
+	var want := [1.0, 1.0 if (fight or stage >= 3) else 0.0, 1.0 if stage >= 3 else 0.0, 1.0 if stage >= 4 else 0.0]
+	# the resonance: a bar's silence from the next bar line, then the drums come in at once (counted down from the next frame)
+	if r_break_in >= 0.0:
+		r_break_in -= adt * r_pitch
+		if r_break_in <= 0.0: r_break = R_BAR + r_break_in; r_break_in = -1.0
+	var br := int(ctx.get("breaks", 0))
+	if br > r_breaks:
+		r_breaks = br
+		var b := floorf(r_t / R_BAR + 0.0001) + 1.0; r_break_in = b * R_BAR - r_t
+		if r_break_in < 0.08: r_break_in += R_BAR
+		_say("break")
+	var was := r_break > 0.0
+	if r_break > 0.0: r_break -= adt * r_pitch
+	for i in 4:
+		var w: float = want[i]
+		if r_break > 0.0: r_level[i] = move_toward(r_level[i], 0.0, dt / 0.06)
+		elif was: r_level[i] = w   # (out of the break: all at once)
+		elif r_break_in >= 0.0 and w > r_level[i]: pass   # (a break to come: what is new waits for it)
+		elif w > r_level[i]: r_level[i] = move_toward(r_level[i], w, dt / R_UP)
+		else: r_level[i] = move_toward(r_level[i], w, dt / (R_OFF if i == 1 else R_DOWN))
+	r_duck = move_toward(r_duck, R_DUCK if ctx.get("duck", false) else 1.0, dt / 0.15)
+	var semis := clampi(int(ctx.get("semis", 0)), 0, 4)
+	if semis != r_semis:
+		r_semis = semis; r_pitch = pow(2.0, semis / 12.0); _say("semis %d" % semis)
+		for p: AudioStreamPlayer in _r[r_set]: p.pitch_scale = r_pitch
+
 ## a one-off on the music: the overtime's bell, a toy trumpet
 func shot(name: String, gain: float) -> void:
 	var s := _stream(name, false)
@@ -281,10 +368,14 @@ func status() -> Dictionary:
 		if _o[k].playing: on.push_back("o_" + k)
 	if _lobby.playing: on.push_back("lobby")
 	if _leadin.playing: on.push_back("leadin")
+	for s: String in _r:
+		for i in 4:
+			if _r[s][i].playing: on.push_back("%s_%d" % [s, i + 1])
 	var lv := {}
 	for k in level: lv[k] = snappedf(level[k], 0.001)
 	return {"what": what, "state": state, "ot": ot, "w_ot": w_ot, "heat": heat, "battle": battle, "pitch": pitch, "lp": lp, "t": t, "fade": fade, "level": lv,
-		"playing": on, "bus": Snd.music_bus, "log": log.slice(-12)}
+		"playing": on, "bus": Snd.music_bus, "log": log.slice(-12),
+		"r_set": r_set, "r_level": r_level.map(func(v): return snappedf(v, 0.001)), "r_t": r_t, "r_break": r_break, "r_break_in": r_break_in, "r_duck": r_duck, "r_pitch": r_pitch, "r_fade": r_fade}
 
 # ---------------- the tape ----------------
 ## a blast: close by (6 m) in a match, the music's tape stretches

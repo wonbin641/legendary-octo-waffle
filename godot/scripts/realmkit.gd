@@ -140,7 +140,8 @@ func arc_things(f: Realm.Fighter, reach: float, half: float) -> Array:
 
 # ---------------- a fighter's frame ----------------
 func act(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
-	f.fire_t = maxf(0.0, f.fire_t - dt); f.alt_cd = maxf(0.0, f.alt_cd - dt); f.dag_t = maxf(0.0, f.dag_t - dt); f.parry_cd = maxf(0.0, f.parry_cd - dt); f.parry_t = maxf(0.0, f.parry_t - dt)
+	# (what is left over of a frame counts toward the next shot: a weapon's rate is its own at any frame rate)
+	f.fire_t = maxf(-dt, f.fire_t - dt); f.alt_cd = maxf(0.0, f.alt_cd - dt); f.dag_t = maxf(0.0, f.dag_t - dt); f.parry_cd = maxf(0.0, f.parry_cd - dt); f.parry_t = maxf(0.0, f.parry_t - dt)
 	f.skill_gap = maxf(0.0, f.skill_gap - dt); f.steady_t = maxf(0.0, f.steady_t - dt); f.since_swing += dt; f.idle_t += dt
 	var S: Dictionary = Races.SKILL[f.race]
 	if f.skill_n < int(S.charges):
@@ -187,7 +188,7 @@ func _xbow(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 		return
 	if f.charge > 0.0:   # let go: the heavy shot, if it was drawn full
 		if f.charged:
-			f.ammo -= 1; f.fire_t = 1.0 / float(W.rate); f.fired_t = 0.0
+			f.ammo -= 1; f.fire_t += 1.0 / float(W.rate); f.fired_t = 0.0
 			var prism := f.rune("elf_prism")
 			shoot({"kind": "big", "pos": muzzle(f), "vel": f.aim * float(W.big_speed), "life": 1.6, "team": f.team, "by": f, "r": 0.1, "dmg": float(W.big) * (float(Races.RUNE.rapid_big) if f.rune("elf_rapid") else 1.0),
 				"head": float(W.head), "elem": "arcane", "pierce": true, "bounces": int(W.bounces) + (1 if prism else 0), "split": prism})
@@ -195,7 +196,7 @@ func _xbow(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 		f.charge = 0.0; f.charged = false
 		return
 	if I.get("fire", false) and f.fire_t <= 0.0:
-		f.ammo -= 1; f.fire_t = 1.0 / (float(W.rate) * (float(Races.RUNE.rapid_rate) if f.rune("elf_rapid") else 1.0)); f.fired_t = 0.0
+		f.ammo -= 1; f.fire_t += 1.0 / (float(W.rate) * (float(Races.RUNE.rapid_rate) if f.rune("elf_rapid") else 1.0)); f.fired_t = 0.0
 		var d := cone(f.aim, float(W.air_spread) if (not f.grounded and f.steady_t <= 0.0) else 0.0)
 		shoot({"kind": "arrow", "pos": muzzle(f), "vel": d * float(W.speed), "life": float(W.life), "team": f.team, "by": f, "r": 0.08, "dmg": float(W.dmg), "head": float(W.head), "elem": "arcane"})
 		_say(f, "rm_xbow", 0.8); rm.look.fired(f, "arrow")
@@ -228,7 +229,7 @@ func _cannon(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 ## the cannon's blast: ten shards, each its own way in a cone; what each meets is hurt less the farther off
 func blast(f: Realm.Fighter) -> Dictionary:
 	var W: Dictionary = Races.CANNON; var o := muzzle(f); var got := {}; var obj := {}; var ends: Array = []
-	f.ammo -= 1; f.fire_t = 1.0 / float(W.rate); f.fired_t = 0.0
+	f.ammo -= 1; f.fire_t += 1.0 / float(W.rate); f.fired_t = 0.0
 	for i in int(W.pellets):
 		var d := cone(f.aim, float(W.spread)); var far := float(W.far)
 		if Phys.raycast_static(o, d, far): far = Phys.rh_t
@@ -328,7 +329,7 @@ func _staff(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 	if f.beam_on: _beam(f, dt)
 	elif I.get("fire", false) and f.fire_t <= 0.0:
 		var hot := rm.critical(f); var burst := f.rune("dm_burst")
-		f.fire_t = 1.0 / float(W.rate); f.idle_t = 0.0; f.fired_t = 0.0
+		f.fire_t += 1.0 / float(W.rate); f.idle_t = 0.0; f.fired_t = 0.0
 		shoot({"kind": "ember", "pos": muzzle(f), "vel": cone(f.aim, 0.012) * float(W.speed), "life": float(W.life), "team": f.team, "by": f, "r": 0.1, "dmg": float(W.dmg), "head": float(W.head), "elem": "fire", "hot": hot, "burst": hot and burst})
 		Snd.toy("rm_ember_hot" if hot else "rm_ember", 0.7, null if f.me else f.eye_at(), 0.85 + 0.45 * minf(1.0, f.heat / float(W.crit)))   # (its pitch climbs with the heat)
 		rm.look.fired(f, "ember")

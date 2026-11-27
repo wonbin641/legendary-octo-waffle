@@ -18,7 +18,7 @@ const NODES := {
 	"h0": [89.5, 0, 5], "h1": [83, 0, 9.5], "h2": [88.7, 3.3, 9.5], "h3": [88.7, 3.3, 13.3], "h4": [93.7, 6.6, 13.3], "h5": [93.7, 6.6, 16.9], "h6": [98.6, 10, 16.9],
 	"stone": [102, 10.4, 16.5], "pl0": [105, 10, 10.8], "pl1": [121, 10, 10.8], "pl2": [124.5, 10, 9.0],
 	"c_gate": [110, 0, 0], "c_w": [116, 0, 0], "c_nw": [122, 0, -13], "c_n": [134, 0, -17.5], "c_ne": [147, 0, -11], "c_e": [151.5, 0, 0], "c_se": [147, 0, 11], "c_s": [134, 0, 17.5], "c_sw": [126, 0, 13],
-	"ward_a": [127, 0, -17], "bast": [120.6, 0.5, 13.4], "lib_port": [142.6, 10, 8.6],
+	"ward_a": [127, 0, -17], "ward_b": [128.5, 0, 16], "bast": [120.6, 0.5, 13.4], "lib_port": [142.6, 10, 8.6],
 }
 const EDGES := [
 	["w_base", "w_tn"], ["w_tn", "w_n"], ["w_base", "w_ts"], ["w_ts", "w_s"], ["w_n", "p0"], ["w_s", "p0"], ["p0", "p1"], ["p1", "p2"], ["p2", "p3"], ["p3", "p4"], ["p4", "p5"],
@@ -27,7 +27,7 @@ const EDGES := [
 	["g3", "pw0"], ["pw0", "pw1"], ["pw1", "pw2"], ["pw2", "pit"], ["pit", "pe0"], ["pe0", "pe1"], ["pe1", "pe2"], ["pe2", "pe3"], ["pe3", "gate_e"],
 	["gate_e", "h0"], ["e0", "h0"], ["h0", "h1"], ["h1", "h2"], ["h2", "h3"], ["h3", "h4"], ["h4", "h5"], ["h5", "h6"], ["h6", "stone"], ["stone", "pl0"], ["pl0", "pl1"], ["pl1", "pl2"],
 	["c_gate", "c_w"], ["c_w", "c_nw"], ["c_nw", "c_n"], ["c_n", "c_ne"], ["c_ne", "c_e"], ["c_e", "c_se"], ["c_se", "c_s"], ["c_s", "c_sw"], ["c_sw", "c_w"],
-	["c_nw", "ward_a"], ["c_n", "ward_a"], ["c_sw", "bast"], ["c_w", "bast"],
+	["c_nw", "ward_a"], ["c_n", "ward_a"], ["c_sw", "ward_b"], ["c_s", "ward_b"], ["c_sw", "bast"], ["c_w", "bast"],
 ]
 # everyone walks in the same body as you do (the wood's ways were made for it): a people's own size is what can be hit
 const MOVE_R := Player.R; const MOVE_H := Player.HEIGHT

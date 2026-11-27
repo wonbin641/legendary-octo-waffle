@@ -221,15 +221,15 @@ func _weapon(ci, s: Vector2, touch: bool, rm: Realm, f: Realm.Fighter) -> void:
 func chips(rm: Realm, f: Realm.Fighter) -> Array:
 	var out: Array = []; var kit := rm.kit
 	match f.race:
-		"elf": out.push_back(["우클릭", ALT.elf, minf(1.0, f.charge / float(Races.XBOW.charge)) if f.charge > 0.0 else 1.0, "꾹 눌러 차징"])
+		"elf": out.push_back(["우클릭", ALT.elf, minf(1.0, f.charge / float(Races.XBOW.charge)) if f.charge > 0.0 else 1.0, ("%d%%" % int(minf(1.0, f.charge / float(Races.XBOW.charge)) * 100.0)) if f.charge > 0.0 else "꾹"])
 		"dwarf": out.push_back(["우클릭", ALT.dwarf, 1.0 - f.alt_cd / float(Races.CANNON.gren_cd), ("%d초" % ceili(f.alt_cd)) if f.alt_cd > 0.0 else "준비"])
 		"orc": out.push_back(["우클릭", ALT.orc, 1.0 - f.alt_cd / float(Races.SWORD.axe_cd), ("%d초" % ceili(f.alt_cd)) if f.alt_cd > 0.0 else "준비"])
-		"demon": out.push_back(["우클릭", ALT.demon, 1.0 if f.hp > float(Races.STAFF.beam_floor) else 0.0, "체력 소모"])
+		"demon": out.push_back(["우클릭", ALT.demon, 1.0 if f.hp > float(Races.STAFF.beam_floor) else 0.0, "체력"])
 	var S: Dictionary = Races.SKILL[f.race]; var cd := kit.skill_cd(f)
 	out.push_back(["Shift", str(Races.R[f.race].skill), 1.0 if f.skill_n > 0 else 1.0 - f.skill_t / cd, ("×%d" % f.skill_n if int(S.charges) > 1 and f.skill_n > 0 else ("준비" if f.skill_n > 0 else "%d초" % ceili(f.skill_t)))])
 	var bk: String = BOMB_SHORT[f.bomb_kinds[f.bomb_i % f.bomb_kinds.size()]] if not f.bomb_kinds.is_empty() else ""
 	out.push_back(["Q", bk + " 폭탄", 1.0 if f.bombs > 0 else 1.0 - f.bomb_t / Races.BOMB_CD, ("×%d" % f.bombs) if f.bombs > 0 else "%d초" % ceili(f.bomb_t)])
-	out.push_back(["V", "룬 단검", 1.0 - f.dag_t / float(Races.DAGGER.cd), "베기 · 처형"])
+	out.push_back(["V", "룬 단검", 1.0 - f.dag_t / float(Races.DAGGER.cd), "처형 40"])
 	out.push_back(["F", "튕겨내기", 1.0 - f.parry_cd / float(Races.DAGGER.parry_cd), ("%d초" % ceili(f.parry_cd)) if f.parry_cd > 0.0 else "준비"])
 	var g := f.gauge / float(Races.GAUGE.max)
 	out.push_back(["X", str(Races.R[f.race].ult), g if f.ult_t <= 0.0 else 1.0, ("%.0f초" % f.ult_t) if f.ult_t > 0.0 else ("준비" if g >= 1.0 else "%d%%" % int(g * 100.0))])

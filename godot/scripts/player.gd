@@ -45,6 +45,7 @@ var air_max := 0        # jumps you may take in the air (an elf: one)
 var air_n := 0
 var dash_t := 0.0       # carried by a dash this long yet, at dash_v (no steering, no falling)
 var dash_v := Vector3.ZERO
+var _dash_done := false  # the dash ended last frame: its speed is not carried on
 var invuln := 0.0
 var fear_t := 0.0; var fear_x := 0.0; var fear_z := 0.0   # a tiger's roar: your legs carry you away for a second
 var toss_on := false     # thrown by a rhino: straight up and straight down, no steering
@@ -118,7 +119,7 @@ func reset(x: float, z: float, yaw_: float) -> void:
 	pos = Vector3(x, 0, z); vel = Vector3.ZERO; yaw = yaw_; pitch = 0.0; grounded = true
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
 	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
-	hp = max_hp; air_n = 0; dash_t = 0.0; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0; Snd.jet(0.0)
+	hp = max_hp; air_n = 0; dash_t = 0.0; _dash_done = false; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0; Snd.jet(0.0)
 	out = false; carry_mul = 1.0; held = false
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
@@ -161,8 +162,9 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if not launched: vel.x += (tx - vel.x) * acc; vel.z += (tz - vel.z) * acc
 	if toss_on: vel.x = 0.0; vel.z = 0.0
 	var dash_k := -1.0   # a dash: its own speed for what is left of it (the last frame only a part)
+	if _dash_done: _dash_done = false; vel.x = 0.0; vel.z = 0.0
 	if dash_t > 0.0:
-		dash_k = minf(1.0, dash_t / maxf(dt, 0.0001)); dash_t -= dt; vel.x = dash_v.x * dash_k; vel.z = dash_v.z * dash_k; jump_buf = 0.0
+		dash_k = minf(1.0, dash_t / maxf(dt, 0.0001)); dash_t -= dt; vel.x = dash_v.x * dash_k; vel.z = dash_v.z * dash_k; jump_buf = 0.0; _dash_done = dash_t <= 0.0
 	jump_buf -= dt
 	if jet_on:
 		# flying: no gravity; hold jump to rise, Ctrl or C to sink, nothing to hover. it sputters out after 10 seconds

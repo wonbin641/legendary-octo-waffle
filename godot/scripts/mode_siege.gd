@@ -13,16 +13,17 @@ const PLANT := 4.0; const FUSE := 35.0; const DEFUSE := 5.0; const DEFUSE_HALF :
 const NUC_HP := 3500.0; const NUC_SHIELD := 1000.0; const NUC_REGEN := 150.0; const NUC_WAIT := 5.0
 const BACK_ATT := 6.0; const BACK_DEF := 9.0
 const BOMB_BACK := 5.0             # ours: a new bomb is at the stormers' base this long after the last went off or was unset
-const BLAST := {"r": 6.0, "dmg": 150.0}   # ours: what the bomb does to whoever stands by it
+const BLAST := {"r": 6.0, "dmg": 300.0}   # ours: what the bomb does to whoever stands by it (nobody lives through it)
 const TRAP := {"r": 1.5, "wait": 2.0, "hp": 150.0}
 const TC := ElfWood.TC
-const SITES := {"a": Vector3(127.0, 0.0, -17.0), "b": Vector3(120.6, 0.5, 13.4)}
-const ATT1 := Vector3(94.0, 0.0, -2.0); const ATT2 := Vector3(116.0, 0.0, 0.0)
+const SITES := {"a": Vector3(127.0, 0.0, -17.0), "b": Vector3(128.5, 0.0, 16.0)}   # in the court, north and south of the gate (clear of the bastion's portal)
+const ATT1 := Vector3(94.0, 0.0, -2.0)
+const ATT2 := Vector3(144.9, 10.0, 3.2)   # the second part: inside the tower, at the gallery's east end by the second flight's foot
 const DEF1 := Vector3(150.5, 0.0, 0.0)
 const NUC := Vector3(134.0, 20.7, 0.0)
 const GATE := Vector3(110.0, 0.0, 0.0)   # the tower's lower entrance: where a trap sends whoever steps in it
 # the rune slots a trap can be laid in: [name, x, y, z]
-const SLOTS := [["결계 A 앞", 127.0, 0.0, -13.6], ["결계 B 앞", 123.6, 0.0, 9.6], ["1층 계단 입구", 124.0, 0.0, 0.0], ["1층 계단 중간", 144.0, 5.0, 0.3],
+const SLOTS := [["결계 A 앞", 127.0, 0.0, -13.6], ["결계 B 앞", 127.4, 0.0, 12.4], ["1층 계단 입구", 124.0, 0.0, 0.0], ["1층 계단 중간", 144.0, 5.0, 0.3],
 	["서고 서쪽", 122.0, 10.0, 0.6], ["서고 남쪽", 134.0, 10.0, 12.0], ["2층 계단 입구", 143.3, 10.2, -1.0], ["천문대 입구", 142.6, 20.0, -1.6]]
 
 var attackers := "us"
@@ -55,7 +56,7 @@ func brief() -> Array:
 		"수비는 5초 동안 해체합니다 · 2.5초를 넘기면 절반이 저장됩니다", "결계 하나가 터지면 천문대 봉인이 풀리고 3분 30초가 더해집니다 · 둘 다 터지면 비전 증폭 진이 공격 편 것",
 		"2단계: 무기로 비전 핵(체력 3,500 + 보호막 1,000)을 직접 부숩니다", "부활: 공격 6초 · 수비 9초 · 수비는 준비 시간마다 역소환 함정진 2개"]
 func win_title() -> String: return "비전 핵 공성전 승리"
-func bonus() -> int: return 80000
+func bonus() -> int: return 40000 * Store.PAY
 func works(team: String) -> Array:
 	var out: Array = [base_of(team)]
 	if team == defenders():
@@ -64,9 +65,14 @@ func works(team: String) -> Array:
 	return out
 func prize(f: Realm.Fighter): return nucleus if (stage == 2 and f.team == attackers and not nucleus.is_empty() and float(nucleus.hp) > 0.0) else null
 
-## the holders come back on the second flight, three quarters of the way up, once the fight is for the nucleus
+## the holders come back on the second flight, three quarters of the way up, once the fight is for the nucleus; the stormers
+## then along the gallery's east end, by the second flight's foot
 func spawn_at(f: Realm.Fighter) -> Vector3:
-	if f.team == attackers or stage == 1: return super.spawn_at(f)
+	if stage == 1: return super.spawn_at(f)
+	if f.team == attackers:
+		var j := rm.team_of(f.team).find(f); var b := deg_to_rad(6.0 + 6.0 * j)
+		var q := Vector3(TC.x + cos(b) * 11.2, ElfWood.T_F2 + 0.6, TC.y + sin(b) * 11.2); q.y = Phys.ground_at(q.x, q.y, q.z, 0.3)
+		return q
 	var i := rm.team_of(f.team).find(f); var a := deg_to_rad(-270.0 + (i - 2) * 5.0)
 	var p := Vector3(TC.x + cos(a) * 9.3, ElfWood.T_F2 + (ElfWood.T_F3 - ElfWood.T_F2) * 0.75 + 1.0, TC.y + sin(a) * 9.3)
 	p.y = Phys.ground_at(p.x, p.y, p.z, 0.3)
@@ -108,7 +114,8 @@ func _half() -> void:
 
 func _new_bomb(wait: float) -> void:
 	if bomb.by != null: (bomb.by as Realm.Fighter).carrying = false
-	bomb = {"state": "none" if wait > 0.0 else "home", "pos": base_of(attackers) + Vector3(0, 0, 3.0), "by": null, "site": "", "t": 0.0, "fuse": 0.0, "cut": 0.0, "saved": false, "wait": wait, "plan": "a" if randf() < 0.5 else "b"}
+	var b0 := base_of(attackers); var fwd := Vector3(TC.x - b0.x, 0, TC.y - b0.z).normalized()   # (five metres out of the base's circle, toward the tower: taken by whoever means to, not by whoever comes back there)
+	bomb = {"state": "none" if wait > 0.0 else "home", "pos": b0 + fwd * 5.0, "by": null, "site": "", "t": 0.0, "fuse": 0.0, "cut": 0.0, "saved": false, "wait": wait, "plan": "a" if randf() < 0.5 else "b"}
 	if not wards[bomb.plan]: bomb.plan = "b" if bomb.plan == "a" else "a"
 
 func _seal_up() -> void:
@@ -227,7 +234,7 @@ func _ward_down(site: String) -> void:
 		if f.alive and f.feet_mid().distance_to(at) < float(BLAST.r): rm.hurt(f, float(BLAST.dmg), "alchemy", null, {"fixed": true, "aoe": true, "src": "bomb", "from": at})
 	rm.note(["ward", site])
 	if stage == 1:   # the first ward down: the observatory unsealed, the stormers' base in the court, more time, new traps
-		stage = 2; turn_t = TURN; time_left += TIME2; _unseal()
+		stage = 2; turn_t = TURN; time_left += TIME2; _unseal(); rm.music_break += 1   # (the music: a bar's breath, then the drums)
 		for f: Realm.Fighter in rm.all: f.shards += int(Races.SHARDS.siege_att) if f.team == attackers else int(Races.SHARDS.siege_def)
 		shop_ai(); _lay_traps()
 		if rm.game != null: rm.game.say_banner("결계 " + site.to_upper() + " 파괴", "천문대 봉인 해제 · 제한 시간 +3분 30초", 2.6)
@@ -362,6 +369,15 @@ func tac() -> Array:
 	if defenders() == "us":
 		for t: Dictionary in traps: out.push_back({"x": (t.pos as Vector3).x, "z": (t.pos as Vector3).z, "c": "8ff7ea", "r": 1.5, "label": "함정"})
 	return out
+
+## the music: the tower's set; the fight for the nucleus in the second part, the climax with the nucleus nearly broken or the
+## clock nearly out
+func music_set() -> String: return "rt"
+func music_stage() -> int:
+	if phase != "fight": return 1
+	if (stage == 2 and not nucleus.is_empty() and float(nucleus.hp) <= NUC_HP * 0.3) or (time_left <= 30.0 and turn_t <= 0.0): return 4
+	return 3 if stage == 2 else 1
+func music_semis() -> int: return 0
 
 func marks() -> Array:
 	var out: Array = []

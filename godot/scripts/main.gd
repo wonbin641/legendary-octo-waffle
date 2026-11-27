@@ -715,6 +715,11 @@ func _cut_step(dt: float) -> void:
 ## follow (waiting to come back, under the bed, enemies about you, your shots and hurts, the last 30 seconds of the clock)
 var _near_t := 0.0; var _near := 0
 func music_ctx(dt: float) -> Dictionary:
+	if game.rm != null and (state == "playing" or state == "paused" or state == "down"):   # stage 6's team battles: their own music
+		var rc: Dictionary = game.rm.music(); rc.paused = state == "paused"
+		if game.ended: rc.what = ""
+		return rc
+	if state == "brief" and ui.sel == Store.ST_ELF and Realm.picked() != "solo": return {"warm": "rt" if Realm.picked() == "siege" else "rf"}   # (its stems made ready on the web)
 	if world.toy == null or (state != "playing" and state != "paused"): return music_for(state, world.toy != null, null, false, Vector3.ZERO, false, 0, 0, 0.0)
 	_near_t -= dt
 	if _near_t <= 0.0:

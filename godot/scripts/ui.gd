@@ -174,7 +174,7 @@ func _ready() -> void:
 func build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); mouse_filter = Control.MOUSE_FILTER_IGNORE   # (already in the tree: the offsets must be set too)
 	tac = TacMap.new(); tac.game = game; tac.f_mono = f_mono; tac.f_bold = f_bold
-	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_account(); _build_brief(); _build_map(); _build_pause(); _build_over()
+	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_account(); _build_brief(); _build_map(); _build_altar(); _build_pause(); _build_over()
 	resized.connect(layout); layout()
 
 # ================= the main menu: the harbour control console =================
@@ -1119,7 +1119,6 @@ func _build_altar() -> void:
 	var b := btn("닫기", "primary", func() -> void: do_altar_close.call()); b.set_meta("first", true); s[2].add_child(b); s[2].move_child(b, 0)
 
 func open_altar() -> void:
-	if not screens.has("altar"): _build_altar()
 	render_altar(); show_screen("altar")
 
 func render_altar() -> void:

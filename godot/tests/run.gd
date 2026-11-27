@@ -1083,6 +1083,7 @@ func _ready() -> void:
 	_toy_breaks(gm, en, pl, g, pr, w, cam, fxn)
 	_toy_far(gm, en, pl, g, pr, w, cam)
 	_elf_wood(gm, en, pl, g, pr, w, cam, fxn, lt)
+	_realm_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -3909,3 +3910,494 @@ func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, c
 			if not ResourceLoader.exists("res://sounds/%s.wav" % m9.get_string(1)): snd_bad.push_back(m9.get_string(1))
 	check("every sound the Silverwood and its elves play is there (made by tools/make_sounds.py): bolts, arrows, the mage's ball and its burst, blades, the wind step, runes, the beam, chimes, the puffball, the portal, the bomb", snd_bad.is_empty() and snd_used.size() >= 13, [snd_bad, snd_used.size()])
 	fk.clear(); pr.clear(); Store.save = save0; randomize()
+
+## stage 6's team battles (scripts/realm*.gd, mode_sanctum.gd, mode_siege.gd): the four peoples and their arms, by the design
+## papers' numbers; the elements; the ultimates and their gauge; the rune altar; the two matches by their rules; the music
+func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, fxn: Fx, lt) -> void:
+	reset_test_state(); seed(620)
+	var save0: Dictionary = Store.save; var E := -PI / 2.0
+	gm.begin(10)
+	check("stage 6-1 on its own is as it was: no team battle unless one is picked on the briefing (the wood's 61 elves, your thousand health, the guns of your layout)",
+		gm.rm == null and Realm.picked() == "solo" and en.list.size() == 61 and pl.max_hp == Player.MAX_HP and not pl.realm, [Realm.picked(), en.list.size()])
+	Store.settings.realmMode = "sanctum"; Store.settings.realmRace = "elf"; Store.settings.realmBomb = "oil"
+	gm.begin(10); var rm: Realm = gm.rm; var kit: RealmKit = rm.kit; var md: ModeSanctum = rm.mode; var me: Realm.Fighter = rm.me
+	rm.ai_off = true; rm.log_on = true; rm.look.base_shield(false)
+	var A := Vector3(-78.0, 0.0, -4.0)   # the west end of fifty metres of flat, open ground beside the path
+	var step := func(secs: float, dt := 1.0 / 120.0) -> void:
+		var t := 0.0
+		while t < secs - 1e-9: pl.update(dt, cam, 0.0); rm.update(dt); t += dt
+	var foe := func(race: String) -> Realm.Fighter:
+		for f: Realm.Fighter in rm.all:
+			if f.team == "them" and f.race == race: return f
+		return null
+	var ally := func(race: String) -> Realm.Fighter:
+		for f: Realm.Fighter in rm.all:
+			if f.team == "us" and f.race == race and not f.me: return f
+		return null
+	# everyone whole, nothing on anyone, the others out of the way; you one of a people on the path, looking east
+	var set_up := func(race: String) -> void:
+		kit.clear(); rm.log.clear(); rm.marks.clear(); rm.resonant = ""; rm.flash.clear(); var i := 0
+		md.gauge = {"us": 0.0, "them": 0.0}; md.overtime = false; md.resonated = false; md.set_phase("fight")
+		for f: Realm.Fighter in rm.all:
+			f.runes = {"a": "", "b": "", "c": ""}; f.max_hp = float(Races.R[f.race].hp); rm.mend(f); f.gauge = 0.0; f.kills = 0; f.deaths = 0; f.assists = 0; f.bonus = 0
+			if not f.me: f.pos = Vector3(-132.0 + i * 3.0, 0.0, 18.0 if f.team == "us" else -18.0); f.aim = Vector3(1, 0, 0); f.vel = Vector3.ZERO; i += 1
+		rm.become(me, race); rm.mend(me); me.gauge = 0.0; me.pos = A; pl.reset(A.x, A.z, E); pl.pos = A; g.trigger = false; g.ads_held = false; rm.press.clear(); pl.in_f = 0.0; pl.in_s = 0.0; rm.log.clear()
+	var put := func(f: Realm.Fighter, x: float, z := 0.0, tough := true) -> void:   # someone set before you, facing you (tough: he will not fall to what a check throws at him)
+		f.pos = A + Vector3(x, 0, z); f.aim = Vector3(-1, 0, 0); f.yaw = PI / 2.0
+		if tough: f.max_hp = 9000.0; f.hp = 9000.0
+	var aim := func(at: Vector3) -> void:
+		var d := (at - (pl.pos + Vector3(0, me.eye, 0))).normalized(); pl.yaw = atan2(-d.x, -d.z); pl.pitch = asin(d.y)
+	var hurts := func(v: Realm.Fighter, src := "") -> Array: return rm.log.filter(func(q): return q[0] == "hurt" and int(q[1]) == v.id and (src == "" or str(q[5]) == src))
+	var total := func(v: Realm.Fighter, src := "") -> float:
+		var s := 0.0
+		for q: Array in rm.log:
+			if q[0] == "hurt" and int(q[1]) == v.id and (src == "" or str(q[5]) == src): s += float(q[3])
+		return s
+	var noted := func(what: String) -> Array: return rm.log.filter(func(q): return q[0] == what)
+	var near := func(a: float, b: float, tol := 0.01) -> bool: return absf(a - b) <= tol
+	var tough_me := func() -> void: me.max_hp = 9000.0; me.hp = 9000.0
+
+	# ---- the peoples ----
+	var per := {"us": {}, "them": {}}
+	for f: Realm.Fighter in rm.all: per[f.team][f.race] = int(per[f.team].get(f.race, 0)) + 1
+	set_up.call("orc"); me.stacks = 3; var orc3 := rm.speed_of(me)
+	set_up.call("demon"); me.heat = 85.0; var hot_sp := rm.speed_of(me); me.heat = 10.0; var cold_sp := rm.speed_of(me)
+	check("a team battle on the Silverwood is five a side: you and one of each of the four peoples against one of each and one more (no people more than twice on a side); and the peoples are the papers': an elf 175 health at 6.2 m/s, a demon 200 at 5.8 (6.5 at critical heat), a dwarf 225 at 5.3, an orc 275 at 5.7 (7.07 at three stacks of bloodlust)",
+		rm.all.size() == 10 and rm.team_of("us").size() == 5 and rm.team_of("them").size() == 5 and me.team == "us" and per.us.values().max() <= 2 and per.them.values().max() <= 2 and per.us.size() == 4 and per.them.size() == 4
+		and Races.R.elf.hp == 175.0 and Races.R.elf.speed == 6.2 and Races.R.demon.hp == 200.0 and Races.R.demon.speed == 5.8 and Races.R.dwarf.hp == 225.0 and Races.R.dwarf.speed == 5.3 and Races.R.orc.hp == 275.0 and Races.R.orc.speed == 5.7
+		and near.call(orc3, 7.068, 0.005) and near.call(hot_sp, 6.496, 0.005) and near.call(cold_sp, 5.8), [per, orc3, hot_sp])
+	check("each weapon held down deals what the papers reckon: the crossbow 84 a second with its reloads (34 a shot, 3.5 a second, twelve in it, 1.4 s to load), the staff 153 at critical heat (15 a shot, nine a second, and 18 of burning), the cannon about 110 (ten shards of 14, 1.1 a second, five in it, 1.8 s to load); the sword's three blows and its wave are 255 in 2.25 s, 113 a second (the papers' table says 133 for the same blows; their own sum of the blows, 65 + 65 + 80 + 45, is what is kept)",
+		absf(Races.dps("elf") - 84.5) < 0.6 and Races.dps("demon") == 153.0 and absf(Races.dps("dwarf") - 110.3) < 0.5 and absf(Races.dps("orc") - 113.33) < 0.1, [Races.dps("elf"), Races.dps("dwarf"), Races.dps("orc"), Races.dps("demon")])
+	check("the four elements swing a hit by 15% and no more: arcane up against a shield or an orc's bloodlust and down through fog or frost; fire up against oil and plants and down against a dwarf; physical up against made things (a turret, a trap, the nucleus' body) and down against a demon just out of his shadow step; alchemy up against a demon at critical heat; and arcane bites the nucleus' shield a fifth harder",
+		Races.affinity("arcane", {"shield": true}) == 1.15 and Races.affinity("arcane", {"fog": true}) == 0.85 and Races.affinity("arcane", {}) == 1.0 and Races.affinity("fire", {"plant": true}) == 1.15 and Races.affinity("fire", {"dwarf": true}) == 0.85
+		and Races.affinity("physical", {"made": true}) == 1.15 and Races.affinity("physical", {"phased": true}) == 0.85 and Races.affinity("alchemy", {"critical": true}) == 1.15 and Races.affinity("alchemy", {"dwarf": true}) == 1.0 and Races.SHIELD_ARCANE == 1.2)
+
+	# ---- the elves' repeater ----
+	set_up.call("elf"); var dm: Realm.Fighter = foe.call("demon"); put.call(dm, 15.0)
+	aim.call(dm.pos + Vector3(0, 1.0, 0)); g.trigger = true; step.call(1.0)
+	var first4: Array = hurts.call(dm, "arrow"); var ammo1 := me.ammo
+	step.call(2.3); var all12: Array = hurts.call(dm, "arrow"); var empty := me.ammo == 0 and me.reload_t > 0.0
+	step.call(1.45); var loaded := me.reload_t <= 0.0 and me.ammo >= 11
+	check("the elf's arcane repeater: 3.5 arrows a second (four in the first second), 34 each to the body, twelve to the magazine, then 1.4 s while its core draws mana in",
+		first4.size() == 4 and ammo1 == 8 and first4.all(func(q): return float(q[3]) == 34.0 and q[4] == "arcane") and all12.size() == 12 and empty and loaded, [first4.size(), ammo1, all12.size(), empty, loaded, me.ammo])
+	set_up.call("elf"); put.call(dm, 15.0, 0.0, false); aim.call(dm.pos + Vector3(0, dm.H - 0.1, 0)); g.trigger = true; step.call(0.3)
+	aim.call(dm.pos + Vector3(0, 1.0, 0)); var t_kill := 0.3
+	while dm.alive and t_kill < 2.0: step.call(1.0 / 120.0); t_kill += 1.0 / 120.0
+	var four: Array = hurts.call(dm, "arrow")
+	check("two arrows to a demon's head (68 each, twice the body's) and two to his body are 204: more than his 200, the fourth arrow leaving the bow 0.86 s after the first",
+		four.size() == 4 and float(four[0][3]) == 68.0 and float(four[1][3]) == 68.0 and float(four[2][3]) == 34.0 and not dm.alive and t_kill < 1.0 and t_kill > 0.86, [four.map(func(q): return q[3]), t_kill])
+	g.trigger = false
+	# the heavy shot: drawn 0.9 s, through everyone in its way; let go early it is not shot at all
+	set_up.call("elf"); var oc: Realm.Fighter = foe.call("orc"); var dw: Realm.Fighter = foe.call("dwarf"); put.call(oc, 15.0); put.call(dw, 18.0)
+	aim.call(A + Vector3(15.0, 1.0, 0)); g.ads_held = true; step.call(0.5); var half_drawn := not me.charged; g.ads_held = false; step.call(0.2); var none_yet := rm.log.is_empty() and me.ammo == 12
+	g.ads_held = true; step.call(0.92); var drawn := me.charged; g.ads_held = false; step.call(0.4)
+	var b1: Array = hurts.call(oc, "big"); var b2: Array = hurts.call(dw, "big")
+	check("its heavy shot: the right button held 0.9 s, then let go: 95 to the body of everyone in its way, one after another (let go before it is drawn full, nothing is shot and no arrow spent)",
+		half_drawn and none_yet and drawn and b1.size() == 1 and float(b1[0][3]) == 95.0 and b2.size() == 1 and float(b2[0][3]) == 95.0 and me.ammo == 11, [half_drawn, none_yet, drawn, b1, b2, me.ammo])
+	set_up.call("elf"); put.call(dm, 20.0); aim.call(A + Vector3(10.0, 0.0, 0)); g.ads_held = true; step.call(0.92); g.ads_held = false; step.call(0.5)
+	var gl: Array = noted.call("glance"); var bh: Array = hurts.call(dm, "big")
+	check("the heavy shot glances off the ground or a wall once: shot at the ground half way to a demon, it comes up into his chest",
+		gl.size() == 1 and bh.size() == 1 and float(bh[0][3]) == 95.0, [gl, bh])
+	set_up.call("elf"); me.runes.a = "elf_prism"; aim.call(A + Vector3(10.0, 0.0, 0)); g.ads_held = true; step.call(0.92); g.ads_held = false
+	var split := 0; var each := 0.0; var left := -1; var tt := 0.0
+	while tt < 0.3 and split == 0:
+		step.call(1.0 / 120.0); tt += 1.0 / 120.0
+		if not (noted.call("glance") as Array).is_empty(): split = kit.shots.size(); each = float(kit.shots[0].dmg); left = int(kit.shots[0].bounces)
+	check("the prism rune: at its first glance the heavy arrow becomes two, each 60% as strong, with one more glance left in them",
+		split == 2 and near.call(each, 57.0) and left == 1, [split, each, left])
+	# arcane sight
+	set_up.call("elf"); var el: Realm.Fighter = foe.call("elf"); put.call(dm, 25.0, 0.0); put.call(oc, 25.0, 6.0); put.call(dw, 25.0, -6.0); put.call(el, 40.0, 3.0)
+	dm.fired_t = 1.0; oc.fired_t = 9.0; dw.fired_t = 1.0; el.fired_t = 1.0; kit.lay("smoke", dw.pos, dw, 5.5, 9.0)
+	aim.call(A + Vector3(25.0, 1.0, 0)); g.ads_held = true; step.call(0.75); var not_yet := dm.mark_t <= 0.0; step.call(0.1)
+	check("the elf's arcane sight: the heavy shot held drawn 0.8 s shows, for 1.5 s, the foes within 35 m who fired in the last few seconds; not one who did not, nor one in smoke, nor one farther off",
+		not_yet and near.call(dm.mark_t, 1.5, 0.06) and oc.mark_t <= 0.0 and dw.mark_t <= 0.0 and el.mark_t <= 0.0, [not_yet, dm.mark_t, oc.mark_t, dw.mark_t, el.mark_t])
+	g.ads_held = false
+
+	# ---- the dwarves' scatter-cannon ----
+	set_up.call("dwarf"); put.call(oc, 3.0); aim.call(oc.pos + Vector3(0, 1.1, 0)); var rp0 := pl.recoil_pitch
+	g.trigger = true; step.call(0.02); var one: Array = hurts.call(oc, "cannon"); var kickd := pl.recoil_pitch - rp0; var shoved := oc.push.length() > 1.0; var held_up := oc.delay_t > 0.2
+	oc.pos = A + Vector3(3.0, 0, 0); oc.push = Vector3.ZERO; step.call(2.0); var three := (noted.call("blast") as Array).size()
+	check("the dwarf's rune steam cannon: ten shards of 14 in a narrow cone, all 140 into an orc three metres off; the view kicks up 3.5 degrees when every shard is home; he is shoved back, and a bomb he was setting would lose 0.3 s; 1.1 blasts a second",
+		one.size() == 1 and near.call(float(one[0][3]), 140.0, 0.001) and near.call(kickd, deg_to_rad(7.0), 0.02) and shoved and held_up and three == 3 and me.ammo == 2, [one, rad_to_deg(kickd), shoved, held_up, three, me.ammo])
+	var guard := 0
+	while me.reload_t <= 0.0 and guard < 600: step.call(1.0 / 120.0); guard += 1   # (the last two, then it is loaded)
+	var loading := me.ammo == 0 and me.reload_t > 1.7
+	oc.pos = A + Vector3(2.0, 0, 0); oc.push = Vector3.ZERO; me.skill_n = 0; me.skill_t = 6.0; rm.log.clear(); step.call(0.5)   # (the steam is let out 0.45 s in)
+	var vented: Array = hurts.call(oc, "vent"); var dash_left := me.skill_t
+	step.call(1.4); var reloaded := me.ammo >= 4
+	check("five to the magazine, then 1.8 s to load, and as it is loaded its steam scalds whoever stands right by (15, fire) and gives two seconds back to the dwarf's dash",
+		vented.size() == 1 and near.call(float(vented[0][3]), 15.0) and vented[0][4] == "fire" and loading and reloaded and near.call(dash_left, 6.0 - 0.5 - 2.0, 0.02), [vented, loading, reloaded, dash_left])
+	g.trigger = false
+	set_up.call("dwarf"); put.call(oc, 16.0); aim.call(oc.pos + Vector3(0, 1.1, 0)); g.trigger = true; step.call(0.02); g.trigger = false
+	var far_d: float = total.call(oc, "cannon"); var per_far := 14.0 * lerpf(1.0, 0.3, (16.0 - oc.R - 9.0) / 15.0)
+	check("far off its shards are weak and wide: at 16 m each is worth about two thirds, and not all of them find an orc", far_d > 0.0 and far_d < 10.0 * per_far + 0.5 and far_d < 100.0, [far_d, per_far])
+	set_up.call("dwarf"); put.call(oc, 8.0); aim.call(oc.pos + Vector3(0, 1.0, 0)); g.ads_held = true; step.call(0.02); g.ads_held = false; step.call(0.8)
+	var gd: float = total.call(oc, "gren"); var gb: float = total.call(oc, "gren_boom"); var oil := kit.fields.filter(func(fd): return fd.kind == "oil")
+	check("the cannon's alchemical grenade: 45 where it strikes and 40 to everyone its burst reaches (85 to whom it struck), a slick of oil left on the ground, six seconds before the next",
+		near.call(gd, 45.0) and near.call(gb, 40.0) and oil.size() == 1 and me.alt_cd > 5.0 and me.alt_cd < 5.3, [gd, gb, oil.size(), me.alt_cd])
+	set_up.call("dwarf"); me.runes.a = "dw_frost"; put.call(dm, 8.0); dm.heat = 90.0; aim.call(dm.pos + Vector3(0, 1.0, 0)); g.ads_held = true; step.call(0.02); g.ads_held = false; step.call(0.8)
+	var frost := kit.fields.filter(func(fd): return fd.kind == "frost")
+	check("by the frost rune the grenade leaves frost for four seconds instead: who stands in it is 30% slower, a demon's staff goes cold at once, and (alchemy on a demon at critical heat) the burst bit 15% harder",
+		frost.size() == 1 and float(frost[0].t) < 4.0 and float(frost[0].t) > 3.0 and dm.heat == 0.0 and near.call(rm.speed_of(dm), 5.8 * 0.7, 0.01) and near.call(total.call(dm, "gren"), 45.0 * 1.15, 0.01), [frost.size(), dm.heat, rm.speed_of(dm), total.call(dm, "gren")])
+	set_up.call("dwarf"); put.call(oc, 3.0, 0.0, false); aim.call(oc.pos + Vector3(0, 1.1, 0)); g.trigger = true; step.call(0.05); rm.press["skill"] = true; pl.in_f = 1.0
+	var t_orc := 0.05
+	while oc.alive and t_orc < 2.0: aim.call(oc.pos + Vector3(0, 1.1, 0)); step.call(1.0 / 120.0); t_orc += 1.0 / 120.0   # (you turn to keep him before you)
+	check("a dwarf on an orc first: a blast close by (140), the steam dash through him (20), a second blast (140): the orc's 275 gone in about a second",
+		not oc.alive and t_orc < 1.0 and near.call(total.call(oc, "steam"), 20.0) and total.call(oc, "cannon") >= 255.0, [t_orc, total.call(oc, "cannon"), total.call(oc, "steam")])
+	g.trigger = false; pl.in_f = 0.0
+
+	# ---- the orcs' great sword ----
+	set_up.call("orc"); put.call(dm, 2.0); aim.call(dm.pos + Vector3(0, 1.0, 0)); g.trigger = true
+	var t1 := 0.0
+	while (hurts.call(dm) as Array).is_empty() and t1 < 1.0: step.call(1.0 / 120.0); t1 += 1.0 / 120.0
+	var stop1 := me.hold_t; var stun1 := dm.stun_t; step.call(2.2 - t1); g.trigger = false; step.call(0.3)
+	var sw: Array = noted.call("swing"); var by_src := [total.call(dm, "sword1"), total.call(dm, "sword2"), total.call(dm, "sword3"), total.call(dm, "wave")]
+	check("the orc's great sword: three blows, one every 0.75 s (each landing 0.3 of the way through its swing): 65, 65, and 80 with a wave of 45 from the blade, 255 in all; a blow that bites holds a moment (30 ms the first two, 55 ms the third), and each that bites is a stack of bloodlust",
+		near.call(t1, 0.225, 0.03) and near.call(stop1, 0.03, 0.009) and stun1 > 0.0 and sw.size() == 3 and sw[0][2] == 0 and sw[1][2] == 1 and sw[2][2] == 2 and by_src == [65.0, 65.0, 80.0, 45.0] and me.stacks == 3 and near.call(rm.speed_of(me), 7.068, 0.005),
+		[t1, stop1, sw, by_src, me.stacks])
+	set_up.call("orc"); tough_me.call(); me.stacks = 3; me.stack_t = 9.0; me.aim = Vector3(1, 0, 0); var front := A + Vector3(10, 1.5, 0); var back := A + Vector3(-10, 1.5, 0)
+	var h_front := rm.hurt(me, 100.0, "physical", dw, {"ranged": true, "from": front}); var h_back := rm.hurt(me, 100.0, "physical", dw, {"ranged": true, "from": back})
+	var h_melee := rm.hurt(me, 100.0, "physical", dw, {"melee": true, "from": front}); var h_arc := rm.hurt(me, 100.0, "arcane", dw, {"ranged": true, "from": front})
+	check("three stacks of bloodlust turn 15% of a shot that comes from the front, not one from behind and not a blade; and arcane, which bites armour the harder, gets some of that back",
+		near.call(h_front, 85.0) and h_back == 100.0 and h_melee == 100.0 and near.call(h_arc, 100.0 * 1.15 * 0.85), [h_front, h_back, h_melee, h_arc])
+	set_up.call("orc"); put.call(dm, 15.0); aim.call(dm.pos + Vector3(0, 1.0, 0)); g.ads_held = true; step.call(0.02); g.ads_held = false; step.call(1.0)
+	var chain: Array = noted.call("chain")
+	check("the chain axe, thrown: 55 where it bites, and the orc is hauled along the chain to it at speed (and it is six seconds before the next)",
+		near.call(total.call(dm, "axe"), 55.0) and chain.size() == 1 and pl.pos.x > A.x + 12.0 and pl.pos.x < A.x + 14.6 and me.alt_cd > 4.9, [total.call(dm, "axe"), chain, pl.pos.x - A.x, me.alt_cd])
+	set_up.call("orc"); me.runes.a = "orc_hook"; put.call(dm, 15.0); aim.call(dm.pos + Vector3(0, 1.0, 0)); g.ads_held = true; step.call(0.02); g.ads_held = false; step.call(1.0)
+	check("by the hook rune it is the bitten one who is hauled, to two metres before the orc, who stays where he stood",
+		(noted.call("hook") as Array).size() == 1 and absf(dm.pos.x - (A.x + 2.0)) < 0.2 and absf(pl.pos.x - A.x) < 0.05, [dm.pos.x - A.x, pl.pos.x - A.x])
+	set_up.call("orc"); put.call(dm, 2.0, 0.0, false); dm.hp = 20.0; me.skill_n = 0; me.skill_t = 5.0; aim.call(dm.pos + Vector3(0, 1.0, 0)); g.trigger = true; step.call(0.4); g.trigger = false
+	check("an orc who fells someone with his blade has his bound back at once", not dm.alive and me.skill_n == 1 and me.skill_t == 0.0 and me.kills == 1, [dm.alive, me.skill_n, me.skill_t])
+
+	# ---- the demons' staff ----
+	set_up.call("demon"); put.call(oc, 10.0); aim.call(oc.pos + Vector3(0, 1.0, 0)); g.trigger = true; step.call(1.0); g.trigger = false; var heat9 := me.heat; step.call(0.3)
+	var em: Array = hurts.call(oc, "ember")
+	check("the demon's hellfire staff: nine embers a second, 15 each to the body, and no magazine: each ember is heat instead",
+		em.size() == 9 and em.all(func(q): return float(q[3]) == 15.0 and q[4] == "fire") and near.call(heat9, 9.0 * float(Races.STAFF.heat), 0.01), [em.size(), heat9])
+	set_up.call("demon"); put.call(oc, 10.0); aim.call(oc.pos + Vector3(0, oc.H - 0.1, 0)); g.trigger = true; step.call(0.02); g.trigger = false; step.call(0.3)
+	check("an ember to the head is 22.5", (hurts.call(oc, "ember") as Array).size() == 1 and near.call(total.call(oc, "ember"), 22.5), hurts.call(oc, "ember"))
+	set_up.call("demon"); put.call(oc, 10.0); aim.call(oc.pos + Vector3(0, 1.0, 0)); me.heat = 79.0; g.trigger = true; step.call(0.02); g.trigger = false; step.call(0.2)
+	var cool_one := oc.burn == 0.0 and (hurts.call(oc, "ember") as Array).size() == 1 and rm.critical(me)   # (shot from under 80%: no fire on it, though it took the staff over)
+	me.heat = 80.0; g.trigger = true; step.call(0.4); var burning := oc.burn == 18.0 and oc.burn_t > 0.0; me.hp = 100.0; rm.log.clear()
+	var t_seal := 0.0
+	while me.seal_t <= 0.0 and t_seal < 3.0: step.call(1.0 / 120.0); t_seal += 1.0 / 120.0
+	g.trigger = false
+	var sealed_at := me.heat; var healed := me.hp - 100.0; var burnt: float = total.call(oc, "burn"); var shots_before := (hurts.call(oc, "ember") as Array).size()
+	g.trigger = true; step.call(1.0); var none_while := (hurts.call(oc, "ember") as Array).size() <= shots_before + 2; g.trigger = false; step.call(1.05); var after_seal := me.heat; var open_again := me.seal_t <= 0.0
+	check("at 80% heat and over (the critical state) its embers set the struck one burning, 18 a second, and 15% of what that burning takes comes back to the demon as health; past 100% the staff is sealed for two seconds and comes back at 55%",
+		cool_one and burning and sealed_at == 100.0 and healed > 0.0 and near.call(healed, burnt * 0.15, 0.3) and none_while and open_again and after_seal <= 55.0 and after_seal > 50.0, [cool_one, burning, sealed_at, healed, burnt, none_while, after_seal])
+	set_up.call("demon"); me.heat = 60.0; me.idle_t = 0.0; step.call(0.45); var held_heat := me.heat; step.call(1.0)
+	check("left alone half a second the staff cools, 28% a second (40% faster by the core rune, which also widens the critical state to 75%)",
+		held_heat == 60.0 and near.call(me.heat, 60.0 - 28.0 * 0.95, 0.5) and float(Races.RUNE.core_cool) == 1.4 and float(Races.RUNE.core_crit) == 75.0, [held_heat, me.heat])
+	set_up.call("demon"); put.call(el, 6.0, 0.0, false); me.heat = 80.0; aim.call(el.pos + Vector3(0, 1.0, 0)); g.trigger = true; var t_elf := 0.0
+	while el.alive and t_elf < 3.0: step.call(1.0 / 120.0); t_elf += 1.0 / 120.0
+	g.trigger = false
+	check("a demon at critical heat melts an elf's 175 in about 1.15 s (153 a second), eleven embers from 80%, without the staff sealing",
+		not el.alive and t_elf > 1.05 and t_elf < 1.25 and me.seal_t <= 0.0 and me.heat < 100.0, [t_elf, me.heat, me.seal_t])
+	set_up.call("demon"); put.call(oc, 10.0); aim.call(oc.pos + Vector3(0, 1.0, 0)); me.heat = 50.0; me.idle_t = 0.0; g.ads_held = true; step.call(1.0); g.ads_held = false
+	var beam_d: float = total.call(oc, "beam"); var cost := 200.0 - me.hp; me.hp = 29.0; rm.log.clear(); g.ads_held = true; step.call(0.3); g.ads_held = false
+	check("the soul-drain beam (the right button held): 70 a second to whom it rests on, 14 a second of the demon's own health for it, no heat (the staff cools meanwhile), and none of it at 30 health or under",
+		near.call(beam_d, 70.0, 7.5) and near.call(cost, 14.0, 0.3) and me.heat < 50.0 and (hurts.call(oc) as Array).is_empty() and me.hp == 29.0, [beam_d, cost, me.heat])
+
+	# ---- the rune dagger ----
+	set_up.call("elf"); put.call(oc, 2.0, 0.0, false); oc.hp = 86.0; aim.call(oc.pos + Vector3(0, 1.0, 0)); rm.press["slash"] = true; step.call(0.02)
+	var cut1 := oc.hp; rm.press["slash"] = true; step.call(0.3); var too_soon := oc.hp == cut1; step.call(0.45)
+	oc.hp = 40.0; oc.shield = 60.0; rm.press["slash"] = true; step.call(0.02)
+	check("the rune dagger everyone carries (V): a cut of 45, one every 0.7 s; and whoever is at 40 health or under it finishes at a blow, whatever shield he has up",
+		cut1 == 41.0 and too_soon and not oc.alive and (noted.call("down") as Array).size() == 1 and rm.flash.has("execute"), [cut1, too_soon, oc.alive])
+	set_up.call("elf"); put.call(el, 20.0); var arrow := func() -> Dictionary:
+		return kit.shoot({"kind": "arrow", "pos": el.eye_at(), "vel": (pl.pos + Vector3(0, 1.0, 0) - el.eye_at()).normalized() * 150.0, "life": 1.2, "team": "them", "by": el, "r": 0.08, "dmg": 34.0, "head": 2.0, "elem": "arcane"})
+	arrow.call(); step.call(0.3); var struck_me := 175.0 - me.hp
+	aim.call(el.pos + Vector3(0, 1.0, 0)); arrow.call(); step.call(0.05); rm.press["parry"] = true; step.call(0.4); var pc := me.parry_cd
+	var par: Array = noted.call("parry"); var sent_back: float = total.call(el, "arrow"); rm.press["parry"] = true; step.call(0.02)
+	check("the dagger held up (F) for 0.4 s sends a missile back the way you look, yours now: an arrow that would have cost you 34 costs the elf who shot it 34; ten seconds before the dagger can be held up again",
+		struck_me == 34.0 and par.size() == 1 and sent_back == 34.0 and me.hp == 175.0 - 34.0 and pc > 9.4 and me.parry_t <= 0.0, [struck_me, par, sent_back, me.hp, pc])
+	set_up.call("elf"); me.runes.c = "c_mirror"; put.call(el, 20.0); aim.call(el.pos + Vector3(0, 1.0, 0)); rm.press["parry"] = true; step.call(0.02); var win := me.parry_t; arrow.call(); step.call(0.5)
+	check("by the mirror rune it is held up 0.65 s and what it sends back is 30% the stronger", near.call(win, 0.65, 0.02) and near.call(total.call(el, "arrow"), 34.0 * 1.3), [win, total.call(el, "arrow")])
+
+	# ---- the alchemical bombs ----
+	set_up.call("demon"); put.call(oc, 10.0); aim.call(oc.pos + Vector3(0, 0.3, 0)); rm.press["bomb"] = true; step.call(1.4)
+	var oilf := kit.fields.filter(func(fd): return fd.kind == "oil"); var slowed := rm.speed_of(oc)
+	var bomb_gone := me.bombs == 0 and me.bomb_t > 0.0
+	aim.call(oc.pos + Vector3(0, 1.0, 0)); g.trigger = true; step.call(0.3); g.trigger = false; var lit := kit.fields.filter(func(fd): return fd.kind == "fire"); rm.log.clear()
+	var fire_t0: float = float(lit[0].t) if not lit.is_empty() else 0.0
+	step.call(5.2); var fire_d: float = total.call(oc, "oil")
+	check("the oil flask (Q): a slick four metres across that slows foes to three quarters of their pace; an ember (or a dwarf's steam shards) sets it alight, and then it burns 45 a second for five seconds, 225 to whoever stands in it; the bomb is back in the pouch 16 s after it is thrown",
+		oilf.size() == 1 and float(oilf[0].r) == 4.0 and near.call(slowed, 5.7 * 0.75) and bomb_gone and lit.size() == 1 and fire_t0 > 4.5 and near.call(fire_d, 225.0, 14.0) and kit.fields.is_empty() and Races.BOMB_CD == 16.0, [oilf.size(), slowed, lit.size(), fire_t0, fire_d])
+	set_up.call("demon"); put.call(dw, 6.0); var fdw := kit.lay("oil", dw.pos, me, 4.0, 10.0); kit.ignite(fdw, me); me.hp = 100.0; step.call(5.2)
+	var dwarf_fire: float = total.call(dw, "oil"); var wellf := kit.lay("oil", ElfWood.WELL, me, 4.0, 10.0)
+	check("a dwarf standing in that fire takes far less of it (fire is 15% the weaker on a dwarf, and he shrugs off a quarter of any burst or blaze): 143 of the 225; the demon whose fire it is has 15% of it back as health; and on the moonwell's water what alchemy lays lasts half as long",
+		near.call(dwarf_fire, 225.0 * 0.85 * 0.75, 10.0) and near.call(me.hp - 100.0, dwarf_fire * 0.15, 0.5) and float(wellf.t) == 5.0, [dwarf_fire, me.hp, wellf.t])
+	set_up.call("elf"); me.bomb_kinds = ["gravity"]; rm.refit(me); put.call(oc, 12.0, 4.0); put.call(dw, 12.0, -4.0); put.call(dm, 12.0, 9.0)
+	kit.flask_burst({"bomb": "gravity", "by": me}, A + Vector3(12, 0.2, 0)); var g30 := [total.call(oc, "gravity"), total.call(dw, "gravity"), total.call(dm, "gravity")]
+	var s9: Dictionary = kit.shoot({"kind": "arrow", "pos": A + Vector3(12, 1.0, -9), "vel": Vector3(60, 0, 0), "life": 1.0, "team": "us", "by": me, "r": 0.08, "dmg": 1.0, "elem": "arcane"})
+	var s3: Dictionary = kit.shoot({"kind": "arrow", "pos": A + Vector3(9, 1.0, -3), "vel": Vector3(60, 0, 0), "life": 1.0, "team": "us", "by": me, "r": 0.08, "dmg": 1.0, "elem": "arcane"})
+	step.call(0.03); var bent := (s3.vel as Vector3).z > 1.0 and absf((s9.vel as Vector3).z) < 0.001; step.call(1.6)
+	var c0 := A + Vector3(12, 0, 0)
+	check("the gravity sphere: 30 to every foe within five metres (30 whatever he is: nothing is taken off it), and for a second and a half they and whatever flies through are drawn to its middle, a dwarf only half as far",
+		g30 == [30.0, 30.0, 0.0] and bent and oc.pos.distance_to(c0) < 0.8 and dw.pos.distance_to(c0) > 1.2 and dw.pos.distance_to(c0) < 2.2 and near.call(dm.pos.distance_to(c0), 9.0, 0.01) and kit.fields.is_empty(), [g30, bent, oc.pos.distance_to(c0), dw.pos.distance_to(c0)])
+	set_up.call("elf"); put.call(oc, 20.0); kit.lay("smoke", A + Vector3(10, 0, 0), oc, 5.5, 9.0); var blind := not kit.sees(me, oc) and not kit.sees(oc, me); oc.mark_t = 1.0; var marked_seen := kit.sees(me, oc)
+	aim.call(oc.pos + Vector3(0, 1.0, 0)); g.trigger = true; step.call(0.02); g.trigger = false; step.call(0.3)
+	check("the smoke bomb: nobody sees through it (but someone marked is seen whatever), and an arcane arrow that flies through it is 15% the weaker",
+		blind and marked_seen and near.call(total.call(oc, "arrow"), 34.0 * 0.85), [blind, marked_seen, total.call(oc, "arrow")])
+
+	# ---- Shift ----
+	set_up.call("elf"); pl.in_f = 1.0; rm.press["skill"] = true; step.call(0.02); pl.in_f = 0.0; step.call(0.5); var wind_x := pl.pos.x - A.x; var cd_e := me.skill_t; rm.press["skill"] = true; step.call(0.02)
+	var no_second := absf(pl.pos.x - A.x - wind_x) < 0.05
+	pl.jump_buf = 0.15; step.call(0.25); var up1 := pl.pos.y; pl.jump_buf = 0.15; step.call(0.03); var again := pl.vel.y > 5.0 and pl.air_n == 1; pl.jump_buf = 0.15; step.call(0.03); var no_third := pl.air_n == 1
+	check("an elf's wind step (Shift): six metres the way you are walking, in a fifth of a second, then eight seconds before the next; and an elf has a second jump in the air (one)",
+		near.call(wind_x, 6.0, 0.25) and cd_e > 7.3 and cd_e < 7.6 and no_second and up1 > 0.8 and again and no_third and float(Races.SKILL.elf.cd) == 8.0, [wind_x, cd_e, no_second, up1, again, no_third])
+	set_up.call("dwarf"); put.call(oc, 3.5); pl.in_f = 1.0; rm.press["skill"] = true; step.call(0.02); pl.in_f = 0.0; step.call(0.6)
+	check("a dwarf's steam dash: seven metres level; whoever is in its way takes 20 (alchemy) and is shoved off; ten seconds before the next",
+		near.call(pl.pos.x - A.x, 7.0, 0.3) and near.call(total.call(oc, "steam"), 20.0) and (hurts.call(oc, "steam") as Array).size() == 1 and oc.pos.x > A.x + 3.6 and float(Races.SKILL.dwarf.cd) == 10.0, [pl.pos.x - A.x, total.call(oc, "steam"), oc.pos.x - A.x])
+	set_up.call("orc"); put.call(dm, 11.5); pl.pitch = 0.0; rm.press["skill"] = true; step.call(0.02); var in_air := not pl.grounded and me.leaping; step.call(1.0)
+	var landed: Array = noted.call("land"); var slow_dm := rm.speed_of(dm); g.trigger = true; step.call(0.02); g.trigger = false; var quick_len := me.swing_len; step.call(1.1)
+	check("an orc's bound: ten metres forward in a low arc; those within 2.5 m of where he comes down are 20% slower for a second; his next blow is 30% the quicker; seven seconds before the next bound",
+		in_air and landed.size() == 1 and near.call(pl.pos.x - A.x, 10.0, 0.6) and near.call(slow_dm, 5.8 * 0.8, 0.01) and near.call(quick_len, 0.75 * 0.7) and near.call(rm.speed_of(dm), 5.8) and float(Races.SKILL.orc.cd) == 7.0, [in_air, landed.size(), pl.pos.x - A.x, slow_dm, quick_len])
+	set_up.call("demon"); me.heat = 90.0; pl.in_s = 1.0; rm.press["skill"] = true; step.call(0.02); pl.in_s = 0.0; var safe := rm.hurt(me, 50.0, "fire", oc, {}) == 0.0 and me.inv > 0.3; var cooled := me.heat; step.call(0.2)
+	var side := pl.pos.z - A.z; var one_left := me.skill_n == 1; rm.press["skill"] = true; step.call(0.02); var gap := absf(pl.pos.z - A.z - side) < 0.05
+	step.call(0.2); var soft := rm.hurt(me, 100.0, "physical", oc, {}); step.call(1.2); pl.in_s = 1.0; rm.press["skill"] = true; step.call(0.02); pl.in_s = 0.0; step.call(0.3)
+	var second := pl.pos.z - A.z; var none_left := me.skill_n == 0; rm.press["skill"] = true; step.call(0.1); var third := absf(pl.pos.z - A.z - second) < 0.05
+	check("a demon's shadow step: 6.5 m the way you are walking, at once; nothing touches him for 0.35 s; the staff cools 25%; for a second after it physical blows are 15% the weaker on him; two of them kept, 1.5 s apart, each nine seconds coming back",
+		safe and near.call(side, 6.5, 0.3) and near.call(cooled, 65.0, 1.0) and one_left and gap and near.call(soft, 85.0) and near.call(second, 13.0, 0.6) and none_left and third and float(Races.SKILL.demon.cd) == 9.0, [safe, side, cooled, one_left, gap, soft, second, none_left, third])
+
+	# ---- the dwarf's resilience ----
+	set_up.call("dwarf"); tough_me.call(); var by_fire := rm.hurt(me, 100.0, "fire", oc, {"aoe": true}); var by_blast := rm.hurt(me, 100.0, "alchemy", oc, {"aoe": true, "blast": true}); var by_shot := rm.hurt(me, 100.0, "physical", oc, {"ranged": true})
+	rm.shove(me, Vector3(1, 0, 0), 4.0); var p_dw := me.push.length(); rm.shove(oc, Vector3(1, 0, 0), 4.0); var p_orc := oc.push.length(); me.push = Vector3.ZERO
+	me.max_hp = 225.0; rm.mend(me); kit.lay("oil", A + Vector3(2, 0, 0), me, 4.0, 60.0); step.call(2.0); var sh2 := me.shield; step.call(4.0); var sh_cap := me.shield
+	me.runes.b = "dw_plate"; step.call(6.0); var sh_plate := me.shield; var head_plate := rm.hurt(me, 34.0, "arcane", el, {"head": 2.0, "ranged": true}); me.runes.b = ""; me.shield = 50.0; var head_bare := rm.hurt(me, 34.0, "arcane", el, {"head": 2.0, "ranged": true})
+	check("a dwarf's resilience: a quarter off any blaze or burst (and fire is 15% the weaker on him besides), half as far when shoved or pulled; within four metres of something his side has laid a shield grows on him, five a second up to 25 (50 by the plate rune, which also holds a head shot through that shield to one and a half times); arcane bites a shield 15% the harder",
+		near.call(by_fire, 63.75) and near.call(by_blast, 75.0) and by_shot == 100.0 and near.call(p_dw, p_orc * 0.5) and near.call(sh2, 10.0, 0.2) and sh_cap == 25.0 and sh_plate == 50.0 and near.call(head_plate, 34.0 * 1.15 * 1.5) and near.call(head_bare, 34.0 * 1.15 * 2.0),
+		[by_fire, by_blast, by_shot, p_dw, p_orc, sh2, sh_cap, sh_plate, head_plate, head_bare])
+
+	# ---- the ultimates' gauge ----
+	set_up.call("elf"); step.call(2.0); var by_clock := me.gauge
+	put.call(oc, 6.0); me.gauge = 0.0; rm.hurt(oc, 34.0, "arcane", me, {}); var by_hurt := me.gauge
+	var thing := kit.add_thing({"kind": "turret", "pos": A + Vector3(4, 0, 3), "r": 0.75, "h": 1.7, "team": "them", "by": oc, "hp": 450.0, "max": 450.0}); me.gauge = 0.0; kit.hurt_thing(thing, 100.0, "arcane", me); var by_thing := me.gauge
+	me.gauge = 0.0; me.hp = 100.0; rm.heal(me, 50.0, me); var by_heal := me.gauge
+	put.call(dm, 6.0, 2.0, false); dm.hp = 1.0; me.gauge = 0.0; rm.hurt(dm, 1.0, "arcane", me, {}); var solo := me.gauge
+	var al: Realm.Fighter = ally.call("orc"); put.call(dw, 6.0, -2.0, false); dw.hp = 11.0; me.gauge = 0.0; al.gauge = 0.0; rm.hurt(dw, 10.0, "physical", al, {}); rm.hurt(dw, 1.0, "arcane", me, {})
+	check("the ultimate's gauge (1,000): five a second by the clock; a point for each point of hurt done to a foe, 0.3 for each done to a made thing; 0.8 for each point mended; 100 for felling someone alone, 50 each to all who had a hand in it otherwise",
+		near.call(by_clock, 10.0, 0.1) and by_hurt == 34.0 and near.call(by_thing, 30.0) and near.call(by_heal, 40.0) and solo == 101.0 and me.gauge == 51.0 and al.gauge == 60.0 and al.assists == 1 and Races.GAUGE.max == 1000.0, [by_clock, by_hurt, by_thing, by_heal, solo, me.gauge, al.gauge])
+
+	# ---- the four ultimates ----
+	set_up.call("elf"); put.call(oc, 20.0); me.gauge = 1000.0; aim.call(oc.pos); rm.press["ult"] = true; step.call(0.02)
+	var star := kit.fields.filter(func(fd): return fd.kind == "star"); var near_him: bool = not star.is_empty() and (star[0].pos as Vector3).distance_to(oc.pos) < 1.0
+	step.call(0.7); var warned := (hurts.call(oc, "star") as Array).is_empty(); var locked := me.gauge == 0.0; step.call(3.3)
+	var rain: Array = hurts.call(oc, "star"); var marked := oc.mark_t
+	check("the elf's star rain (X, the gauge full): a ring nine metres across where you aim, a warning of 0.8 s, then 24 arcane arrows in three seconds on whoever of the other side is in it, 22 each (528 on one who stays), roof or no roof; whoever they strike is marked for four seconds; the gauge is empty and stays so while it falls",
+		star.size() == 1 and near_him and float(star[0].r) == 9.0 and warned and locked and rain.size() == 24 and near.call(total.call(oc, "star"), 528.0) and marked > 3.0 and marked <= 4.0 and kit.fields.is_empty(), [star.size(), near_him, warned, locked, rain.size(), total.call(oc, "star"), marked])
+	set_up.call("elf"); put.call(oc, 20.0); oc.parry_t = 99.0; me.gauge = 1000.0; aim.call(oc.pos); rm.press["ult"] = true; step.call(4.2)
+	check("a dagger held up turns a falling star arrow", (hurts.call(oc, "star") as Array).is_empty() and (noted.call("parry") as Array).size() >= 20, [(hurts.call(oc) as Array).size(), (noted.call("parry") as Array).size()])
+	set_up.call("dwarf"); me.gauge = 1000.0; pl.pitch = 0.0; rm.press["ult"] = true; step.call(0.02)
+	var tur := kit.things.filter(func(th): return th.kind == "turret"); var dome := kit.fields.filter(func(fd): return fd.kind == "dome")
+	var tp: Vector3 = tur[0].pos if not tur.is_empty() else Vector3.ZERO
+	put.call(oc, 6.0); var al2: Realm.Fighter = ally.call("elf"); al2.pos = tp + Vector3(1.5, 0, 1.5); rm.log.clear(); step.call(3.0)
+	var bolts: Array = hurts.call(oc, "bolt"); var steamd: float = total.call(oc, "steam"); var slow_in := rm.speed_of(oc); var sh_al := al2.shield
+	var from_out := rm.hurt(al2, 100.0, "physical", oc, {"ranged": true, "from": tp + Vector3(20, 1, 0)}); al2.shield = 0.0; al2.hp = 175.0; var from_in := rm.hurt(al2, 100.0, "physical", oc, {"ranged": true, "from": tp + Vector3(1, 1, 0)})
+	var t_phys := kit.hurt_thing(tur[0], 100.0, "physical", oc); var t_arc := kit.hurt_thing(tur[0], 100.0, "arcane", oc); step.call(9.2)
+	check("the dwarf's watchtower: a turret (450) set down before him and a wall of steam six metres round it for twelve seconds. It sends a rune bolt of 28 every 0.6 s at a foe inside (or the nearest in sight); your side inside gains a shield, 15 a second up to 50, and takes a fifth less from shots that come from outside; foes inside are a fifth slower and scalded 10 a second; physical blows bite the turret 15% the harder",
+		tur.size() == 1 and float(tur[0].max) == 450.0 and absf(tp.x - (A.x + 2.2)) < 0.05 and dome.size() == 1 and float(dome[0].r) == 6.0 and bolts.size() >= 4 and bolts.size() <= 5 and bolts.all(func(q): return float(q[3]) == 28.0) and near.call(steamd, 30.0, 1.0)
+		and near.call(slow_in, 5.7 * 0.8) and near.call(sh_al, 45.0, 0.6) and near.call(from_out, 80.0) and from_in == 100.0 and near.call(t_phys, 115.0) and t_arc == 100.0 and kit.things.is_empty() and kit.fields.is_empty(),
+		[tur.size(), tp.x - A.x, bolts.size(), steamd, slow_in, sh_al, from_out, from_in, t_phys, t_arc, kit.things.size(), kit.fields.size()])
+	set_up.call("orc"); me.gauge = 1000.0; put.call(dm, 2.0); aim.call(dm.pos + Vector3(0, 1.0, 0)); rm.press["ult"] = true; step.call(0.02)
+	var roar: bool = me.cast_t > 0.5 and me.stacks == 3 and me.over == 125.0 and near.call(me.ult_t, 9.6, 0.05); g.trigger = true; step.call(0.5); var no_blow := (noted.call("swing") as Array).is_empty(); step.call(0.2)
+	rm.slow(me, "oil", 0.5, 5.0); rm.shove(me, Vector3(1, 0, 0), 5.0); var free: bool = me.slows.is_empty() and me.push == Vector3.ZERO and near.call(rm.speed_of(me), 7.068, 0.005)
+	var fast := me.swing_len; step.call(0.4); var w1: float = total.call(dm, "wave"); var took := rm.hurt(me, 100.0, "physical", dm, {"melee": true}); var over_left := me.over
+	me.skill_n = 0; me.skill_t = 0.0; var bound_cd := kit.skill_cd(me); g.trigger = false
+	var left0 := me.ult_t; dw.pos = A + Vector3(2, 0, 1); dw.hp = 1.0; el.pos = A + Vector3(2, 0, -1); el.hp = 1.0; var el2: Realm.Fighter = rm.team_of("them")[4]; el2.pos = A + Vector3(2.5, 0, 0.5); el2.hp = 1.0
+	rm.hurt(dw, 5.0, "physical", me, {}); rm.hurt(el, 5.0, "physical", me, {}); rm.hurt(el2, 5.0, "physical", me, {}); var more := me.ult_t - left0
+	step.call(14.0)
+	check("the orc's blood rage: a roar of 0.6 s, then nine seconds with three stacks of bloodlust and 125 health over his own; nothing slows or shoves him; his sword a third quicker and a wave from every blow; his bound back in 3.5 s; 2.5 s more for each one he fells, twice at most",
+		roar and no_blow and free and near.call(fast, 0.75 / 1.35) and w1 == 45.0 and took == 100.0 and over_left == 25.0 and bound_cd == 3.5 and near.call(more, 5.0) and me.ult_t == 0.0 and me.over == 0.0,
+		[roar, no_blow, free, fast, w1, took, over_left, bound_cd, more, me.ult_t, me.over])
+	set_up.call("demon"); me.gauge = 1000.0; put.call(oc, 6.0); put.call(dw, 14.0); aim.call(oc.pos + Vector3(0, 1.0, 0)); rm.press["ult"] = true; step.call(0.02); rm.log.clear(); me.hp = 100.0
+	oc.hp = 5000.0; var mended := rm.heal(oc, 100.0, oc); g.trigger = true; step.call(3.0); g.trigger = false
+	var aura: float = total.call(oc, "furnace"); var none_far: float = total.call(dw, "furnace"); var held90 := me.heat == 90.0 and me.seal_t <= 0.0; var hot_all := (hurts.call(oc, "ember") as Array).size() >= 25
+	var got_back := me.hp - 100.0; var dealt_burn: float = total.call(oc, "furnace") + total.call(oc, "burn")
+	pl.pos = A + Vector3(0, 0, 20); step.call(0.1); var follows := not kit.fields.is_empty() and (kit.fields[0].pos as Vector3).distance_to(pl.pos) < 0.1; step.call(5.2)
+	check("the demon's furnace: a ring of fire ten metres round him that goes where he goes, eight seconds; his staff held at 90% (every ember burning, and no sealing); foes in it burn 25 a second and are mended only half as much; a fifth of what his fire takes comes back to him",
+		near.call(aura, 75.0, 2.0) and none_far == 0.0 and held90 and hot_all and near.call(mended, 50.0) and near.call(got_back, dealt_burn * 0.2, 2.0) and got_back > 15.0 and follows and kit.fields.is_empty() and me.ult_t == 0.0, [aura, none_far, held90, hot_all, mended, got_back, dealt_burn, follows])
+
+	# ---- the altar: shards and runes ----
+	set_up.call("elf"); me.shards = 300
+	var costs := {}
+	for id: String in Races.RUNES: costs[id] = int(Races.RUNES[id].cost)
+	var dear := rm.buy(me, "elf_prism"); var got := rm.buy(me, "elf_rapid"); var left_s := me.shards; var mag16 := kit.mag(me) == 16 and me.ammo == 16
+	put.call(oc, 15.0); aim.call(oc.pos + Vector3(0, 1.0, 0)); g.trigger = true; step.call(1.0); g.trigger = false; step.call(0.2); var rapid5 := (hurts.call(oc, "arrow") as Array).size()
+	var not_his := rm.buy(me, "orc_hook"); rm.sell(me, "a"); var back_s := me.shards; rm.buy(me, "elf_rapid"); me.shards += 250; rm.buy(me, "c_ley"); rm.become(me, "dwarf")
+	check("the rune altar: three slots (the weapon, the passive and Shift, one for everyone), fifteen runes at the papers' prices; a rune is cut for shards, given back for what it cost, and only your own people's; change people and the runes that were the other's come back as shards (the one for everyone stays). The elves' quick-string: 4.2 arrows a second and sixteen in the magazine",
+		costs == {"elf_prism": 450, "elf_rapid": 250, "dw_wave": 450, "dw_frost": 300, "orc_giant": 450, "orc_hook": 300, "dm_core": 450, "dm_burst": 300, "elf_echo": 300, "dw_plate": 400, "orc_roar": 250, "dm_trail": 350, "c_pouch": 400, "c_mirror": 300, "c_ley": 250}
+		and not dear and got and left_s == 50 and mag16 and rapid5 == 5 and not not_his and back_s == 300 and me.runes == {"a": "", "b": "", "c": "c_ley"} and me.shards == 300 and Races.runes_for("orc", "a").size() == 2 and Races.runes_for("orc", "b").size() == 1 and Races.runes_for("orc", "c").size() == 3,
+		[dear, got, left_s, mag16, rapid5, not_his, back_s, me.runes, me.shards])
+	set_up.call("elf"); me.shards = 400; rm.buy(me, "c_pouch"); var two: bool = me.bomb_kinds.size() == 2 and me.bomb_kinds[0] != me.bomb_kinds[1] and me.bombs == 2
+	aim.call(A + Vector3(10, 1, 0)); rm.press["bomb"] = true; step.call(0.05); rm.press["bomb"] = true; step.call(0.05); var thrown: Array = noted.call("bomb")
+	check("the double pouch: two bombs, of two kinds, thrown one after the other", two and thrown.size() == 2 and thrown[0][2] != thrown[1][2] and me.bombs == 0, [me.bomb_kinds, thrown])
+
+	# ---- the sanctum's inscription ----
+	set_up.call("elf"); var Z := ModeSanctum.AT; var into := func(f: Realm.Fighter, dx := 0.0, dz := 4.5) -> void: f.pos = Vector3(Z.x + dx, Phys.ground_at(Z.x + dx, 1.5, Z.z + dz, 0.3), Z.z + dz)
+	var stepm := func(secs: float) -> void:   # (the match alone, in bigger steps: nobody walks)
+		var t := 0.0
+		while t < secs - 1e-9: rm.update(1.0 / 30.0); t += 1.0 / 30.0
+	me.pos = Vector3(Z.x, Phys.ground_at(Z.x, 1.5, Z.z + 4.5, 0.3), Z.z + 4.5); pl.pos = me.pos; me.gauge = 0.0; stepm.call(8.0); var alone8 := float(md.gauge.us); var cap_g := me.gauge
+	into.call(ally.call("orc"), 3.0); into.call(ally.call("dwarf"), -3.0); stepm.call(8.0); var three8 := float(md.gauge.us) - alone8
+	into.call(oc, 0.0, -4.5); stepm.call(4.0); var held4 := float(md.gauge.us) - alone8 - three8; var theirs0 := float(md.gauge.them)
+	for f: Realm.Fighter in rm.team_of("us"): f.pos = A + Vector3(0, 0, 3.0 * rm.team_of("us").find(f))
+	pl.pos = me.pos; stepm.call(4.0); var theirs4 := float(md.gauge.them)
+	check("성소 각인전: the Moonwell's pavilion is the sanctum; with only your side standing in it your gauge fills 1.25% a second (ten in eight seconds, 100 in eighty), no faster for three of you than for one; with both sides in it neither fills; alone in it, theirs does. Standing for it fills the ultimate's gauge, twelve a second",
+		near.call(alone8, 10.0, 0.05) and near.call(three8, 10.0, 0.05) and held4 == 0.0 and theirs0 == 0.0 and near.call(theirs4, 5.0, 0.05) and near.call(cap_g, 8.0 * 17.0, 1.0) and ModeSanctum.RATE == 1.25, [alone8, three8, held4, theirs4, cap_g])
+	set_up.call("elf"); me.pos = Vector3(Z.x, Phys.ground_at(Z.x, 1.5, Z.z + 4.5, 0.3), Z.z + 4.5); pl.pos = me.pos; md.gauge.us = 49.5; stepm.call(1.0)
+	var res := md.resonated and rm.resonant == "them"; var q0: Dictionary = rm.world.wood.portals[0]
+	var a_us: Realm.Fighter = ally.call("dwarf"); rm._port(a_us, q0); rm._port(oc, q0); var cd_us := a_us.port_t; var cd_them := oc.port_t
+	a_us.pos = ElfWood.WELL + Vector3(1.0, 0, 0); a_us.hp = 100.0; var hp0 := a_us.hp; stepm.call(1.0); var well_up := a_us.hp - hp0
+	md.resonated = true; rm.resonant = ""; a_us.hp = 100.0; stepm.call(1.0); var well_plain := a_us.hp - 100.0
+	check("at 50% the sanctum's mana resounds: from then the side behind waits eight seconds at a portal, not fifteen, and the moonwell mends 25 a second, not 15 (once a round)",
+		res and cd_us == 15.0 and cd_them == 8.0 and near.call(well_up, 25.0, 0.5) and near.call(well_plain, 15.0, 0.5), [res, cd_us, cd_them, well_up, well_plain])
+	set_up.call("elf"); me.pos = Vector3(Z.x, Phys.ground_at(Z.x, 1.5, Z.z + 4.5, 0.3), Z.z + 4.5); pl.pos = me.pos; md.gauge.us = 98.9; md.resonated = true; stepm.call(0.2); into.call(oc, 0.0, -4.5); stepm.call(5.0)
+	var ot := md.overtime and float(md.gauge.us) == 99.0 and md.phase == "fight"; var need0 := md.hold_need(); md.ot_t = 16.0; var need1 := md.hold_need(); md.ot_t = 31.0; var need2 := md.hold_need(); md.ot_t = 1.0
+	oc.pos = A; stepm.call(2.5); var not_done := md.phase == "fight"; stepm.call(0.7)
+	check("a leader at 99% with a foe still standing in the sanctum is held there: overtime. It ends when the sanctum has been clear of foes for three seconds (half that for each fifteen seconds the overtime has gone on), and the round is the leader's",
+		ot and need0 == 3.0 and need1 == 1.5 and need2 == 0.75 and not_done and md.phase == "over" and int(md.wins.us) == 1 and int(md.wins.them) == 0, [ot, need0, need1, need2, not_done, md.phase, md.wins])
+	# a whole match by the clock: the first round's parts, the shards, the second round, the match won
+	set_up.call("elf"); md.start()
+	var p0: bool = md.phase == "prep" and near.call(md.phase_t, 15.0) and me.shards == 300 and oc.shards == 0 and str(oc.runes.a) != ""; var safe0 := rm.hurt(oc, 50.0, "arcane", me, {}) == 0.0 and md.held(me)
+	rm.altar_open = true; stepm.call(3.0); var waits: bool = near.call(md.phase_t, 15.0); rm.altar_open = false; stepm.call(15.1)
+	var p1 := md.phase == "wait" and md.phase_t > 29.0 and md.fighting(); into.call(me); pl.pos = me.pos; stepm.call(5.0); var shut := float(md.gauge.us) == 0.0; stepm.call(25.1)
+	var p2 := md.phase == "fight"; me.kills = 0; me.bonus = 0; md.gauge.us = 99.5; into.call(me); pl.pos = me.pos; stepm.call(1.0)
+	var r1 := md.phase == "over" and int(md.wins.us) == 1; var sh_me := me.shards; var sh_ally: int = (ally.call("orc") as Realm.Fighter).shards; var sh_foe := oc.shards; stepm.call(4.2)
+	var p3 := md.phase == "prep" and md.round_n == 2 and float(md.gauge.us) == 0.0 and me.alive and me.pos.distance_to(ModeSanctum.BASE.us) < 4.0
+	stepm.call(15.1 + 30.1); md.gauge.us = 99.5; into.call(me); pl.pos = me.pos; stepm.call(1.0); var ended_soon := md.won == "us"; stepm.call(4.2)
+	check("a round: 15 s in the base (nobody can be hurt; the altar open, and the clock waiting while you are at it; the others spend their shards), 30 s out with the sanctum shut, then the fight for it; the round's winners have 550 shards more and its losers 650, and each his own 50 for each foe felled or quarter of the gauge stood for (150 at most); two rounds win the match",
+		p0 and safe0 and waits and p1 and shut and p2 and r1 and sh_me == 300 + 550 + 100 and sh_ally >= 550 and sh_foe >= 650 and p3 and ended_soon and gm.ended and gm.result == "clear" and Races.SHARDS.sanctum == [300, 0, 700],
+		[p0, safe0, waits, p1, shut, p2, r1, sh_me, sh_ally, sh_foe, p3, ended_soon, gm.ended, gm.result])
+	check("the match won, its record is kept under its own name and its first win pays a bonus", Store.save.best.has("t10sa") and md.record_key() == "t10sa" and md.bonus() == 30000 * Store.PAY, [Store.save.best, md.bonus()])
+	# falling and coming back
+	Store.settings.realmMode = "sanctum"; gm.begin(10); rm = gm.rm; kit = rm.kit; md = rm.mode; me = rm.me; rm.ai_off = true; rm.log_on = true; md.set_phase("fight")
+	var o2: Realm.Fighter = rm.team_of("them")[2]; o2.pos = Vector3(-60, 0, -4); rm.slay(o2, me, {}); var wait7 := o2.back_t; var gone := not o2.alive
+	for i in 205: rm.update(1.0 / 30.0)
+	var not_back := not o2.alive
+	for i in 10: rm.update(1.0 / 30.0)
+	var haste := rm.speed_of(o2) / float(Races.R[o2.race].speed)
+	for i in 125: rm.update(1.0 / 30.0)
+	check("whoever falls is back at his side's base circle seven seconds later, whole, and a quarter quicker on his feet for the first four seconds",
+		gone and wait7 == 7.0 and not_back and o2.alive and o2.hp == o2.max_hp and o2.pos.distance_to(ModeSanctum.BASE.them) < 4.0 and near.call(haste, 1.25) and near.call(rm.speed_of(o2), float(Races.R[o2.race].speed)), [wait7, not_back, o2.alive, haste])
+
+	# ---- the siege of the nucleus ----
+	Store.settings.realmMode = "siege"; gm.begin(10); rm = gm.rm; kit = rm.kit; me = rm.me; rm.ai_off = true; rm.log_on = true
+	var sg: ModeSiege = rm.mode; var SA: Vector3 = ModeSiege.SITES.a; var SB: Vector3 = ModeSiege.SITES.b
+	var stepg := func(secs: float) -> void:
+		var t := 0.0
+		while t < secs - 1e-9: rm.update(1.0 / 30.0); t += 1.0 / 30.0
+	var at_ := func(f: Realm.Fighter, p: Vector3) -> void:
+		f.pos = Vector3(p.x, Phys.ground_at(p.x, p.y + 0.9, p.z, 0.3), p.z)
+		if f.me: pl.pos = f.pos
+	var theirs: Array = rm.team_of("them"); var ours: Array = rm.team_of("us"); var d0: Realm.Fighter = theirs[0]
+	var start_ok: bool = sg.phase == "prep" and near.call(sg.phase_t, 25.0) and sg.attackers == "us" and sg.half == 1 and sg.stage == 1 and sg.time_left == 240.0 and me.shards == 350 and str(sg.bomb.state) == "home" and sg.traps.size() == 2
+	var bases_ok: bool = me.pos.distance_to(ModeSiege.ATT1) < 4.0 and d0.pos.distance_to(ModeSiege.DEF1) < 4.0 and sg.back_time(me) == 6.0 and sg.back_time(d0) == 9.0
+	var is_sealed: bool = kit.hurt_thing(sg.nucleus, 100.0, "physical", me) == 0.0 and float(sg.nucleus.hp) == 3500.0 and float(sg.nucleus.shield) == 1000.0
+	stepg.call(25.1); var went_out: bool = sg.phase == "fight"
+	check("비전 핵 공성전: your side storms the tower first. 25 s in the bases_ok (the stormers' east of the ravine, the holders' behind the tower), then four minutes for the wards; everyone starts with 350 shards; the bomb lies at the stormers' base, the holders have laid two traps, and the nucleus (3,500 under a shield of 1,000) cannot be touched yet; stormers are back six seconds after they fall, holders nine",
+		start_ok and bases_ok and is_sealed and went_out, [start_ok, bases_ok, is_sealed, went_out, sg.state()])
+	at_.call(me, sg.bomb.pos); stepg.call(0.1); var took_it: bool = sg.bomb.by == me and me.carrying and near.call(rm.speed_of(me), 6.2 * 0.9)
+	at_.call(me, SA + Vector3(1.2, 0, 0)); stepg.call(2.0); var half_set: bool = near.call(float(sg.bomb.t), 2.0, 0.05); me.delay_t = 0.3; stepg.call(0.3); var held_up2: bool = near.call(float(sg.bomb.t), 2.0, 0.05)
+	at_.call(me, SA + Vector3(6, 0, 0)); stepg.call(0.2); var set_lost: bool = float(sg.bomb.t) == 0.0; at_.call(me, SA + Vector3(1.2, 0, 0)); me.gauge = 0.0; stepg.call(4.05)
+	var set_ok: bool = str(sg.bomb.state) == "set" and str(sg.bomb.site) == "a" and not me.carrying and float(sg.bomb.fuse) > 34.5 and me.gauge >= 150.0
+	check("one of the stormers takes the bomb by walking onto it (it slows him a tenth) and sets it by standing four seconds at a ward's altar, without leaving (a blast close by holds the setting up 0.3 s); set, it goes off 35 s later; setting it is 150 to the ultimate's gauge",
+		took_it and half_set and held_up2 and set_lost and set_ok, [took_it, half_set, held_up2, set_lost, set_ok, sg.bomb])
+	at_.call(me, SA + Vector3(8, 0, 0)); at_.call(d0, SA + Vector3(-1.2, 0, 0)); stepg.call(2.0); var no_save: bool = not bool(sg.bomb.saved); stepg.call(0.7); at_.call(d0, SA + Vector3(-9, 0, 0)); stepg.call(0.3)
+	var half_kept: bool = bool(sg.bomb.saved) and float(sg.bomb.cut) == 2.5; d0.gauge = 0.0; at_.call(d0, SA + Vector3(-1.2, 0, 0)); stepg.call(2.4); var not_cut: bool = str(sg.bomb.state) == "set"; stepg.call(0.2)
+	var was_cut: bool = str(sg.bomb.state) == "none" and sg.wards.a and d0.gauge >= 150.0; stepg.call(5.1); var again2: bool = str(sg.bomb.state) == "home" and (sg.bomb.pos as Vector3).distance_to(ModeSiege.ATT1) < 5.5
+	check("a holder unsets it by standing five seconds at the altar; once 2.5 s are done that half is kept if he is driven off; unset, the ward stands and a new bomb is at the stormers' base five seconds later",
+		no_save and half_kept and not_cut and was_cut and again2, [no_save, half_kept, not_cut, was_cut, again2])
+	at_.call(d0, ModeSiege.DEF1); at_.call(me, sg.bomb.pos); stepg.call(0.1); at_.call(me, Vector3(110, 0, 0)); rm.slay(me, d0, {}); stepg.call(0.1)
+	var fell_there: bool = str(sg.bomb.state) == "down" and (sg.bomb.pos as Vector3).distance_to(Vector3(110, 0, 0)) < 1.0 and not me.carrying
+	var a1: Realm.Fighter = ours[1]; at_.call(a1, sg.bomb.pos); stepg.call(0.1); var picked_up: bool = sg.bomb.by == a1; at_.call(a1, SB + Vector3(0.8, 0, 0)); stepg.call(4.1)
+	var tl0 := sg.time_left; var my0 := me.shards; var set_b: bool = str(sg.bomb.state) == "set" and str(sg.bomb.site) == "b"; at_.call(a1, SB + Vector3(1.0, 0, 0)); a1.hp = a1.max_hp; stepg.call(35.1)
+	var ward_gone: bool = not sg.wards.b and sg.wards.a and sg.stage == 2 and not a1.alive and near.call(sg.time_left, tl0 - 35.0 + 210.0, 0.3) and sg.turn_t > 9.0 and me.shards == my0 + 600 and int(Races.SHARDS.siege_def) == 650
+	var base_in: bool = sg.base_of("us") == ModeSiege.ATT2 and sg.amp_owner() == "them" and sg.altar_ok() and sg.traps.size() == 2; var tl1 := sg.time_left; stepg.call(5.0); var clock_waits: bool = sg.time_left == tl1; stepg.call(5.2)
+	check("the bomb falls where its carrier fell, for another of his side to take up. When it goes off the ward is gone and whoever stood by it with it; the first ward down opens the second part: the observatory unsealed, 3 min 30 s more on the clock (which waits ten seconds first, the altar open for them), 600 shards more to the stormers and 650 to the holders, the stormers' base moved inside the tower (the gallery's east end, by the second flight), the holders' two traps laid anew",
+		fell_there and picked_up and set_b and ward_gone and base_in and clock_waits and sg.time_left < tl1, [fell_there, picked_up, set_b, ward_gone, base_in, clock_waits, sg.state()])
+	# the nucleus
+	var nuc: Dictionary = sg.nucleus; for f: Realm.Fighter in rm.all: rm.mend(f)
+	var n_arc := kit.hurt_thing(nuc, 100.0, "arcane", me); var n_phy := kit.hurt_thing(nuc, 100.0, "physical", me); var sh_left := float(nuc.shield); nuc.shield = 0.0
+	var b_phy := kit.hurt_thing(nuc, 100.0, "physical", me); var b_arc := kit.hurt_thing(nuc, 100.0, "arcane", me); var b_fire := kit.hurt_thing(nuc, 100.0, "fire", me); var hp_left := float(nuc.hp)
+	stepg.call(4.8); var no_regen: bool = float(nuc.shield) == 0.0; stepg.call(1.2); var sh_back := float(nuc.shield); stepg.call(7.0); var sh_full := float(nuc.shield)
+	var three_on := Races.dps("demon") + Races.dps("dwarf") + Races.dps("orc"); var t3 := 4500.0 / three_on
+	check("the nucleus up in the observatory is broken with weapons: its shield of 1,000 first, which arcane bites a fifth harder and which grows back 150 a second once it has not been struck for five seconds; then its body of 3,500, which physical blows bite 15% the harder; a demon, a dwarf and an orc on it together are through all 4,500 in about twelve seconds",
+		n_arc == 120.0 and n_phy == 100.0 and sh_left == 780.0 and near.call(b_phy, 115.0) and b_arc == 100.0 and b_fire == 100.0 and near.call(hp_left, 3500.0 - 315.0) and no_regen and sh_back > 100.0 and sh_back < 200.0 and sh_full == 1000.0 and t3 > 11.0 and t3 < 12.5,
+		[n_arc, n_phy, sh_left, b_phy, b_arc, b_fire, hp_left, no_regen, sh_back, sh_full, t3])
+	# a trap; both_down wards down; the nucleus broken
+	var tr: Dictionary = sg.traps[0]; var a2: Realm.Fighter = ours[2]; at_.call(a2, tr.pos); stepg.call(1.9); var was_caught: bool = tr.who == a2 and a2.pos.distance_to(tr.pos) < 0.5; stepg.call(0.2)
+	var sent_down: bool = a2.pos.distance_to(ModeSiege.GATE) < 2.0 and sg.traps.size() == 1; var tr2: Dictionary = sg.traps[0]; var t_hp := kit.hurt_thing(tr2.thing, 100.0, "physical", me)
+	check("a summoning trap: the first stormer to step in it is, two seconds later, at the tower's lower entrance, and the trap is spent; a trap is a made thing that can be broken (150; physical 15% the harder)",
+		was_caught and sent_down and near.call(t_hp, 115.0) and ModeSiege.SLOTS.size() == 8, [was_caught, sent_down, t_hp])
+	sg.bomb.state = "set"; sg.bomb.site = "a"; sg.bomb.fuse = 0.05; sg.bomb.pos = SA; stepg.call(0.2); var both_down: bool = not sg.wards.a and not sg.wards.b and sg.amp_owner() == "us" and sg.stage == 2
+	var el_t := sg.elapsed; nuc.shield = 0.0; nuc.hp = 50.0; kit.hurt_thing(nuc, 100.0, "physical", me)
+	var was_broken: bool = sg.phase == "over" and sg.results.size() == 1 and bool(sg.results[0].done) and str(sg.results[0].team) == "us" and near.call(float(sg.results[0].t), el_t) and int(sg.results[0].wards) == 2
+	stepg.call(5.1); var sides_changed: bool = sg.half == 2 and sg.attackers == "them" and sg.phase == "prep" and sg.stage == 1 and sg.wards.a and sg.wards.b and me.shards == 850 and me.runes == {"a": "", "b": "", "c": ""} and me.pos.distance_to(ModeSiege.DEF1) < 4.0 and sg.back_time(me) == 9.0
+	check("both wards down, the amplifying circle is the stormers'; the nucleus broken, the half is theirs and its time is kept. Then the sides change places: everyone's runes and shards are taken back and 850 shards given, and your side holds the tower",
+		both_down and was_broken and sides_changed, [both_down, was_broken, sides_changed, sg.results, me.shards, me.runes])
+	stepg.call(25.1); sg.time_left = 0.5; stepg.call(0.6); var timed_out: bool = sg.phase == "over" and sg.results.size() == 2 and not bool(sg.results[1].done); stepg.call(5.1)
+	var D := func(done: bool, t: float, dmg: float, wards: int, team: String) -> Dictionary: return {"team": team, "done": done, "t": t, "dmg": dmg, "wards": wards}
+	check("their four minutes run went_out with no ward down: their half is set_lost, and the match is yours. Who wins after both_down halves: who was_broken the nucleus; if both_down, who was_broken it sooner; if neither, who hurt it more, then who blew more wards; else nobody",
+		timed_out and sg.won == "us" and gm.ended and gm.result == "clear" and Store.save.best.has("t10si")
+		and ModeSiege.decide(D.call(true, 300.0, 3500.0, 1, "us"), D.call(false, 240.0, 0.0, 0, "them")) == "us" and ModeSiege.decide(D.call(true, 300.0, 3500.0, 1, "us"), D.call(true, 250.0, 3500.0, 2, "them")) == "them"
+		and ModeSiege.decide(D.call(false, 450.0, 900.0, 1, "us"), D.call(false, 450.0, 1200.0, 1, "them")) == "them" and ModeSiege.decide(D.call(false, 240.0, 0.0, 1, "us"), D.call(false, 240.0, 0.0, 0, "them")) == "us" and ModeSiege.decide(D.call(false, 240.0, 0.0, 0, "us"), D.call(false, 240.0, 0.0, 0, "them")) == "",
+		[timed_out, sg.won, gm.ended, gm.result])
+
+	# ---- the battles' sounds ----
+	var rs_bad := []; var rs_used := {}; var rs_re := RegEx.new(); rs_re.compile("\"(rm_[a-z0-9_]*[a-z0-9])\"")
+	for path: String in ["res://scripts/realm.gd", "res://scripts/realmkit.gd", "res://scripts/realmlook.gd", "res://scripts/mode_sanctum.gd", "res://scripts/mode_siege.gd", "res://scripts/ui.gd", "res://scripts/realmhud.gd"]:
+		for line: String in FileAccess.get_file_as_string(path).split("\n"):
+			if path.ends_with("realmlook.gd") and line.find("Snd.") < 0: continue   # (its other rm_ words name its meshes)
+			for m9: RegExMatch in rs_re.search_all(line): rs_used[m9.get_string(1)] = true
+	for r: String in Races.ORDER: rs_used["rm_die_" + r] = true
+	for k: String in rs_used:
+		if not ResourceLoader.exists("res://sounds/%s.wav" % k): rs_bad.push_back(k)
+	check("every sound the battles play is there (made by tools/make_sounds.py): the four weapons, the dagger and the bombs, Shift, the ultimates, the circles and the objectives, the hits and each people's fall",
+		rs_bad.is_empty() and rs_used.size() >= 60, [rs_bad, rs_used.size()])
+
+	# ---- the battles' music ----
+	var Mu := Music; Mu.keep_log = true; Mu.log.clear()
+	var keep_mv := Mu.volume; var keep_sv := Snd.volume; Mu.volume = 0.6; Snd.volume = 0.7
+	var mbad := []
+	for s: String in Music.R_SETS:
+		for i in 4:
+			var st: AudioStream = Mu._r[s][i].stream
+			if st == null or not (st is AudioStreamOggVorbis) or absf(st.get_length() - Music.R_LOOP) > 0.001 or not (st as AudioStreamOggVorbis).loop or Mu._r[s][i].bus != &"Music": mbad.push_back("%s_%d" % [s, i + 1])
+	check("the battles' music (tools/make_realm_music.py): two sets of four stems, the wood's and the tower's, each 16 bars at 90 (42.67 s), looping, on the music's bus",
+		mbad.is_empty() and absf(Music.R_LOOP - 128.0 / 3.0) < 1e-4, mbad)
+	var runm := func(ctx: Dictionary, sec: float) -> void:
+		for i in roundi(sec / 0.05): Mu.update(0.05, ctx, 0.05)
+	var rc := {"what": "realm", "set": "rf", "stage": 1, "fight": false, "breaks": 0, "duck": false, "semis": 0}
+	runm.call({}, 2.0); runm.call(rc, 2.0); var m1: Dictionary = Mu.status()
+	check("a battle starts: the set's four stems go round together from their start, and exploring only the first is heard",
+		m1.what == "realm" and m1.r_set == "rf" and ["rf_1", "rf_2", "rf_3", "rf_4"].all(func(k): return m1.playing.has(k)) and not m1.playing.has("rt_1") and m1.r_level == [1.0, 0.0, 0.0, 0.0]
+		and absf(m1.r_t - 2.0) < 0.01 and Mu._r.rf[0].volume_db > -40.0 and Mu._r.rf[1].volume_db < -79.0, m1)
+	var fc := rc.duplicate(); fc.fight = true; runm.call(fc, 1.0); var m2: Dictionary = Mu.status(); runm.call(rc, 3.0); var m3: Dictionary = Mu.status(); runm.call(rc, 3.2); var m4: Dictionary = Mu.status()
+	check("a skirmish (a foe in sight, shots, a hurt): the second stem comes in; once it is over it goes out again over six seconds",
+		m2.r_level == [1.0, 1.0, 0.0, 0.0] and absf(m3.r_level[1] - 0.5) < 0.02 and m4.r_level[1] == 0.0, [m2.r_level, m3.r_level, m4.r_level])
+	var bc := rc.duplicate(); bc.stage = 3; bc.breaks = 1; runm.call(bc, 0.05); var m5: Dictionary = Mu.status()
+	var bar_at := (floorf(float(m5.r_t) / Music.R_BAR) + 1.0) * Music.R_BAR
+	if bar_at - float(m5.r_t) < 0.08: bar_at += Music.R_BAR
+	var to_bar: float = m5.r_break_in; runm.call(bc, to_bar - 0.1); var m6: Dictionary = Mu.status(); runm.call(bc, 0.4); var m7: Dictionary = Mu.status()
+	runm.call(bc, Music.R_BAR - 0.2); var m8: Dictionary = Mu.status()   # (0.1 s past the break's end)
+	check("the sanctum resounds (or the siege's second part begins): from the next bar line a bar's silence, then the first three stems at once, the drums with them",
+		absf(m5.r_t + to_bar - bar_at) < 1e-4 and m6.r_level[2] == 0.0 and m6.r_level[0] == 1.0 and m7.r_level == [0.0, 0.0, 0.0, 0.0] and m7.r_break > 0.0 and m8.r_level == [1.0, 1.0, 1.0, 0.0], [m5.r_break_in, m6.r_level, m7.r_level, m8.r_level])
+	var cc := bc.duplicate(); cc.stage = 4; cc.duck = true; runm.call(cc, 1.0); var m9: Dictionary = Mu.status(); var db1: float = Mu._r.rf[0].volume_db
+	cc.duck = false; runm.call(cc, 0.5); var db2: float = Mu._r.rf[0].volume_db
+	cc.semis = 2; runm.call(cc, 0.1); var m10: Dictionary = Mu.status(); var ps: float = Mu._r.rf[3].pitch_scale
+	check("the climax (a gauge at 90%, overtime, the nucleus nearly broken): all four; an ultimate called near you takes the music 6 dB under while it lasts; in overtime it climbs a semitone each time the hold shortens",
+		m9.r_level == [1.0, 1.0, 1.0, 1.0] and absf(db2 - db1 - 6.02) < 0.1 and absf(m10.r_pitch - pow(2.0, 2.0 / 12.0)) < 1e-6 and absf(ps - m10.r_pitch) < 1e-6, [m9.r_level, db1, db2, m10.r_pitch])
+	runm.call({"what": "realm", "set": "rt", "stage": 1}, 1.0); var m11: Dictionary = Mu.status()
+	runm.call({}, 2.0); var m12: Dictionary = Mu.status()
+	check("the siege has the tower's set; the battle over, the music fades out and stops", m11.r_set == "rt" and m11.playing.has("rt_1") and not m11.playing.has("rf_1") and m12.what == "" and m12.r_set == "" and not m12.playing.any(func(k): return str(k).begins_with("r")), [m11.playing, m12])
+	Mu.volume = keep_mv; Snd.volume = keep_sv; Mu.keep_log = false
+	# what a match tells the music
+	Store.settings.realmMode = "sanctum"; gm.begin(10); rm = gm.rm; md = rm.mode; md.set_phase("fight"); md.gauge.us = 49.5; rm.ai_off = true
+	var c1: Dictionary = rm.music(); md.gauge.us = 50.5; rm.update(0.05); var c2: Dictionary = rm.music(); md.gauge.us = 92.0; var c3: Dictionary = rm.music()
+	md.overtime = true; md.ot_t = 16.0; var c4: Dictionary = rm.music()
+	check("a match tells the music its set and how far it has come: the wood's for the sanctum; the objective's stem from the resonance on (one break asked for), the climax at 90% and in overtime (two semitones up once the hold has halved)",
+		c1.set == "rf" and c1.stage == 1 and c2.stage == 3 and c2.breaks == 1 and c3.stage == 4 and c4.stage == 4 and c4.semis == 2, [c1, c2, c3, c4])
+	Store.settings.realmMode = "solo"; gm.begin(1); Store.save = save0; randomize()

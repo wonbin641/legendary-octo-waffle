@@ -175,16 +175,16 @@ func _hands(dt: float) -> void:
 	match f.race:
 		"elf":
 			if f.charge > 0.0: var c := minf(1.0, f.charge / float(Races.XBOW.charge)); at += Vector3(-0.07 * c, 0.03 * c, 0.05 * c) + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * 0.0015 * c
-			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.XBOW.reload); at.y -= 0.12 * sin(u * PI); rot.z = u * TAU   # (the core turns as it draws mana in)
+			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.XBOW.reload); at.y -= 0.12 * sin(u * PI); rot.z = 0.7 * sin(u * PI); rot.x += 0.3 * sin(u * PI)   # (tipped over while its core draws mana in)
 		"dwarf":
 			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.CANNON.reload); at.y -= 0.14 * sin(u * PI); rot.x += 0.5 * sin(u * PI)
-		"orc":
-			at = Vector3(0.3, -0.3, -0.42); rot = Vector3(-0.5, 0.25, -0.3)
+		"orc":   # the great sword, held up before you; its three blows: across, back across, down from overhead
+			at = Vector3(0.3, -0.36, -0.42); rot = Vector3(1.05, 0.25, -0.2)
 			if f.swing_t > 0.0 and f.swing_len > 0.0:
-				var u := 1.0 - f.swing_t / f.swing_len; var dirn := -1.0 if f.combo == 1 else 1.0
-				if f.combo == 2: rot = Vector3(lerpf(0.9, -1.5, clampf(u / 0.45, 0.0, 1.0)), 0.0, 0.0); at = Vector3(0.12, -0.2, -0.5)   # the third: down from overhead
-				else: rot = Vector3(-0.4, lerpf(1.1, -1.1, clampf(u / 0.45, 0.0, 1.0)) * dirn, -1.2 * dirn); at = Vector3(0.05 * dirn, -0.24, -0.5)
-			if f.cast_t > 0.0: rot = Vector3(0.9, 0, 0); at = Vector3(0.1, -0.1, -0.45)
+				var u := clampf((1.0 - f.swing_t / f.swing_len) / 0.5, 0.0, 1.0); var dirn := -1.0 if f.combo == 1 else 1.0
+				if f.combo == 2: rot = Vector3(lerpf(1.9, -0.5, u), 0.0, 0.0); at = Vector3(0.1, -0.26, -0.5)
+				else: rot = Vector3(0.25, lerpf(-1.3, 1.3, u) * dirn, 0.9 * dirn); at = Vector3(lerpf(0.34, -0.2, u) * dirn, -0.26, -0.5)
+			if f.cast_t > 0.0: rot = Vector3(1.7, 0, 0); at = Vector3(0.1, -0.2, -0.45)
 		"demon":
 			at += Vector3(0.0, -0.05, 0.0); rot.x += 0.25
 			if f.seal_t > 0.0: at.y -= 0.1; rot.z = 0.5
@@ -441,7 +441,7 @@ func landed(f: Realm.Fighter) -> void:
 	if f.me and rm.player != null: rm.player.shake = maxf(rm.player.shake, 0.3)
 
 func ulted(f: Realm.Fighter) -> void:
-	rm.duck_t = float(Races.DUCK.t)
+	if f.me or (rm.me != null and f.pos.distance_to(rm.me.pos) < 30.0): rm.duck_t = float(Races.DUCK.t)   # (one called near you: the music steps back for its signature)
 	if rm.fx == null: return
 	var c := f.feet_mid(); var col := Color(str(Races.R[f.race].col))
 	for i in 24: var a := i * TAU / 24.0; rm.fx.glow(c, Vector3(cos(a), 0.4, sin(a)) * 6.0, 0.6, 0.3, 0.05, Color(col.r, col.g, col.b, 0.9), 0.0, 2.0)

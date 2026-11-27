@@ -55,10 +55,13 @@ func brief_line() -> String: return ""
 func brief() -> Array: return []
 func win_title() -> String: return "승리"
 func pause_line() -> String: return str(Realm.NAMES.get(key, ""))
-func record_key() -> String: return "realm_" + key
+func record_key() -> String: return "t10" + key.substr(0, 2)   # (t10sa, t10si: beside the stages' own best times)
 func bonus() -> int: return 0
 func tac() -> Array: return []             # marks for the map: [{x, z, c, r, label}]
 func marks() -> Array: return []           # marks over the view: [{at, c, label}]
+func music_set() -> String: return "rf"    # the music (Music): the set, how far the match has come (1..4), the overtime's semitones
+func music_stage() -> int: return 1
+func music_semis() -> int: return 0
 func state() -> Dictionary: return {"phase": phase, "round": round_n, "wins": wins}
 
 # ---------------- the rounds' parts, shared ----------------
@@ -69,9 +72,7 @@ func set_phase(p: String, t := 0.0) -> void:
 ## everyone back in his base, whole, as a round begins (the dead too)
 func muster() -> void:
 	rm.kit.clear()
-	for f: Realm.Fighter in rm.all:
-		f.back_t = 0.0; f.burn_t = 0.0; f.burn = 0.0; f.slows.clear(); f.stacks = 0; f.shield = 0.0; f.over = 0.0; f.ult_t = 0.0; f.cast_t = 0.0; f.stun_t = 0.0; f.mark_t = 0.0; f.carrying = false; f.push = Vector3.ZERO
-		rm.back(f); f.inv = 0.0; f.haste_t = 0.0
+	for f: Realm.Fighter in rm.all: rm.mend(f); rm.back(f); f.inv = 0.0; f.haste_t = 0.0
 
 ## the others spend what shards they have: the dearest rune they can pay for in each empty slot
 func shop_ai() -> void:

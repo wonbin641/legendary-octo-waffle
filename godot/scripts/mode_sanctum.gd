@@ -32,7 +32,7 @@ func brief() -> Array:
 	return ["성소(달샘 정자) 안에 우리 편만 서 있으면 각인 게이지가 초당 1.25% 오릅니다", "먼저 100%를 채운 편이 라운드를 가져갑니다 · 3판 2선승",
 		"쓰러지면 7초 뒤 본진 마법진에서 다시 일어납니다", "50%에서 마력 공명: 뒤처진 편의 포탈 대기가 줄고 달샘 회복이 늘어납니다", "라운드 사이 15초: B 키로 룬 제단 · 종족과 폭탄 교체"]
 func win_title() -> String: return "성소 각인 완료"
-func bonus() -> int: return 60000
+func bonus() -> int: return 30000 * Store.PAY
 func works(team: String) -> Array: return [BASE[team]]
 
 func start() -> void:
@@ -59,14 +59,13 @@ func update(dt: float) -> void:
 	for team: String in ["us", "them"]:
 		var foe := rm.other(team)
 		if int(inside[team]) > 0 and int(inside[foe]) == 0:
-			var cap := 100.0
+			var cap := 99.0 if overtime else 100.0   # (in overtime it is the sanctum staying clear that ends the round)
 			gauge[team] = minf(cap, float(gauge[team]) + RATE * dt)
 			for f: Realm.Fighter in within: rm.gain(f, float(Races.GAUGE.capture) * dt)
 			var q := int(float(gauge[team]) / 25.0)
 			if q > int(_marks[team]):   # a quarter of the gauge: those who stood for it have their part (the shards' bonus)
 				_marks[team] = q
 				for f: Realm.Fighter in within: f.bonus = mini(3, f.bonus + 1)
-		elif int(inside[team]) > 0 and float(gauge[team]) >= 99.0: pass
 		# a leader at 99% and a foe in the sanctum: it waits there
 		if float(gauge[team]) >= 99.0 and float(gauge[team]) < 100.0 and int(inside[foe]) > 0 and not overtime:
 			overtime = true; ot_t = 0.0; clear_t = 0.0; Snd.play("rm_overtime")
@@ -110,7 +109,7 @@ func _resound(lead: String) -> void:
 	resonated = true; rm.resonant = rm.other(lead)
 	for f: Realm.Fighter in rm.all:
 		if f.alive and f.pos.distance_to(AT) < WAVE: rm.shove(f, f.pos - AT if f.pos.distance_to(AT) > 0.3 else Vector3(1, 0, 0), 2.5)
-	Snd.play("rm_resonance", 1.0, AT); rm.look.resonance(AT, WAVE); rm.music_break = 1
+	Snd.play("rm_resonance", 1.0, AT); rm.look.resonance(AT, WAVE); rm.music_break += 1
 	if rm.game != null: rm.game.say_banner("마력 공명", ("우리" if rm.resonant == "us" else "적") + " 편의 포탈 대기 8초 · 달샘 회복 초당 25", 2.4)
 	rm.note(["resonance", lead])
 
@@ -152,6 +151,15 @@ func hud() -> Dictionary:
 
 func tac() -> Array:
 	return [{"x": AT.x, "z": AT.z, "c": "ffd66b", "r": ZONE, "label": "성소"}, {"x": float(BASE.us.x), "z": float(BASE.us.z), "c": "5f9cff", "r": 6.5, "label": "우리 본진"}, {"x": float(BASE.them.x), "z": float(BASE.them.z), "c": "ff5260", "r": 6.5, "label": "적 본진"}]
+
+## the music: the wood's set; the fight for the sanctum once it has resounded, the climax at 90% or in overtime (a semitone up
+## each time the hold shortens)
+func music_set() -> String: return "rf"
+func music_stage() -> int:
+	if phase != "fight": return 1
+	if overtime or maxf(float(gauge.us), float(gauge.them)) >= 90.0: return 4
+	return 3 if resonated else 1
+func music_semis() -> int: return mini(3, int(floorf(ot_t / HOLD_STEP)) + 1) if overtime else 0
 
 func marks() -> Array: return [{"at": AT + Vector3(0, 3.2, 0), "c": "ffd66b", "label": "성소"}] if phase != "prep" else []
 
