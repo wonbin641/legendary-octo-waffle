@@ -58,6 +58,7 @@ func world_to_clip() -> Projection:
 ## and loot, which in the browser game cast shadows but do not receive them. Solid materials only
 const UNSHADOWED := 2   # (the shadow layer's shader names the same number)
 const GRASS := 3        # the savanna's tall grass cards: no shadow on them either, and the occlusion leaves their blades be (AoView names it too)
+const HAND := 4         # the gun in your hands (GunModels): the occlusion leaves it be, as the browser game draws it after that (AoView names it too)
 static func no_receive(n: Node) -> void:
 	if not (n is GeometryInstance3D): return
 	var g := n as GeometryInstance3D; var mats: Array = [g.material_override]
@@ -79,6 +80,13 @@ static func grass(m: BaseMaterial3D) -> void:
 	m.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; m.stencil_reference = GRASS
 	if Gfx.fplus: m.disable_receive_shadows = true
 
+## a solid material of the gun in your hands: marked, so the occlusion passes it by wherever it is (not only nearer than a
+## set distance, which also left a wall you stood against without its occlusion); the moon's shadow layer passes it by too
+static func hand(m: BaseMaterial3D) -> void:
+	if m.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED: return
+	m.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM; m.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
+	m.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS; m.stencil_reference = HAND
+
 static func caster(n: Node, on := true) -> void:
 	if n is VisualInstance3D: (n as VisualInstance3D).set_layer_mask_value(CASTER, on)
 	for c in n.get_children(): caster(c, on)
@@ -90,7 +98,7 @@ static func caster(n: Node, on := true) -> void:
 const LAYER_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;
-stencil_mode read, compare_greater, 2;   // (passes where 2 is greater than the mark: neither no-shadow (2) nor grass (3))
+stencil_mode read, compare_greater, 2;   // (passes where 2 is greater than the mark: neither no-shadow (2), grass (3) nor the gun in hand (4))
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
 uniform sampler2D shadow_map : filter_nearest;
@@ -104,17 +112,7 @@ uniform float lamp_range = 26.75; uniform float lamp_atten = 0.82;
 uniform float exposure = 1.0;
 uniform float bias = 0.0006; uniform float normal_bias = 0.03;
 %s
-const float FA = 0.0245786; const float FB = 0.000090537; const float FC = 0.983729; const float FD = 0.432951; const float FE = 0.238081;
-const mat3 RRT = mat3(vec3(0.59719 * 1.8, 0.35458 * 1.8, 0.04823 * 1.8), vec3(0.07600 * 1.8, 0.90834 * 1.8, 0.01566 * 1.8), vec3(0.02840 * 1.8, 0.13383 * 1.8, 0.83777 * 1.8));
-const mat3 ODT = mat3(vec3(1.60475, -0.53108, -0.07367), vec3(-0.10208, 1.10813, -0.00605), vec3(-0.00327, -0.07276, 1.07602));
-// what Godot shows (its ACES at white 14.26, then its sRGB encode), turned back into the scene colour that made it
-vec3 unshow(vec3 s) {
-	vec3 t = pow((max(s, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)) * inverse(ODT);
-	t = min(t, vec3(1.0));
-	vec3 a = FC * t - 1.0, b = FD * t - FA, c = FE * t + FB;
-	vec3 v = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
-	return max(v * inverse(RRT), vec3(0.0)) / exposure;
-}
+%s
 vec3 view_at(vec2 uv, mat4 ipm) {
 	float d = texture(depth_tex, uv).r;
 	vec4 v = ipm * vec4(uv * 2.0 - 1.0, ndc_z(d), 1.0);

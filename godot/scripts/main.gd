@@ -25,7 +25,7 @@ var needle: Node3D; var needle_arm: Node3D; var needle_syr: Node3D; var needle_j
 var gm_models: GunModels
 var jet_puff_t := 0.0
 var cut: Cut   # the cutscenes: in by helicopter, out by helicopter, the lab, the ship, the look behind a sealed door
-var view: Node3D; var view_lens: Node3D; var gun_models := {}; var gun_mats := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
+var view: Node3D; var view_lens: Node3D; var gun_models := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var fps_label: Label
 var hudd: Hud   # the fight's screen (scripts/hud.gd)
 var heat_k := -1.0
@@ -34,6 +34,7 @@ var cu_light: OmniLight3D = null   # the menu scene is dark: the gun being fitte
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var joy_id := -1; var look_id := -1; var fire_id := -1; var joy := Vector2.ZERO; var pad_sprint := false; var pad_last_up := -9.0
 var _js_cb
+var _lock_cb; var web_locked := false   # the web: whether the page holds the pointer, kept by the browser's pointerlockchange (no asking every frame)
 
 func _ready() -> void:
 	Gfx.fplus = RenderingServer.get_current_rendering_method() != "gl_compatibility"   # (the computer's game: Forward+; the web: compatibility)
@@ -97,7 +98,7 @@ func _ready() -> void:
 	hud.get_parent().add_child(ui); ui.build(); ui.tac.cam = cam
 	Cloud.idle = func() -> bool: return state == "menu" and (ui.cur == "menu" or ui.cur == "account" or ui.cur == "settings")   # (the account's newer progress comes down only here)
 	get_viewport().size_changed.connect(_on_resize); _on_resize()
-	apply_settings(); to_menu(); _bridge()
+	apply_settings(); to_menu(); _bridge(); _watch_lock()
 	if OS.get_cmdline_user_args().has("--smoke"): _smoke.call_deferred()
 
 ## a check of a built copy of the game (... --headless -- --smoke): every stage started and played two seconds, then out
@@ -176,7 +177,7 @@ func _build_needle(parent: Node3D) -> void:
 
 func _pose_gun(dt: float) -> void:
 	var W := guns.w(); var a := guns.ads * guns.ads * (3.0 - 2.0 * guns.ads); var d: Array = GUN_SHAPE.get(guns.cur, [0.5, 0.07, 0.05])   # (the toy room's own spray can has no plain shape: a toy's length is set below)
-	var toy := game.stage == 9; var shown: bool = not guns.scoped() and not guns.none and not player.out
+	var toy := game.stage == Store.ST_TOY; var shown: bool = not guns.scoped() and not guns.none and not player.out
 	if carry_view != null: carry_view.visible = game.tm != null and game.tm.key == "rush" and game.tm.mode.carry != null and not player.out   # the battery under your arm
 	for id in gun_models: (gun_models[id] as Node3D).visible = not toy and id == guns.cur and shown
 	for id in toy_models: (toy_models[id] as Node3D).visible = toy and id == guns.cur and shown and not guns.melee_on
@@ -400,8 +401,9 @@ func _draw_touch() -> void:
 		touch_ui.draw_circle(b[0], b[1], Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.45) if on else Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.45))
 		touch_ui.draw_arc(b[0], b[1], 0, TAU, 40, SODIUM if on else Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35), 1.5)
 		touch_ui.draw_string(f_mono, b[0] + Vector2(-b[1], 4), b[2], HORIZONTAL_ALIGNMENT_CENTER, b[1] * 2, 12 if k == "fire" else 11, INK)
-	for k in _touch_pills():
-		var q: Array = _touch_pills()[k]; var pr: Rect2 = q[0]
+	var pills := _touch_pills()
+	for k in pills:
+		var q: Array = pills[k]; var pr: Rect2 = q[0]
 		var bg := Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.9) if k == "car" else (Color(94 / 255.0, 214 / 255.0, 176 / 255.0, 0.4) if k == "anti" else Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.55))
 		var ln := SODIUM if k == "car" else (VITAL if k == "anti" else Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35))
 		touch_ui.draw_style_box(_sbox(bg, ln, int(pr.size.y / 2.0)), pr)
@@ -670,7 +672,7 @@ func _process(delta: float) -> void:
 	var dt := minf(delta, 0.05)
 	if state == "playing":
 		if look_mode == "lock":
-			var locked := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and (not OS.has_feature("web") or bool(JavaScriptBridge.eval("!!document.pointerLockElement")))
+			var locked := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and (not OS.has_feature("web") or web_locked)
 			if locked: ever_locked = true; lock_wait = -1.0
 			elif lock_wait > 0.0:
 				lock_wait -= dt
@@ -754,6 +756,15 @@ func _back() -> void:
 		"quit": get_tree().quit()
 
 # ---------------- a door for the browser tests: window.__yarr("command") returns a small object ----------------
+## the web: the page tells when it takes or lets go of the pointer, once each time, instead of being asked every frame
+func _watch_lock() -> void:
+	if not OS.has_feature("web"): return
+	_lock_cb = JavaScriptBridge.create_callback(func(_a: Array) -> void: web_locked = bool(JavaScriptBridge.eval("!!document.pointerLockElement")))
+	var doc = JavaScriptBridge.get_interface("document")
+	if doc == null: return
+	doc.addEventListener("pointerlockchange", _lock_cb); doc.addEventListener("pointerlockerror", _lock_cb)
+	web_locked = bool(JavaScriptBridge.eval("!!document.pointerLockElement"))
+
 func _bridge() -> void:
 	if not OS.has_feature("web"): return
 	_js_cb = JavaScriptBridge.create_callback(_on_js)

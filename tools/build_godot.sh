@@ -16,7 +16,8 @@ for f in index.html index.js index.pck index.png index.audio.worklet.js index.au
 # the artifact
 cp "$OUT/index.js" "$OUT/index.audio.worklet.js" "$OUT/index.audio.position.worklet.js" "$ART/"
 gzip -9 -n -c "$OUT/index.wasm" > "$ART/engine.wasm"; cp "$OUT/index.pck" "$ART/game.wasm"
-CFG=$(grep -o 'const GODOT_CONFIG = {.*};' "$OUT/index.html")
+CFG=$(grep -o 'const GODOT_CONFIG = {.*};' "$OUT/index.html" || true)
+[ -n "$CFG" ] || { echo "no GODOT_CONFIG in $OUT/index.html (has Godot's web page changed?): the artifact cannot be made"; exit 1; }
 cat > "$ART/index.html" <<HTML
 <title>Yarr 07 Godot</title>
 <style>

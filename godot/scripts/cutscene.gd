@@ -281,7 +281,8 @@ func _ship_outro(_dt: float, t: float) -> void:
 ## and its name stands big in the bottom right (yellow for the bee, green for the boss); the camera drifts a little way in
 func start_boss_intro(D: Dictionary, e: Enemies.Foe, on_done: Callable) -> void:
 	var cz: float = (D.z0 + D.z1) / 2.0; var cam0 := Vector3(D.x + D.inward * 2.0, 2.6, cz); var at := e.pos
-	C = {"kind": "boss", "t": 0.0, "dur": 1.5, "done": on_done, "D": D, "e": e, "cam0": cam0, "cam1": cam0.lerp(at, minf(0.4, 9.0 / maxf(1.0, cam0.distance_to(at)))), "base": at, "yaw0": e.yaw}
+	C = {"kind": "boss", "t": 0.0, "dur": 1.5, "done": on_done, "D": D, "e": e, "cam0": cam0, "cam1": cam0.lerp(at, minf(0.4, 9.0 / maxf(1.0, cam0.distance_to(at)))), "base": at, "yaw0": e.yaw,
+		"bar": e.bar.visible}   # (its health bar is out of the picture while it is shown, and back as it was after, watched or skipped)
 	heli.visible = false; rope.visible = false; fig.visible = false; pool.visible = false
 	e.g.visible = true; e.bar.visible = false
 	if e.is_far: enemies.set_far(e, false)   # (it may still be drawn baked as far away)
@@ -398,6 +399,9 @@ func skip() -> void:
 
 func finish() -> void:
 	var done: Callable = C.get("done", Callable()); var k := kind()
+	if k == "boss":
+		var be: Enemies.Foe = C.e
+		if be != null and is_instance_valid(be.bar): be.bar.visible = bool(C.get("bar", false)) and be.alive
 	C = {}; heli.visible = false; rope.visible = false; fig.visible = false; pool.visible = false
 	if overlay != null: overlay.visible = false; card.visible = false
 	Snd.loop("rotor", 0.0)

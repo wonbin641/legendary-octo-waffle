@@ -41,6 +41,7 @@ var _result_kind := ""
 var _chest_wait := false
 var flow_t := 0.0
 var mid: Enemies.Foe = null   # the gold commander drone
+var flow_budget := 3000   # microseconds of the walking grid's search a frame (the checks: -1, all of it at once, so that a seeded fight is the same on every computer)
 var sp = null                 # stage 4's save point
 var deployed := false         # out of the briefing into the stage (or back at the save point): rented guns go back only then
 var spawned := 0
@@ -69,7 +70,7 @@ func say_feed(text: String) -> void: _say(feed, [text, 0])
 func say_hint(text: String, sec: float) -> void: _say(hint, [text, sec])
 
 func layout() -> Array:
-	if stage == 9: return (Store.save.toy_order as Array).duplicate()   # every toy gun in hand (keys 1-9), in the order you put them
+	if stage == Store.ST_TOY: return (Store.save.toy_order as Array).duplicate()   # every toy gun in hand (keys 1-9), in the order you put them
 	return (Store.save.loadout as Array).map(func(id): return id if (id != null and Store.gun_available(id, bonus_guns)) else null)
 
 func begin(stage_: int) -> void:
@@ -80,7 +81,7 @@ func begin(stage_: int) -> void:
 	if tm != null: tm.clear()
 	tm = null
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
-	if stage == 9 and ToyMatch.picked() != "sweep":   # a team mode in the toy room: its things are built with the room
+	if stage == Store.ST_TOY and ToyMatch.picked() != "sweep":   # a team mode in the toy room: its things are built with the room
 		tm = ToyMatch.create(ToyMatch.picked()); tm.game = self; tm.world = world; tm.en = enemies; tm.toys = tf; tm.player = player; tm.guns = guns; tm.proj = proj; tm.fx = fx
 	world.toy_tm = tm; tf.tm = tm; proj.tm = tm; enemies.vis_r = 160.0 if tm != null else 0.0
 	world.build_stage(stage); calm = 0; sp = null; mid = null
@@ -90,21 +91,21 @@ func begin(stage_: int) -> void:
 	if world.lab != null: world.lab.player = player; world.lab.game = self
 	if world.safari != null: world.safari.player = player; world.safari.game = self; world.safari.enemies = enemies; world.safari.fx = fx
 	bonus_guns = []; replay = Store.save.best.has(tm.mode.record_key()) if tm != null else Store.save.cleared.has(stage)   # (a team mode: once won, it pays no more)
-	guns.reset(layout()); guns.stage = stage; enemies.stage = stage; enemies.down_hint = false; proj.stage = stage; guns.toy = stage == 9
+	guns.reset(layout()); guns.stage = stage; enemies.stage = stage; enemies.down_hint = false; proj.stage = stage; guns.toy = stage == Store.ST_TOY
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
-	if stage == 9: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
+	if stage == Store.ST_TOY: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false
 	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
 	# down in the corner at the bottom right of the map (the east and south ends), facing in
-	if stage == 5:
+	if stage == Store.ST_ARMED:
 		var d = open_spot(0.0, 58.0)
 		if d != null: world.start = d; player.reset(d.x, d.z, d.yaw); player.invuln = 1.5
 	populate()
 	if world.village != null: world.village.drop_ghosts()   # (stage 2: the crates out in the village only kept the zombies where the browser game puts them)
-	if stage == 5:
+	if stage == Store.ST_ARMED:
 		var c = open_spot(Phys.HALF - 6.0, Phys.HALF - 6.0)
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
@@ -171,20 +172,20 @@ func populate() -> void:
 			if e.T.get("mid", false): mid = e
 		return
 	var B: Dictionary = BOSS.get(stage, {})
-	if stage == 5: _populate_armed(SR, ok, find, put, placed, n)
+	if stage == Store.ST_ARMED: _populate_armed(SR, ok, find, put, placed, n)
 	elif not B.is_empty():
 		var bp = find.call(55.0, 8.0, 2.5)
 		if bp == null: bp = find.call(30.0, 4.0, 1.5)
 		var bo := B.duplicate(); bo.boss = true; put.call(B.type, bp, bo)
 	# guard posts of 2-4 people, or packs of 2-6 zombies
 	var helmet := stage == 6; var yard := stage != 2; var kind: String = STAGES[stage].enemy
-	while n[0] < 100 and stage != 5:
+	while n[0] < 100 and stage != Store.ST_ARMED:
 		var center = find.call(36.0 if yard else 22.0, 5.0, 0.8)
 		if center == null: break
 		put.call(kind, center, {"helmet": helmet})
 		var grp := int(floor(SR.rng(2, 5))) if yard else int(floor(SR.rng(2, 7)))
 		for i in range(1, grp): put.call(kind, find.call(33.0 if yard else 20.0, 1.6, 0.6, center, 5.0), {"helmet": helmet})
-	while n[0] < 100 and stage != 5:   # anyone still missing goes wherever there is room
+	while n[0] < 100 and stage != Store.ST_ARMED:   # anyone still missing goes wherever there is room
 		var p = find.call(18.0, 1.2, 0.6)
 		if p == null: break
 		put.call(kind, p, {"helmet": helmet})
@@ -254,7 +255,7 @@ func update(dt: float) -> void:
 	# all at once, as there; a slow one over a few frames, the enemies keeping the last way meanwhile), the next once it is done
 	flow_t -= dt
 	if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
-	if Phys.flow_busy: Phys.flow_step(3000)
+	if Phys.flow_busy: Phys.flow_step(flow_budget)
 	stats.shots = guns.shots; stats.hits = guns.hits
 	if _chest_wait and loot.pending() == null: _chest_wait = false; finish()
 	result_tick(dt)
@@ -354,6 +355,7 @@ func from_save() -> void:
 	boss = null; mid = null
 	for e in enemies.list:
 		if e.boss: boss = e
+		if e.T.get("mid", false): mid = e   # (the gold commander drone too, if it was still about: its bar and its end, as before the save)
 	world.ship.restore(s)
 	player.reset(Ship.SAVE.x, Ship.SAVE.z, Ship.SAVE.yaw); player.invuln = 1.5
 	Phys.update_flow(player.pos.x, player.pos.z)
@@ -521,7 +523,7 @@ func _leave_animals() -> void:
 func return_rentals() -> void:
 	if not deployed: return
 	deployed = false
-	if stage == 9: return
+	if stage == Store.ST_TOY: return
 	if (Store.save.rented as Array).is_empty(): return
 	Store.save.rented = []; Store.persist()
 

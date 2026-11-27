@@ -28,12 +28,14 @@ func rocket(from: Vector3, dir: Vector3, W: Dictionary, target) -> void:
 ## an enemy's pistol round: fast, a visible tracer; it hurts you where it strikes (above the shoulders is the head)
 ## an enemy's round. team: "them" (the enemies': it hits you, and in stage 5's team modes our blue soldiers too) or "us"
 ## (one of our soldiers': it hits the room's toys, and a trap on the train's track)
+var _bullet_box: BoxMesh = null
 func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: float, team := "them") -> void:
 	var v := Vector3(target.x + randf_range(-1, 1) * spread_r - from.x, target.y + randf_range(-0.7, 0.7) * spread_r - from.y, target.z + randf_range(-1, 1) * spread_r - from.z).normalized() * speed
-	var m := MeshInstance3D.new(); var b := BoxMesh.new(); b.size = Vector3(0.03, 0.03, 0.55); m.mesh = b; m.material_override = _ally_mat() if team == "us" else _bullet_mat(); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
+	if _bullet_box == null: _bullet_box = BoxMesh.new(); _bullet_box.size = Vector3(0.03, 0.03, 0.55)   # (one mesh for every bullet)
+	var m := MeshInstance3D.new(); m.mesh = _bullet_box; m.material_override = _ally_mat() if team == "us" else _bullet_mat(); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
 	m.look_at_from_position(from, from + v, Vector3.UP if absf(v.normalized().y) < 0.99 else Vector3.RIGHT)
 	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m, "team": team})
-	if fx and stage != 9: fx.glow(from, Vector3.ZERO, 0.08, 0.45, 0.1, Color(1, 0.8, 0.5, 0.9))   # the flash at his muzzle
+	if fx and stage != Store.ST_TOY: fx.glow(from, Vector3.ZERO, 0.08, 0.45, 0.1, Color(1, 0.8, 0.5, 0.9))   # the flash at his muzzle
 
 var _amat: Material
 func _ally_mat() -> Material:   # our soldiers' rounds: blue
@@ -81,7 +83,7 @@ func _crates_near(c: Vector3, radius: float) -> void:
 
 func _rocket_hit(p: Dictionary, e) -> void:
 	var c: Vector3 = p.pos
-	if stage == 9:   # a bottle rocket: a pop of coloured stars
+	if stage == Store.ST_TOY:   # a bottle rocket: a pop of coloured stars
 		if fx: fx.firework(c)
 		Snd.play("toy_boom", 1.0, c); Music.blast(c)
 	else:
@@ -100,7 +102,7 @@ func _explode(p: Dictionary) -> void:
 	var c: Vector3 = p.pos
 	if fx: fx.explode(c, true)
 	Snd.play("boom", 1.0, c); enemies.noise(c, 60)
-	if stage == 9: Music.blast(c)   # (the toy room's music: the tape stretches)
+	if stage == Store.ST_TOY: Music.blast(c)   # (the toy room's music: the tape stretches)
 	player.shake = maxf(player.shake, clampf(0.5 - c.distance_to(player.pos) * 0.02, 0.0, 0.5))
 	enemies.splash(c, p.radius, p.dmg)
 	_crates_near(c, p.radius)
@@ -129,9 +131,9 @@ func update(dt: float) -> void:
 					if p.pos.y < e.pos.y - 0.1 or p.pos.y > e.pos.y + e.H + 0.2: continue
 					if Vector2(e.pos.x - p.pos.x, e.pos.z - p.pos.z).length() < e.R * 0.95 + 0.25: hit_e = e; break
 				if hit_e != null or p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.06, p.pos.z, 0.06, 0.12) != null: _rocket_hit(p, hit_e); dead = true
-			if not dead and stage != 9 and fx: fx.puff(p.pos, 1, 0.75, 0.32); fx.glow(p.pos - rd * 0.3, Vector3.ZERO, 0.07, 0.35, 0.1, Color(1, 0.6, 0.25, 0.9))   # smoke and the tail of fire
+			if not dead and stage != Store.ST_TOY and fx: fx.puff(p.pos, 1, 0.75, 0.32); fx.glow(p.pos - rd * 0.3, Vector3.ZERO, 0.07, 0.35, 0.1, Color(1, 0.6, 0.25, 0.9))   # smoke and the tail of fire
 			if not dead and p.life <= 0.0: _rocket_hit(p, null); dead = true
-			if not dead and stage == 9 and fx: fx.spark(p.pos - rd * 0.3)   # the tail of fire
+			if not dead and stage == Store.ST_TOY and fx: fx.spark(p.pos - rd * 0.3)   # the tail of fire
 			if not dead: (p.m as MeshInstance3D).look_at_from_position(p.pos, p.pos + rd, Vector3.UP if absf(rd.y) < 0.99 else Vector3.RIGHT)
 		elif p.kind == "bomb":
 			if p.life <= 0.0: blast(p.pos, 7.0, 300.0, true); dead = true
@@ -185,9 +187,13 @@ func update(dt: float) -> void:
 				p.pos += p.vel * (dt / 3.0)
 				var armed: bool = (p.pos as Vector3).distance_to(p.src) > 8.0
 				var impact: bool = p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1) != null
-				if not impact:
+				if not impact:   # an enemy's body: as the rocket finds it (its height and girth; a flier round its middle), never the one you ride
 					for e in enemies.list:
-						if Vector3(e.pos.x, e.pos.y + 1.1, e.pos.z).distance_to(p.pos) < 0.55: impact = true; break
+						if not e.alive or e.ridden: continue
+						if e.fly:
+							if (e.pos as Vector3).distance_to(p.pos) < e.R + 0.3: impact = true; break
+							continue
+						if p.pos.y >= e.pos.y - 0.1 and p.pos.y <= e.pos.y + e.H + 0.1 and Vector2(e.pos.x - p.pos.x, e.pos.z - p.pos.z).length() < e.R + 0.25: impact = true; break
 				if impact:
 					if armed: _explode(p); dead = true
 					elif not p.bounced:

@@ -28,6 +28,7 @@ func _differs(a: Image, b: Image) -> float:
 	return float(hit) / maxf(1.0, n)
 
 func _ready() -> void:
+	Store.ephemeral = true   # (nothing the checks write reaches this machine's own save and settings)
 	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	main = load("res://main.tscn").instantiate(); add_child(main)
 	await _frames(3)

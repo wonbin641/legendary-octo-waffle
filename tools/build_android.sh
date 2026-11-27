@@ -15,7 +15,9 @@ prop() { grep "^$1=" "$KP" | head -1 | cut -d= -f2-; }
 export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$ROOT/android/app/$(prop storeFile)"
 export GODOT_ANDROID_KEYSTORE_RELEASE_USER="$(prop keyAlias)"
 export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$(prop storePassword)"
-IFS=. read -r MA MI PA <<< "$VERSION"; CODE=$((10#$MA * 10000 + 10#$MI * 100 + 10#${PA:-0}))
+IFS=. read -r MA MI PA <<< "$VERSION"; PA=${PA%%-*}; PA=${PA%%+*}   # (a pre-release or build tag, 1.6.2-rc1 or 1.6.2+7, counts as 1.6.2)
+[[ "$MA" =~ ^[0-9]+$ && "$MI" =~ ^[0-9]+$ && "${PA:-0}" =~ ^[0-9]+$ ]] || { echo "VERSION must be major.minor[.patch], not $VERSION"; exit 1; }
+CODE=$((10#$MA * 10000 + 10#$MI * 100 + 10#${PA:-0}))
 sed -i -e "s|^version/code=.*|version/code=$CODE|" -e "s|^version/name=.*|version/name=\"$VERSION\"|" "$ROOT/godot/export_presets.cfg"
 OUT=$ROOT/build/android; mkdir -p "$OUT"; rm -f "$OUT/Yarr07.apk"
 "$G" --headless --path "$ROOT/godot" --import > /dev/null 2>&1 || true

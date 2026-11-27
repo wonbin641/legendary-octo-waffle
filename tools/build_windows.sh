@@ -13,7 +13,7 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 [ -s "$OUT/Yarr07.exe" ] || { echo "export failed, see build/godot-windows-export.log"; exit 1; }
 # the game's own icon (the app's, godot/icon.png) at the sizes Windows asks for
 python3 -c "from PIL import Image; Image.open('$ROOT/godot/icon.png').convert('RGBA').save('$OUT/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(192,192)])"
-SIZE_KB=$(( $(stat -c %s "$OUT/Yarr07.exe") / 1024 ))
+SIZE_KB=$(( $(wc -c < "$OUT/Yarr07.exe") / 1024 ))   # (wc -c works the same everywhere; GNU stat -c does not)
 makensis -V2 -DOUTDIR="$OUT" -DVERSION="$VERSION" -DSIZE_KB="$SIZE_KB" "$ROOT/tools/windows_installer.nsi"
 (cd "$OUT" && rm -f Yarr07-windows.zip && zip -q -9 Yarr07-windows.zip Yarr07.exe)
 ls -la "$OUT" | awk 'NR > 1 {print $5, $9}'

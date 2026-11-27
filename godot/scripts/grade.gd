@@ -104,6 +104,9 @@ func attach(src: SubViewport) -> void:
 	show.texture = final_vp.get_texture(); add_child(show)
 	RenderingServer.frame_pre_draw.connect(_sync); _on_visible()
 
+func _exit_tree() -> void:   # (the server's signal outlives this node: let go of it)
+	if RenderingServer.frame_pre_draw.is_connected(_sync): RenderingServer.frame_pre_draw.disconnect(_sync)
+
 ## the browser game's Post size(): the bright pass at half the picture's size, each next level half that
 func _sync() -> void:
 	if source == null or not visible: return

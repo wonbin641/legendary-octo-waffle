@@ -20,6 +20,7 @@ func _until(cond: Callable, secs := 10.0) -> bool:
 func _ready() -> void:
 	var url := OS.get_environment("YARR07_ACCOUNTS"); var re := RegEx.new(); re.compile("^http://127\\.0\\.0\\.1:[0-9]{2,5}$")
 	if re.search(url) == null: print("FAIL needs the address of a server on this machine in YARR07_ACCOUNTS: run server/test/game.test.mjs"); get_tree().quit(1); return
+	Store.ephemeral = true   # (nothing the checks write reaches this machine's own save and settings)
 	var C = Cloud; var K = load("res://scripts/cloud.gd")
 	var keep_save: Dictionary = Store.save.duplicate(true)
 	C.mute(); C.store_key = "account_check"; C.base = url; C.rounds = K.ROUNDS; C._forget()

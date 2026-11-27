@@ -419,7 +419,7 @@ func collapse() -> void:
 	var was := player_on()
 	standing = false; on = false; fall_t = 0.0; fall_dir = 1.0 if randf() < 0.5 else -1.0
 	for b in cols: Phys.remove_collider(b)
-	cols.clear(); Phys.build_nav(); Phys.update_flow(player.pos.x, player.pos.z)
+	Phys.nav_patch_boxes(cols); cols.clear(); Phys.update_flow(player.pos.x, player.pos.z)
 	var c := Vector3(outer.position.x, 1.5, outer.position.z); Snd.play("crack", 1.0, c); Snd.play("quake", 1.0, c); Snd.play("boom_small", 1.0, c)
 	if fx:
 		for i in 14: var a := i / 14.0 * TAU; fx.puff(Vector3(outer.position.x + cos(a) * 3.5, 0.5, outer.position.z + sin(a) * 3.5), 2, 0.6, 1.4)

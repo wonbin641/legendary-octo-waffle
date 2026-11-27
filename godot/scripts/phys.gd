@@ -262,6 +262,11 @@ func nav_patch(minx: float, minz: float, maxx: float, maxz: float) -> void:
 			var b := nav_blocked[j * nav_n + i]; var at := (j + 1) * _np + i + 1; _pblk[at] = b; _pdist0[at] = -2 if b != 0 else -1
 	flow_busy = false   # (a search under way was looking at the grid as it was)
 
+## colliders went (a cage's walls, the watchtower, the pit's floor): redo the grid only round where each stood. The same grid
+## as build_nav would make (every cell a gone box marked is in its patch, and every box that marks a cell there is found)
+func nav_patch_boxes(bs: Array) -> void:
+	for b: Box in bs: nav_patch(b.minx, b.minz, b.maxx, b.maxz)
+
 ## the whole search now (the game's own every 0.3 s goes by flow_start and flow_step)
 func update_flow(px: float, pz: float) -> void:
 	flow_start(px, pz); flow_step(-1)

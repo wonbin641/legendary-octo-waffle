@@ -63,6 +63,7 @@ func _layout_checks(where: String) -> void:
 		not on_press and open and was == null and Store.save.loadout[1] == "pistol", [on_press, open, was, Store.save.loadout[1]])
 
 func _ready() -> void:
+	Store.ephemeral = true   # (nothing the checks write reaches this machine's own save and settings)
 	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	get_window().size = Vector2i(2400, 1080); get_window().content_scale_factor = K
 	main = load("res://main.tscn").instantiate(); add_child(main)
@@ -91,7 +92,9 @@ func _ready() -> void:
 		on_words[0] > 40 and s1 - s0 > 40 and m1 == m0 and r1.is_empty(), [_room(sc), on_words[0], s0, s1, m0, m1, r1])
 	for b in sc.find_children("*", "Button", true, false):
 		if (b as Button).text == "대여" and not (b as Button).disabled: rent = b; break
-	sc.ensure_control_visible(rent); await _frames(); await _tap(rent.get_global_rect().get_center())
+	sc.ensure_control_visible(rent); await _frames(); var s_tap := sc.scroll_vertical; await _tap(rent.get_global_rect().get_center()); await _frames(3)
+	var s_after := sc.scroll_vertical
+	check("the shop: drawn again after the rent, the list stays where it was scrolled to (not sent back to the top)", s_tap > 40 and s_after == s_tap, [s_tap, s_after])
 	check("the shop: a tap on a rent button rents that gun once", (Store.save.rented as Array).size() == 1 and Store.save.money == m0 - Weapons.rent(Store.save.rented[0]), [Store.save.rented, Store.save.money])
 	ui.close_sub(); await _frames()
 	# the codex and the settings

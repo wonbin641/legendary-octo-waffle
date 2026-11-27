@@ -119,28 +119,17 @@ func tune(style: Dictionary) -> float:
 const APPLY_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mul, depth_draw_never, depth_test_disabled, cull_disabled, fog_disabled, shadows_disabled;
-stencil_mode read, compare_not_equal, 3;   // (the savanna's grass blades, MoonShadow.GRASS, are left unshaded as there)
+stencil_mode read, compare_greater, 3;   // (passes where 3 is greater than the mark: the savanna's grass blades, MoonShadow.GRASS, are left unshaded as there, and the gun in hand, MoonShadow.HAND)
 uniform sampler2D ao_tex : filter_linear, repeat_disable;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform float strength = 0.9; uniform float flip = 0.0; uniform float exposure = 1.0;   // (screen to screen: the same way up)
-uniform float near_skip = 0.9;
 uniform float ao_gamma = 2.2;
 %s
-const float FA = 0.0245786; const float FB = 0.000090537; const float FC = 0.983729; const float FD = 0.432951; const float FE = 0.238081;
-const mat3 RRT = mat3(vec3(0.59719 * 1.8, 0.35458 * 1.8, 0.04823 * 1.8), vec3(0.07600 * 1.8, 0.90834 * 1.8, 0.01566 * 1.8), vec3(0.02840 * 1.8, 0.13383 * 1.8, 0.83777 * 1.8));
-const mat3 ODT = mat3(vec3(1.60475, -0.53108, -0.07367), vec3(-0.10208, 1.10813, -0.00605), vec3(-0.00327, -0.07276, 1.07602));
-vec3 unshow(vec3 s) {
-	vec3 t = pow((max(s, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)) * inverse(ODT);
-	t = min(t, vec3(1.0));
-	vec3 a = FC * t - 1.0, b = FD * t - FA, c = FE * t + FB;
-	vec3 v = (-b - sqrt(max(b * b - 4.0 * a * c, vec3(0.0)))) / (2.0 * a);
-	return max(v * inverse(RRT), vec3(0.0)) / exposure;
-}
+%s
 float apply(vec2 suv, mat4 ipm, mat4 iv) {
 	float d0 = texture(depth_tex, suv).r;
 	if (d0 <= 0.000001) return 1.0;
 	vec4 v = ipm * vec4(suv * 2.0 - 1.0, ndc_z(d0), 1.0);
-	if (-v.z / v.w < near_skip) return 1.0;   // the gun in hand: drawn after the occlusion in the browser game
 	if (length((iv * vec4(v.xyz / v.w, 1.0)).xyz) > 370.0) return 1.0;   // the sky dome (solid on Forward+, Gfx.SKY_R)
 	vec2 uv = vec2(suv.x, mix(suv.y, 1.0 - suv.y, flip));
 	return mix(1.0, texture(ao_tex, uv).r, strength);

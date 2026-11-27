@@ -77,7 +77,7 @@ static func _clear_from(bb: AABB, at: Vector3, clear: float, d: Vector2) -> floa
 func _mat(color: String, rough: float, metal := 0.0, emit := "") -> StandardMaterial3D:
 	var m := Gfx.std(World.lin(color), rough, metal)
 	if emit != "": m.emission_enabled = true; m.emission = World.lin(emit)
-	m.set_meta("color", m.albedo_color); m.set_meta("metal", metal); m.set_meta("rough", rough)
+	m.set_meta("color", m.albedo_color); m.set_meta("metal", metal); m.set_meta("rough", rough); MoonShadow.hand(m)
 	return m
 
 func _add(g: Node3D, mesh: Mesh, m: Material, at: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
@@ -96,7 +96,7 @@ func build(parent: Node3D) -> void:
 		# every gun has its own copies of the materials, so one can be painted (or glow with heat) without the others
 		var metal := _mat("3b4048", 0.45, 0.35); var dark := _mat("23262b", 0.5, 0.4); var poly := _mat("24272c", 0.8); var olive := _mat("4a5236", 0.85)
 		var accent := _mat("b8701c", 0.5, 0.4, "2a1500"); var wood := _mat("6b4528", 0.7); var glove := _mat("26292e", 0.9); var sleeve := _mat("222a37", 0.95)
-		var lens := _mat("1b3550", 0.1, 0.6, "06121e"); var sight := Gfx.unlit(Color("ff5a3a"), false)
+		var lens := _mat("1b3550", 0.1, 0.6, "06121e"); var sight := Gfx.unlit(Color("ff5a3a"), false); MoonShadow.hand(sight)
 		var g := Node3D.new(); g.visible = false; parent.add_child(g)
 		var M := {"g": g, "body": [metal, poly, olive, wood], "hot": [metal, dark], "iron": [], "hands": [], "parts": {"sight": {}, "muzzle": {}, "under": {}}, "tip": null, "flash_z": MUZZLE[id][0]}
 		var hands := func(gx: float, gy: float, gz: float, fx: float, fy: float, fz: float) -> void:
@@ -154,14 +154,24 @@ func build(parent: Node3D) -> void:
 		models[id] = M
 		_parts(id, M)
 
+## the parts' materials: the same on every gun (nothing paints them or heats them), so made once for all eight
+var _pm := {}
+func _part_mats() -> Dictionary:
+	if _pm.is_empty():
+		var dk := Gfx.std(World.lin("1c1f24"), 0.45, 0.55); var dk2 := Gfx.std(World.lin("2a2e35"), 0.6, 0.35)
+		var tube_m: StandardMaterial3D = dk.duplicate(); tube_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		var gl := Gfx.unlit(Color(0.62, 0.85, 1.0, 0.16), false); gl.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; gl.cull_mode = BaseMaterial3D.CULL_DISABLED
+		var bm := Gfx.unlit(Color(1.0, 0.16, 0.1, 0.45), false); bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; bm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		var red := Gfx.unlit(Color("ff2a1a"), false)
+		for m: StandardMaterial3D in [dk, dk2, tube_m, red]: MoonShadow.hand(m)
+		_pm = {"dk": dk, "dk2": dk2, "tube": tube_m, "glass": Gfx.see_through(gl), "red": red, "beam": Gfx.see_through(bm)}
+	return _pm
+
 ## the parts, built once for every gun and shown or hidden as chosen
 func _parts(id: String, M: Dictionary) -> void:
 	var g: Node3D = M.g; var MT: Dictionary = MOUNT_GEO[id]; var ys: float = MUZZLE[id][2]; var mzy: float = MUZZLE[id][1]; var mzz: float = MUZZLE[id][0]
-	var dk := Gfx.std(World.lin("1c1f24"), 0.45, 0.55); var dk2 := Gfx.std(World.lin("2a2e35"), 0.6, 0.35)
-	var tube_m: StandardMaterial3D = dk.duplicate(); tube_m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var gl := Gfx.unlit(Color(0.62, 0.85, 1.0, 0.16), false); gl.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; gl.cull_mode = BaseMaterial3D.CULL_DISABLED; var glass := Gfx.see_through(gl)
-	var red := Gfx.unlit(Color("ff2a1a"), false)
-	var bm := Gfx.unlit(Color(1.0, 0.16, 0.1, 0.45), false); bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; bm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; var beam := Gfx.see_through(bm)
+	var PM := _part_mats(); var dk: StandardMaterial3D = PM.dk; var dk2: StandardMaterial3D = PM.dk2; var tube_m: StandardMaterial3D = PM.tube
+	var glass: Material = PM.glass; var red: StandardMaterial3D = PM.red; var beam: Material = PM.beam
 	var add := func(slot: String, pid: String) -> Node3D:
 		var p := Node3D.new(); p.visible = false; g.add_child(p); M.parts[slot][pid] = p; return p
 	var dot := func(p: Node3D, r: float, at: Vector3) -> void:
@@ -226,11 +236,14 @@ func apply_look(id: String, s: Dictionary) -> void:
 	for m: StandardMaterial3D in M.hot:
 		if not m.has_meta("paint"): m.set_meta("paint", m.get_meta("color"))
 
-## the machine gun goes red as it heats: k from 0 (cold) to 1
+## the machine gun goes red as it heats: k from 0 (cold) to 1. As the browser game's: its paint mixed towards 0x8a0d06 by
+## k x 0.85 and a glow of (0.42, 0.012, 0.004) x k, both in three.js r128's linear numbers (World.lin for Godot's colours)
+const HOT_RED := Color(0x8a / 255.0, 0x0d / 255.0, 0x06 / 255.0)
 func heat(id: String, k: float) -> void:
 	for m: StandardMaterial3D in models[id].hot:
-		m.albedo_color = (m.get_meta("paint", m.get_meta("color")) as Color).lerp(Color(0.9, 0.12, 0.05), k * 0.85)
-		m.emission_enabled = k > 0.01; m.emission = Color(0.42 * k, 0.012 * k, 0.004 * k)
+		var paint := (m.get_meta("paint", m.get_meta("color")) as Color).srgb_to_linear()   # (kept as Godot's colour: back to linear numbers to mix)
+		m.albedo_color = World.lin(paint.lerp(HOT_RED, k * 0.85))
+		m.emission_enabled = k > 0.01; m.emission = World.lin(Color(0.42 * k, 0.012 * k, 0.004 * k))
 
 func show_hands(id: String, on: bool) -> void:
 	for o in models[id].hands: (o as Node3D).visible = on

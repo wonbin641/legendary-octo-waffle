@@ -1,15 +1,21 @@
 extends Node
-## Auto-play: in each of the browser game's eight stages a bot fights as a person would, with no invincibility and nothing
+## Auto-play: in each of the browser game's eight stages and the toy room a bot fights as a person would, with no invincibility and nothing
 ## switched on in developer mode, through the game's own input handling only: the keyboard (W A S D, space, R, F, through
 ## Godot's Input as a real key press) and the mouse (movement to aim, the left button to fire, through the game's
 ## _unhandled_input). It turns onto the nearest enemy it can see at a hand's speed and fires once it is on it, side-steps
 ## while it fights, reloads when the magazine runs dry, injects an antidote when infected, and with nothing in sight walks
-## the walking grid towards the nearest enemy. A stage passes when the bot has hit and killed and the enemies have hurt it.
+## the walking grid towards the nearest enemy. A stage passes when the bot has hit and killed at least so many (MIN_KILLS),
+## the enemies have hurt it, and the stage's own moments came (MOMENTS: an antidote, a cage opening, the siege).
 ## Last, falling: the fight stands still at once, as the browser game's (no walking, firing or chest in the second before
 ## the result), the view sinks, then the result sheet.
 ## Run: godot --headless --path godot res://tests/fight.tscn
 
-const STAGES := [1, 6, 5, 2, 3, 7, 8, 4]
+const STAGES := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # 9: stage 5, the toy room, in its first mode
+# the least each fight must come to (about half what the bot does now: a fight that kills next to nothing fails), and the
+# moments a stage is built round that it must reach: bitten and an antidote injected, a cage opening, the siege. The ship's
+# doors and key lie past where the bot falls (about 14 s in, at the start passage), so stage 4 counts its kills only
+const MIN_KILLS := {1: 5, 6: 4, 5: 10, 2: 3, 3: 3, 7: 4, 8: 6, 4: 2, 9: 1}
+const MOMENTS := {2: ["infected", "antidote"], 3: ["cage"], 7: ["stampede"], 8: ["cage"]}
 const SECONDS := {8: 200.0}   # 3-2 lets its animals out one at a time, the first ones tame: it takes longer to be bitten
 const SECONDS_ELSE := 80.0
 const DT := 1.0 / 30.0
@@ -22,6 +28,7 @@ func check(name: String, ok: bool, info = "") -> void:
 	if not ok: fails += 1
 
 func _ready() -> void:
+	Store.ephemeral = true   # (nothing the checks write reaches this machine's own save and settings)
 	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
 	main = load("res://main.tscn").instantiate(); add_child(main)
 	# a player a few stages in: an AR-7 bought, a helmet and a whole vest. Nothing from developer mode, no invincibility
@@ -62,13 +69,13 @@ func _let_go() -> void:
 
 # ---- one stage ----
 func _fight(st: int) -> void:
-	seed(7000 + st)   # the same fight every run
-	main.command("start %d" % st); cur = null
+	seed(7000 + st)   # the same fight every run, on every computer: the walking grid's search done whole each time, not a few milliseconds a frame
+	main.command("start %d" % st); cur = null; main.game.flow_budget = -1
 	var pl = main.player; var g = main.game; var en = main.enemies
 	if st == 7: main.command("stampede")   # 3-1: the siege, the fight that stage is for
 	var hp0: float = pl.hp; var kills0: int = g.kills; var shots0: int = 0; var hits0: int = 0   # the stage starts its counts from nothing
 	var hurt := false; var walked := 0.0; var last := Vector3(pl.pos); var stuck_t := 0.0; var path_t := 0.0; var path := Vector2.ZERO
-	var side := KEY_A; var side_t := 0.0; var ticks := 0; var aim_err := 0.0; var aim_n := 0; var gave_up := ""
+	var side := KEY_A; var side_t := 0.0; var ticks := 0; var aim_err := 0.0; var aim_n := 0; var gave_up := ""; var moments := {}
 	for i in int(SECONDS.get(st, SECONDS_ELSE) / DT):
 		if g.ended or main.state != "playing": break
 		ticks += 1
@@ -102,15 +109,28 @@ func _fight(st: int) -> void:
 		if stuck_t > 0.6: _tap(KEY_SPACE); stuck_t = 0.0
 		walked += Vector2(pl.pos.x - last.x, pl.pos.z - last.z).length(); last = Vector3(pl.pos)
 		main.tick(DT)
-		if pl.hp < hp0 - 0.5 or g.infected or g.poison_t > 0.0 or g.ended: hurt = true
+		if pl.hp < hp0 - 0.5 or g.infected or g.poison_t > 0.0 or (g.ended and g.result != "clear"): hurt = true   # (a stage cleared is not being hurt)
+		_note_moments(st, moments)
 	_let_go()
 	var kills: int = g.kills - kills0; var shots: int = g.stats.shots - shots0; var hits: int = g.stats.hits - hits0
 	var tag: String = Store.STAGE_TAG[st]
-	check("stage %s: the bot walks, aims, fires and kills through the game's own input, and the enemies hurt it (no invincibility)" % tag,
-		walked > 1.0 and shots > 0 and hits > 0 and kills > 0 and hurt and not Store.settings.god,
+	var want: Array = MOMENTS.get(st, [])
+	check("stage %s: the bot walks, aims, fires and kills (%d at least) through the game's own input, the enemies hurt it (no invincibility)%s" % [tag, int(MIN_KILLS[st]), (", and " + " · ".join(want)) if not want.is_empty() else ""],
+		walked > 1.0 and shots > 0 and hits > 0 and kills >= int(MIN_KILLS[st]) and hurt and not Store.settings.god and want.all(func(k): return moments.has(k)),
 		{"seconds": snappedf(ticks * DT, 0.1), "walked": snappedf(walked, 0.1), "shots": shots, "hits": hits, "kills": kills, "hurt": hurt, "hp": snappedf(pl.hp, 1.0),
-			"aim_error": snappedf(aim_err / maxi(aim_n, 1), 0.001), "ended": g.result if g.ended else ""})
+			"aim_error": snappedf(aim_err / maxi(aim_n, 1), 0.001), "ended": g.result if g.ended else "", "moments": moments.keys()})
 	main.command("menu")
+
+## the moments each stage is built round, as they come (kept once seen): a cage opening, the siege, a door of the ship
+## sliding open, an antidote going in, the toy room's match under way
+func _note_moments(st: int, m: Dictionary) -> void:
+	var w = main.world; var g = main.game
+	if w.lab != null and w.lab.cages.any(func(c): return c.open): m["cage"] = true
+	if w.safari != null and w.safari.stampede: m["stampede"] = true
+	if w.ship != null and w.ship.doors.any(func(D): return float(D.open) > 0.5): m["door"] = true
+	if g.inject_on: m["antidote"] = true
+	if g.infected or g.poison_t > 0.0: m["infected"] = true
+	if g.tm != null: m["match"] = true
 
 ## stage 5's spray-can flamethrower (key 9) in hand: drawn, and no other toy gun (it once stopped the gun's posing every
 ## frame on a missing table entry, and the dart pistol stayed in your hands)

@@ -68,6 +68,7 @@ class Foe:
 	var bleed_n := 0; var bleed_t := 0.0; var bleed_acc := 0.0; var k := {}; var legs: Array = []; var body: Node3D = null; var head: Node3D = null; var jaw: Node3D = null; var rig: Dictionary = {}; var neck_base: Array = []; var yaw_off := 0.0
 	var burn_t := 0.0; var burn_tick := 0.0   # set alight by the spray-can flamethrower: how long it burns on, the next tick
 	var fuse := 0.0; var beep2 := false; var flame_on := 0.0; var flame_acc := 0.0; var flame_snd := 0.0; var aim_t := 0.0; var laser: MeshInstance3D = null   # a flying thing; a head that takes more than the gun's usual headshot (0: the usual)
+	var body_meshes: Array = []; var body_known := false   # the meshes of its body (a hit's glow goes on them), found once
 	var far: MeshInstance3D = null; var is_far := false; var no_far := false; var casts := -1   # far away: one baked mesh (see bake_far); the moon's shadow (-1 not yet set)
 
 var list: Array[Foe] = []
@@ -357,8 +358,8 @@ func _zombie_skill(e: Foe, dt: float, dist: float, to: Vector2) -> bool:
 	if e.boss and not e.rage and e.hp <= e.max_hp * 0.5:
 		e.rage = true; e.speed *= 1.9; e.charge_cd = 1.6
 		var rm: StandardMaterial3D = _mat.duplicate(); rm.albedo_color = World.lin(Color(1, 0.4, 0.36))   # it turns red (the glow pulses on top)
-		for n in e.g.find_children("*", "MeshInstance3D", true, false):
-			if n.has_meta("body"): (n as MeshInstance3D).material_override = rm
+		for n in body_of(e):
+			if is_instance_valid(n): (n as MeshInstance3D).material_override = rm
 		Snd.play("rage", 1.0, e.pos); player.shake = maxf(player.shake, 0.25)
 		if banner.is_valid(): banner.call(e.name + " 폭주", "빨라지고 가끔 돌진합니다 · 맞으면 2초 기절", 2.4)
 	if not e.boss and not e.dash_used and e.hp > 0.0 and e.hp <= e.max_hp * 0.3 and e.state != "lunge":
@@ -417,7 +418,7 @@ func _zombie(e: Foe, dt: float, dist: float, to: Vector2, face_yaw: float) -> vo
 
 func kill(e: Foe, weak: bool, dir) -> void:
 	e.alive = false; e.dead_t = 0.0; e.bar.visible = false; e.g.visible = true
-	if e.laser: e.laser.visible = false
+	_drop_laser(e)
 	if e.K.get("vest", false):   # the vest goes off (at once if the bomb itself was hit, or he set it off)
 		var now := e.self_det or e.vest_shot; proj.bomb(e.pos, 0.02 if now else 0.3)
 		if now: e.vanish = true
@@ -438,7 +439,22 @@ func kill(e: Foe, weak: bool, dir) -> void:
 func vanish(e: Foe) -> void:
 	if not e.alive: return
 	e.alive = false; e.vanish = true; e.dead_t = 0.0; e.bar.visible = false; list.erase(e); dying.push_back(e)
+	_drop_laser(e)
 	if fx: fx.puff(e.pos, 3, 0.3, 0.4)
+
+## a sniper's laser goes with him (it hangs under this node, not his body: freed with the body later, a red line lit as he fell
+## stayed in the air, and one that went with a save point's clearing was never freed at all)
+func _drop_laser(e: Foe) -> void:
+	if e.laser != null and is_instance_valid(e.laser): e.laser.queue_free()
+	e.laser = null
+
+## the meshes of an enemy's body (not the gun, a blade, the vest's light or a helmet), found once and kept
+func body_of(e: Foe) -> Array:
+	if not e.body_known:
+		e.body_known = true; e.body_meshes.clear()
+		for n in e.g.find_children("*", "MeshInstance3D", true, false):
+			if n.has_meta("body"): e.body_meshes.push_back(n)
+	return e.body_meshes
 
 func _fx_sparks(p: Vector3, n: int, col: Array, speed: float) -> void:
 	if fx: fx.sparks(p, n, col, speed)
@@ -453,8 +469,8 @@ func _glow(e: Foe, kind: String) -> void:
 		var fm := Gfx.unlit(World.lin(Color(0.6, 0.35, 0.2)), false); fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; _flash_mat = Gfx.see_through(fm)
 		var rm := Gfx.unlit(World.lin(Color(0.3, 0.02, 0.01)), false); rm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD; _rage_mat = Gfx.see_through(rm)
 	var mat: Material = _flash_mat if kind == "flash" else (_rage_mat if kind == "rage" else null)
-	for n in e.g.find_children("*", "MeshInstance3D", true, false):   # the body only: not the gun, a blade, the vest's light or a helmet
-		if n.has_meta("body"): (n as MeshInstance3D).material_overlay = mat
+	for n in body_of(e):   # the body only: not the gun, a blade, the vest's light or a helmet
+		if is_instance_valid(n): (n as MeshInstance3D).material_overlay = mat
 
 ## bodies do not stand inside each other: each pair in the browser game's order, but only those whose 10 m squares touch and
 ## with someone awake in them (it passes over a pair more than 5 m apart either way, or with nobody awake, and nobody is
@@ -494,6 +510,7 @@ func _separate() -> void:
 ## all drawn with the body's material, so a hit's flash still shows. The same build makes the same mesh, so it is kept
 func bake_far(e: Foe) -> void:
 	if e.far != null: e.g.remove_child(e.far); e.far.queue_free(); e.far = null
+	e.body_known = false   # (the body's meshes found again next time: the far mesh is one of them)
 	var items := []; var key := ""; var mat: Material = null
 	for n in e.g.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D

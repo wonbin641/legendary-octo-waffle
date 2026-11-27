@@ -26,6 +26,9 @@ func _ready() -> void:
 	show.texture = scene_vp.get_texture(); add_child(show)
 	RenderingServer.frame_pre_draw.connect(_sync)
 
+func _exit_tree() -> void:   # (the server's signal outlives this node: let go of it)
+	if RenderingServer.frame_pre_draw.is_connected(_sync): RenderingServer.frame_pre_draw.disconnect(_sync)
+
 ## multisampling: four times on a computer, none on a phone (the browser game's antialias: !isTouch)
 func set_msaa(m: Viewport.MSAA) -> void:
 	scene_vp.msaa_3d = m

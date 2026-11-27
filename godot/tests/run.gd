@@ -30,9 +30,18 @@ func check(name: String, ok: bool, info = "") -> void:
 	print(("ok   " if ok else "FAIL ") + name + ((" " + str(info)) if str(info) != "" else ""))
 	if not ok: fails += 1
 
+## the state the checks share put back to a fresh player's: the save and settings (in memory only), the stage's locks on
+## what you carry, the specks' exposure and colour cache, the sound and music volumes. At the start, and between blocks of
+## checks that each set up what they need on top of it
+func reset_test_state() -> void:
+	Store.save = Store.save0(); Store.money_lock = null; Store.own_lock = null; Store.ivory_lock = null
+	Store.settings = Store.settings0(false); Store.settings.toyMode = "sweep"
+	Fx.exposure = 1.15; Fx._shown.clear(); Snd.volume = 0.7; Music.volume = 0.7
+
 func _ready() -> void:
+	Store.ephemeral = true   # (nothing the checks write reaches this machine's own save and settings)
 	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
-	Store.settings.dev = false; Store.settings.god = false; Store.settings.gfx = "auto"; Store.settings.toyMode = "sweep"   # (whatever this machine kept from playing: the checks start from a fresh player's settings)
+	reset_test_state()   # (whatever this machine kept from playing: the checks start from a fresh player)
 	var ref: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/reference_stage1.json"))
 	var r := World.Rng.new(7)
 	var got := [r.next(), r.next(), r.next(), r.next()]; var want := [0.011704753153026104, 0.06195825757458806, 0.97690763277933, 0.6990287057124078]
@@ -66,8 +75,8 @@ func _ready() -> void:
 	check("every spawn point has a path to the player", reach == w.spawns.size() and reach >= 12, "%d of %d" % [reach, w.spawns.size()])
 	# a crate breaking: patching the grid round it gives the same grid as rebuilding it all
 	var c = w.crates[5]; Phys.remove_collider(c.b); Phys.nav_patch(c.b.minx, c.b.minz, c.b.maxx, c.b.maxz)
-	var patched: PackedByteArray = Phys.nav_blocked.duplicate(); Phys.build_nav()
-	check("patching the grid after a crate breaks equals a full rebuild", patched == Phys.nav_blocked)
+	var patched: PackedByteArray = Phys.nav_blocked.duplicate(); var patched_p: PackedByteArray = Phys._pblk.duplicate(); var patched_d: PackedInt32Array = Phys._pdist0.duplicate(); Phys.build_nav()
+	check("patching the grid after a crate breaks equals a full rebuild (the grid, and the walled one with the starting field the search walks on)", patched == Phys.nav_blocked and patched_p == Phys._pblk and patched_d == Phys._pdist0)
 	Phys.add_collider(c.b.minx, c.b.miny, c.b.minz, c.b.maxx, c.b.maxy, c.b.maxz, "wood"); Phys.build_nav()
 	# rays
 	check("a ray down the open lane hits nothing for 20 m", not Phys.raycast_static(Vector3(0, 1.6, 6), Vector3(0, 0, -1).normalized(), 8.0))
@@ -85,12 +94,13 @@ func _ready() -> void:
 		check("move: " + run.name, p.pos.distance_to(e) < 1e-4 and p.grounded == run.grounded, "%s (browser %s)" % [str(p.pos), str(e)])
 	# ---------------- weapons ----------------
 	var nbad := 0; var which := ""
-	var price_now := {"rocket": [150000, 45000]}   # [price, rental] set by the owner of this port; the browser game's is [300000, 90000]
+	# [price, rental] the owner of this port set apart from the browser game's: tests/balance_overrides.json (with the browser game's own beside them)
+	var overrides: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/balance_overrides.json")); var price_now := {}
+	for id: String in overrides.weapons: price_now[id] = [overrides.weapons[id].price, overrides.weapons[id].rent]
 	for id in ref.weapons:
 		var a: Dictionary = ref.weapons[id]; var b: Dictionary = Weapons.LIST.get(id, {})
 		for k in a:
 			if k == "rent" or k == "noise" or k == "parts": continue   # set while playing by the attachments (stage 6 of the port)
-			if k == "adsSpeed" and not b.has(k): b = b.merged({"adsSpeed": 7})
 			var av = a[k]; var bv = b.get(k)
 			if k == "reserve" and str(av) == "inf": av = INF
 			if k == "price" and price_now.has(id): av = price_now[id][0]
@@ -160,6 +170,17 @@ func _ready() -> void:
 		if not c2.dead and Phys.collide_at(c2.x, 0, c2.z + 2.0, 0.4, 1.7) == null: crate = c2; break
 	g.auto_jab = true; pl.reset(crate.x, crate.z + 2.0, 0.0); pl.update(0.0, cam, 0.0); g.reset(all); step.call(0.6)
 	check("touch auto-jab breaks a crate that comes within reach, without a shot", crate.dead and g.wstate.pistol.mag == 12)
+	# but not a crate behind a wall: one in reach on the other side of a thin wall is left alone, and taken once nothing is between
+	for c2 in w.crates:
+		if not c2.dead and Phys.collide_at(c2.x, 0, c2.z + 1.6, 0.4, 1.7) == null: crate = c2; break
+	pl.reset(crate.x, crate.z + 1.6, 0.0); pl.update(0.0, cam, 0.0); g.reset(all); g.auto_jab = true
+	var aj_wall := Phys.add_collider(crate.x - 1.0, 0, crate.z + 0.75, crate.x + 1.0, 2.5, crate.z + 0.85, "concrete")
+	g._auto_crate(); var aj_blocked: bool = not g.melee_on
+	Phys.remove_collider(aj_wall); g._auto_crate(); var aj_free: bool = g.melee_on; g.reset(all)
+	check("touch auto-jab leaves a crate in reach behind a wall alone (it jabbed through walls), and takes it once nothing is between", aj_blocked and aj_free, [aj_blocked, aj_free])
+	g.melee_start(); var ms_on: bool = g.melee_on; g.switch_to("smg"); var ms_pending = g.pending; g.reset(all)
+	g.cur = "shotgun"; g._pump_t = 0.3; g.switch_to("pistol"); var ms_pump: float = g._pump_t; g.reset(all)
+	check("no changing guns in the middle of a jab; and a gun put away does not pump after it (the shotgun's pump, heard from the next gun)", ms_on and ms_pending == null and ms_pump == -1.0, [ms_on, ms_pending, ms_pump])
 	g.look_mode = "lock"; g.auto_fire = false; g.auto_jab = false
 	# a grenade: arms after 8 m, blasts crates within 5 m, hurts you on stage 1 when close
 	g.reset(all); pl.reset(0, 6, 0); pl.pitch = -0.05; pl.update(0.0, cam, 0.0); g.cur = "gl"; g.cooldown = 0.0
@@ -173,7 +194,7 @@ func _ready() -> void:
 	check("a rocket into the ground nearby hurts you (35-100% of 500)", pl.hp < 1000.0 and pl.hp >= 500.0, pl.hp)
 	check("one rocket in the tube, eleven carried", Weapons.LIST.rocket.mag == 1 and Weapons.LIST.rocket.reserve == 11)
 	# ---------------- a run of stage 1 ----------------
-	Store.save = Store.save0(); Store.settings.dev = false; Store.settings.god = false; Store.money_lock = null; Store.own_lock = null; Store.ivory_lock = null
+	reset_test_state()
 	var fxn := Fx.new(); add_child(fxn); var lt := Loot.new(); add_child(lt); lt.player = pl
 	var gm := Game.new(); gm.world = w; gm.player = pl; gm.enemies = en; gm.guns = g; gm.proj = pr; gm.loot = lt; gm.fx = fxn
 	en.on_bite = gm.bitten; en.on_poison = gm.poison; en.on_stun = gm.stun
@@ -245,6 +266,29 @@ func _ready() -> void:
 	check("the five main stages (1 to 5) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
 		Store.STAGE_ORDER.size() == 9 and ul_open == [1, 2, 3, 4, 9] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(10), [ul_open, ul_1, ul_3, ul_kept])
 	Store.save = keep_save; Store.settings.dev = keep_dev
+	# a grenade passing low by a man (knee high) bursts on him: his body found by its height and girth (it was a ball round his
+	# middle, and a grenade at his knees flew on to burst on the ground behind him)
+	gm.begin(1); var gn_e = null; var gn_from := Vector3.ZERO
+	for e9 in en.list:
+		if e9.boss or not e9.alive or e9.fly: continue
+		var f9 := Vector3(e9.pos.x - 9.0, e9.pos.y + 0.6, e9.pos.z)
+		if Phys.collide_at(f9.x, f9.y, f9.z, 0.1, 0.1) == null and Phys.line_of_sight(f9, Vector3(e9.pos.x - 0.6, e9.pos.y + 0.35, e9.pos.z)) \
+				and Phys.line_of_sight(Vector3(e9.pos.x + 0.6, e9.pos.y + 0.3, e9.pos.z), Vector3(e9.pos.x + 6.0, e9.pos.y + 0.1, e9.pos.z)): gn_e = e9; gn_from = f9; break
+	var gn_last := Vector3.ZERO; pr.list.clear()
+	if gn_e != null:
+		pr.grenade(gn_from, Vector3(1, 0, 0), Weapons.LIST.gl)
+		for i in 90:
+			if pr.list.is_empty(): break
+			gn_last = pr.list[0].pos; pr.update(1.0 / 120.0)
+	check("a grenade passing a man knee high bursts on him: his body found by its height and girth, not a ball round his middle",
+		gn_e != null and pr.list.is_empty() and absf(gn_last.x - gn_e.pos.x) < gn_e.R + 0.6 and gn_last.y < gn_e.pos.y + 0.6, [gn_last, gn_e.pos if gn_e != null else null])
+	pr.list.clear()
+	# a sniper's red laser goes with him, killed or gone at a save point (it hung on in the air after him)
+	gm.begin(1); var lz_a = en.list[1]; var lz_b = en.list[2]
+	for lz_e in [lz_a, lz_b]: lz_e.laser = MeshInstance3D.new(); en.add_child(lz_e.laser); lz_e.laser.visible = true
+	var lz_na: MeshInstance3D = lz_a.laser; var lz_nb: MeshInstance3D = lz_b.laser
+	en.kill(lz_a, false, null); en.vanish(lz_b)
+	check("a sniper's laser goes with him, killed or vanished (it hung in the air after him)", lz_a.laser == null and lz_b.laser == null and lz_na.is_queued_for_deletion() and lz_nb.is_queued_for_deletion())
 	gm.begin(1); en.damage(en.list[3], 1000, en.list[3].pos, Vector3(0, 0, -1), false)
 	check("a stage played again pays nothing", gm.replay and Store.save.money == 119000 * Store.PAY)
 	check("money reads with thousands separators", Store.won(119000) == "119,000원" and Store.fmt_time(252) == "4:12")
@@ -267,12 +311,33 @@ func _ready() -> void:
 	var code9 := SaveCode.encode(Store.save); var back9 = SaveCode.decode(code9)
 	check("the save code carries gun customisation (57 letters)", code9.replace("-", "").length() == 57 and back9 != null and back9.custom.rifle == {"sight": "holo", "muzzle": "sup", "under": "vgrip", "paint": "gold"} and back9.custom.smg.paint == "pink" and int(back9.money) == 54321 and back9.owned == ["rifle"], code9)
 	check("a part that does not fit a gun is not kept (a pistol takes only a laser underneath)", Custom.setup("pistol").under == "none" and not back9.custom.has("pistol") and Custom.setup("rocket").sight == "iron")
+	# a made-up code (no game writes it): the pistol given a vertical grip, the sniper rifle a 2x sight, the rocket launcher a
+	# silencer. Read back, each gun keeps only what it takes
+	var sc_v := {}
+	for f9: Array in SaveCode.F9: sc_v[f9[0]] = 0
+	sc_v.ver = 9; sc_v.money = 1234
+	sc_v["c%d" % Weapons.ORDER.find("pistol")] = (Custom.part_index("sight", "dot") << 8) | (Custom.part_index("under", "vgrip") << 4) | 1
+	sc_v["c%d" % Weapons.ORDER.find("sniper")] = (Custom.part_index("sight", "x2") << 8) | 2
+	sc_v["c%d" % Weapons.ORDER.find("rocket")] = (Custom.part_index("muzzle", "sup") << 6) | 3
+	var sc_bits := []
+	for f9: Array in SaveCode.F9: SaveCode._push(sc_bits, int(sc_v[f9[0]]), int(f9[1]))
+	SaveCode._push(sc_bits, SaveCode._check(sc_bits), 12)
+	while sc_bits.size() < 57 * 5: sc_bits.push_front(0)
+	var sc_txt := ""
+	for i9 in 57:
+		var k9 := 0
+		for j9 in 5: k9 = k9 * 2 + int(sc_bits[i9 * 5 + j9])
+		sc_txt += SaveCode.AL[k9]
+	var sc_back = SaveCode.decode(sc_txt)
+	check("a made-up code: each gun gets back only the parts it takes (the pistol's grip, the sniper rifle's 2x sight and the launcher's silencer go; the pistol's red dot stays)",
+		sc_back != null and sc_back.money == 1234 and sc_back.custom.pistol.under == "none" and sc_back.custom.pistol.sight == "dot" and sc_back.custom.sniper.sight == "iron"
+		and sc_back.custom.rocket.muzzle == "none", sc_back.custom if sc_back != null else null)
 	var wr := Custom.weapon("rifle"); var w0: Dictionary = Weapons.LIST.rifle
 	check("parts change the gun's numbers as the browser game's do", absf(wr.dmg - 42 * 0.92) < 1e-9 and absf(wr.adsSpread - 0.0008 * 0.7) < 1e-12 and absf(wr.adsSpeed - 6 * 1.1) < 1e-9 and absf(wr.recoil - 0.021 * 0.8) < 1e-12 and absf(wr.bloom - 0.0045 * 0.75) < 1e-12 and wr.noise == 0.4 and w0.dmg == 42 and Custom.weapon("shotgun") == Weapons.LIST.shotgun)
 	Custom.reset("rifle"); check("resetting a gun puts it back as it was", Custom.weapon("rifle") == Weapons.LIST.rifle)
 	check("the developer password is checked by its hash only", SaveCode.dev_hash("1234") != SaveCode.DEV_HASH and SaveCode.dev_hash("") != SaveCode.DEV_HASH)
 	# ---------------- the recommended kit, the shop, the layout ----------------
-	Store.save = Store.save0(); Store.settings.dev = false; Store.money_lock = null; Store.own_lock = null; Store.ivory_lock = null
+	reset_test_state()
 	check("stage 1 wants the pistol: a new save fits", Meta.fits(1) and Meta.missing(1).is_empty())
 	check("stage 2 (and 1-1) want the launcher and one of rifle, SMG, machine gun", not Meta.fits(2) and Meta.missing(2) == ["gl", "rifle", "smg", "lmg"] and Meta.missing(6) == Meta.missing(2))
 	check("1-2: everything but the jetpack, rocket launcher, shotgun and pistol", Meta.spec(5).all == ["rifle", "smg", "sniper", "gl", "lmg", "helmet", "vest"])
@@ -298,6 +363,24 @@ func _ready() -> void:
 	Store.save.loadout = wo_keep
 	line = Meta.cancel_rent("smg")
 	check("cancelling a rental gives the fee back", Store.save.money == 79000 and not Store.save.rented.has("smg") and not Meta.fits(2))
+	# renting a gun you have, or one you have rented: nothing (no second fee); cancelling one not rented: nothing back; in developer
+	# mode a rental is free and its cancelling gives back nothing
+	var rg_m: int = Store.save.money; var rg_own := Meta.rent("pistol", false); Store.save.owned.push_back("rifle"); var rg_has := Meta.rent("rifle", false); Store.save.owned.erase("rifle")
+	Meta.rent("smg", false); var rg_m1: int = Store.save.money; var rg_twice := Meta.rent("smg", false); var rg_n: int = Store.save.rented.count("smg"); var rg_m2: int = Store.save.money
+	Meta.cancel_rent("smg"); var rg_none := Meta.cancel_rent("smg"); var rg_m3: int = Store.save.money
+	Store.settings.dev = true; Meta.rent("shotgun", false); var rg_dm: int = Store.save.money; Meta.cancel_rent("shotgun"); var rg_dc: int = Store.save.money; Store.settings.dev = false
+	check("renting a gun you have or have rented already does nothing (no second fee); cancelling one not rented gives nothing; in developer mode renting is free and cancelling gives nothing back",
+		rg_own.ends_with("이미 가진 무기입니다") and rg_has.ends_with("이미 가진 무기입니다") and rg_twice.ends_with("이미 대여 중입니다") and rg_n == 1 and rg_m1 == rg_m - Weapons.rent("smg") and rg_m2 == rg_m1
+		and rg_none == "" and rg_m3 == rg_m and rg_dm == rg_m and rg_dc == rg_m and not Store.save.rented.has("shotgun"), [rg_own, rg_has, rg_twice, rg_n, rg_m1 - rg_m, rg_m3 - rg_m, rg_dm - rg_m, rg_dc - rg_m])
+	# ammo in a stage: no more than the gun's full reserve (the last pack only what still fits, for its share of the price); a rocket
+	# to 12 in all; the pistol's endless rounds: none to buy
+	var am_keep: Dictionary = g.wstate.smg.duplicate(); var am_res: int = int(Weapons.LIST.smg.reserve); g.wstate.smg.reserve = am_res - 30
+	var am_pk := Meta.ammo_pack("smg", g); var am_m0: int = Store.save.money; var am_msg := Meta.buy_ammo("smg", g); var am_m1: int = Store.save.money
+	var am_full: bool = int(g.wstate.smg.reserve) == am_res; var am_more := Meta.buy_ammo("smg", g)
+	g.wstate.smg.reserve = 0; var am_pk100 := Meta.ammo_pack("smg", g); g.wstate.smg = am_keep; Store.save.money = am_m0   # (the bag as it was, for the checks after)
+	check("ammo in a stage: up to the gun's full reserve, the last part pack (30 rounds) for its share of a pack's price, then no more; 100 a pack below that; none for the pistol",
+		am_pk == [30, ceili(Weapons.AMMO100.smg * 30 / 100.0)] and am_full and am_m0 - am_m1 == am_pk[1] and am_more.ends_with("더 들 수 없습니다") and am_pk100 == [100, Weapons.AMMO100.smg]
+		and Meta.ammo_room("pistol", g) == 0, [am_pk, am_msg, am_more, am_pk100, Meta.ammo_room("pistol", g)])
 	Meta.buy_item("helmet"); Meta.buy_item("vest")
 	check("items: a helmet (1,000) and a vest (5,000, ten blocks)", Store.save.money == 73000 and Store.save.items.helmet == 1 and Store.save.items.vest == 10 and Meta.item_state("vest") == "착용 중 · 내구 10/10" and Meta.buy_item("helmet").contains("이미"))
 	Store.save.items.ivory = 3
@@ -314,12 +397,25 @@ func _ready() -> void:
 	var sh_miss: Array = Meta.missing(3)
 	check("the shop: the guns and items stage 3's recommended kit lacks are filled amber, up top and again in the lists below; the rest as ever",
 		sh_miss.size() == 8 and sh_rec == 2 * sh_miss.size() and sh_plain > 0 and sh_ok, [sh_rec, sh_plain, sh_miss])
+	# drawn again in its place (a rent or a buy down the list), the shop stays where it was scrolled to
+	sh_ui.size = Vector2(1280, 720); sh_ui.layout(); (sh_ui.screens.shop as Control).visible = true; sh_ui.cur = "shop"
+	for i in 3: await get_tree().process_frame
+	var sh_sc := sh_ui.shop_list.get_parent() as ScrollContainer; var sh_room := int(sh_sc.get_v_scroll_bar().max_value - sh_sc.get_v_scroll_bar().page)
+	sh_sc.scroll_vertical = mini(240, sh_room); var sh_at := sh_sc.scroll_vertical
+	sh_ui.render_shop()
+	for i in 3: await get_tree().process_frame
+	check("the shop drawn again in its place stays scrolled where it was (a rent or a buy down the list), not sent back to the top", sh_at > 100 and sh_sc.scroll_vertical == sh_at, [sh_room, sh_at, sh_sc.scroll_vertical])
 	sh_ui.queue_free(); Store.save = sh_keep
 	check("the guided rocket launcher rents for 45,000 (half the browser game's 90,000)", Weapons.rent("rocket") == 45000 and Weapons.LIST.rocket.price == 150000)
 	Store.settings.dev = true
 	var dv_cl: Array = Store.save.cleared.duplicate(); Store.save.cleared = []
 	check("developer mode: every stage open (the side stages too, nothing cleared), every gun free to carry", Store.STAGE_ORDER.all(func(s9): return Store.stage_open(s9)) and Store.gun_available("rocket"))
 	Store.settings.god = true; var dv_chips: Array = Hud.new()._items(false); Store.settings.god = false; var dv_off: Array = Hud.new()._items(false)
+	var hg_hud := Hud.new(); var hg_ok := true
+	for hg_k: String in Hud.GLOW_STOPS:
+		var hg_t := hg_hud._radial_tex(hg_k); var hg_st: Array = Hud.GLOW_STOPS[hg_k]
+		hg_ok = hg_ok and hg_t == hg_hud._radial_tex(hg_k) and hg_t.gradient.colors.size() == hg_st.size() and hg_t.gradient.colors[hg_st.size() - 1] == hg_st[hg_st.size() - 1][1] and is_equal_approx(hg_t.gradient.offsets[1], hg_st[1][0])
+	check("the view's glows (hurt, low health, poison, stun, down, watched, wind): each key has its one picture, made once from the one table", hg_ok and Hud.GLOW_STOPS.size() == 7)
 	check("developer mode's invincibility is shown on the screen while it is on", dv_chips.size() > 0 and dv_chips[0][0] == "무적 · 개발자 모드" and not dv_off.any(func(c): return c[0] == "무적 · 개발자 모드"), [dv_chips, dv_off])
 	Store.save.cleared = dv_cl
 	Store.settings.dev = false
@@ -573,8 +669,15 @@ func _ready() -> void:
 	for i in 495: lab.update(0.02)
 	check("stage 3: 9.9 s in every cage is still shut", not lab.cages[0].open and lab.next_cage().n == 1)
 	var col3: int = Phys.colliders.size()
+	# the grid redone only round what went must be the one a whole new grid would be (then the whole one is kept, as before)
+	var nav_as_whole := func(px: float, pz: float) -> bool:
+		var nb := Phys.nav_blocked.duplicate(); var pb := Phys._pblk.duplicate(); var pd := Phys._pdist0.duplicate(); var fl := Phys.nav_dist.duplicate()
+		Phys.build_nav(); Phys.update_flow(px, pz)
+		return nb == Phys.nav_blocked and pb == Phys._pblk and pd == Phys._pdist0 and fl == Phys.nav_dist and nb.count(1) > 0
+	var nav_before := Phys.nav_blocked.duplicate()
 	for i in 10: lab.update(0.02)
 	check("stage 3: at 10 s the first cage opens: its four walls stop blocking and the zebras are let out", lab.cages[0].open and Phys.colliders.size() == col3 - 4 and not zb3.caged and zb3.release_t > 0.0 and lab.next_cage().n == 2)
+	check("stage 3: an opened cage's walls leave the grid round them only, and it is the grid a whole new one would be", nav_before != Phys.nav_blocked and nav_as_whole.call(pl.pos.x, pl.pos.z))
 	for i in 750: lab.update(0.02)
 	check("stage 3: the second opens 15 s later", lab.cages[1].open and not lab.cages[2].open)
 	# riding: a zebra from the floor, a giraffe only from a zebra
@@ -604,6 +707,17 @@ func _ready() -> void:
 	check("stage 3: the zebra you ride glows a moment when it is hit, as there (the hit flash on its whole body, then gone)", fl3_body >= 5 and fl3_on == fl3_body and fl3_off, [fl3_body, fl3_on])
 	an.ride_off(false)
 	check("stage 3: off again, standing beside it", an.m == null and pl.grounded and not zb3.ridden)
+	# boxed in on every side: down where it stood, on the floor, not up on a low box at its middle (the review's rule; beside it
+	# a step up to 0.6 m is still taken, as the browser game's)
+	var bx_p0 := pl.pos; an.ride_on(zb3); var bx_g: float = zb3.R + Player.R + 0.35; var bx_cy := cos(zb3.yaw); var bx_sy := sin(zb3.yaw); var bx_cols := []
+	for o in [[bx_cy, -bx_sy], [-bx_cy, bx_sy], [-bx_sy, -bx_cy], [bx_sy, bx_cy]]:
+		var bx_x: float = zb3.pos.x + o[0] * bx_g; var bx_z: float = zb3.pos.z + o[1] * bx_g
+		bx_cols.push_back(Phys.add_collider(bx_x - 0.3, zb3.pos.y, bx_z - 0.3, bx_x + 0.3, zb3.pos.y + 2.0, bx_z + 0.3))
+	bx_cols.push_back(Phys.add_collider(zb3.pos.x + 0.1, zb3.pos.y, zb3.pos.z - 0.2, zb3.pos.x + 0.5, zb3.pos.y + 0.4, zb3.pos.z + 0.2))   # a low box at its middle
+	an.ride_off(false); var bx_y: float = pl.pos.y - zb3.pos.y; var bx_at := Vector2(pl.pos.x - zb3.pos.x, pl.pos.z - zb3.pos.z).length()
+	for b in bx_cols: Phys.remove_collider(b)
+	check("stage 3: boxed in on every side you get down where it stood, on the floor, not up on a low box there", an.m == null and bx_at < 0.001 and absf(bx_y) < 0.05, [bx_at, bx_y])
+	pl.pos = bx_p0
 	# on foot: gored (25, out cold 3 s, a wound), bitten, tossed
 	an.hit(bf3, "gore")
 	check("stage 3: on foot the buffalo's charge takes 25, knocks you out for 3 s and opens a wound", pl.hp == Player.MAX_HP - 25.0 and absf(pl.stun_t - 3.0) < 1e-6 and an.bleed_n == 1 and an.bleed_t == 10.0)
@@ -720,7 +834,10 @@ func _ready() -> void:
 	var s4_col4: int = Phys.colliders.size()
 	for i in 100: s4_sh.update(0.02, 0.0)
 	check("stage 4: 1.8 s later the hall's floor falls into the stepped pit, 9 m down", s4_sh.broken and Phys.PIT != null and Phys.PIT.y == -9.0 and Phys.colliders.size() == s4_col4 - 3 and Phys.ground_at(100.0, 1.0, -6.0, 0.3) < -0.3, Phys.ground_at(100.0, 1.0, -6.0, 0.3))
+	boss4.k.cd = 50.0   # (a long wait left over from the shell before: the shell coming off starts the new one afresh)
 	for i in 80: en.update(0.02, 0.0)
+	check("stage 4: once the shell is off (1.4 s) the next attack waits the browser game's 1.2 s, not what was left from the shell before",
+		boss4.k.mode != "shed" and boss4.k.cd <= 1.2 - 0.15 and boss4.k.cd > 0.0, [boss4.k.mode, boss4.k.cd])
 	en.damage(boss4, 5000, boss4.pos, Vector3(0, 0, 1), false)
 	check("stage 4: at a third left the second shell goes: phase 3, and the hatches are about to open", boss4.hp == 3000.0 and boss4.k.phase == 2 and boss4.R == 0.75 and s4_sh.hatch_wait > 0.0)
 	for i in 140: en.update(0.02, 0.0)
@@ -764,6 +881,13 @@ func _ready() -> void:
 	for e in en.list:
 		if e.type == "cctv": s4_cam = e; break
 	check("stage 4: a ceiling camera shoots from its own lens, not from where a man's gun would be", en.muzzle_of(s4_cam).distance_to(s4_cam.pos) < 0.5, en.muzzle_of(s4_cam) - s4_cam.pos)
+	# the save point taken with the gold drone still about: back from it, the drone is the stage's commander again (its bar, its end)
+	# (the key can only be taken once the bee is down, so in play it is never about at a save point: a save point made here by hand)
+	gm.begin(4); gm.take_save(); var md_took: bool = gm.sp != null; gm.ended = true; gm.from_save()
+	var md_bee = null
+	for e9 in en.list:
+		if e9.alive and e9.T.get("mid", false): md_bee = e9
+	check("stage 4: back from a save point with the gold drone still about, it is the stage's commander again (its bar, and its end when it falls)", md_took and md_bee != null and gm.mid == md_bee, [md_took, md_bee != null, gm.mid != null])
 	# ---------------- stage 5: the toy room ----------------
 	gm.begin(9); var s5_tf: ToyFoes = en.toys; pl.invuln = 1e9
 	var s5_kinds := {}
@@ -1147,7 +1271,10 @@ func _ready() -> void:
 	check("3-2's map: the cages that wait for the one before them say so", m_seq.texts.filter(func(t: String): return t == "앞 우리를 비우면").size() == 9 and m_seq.texts.has("5초"))
 	gm.begin(7); var m_t0: MapRec = map_of.call(7); w.safari.hp = 5000.0; var m_t1: MapRec = map_of.call(7); w.safari.standing = false; var m_t2: MapRec = map_of.call(7); w.safari.standing = true; w.safari.hp = 10000.0
 	check("3-1's map: the watchtower and how much it has left, and when it is down", m_t0.texts.has("감시탑 100%") and m_t1.texts.has("감시탑 50%") and m_t2.texts.has("감시탑 무너짐"))
+	gm.begin(7); w.safari.collapse()
+	check("3-1: the fallen watchtower leaves the grid round it only, and it is the grid a whole new one would be", not w.safari.standing and w.safari.cols.is_empty() and nav_as_whole.call(pl.pos.x, pl.pos.z))
 	gm.begin(4); var m_s0: MapRec = map_of.call(4); w.ship.break_floor(); var m_s1: MapRec = map_of.call(4)
+	check("stage 4: the hall's floor falling in leaves the grid round it only, and it is the grid a whole new one would be", w.ship.broken and nav_as_whole.call(pl.pos.x, pl.pos.z))
 	check("the ship's map: once the hall's floor falls in, the pit's landings and floor are marked with their depths", not m_s0.texts.has("-9m") and m_s1.texts.has("-3m") and m_s1.texts.has("-6m") and m_s1.texts.has("-9m"), m_s1.texts.filter(func(t: String): return t.ends_with("m")))
 	tm.setup(4); var m_l4: Array = tm.legend(true).map(func(it): return it[1]); tm.setup(5); var m_l5: Array = tm.legend(false).map(func(it): return it[1]); tm.setup(9); var m_l9: Array = tm.legend(true).map(func(it): return it[1])
 	check("the legend: each stage's kinds, 1-2's drop point in its fixed corner (the bottom right: no longer one to pick), who is after you while you play; the toy room has no boss",
@@ -1210,11 +1337,13 @@ func _ready() -> void:
 	for c_skip in [false, true]:
 		gm.begin(4); S4 = w.ship; var D4: Dictionary = S4.doors[0]; var bee = S4.drone(D4)
 		S4.on_cut = func(D: Dictionary, e: Enemies.Foe, done: Callable) -> void: ct.start_boss_intro(D, e, done)
-		S4.enter(D4); var c_mid: String = D4.mode; var c_kind := ct.kind()
+		bee.bar.visible = true   # (as if it had been hit before: its health bar showing)
+		S4.enter(D4); var c_mid: String = D4.mode; var c_kind := ct.kind(); var c_bar_hid: bool = not bee.bar.visible
 		if c_skip: c_run.call(0.4); ct.skip()
 		else: c_run.call(2.0)
 		check("the bridge door: a second and a half looking at the gold bee, then locked in with it (%s)" % ("skipped" if c_skip else "watched"),
 			c_kind == "boss" and c_mid == "cut" and D4.mode == "locked" and not bee.sealed and absf(pl.pos.x - (D4.x + D4.inward * 2.4)) < 1e-4 and not ct.active(), [c_kind, c_mid, D4.mode, pl.pos])
+		check("the bee's health bar is out of the picture while it is shown, and back as it was once that is over (%s)" % ("skipped" if c_skip else "watched"), c_bar_hid and bee.bar.visible)
 	S4.on_cut = Callable(); Snd.keep_log = false
 	# ---------------- the save code by mail ----------------
 	var ms := Store.save0(); ms.cleared = [1, 6]; ms.money = 119000; var mcode := SaveCode.encode(ms)
@@ -1276,6 +1405,10 @@ func _ready() -> void:
 	check("splinters and sparks fly, bounce off the ground, and are gone (debris in 4 s at most)", h_n1 == h_n0 + 13 and fxn._debris.size() + fxn.live() == 0 and h_low > -0.01, [h_n0, h_n1, h_low])
 	fxn.clear(); fxn.explode(Vector3(0, 2, 0), true); var h_ex := [fxn._glow.p.size(), fxn._smoke.p.size(), fxn._boom.visible]
 	fxn.update(1.0 / 30.0); var h_drawn := [fxn._glow.shown, fxn._smoke.shown]
+	var h_once: bool = fxn._glow._whole and fxn._smoke._whole and fxn._glow.mesh.get_surface_count() == 1 and fxn._glow.mesh.surface_get_array_len(0) == 900 * 4 and fxn._smoke.mesh.surface_get_array_len(0) == 260 * 4
+	for i in 3: fxn.update(1.0 / 30.0)
+	h_once = h_once and fxn._glow.mesh.get_surface_count() == 1 and fxn._glow.mesh.surface_get_array_len(0) == 900 * 4 and fxn._glow._lit == fxn._glow.shown
+	check("the specks' pools make their surface once, at its full size, and only send their corners and colours again each frame (drawn the same, pixel for pixel, on both renderers)", h_once)
 	for i in 3000: fxn.sparks(Vector3.ZERO, 1, [1.0, 1.0, 1.0], 1.0)
 	for i in 400: fxn.puff(Vector3.ZERO, 1, 0.5, 0.3)
 	var h_full := [fxn._glow.p.size(), fxn._smoke.p.size()]
@@ -1288,11 +1421,30 @@ func _ready() -> void:
 		[fxn.hole_xf.size(), h_hole.basis.z.normalized(), h_hole.origin])
 	g.shots = 40; g.hits = 12; gm.begin(1); gm.update(0.02)
 	check("a new stage counts its shots and hits from nothing (the result's accuracy is that stage's alone)", g.shots == 0 and g.hits == 0 and gm.stats.shots == 0 and gm.stats.hits == 0, [g.shots, g.hits, gm.stats.shots])
-	gm.begin(1); var h_old: MultiMesh = w.crate_mm; var h_cr: Dictionary = w.crates[0]
-	w.damage_crate(h_cr, 9999.0, Vector3(h_cr.x, 0.6, h_cr.z))
-	check("a broken crate leaves the picture: the crates are drawn from a new MultiMesh with that one at no size (on the web one changed in place kept showing it)",
-		h_cr.dead and w.crate_mm != h_old and w.crate_mmi.multimesh == w.crate_mm and (w.crate_xf[h_cr.idx] as Transform3D).basis.get_scale().length() < 0.001 and w.crate_mm.instance_count == w.crate_xf.size(),
-		[h_cr.dead, w.crate_mm != h_old, w.crate_xf.size()])
+	gm.begin(1); var h_old: MultiMesh = w.crate_mm; var h_cr: Dictionary = w.crates[0]; var h_cr2: Dictionary = w.crates[1]
+	w.damage_crate(h_cr, 9999.0, Vector3(h_cr.x, 0.6, h_cr.z)); w.damage_crate(h_cr2, 9999.0, Vector3(h_cr2.x, 0.6, h_cr2.z))
+	var h_waits: bool = w.crate_mm == h_old and w.crate_mmi.multimesh == h_old   # two broken in one frame: drawn again once, at the frame's end
+	await get_tree().process_frame
+	var h_gone := func(c: Dictionary) -> bool: return (w.crate_xf[c.idx] as Transform3D).basis.get_scale().length() < 0.001   # (what the new MultiMesh is made from: the checks' renderer keeps no instances)
+	check("broken crates leave the picture: the crates are drawn from a new MultiMesh with those at no size (on the web one changed in place kept showing it), made once at the end of the frame however many broke",
+		h_cr.dead and h_cr2.dead and h_waits and w.crate_mm != h_old and w.crate_mmi.multimesh == w.crate_mm and h_gone.call(h_cr) and h_gone.call(h_cr2) and not h_gone.call(w.crates[2])
+		and w.crate_mm.instance_count == w.crate_xf.size() and not w._crate_dirty,
+		[h_cr.dead, h_waits, w.crate_mm != h_old, h_gone.call(h_cr), h_gone.call(h_cr2), w._crate_dirty])
+	var v_ok := true
+	for v_st: int in [2, 4]:   # every crate knows its own place among those drawn (the village's ghosts outside are not drawn)
+		gm.begin(v_st)
+		for v_c in w.crates:
+			if not v_c.has("node") and ((w.crate_xf[v_c.idx] as Transform3D).origin - Vector3(v_c.x, v_c.y + 0.6, v_c.z)).length() > 0.001: v_ok = false
+	check("each crate's place in the picture is its own, in the village too (where the ghost crates outside are counted but not drawn)", v_ok and w.crates.size() > 0)
+	gm.begin(3); var f_tile: ImageTexture = Lab.tiles_tex(); gm.begin(3); var f_kept: bool = Lab.tiles_tex() == f_tile and Lab._tx.size() > 5
+	gm.begin(2); var f_v: bool = Gfx._tex_cache.has("dirt") and Lab._tx.is_empty() and Gfx._tex_cache.keys().filter(func(k: String): return k.begins_with("side:")).is_empty()
+	gm.begin(1); var f_sides: Array = Gfx._tex_cache.keys().filter(func(k: String): return k.begins_with("side:"))
+	var f_side0: ImageTexture = Gfx._tex_cache[f_sides[0]] if not f_sides.is_empty() else null; gm.begin(1)
+	var f_same: bool = f_side0 != null and Gfx._tex_cache.get(f_sides[0]) == f_side0 and Gfx._tex_cache.has("asphalt") and Gfx._tex_cache.has("crate")
+	check("a place keeps the textures it paints while it is played again (the containers' sides too), and lets them go once a stage of another kind is built",
+		f_kept and f_v and f_same and f_sides.size() >= 4 and Lab._tx.is_empty() and Ship._tx.is_empty() and Safari._tx.is_empty() and not Gfx._tex_cache.has("dirt")
+		and World.stage_kind(4) == "ship" and World.stage_kind(7) == "safari" and World.stage_kind(8) == "lab" and World.stage_kind(5) == "docks" and World.stage_kind(9) == "toy",
+		[f_kept, f_v, f_same, f_sides.size(), Lab._tx.size(), Ship._tx.size(), Safari._tx.size()])
 	gm.begin(1)
 	# ---- E: the browser game's picture ----
 	var e_fit := func(x: float) -> float: return (x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.432951) + 0.238081)
@@ -1342,6 +1494,10 @@ func _ready() -> void:
 	check("the yard's 07 is paint on the ground, lit like it (10 x 5 m at the start), not a floating label", e_07 and e_labels == 0)
 	Fx.exposure = 1.15; var e_sc := Fx.shown(Color(1.0, 0.55, 0.2, 0.7)); var e_sd := Gfx.display(Vector3(e_dec.call(e_sc.r), e_dec.call(e_sc.g), e_dec.call(e_sc.b)), 1.15)
 	check("specks show on screen the colour asked for (the browser game writes theirs with no tone mapping)", e_sd.distance_to(Vector3(0.97, 0.55, 0.2)) < 0.004 and absf(e_sc.a - 0.7) < 1e-6, e_sd)
+	var e_fp_was := Gfx.fplus; Gfx.fplus = true; Fx._shown.clear(); var e_fp := Fx.shown(Color(1.0, 0.55, 0.2, 0.7)); Gfx.fplus = e_fp_was; Fx._shown.clear()
+	var e_sdec := func(v: float) -> float: return v / 12.92 if v <= 0.04045 else pow((v + 0.055) / 1.055, 2.4)   # (as SEE_SHADER decodes a vertex colour)
+	var e_fpd := Gfx.display(Vector3(e_sdec.call(e_fp.r), e_sdec.call(e_fp.g), e_sdec.call(e_fp.b)), 1.15)
+	check("on Forward+ too a speck shows the colour asked for: encoded for the see-through shader's one sRGB decode, not decoded twice", e_fpd.distance_to(Vector3(0.97, 0.55, 0.2)) < 0.004 and absf(e_fp.a - 0.7) < 1e-6, e_fpd)
 	Fx.exposure = 1.12; var e_so := Fx.shown(Color(1.0, 0.3, 0.05)); var e_sod := Gfx.display(Vector3(e_dec.call(e_so.r), e_dec.call(e_so.g), e_dec.call(e_so.b)), 1.12); Fx.exposure = 1.15
 	check("a speck redder than the screen can show (a robot's burning bits) still comes out nearest to it", absf(e_sod.x - 0.97) < 0.003 and absf(e_sod.y - 0.3) < 0.003 and absf(e_sod.z - 0.05) < 0.04, e_sod)
 	w.set_ao(false); var e_off := not w.ao_layer.visible and w.ao.render_target_update_mode == SubViewport.UPDATE_DISABLED; w.set_ao(true)
@@ -1425,9 +1581,9 @@ func _ready() -> void:
 		sv_tu.multimesh.instance_count == 3200 and sv_tu.multimesh.mesh.get_faces().size() == 18 and sv_tm.cull_mode == BaseMaterial3D.CULL_DISABLED
 		and sv_tm.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR and is_equal_approx(sv_tm.alpha_scissor_threshold, 0.3)
 		and sv_tm.alpha_antialiasing_mode == BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE and not sv_tu.get_layer_mask_value(MoonShadow.CASTER))
-	check("3-1: no moon shadow on the tufts and no occlusion on their blades: marked (3), kept out of the occlusion's picture, and both layers pass them by",
+	check("3-1: no moon shadow on the tufts and no occlusion on their blades: marked (3), kept out of the occlusion's picture, and both layers pass them by (the occlusion passes by every mark from 3 up: the grass, and the gun in hand at 4)",
 		sv_tm.stencil_mode == BaseMaterial3D.STENCIL_MODE_CUSTOM and sv_tm.stencil_reference == MoonShadow.GRASS and (sv_tu.layers & w.ao.cam.cull_mask) == 0
-		and sv_tu.layers == 1 << (Gfx.MAIN_ONLY - 1) and AoView.APPLY_SHADER.contains("stencil_mode read, compare_not_equal, 3;")
+		and sv_tu.layers == 1 << (Gfx.MAIN_ONLY - 1) and AoView.APPLY_SHADER.contains("stencil_mode read, compare_greater, 3;") and MoonShadow.HAND > MoonShadow.GRASS
 		and MoonShadow.LAYER_SHADER.contains("stencil_mode read, compare_greater, 2;") and MoonShadow.GRASS == 3 and MoonShadow.UNSHADOWED == 2)
 	w.ao.follow(w.ao.cam, Vector2i(1280, 720)); var ao_bh: ShaderMaterial = (w.ao.blur_h.get_child(0) as ColorRect).material; var ao_bv: ShaderMaterial = (w.ao.blur_v.get_child(0) as ColorRect).material
 	check("the occlusion is blurred as the browser game's two seven-tap passes: across, then down, each at half size and weighed by depth, then enlarged smoothly and multiplied in",
@@ -2048,6 +2204,14 @@ func _music(gm: Game, en: Enemies, pl: Player, w: World) -> void:
 	while M.ot and b_wait < 3.0: M.update(0.05, back, 0.05); b_wait += 0.05
 	run.call(back, 0.3)
 	check("time put back on the clock (a checkpoint): the march as it was, at the next bar line", not M.ot and b_wait <= Music.OT_BAR + 0.06 and M._n.war.playing and not M._o.war.playing, [b_wait, M.ot])
+	# a long frame (the page's audio asleep three seconds, say): where the march is follows all of it, as the players went on
+	var lf_t0: float = M.t; M.update(0.05, base, 3.0)
+	check("a long frame (3 s at once): where the march is follows all of it (the players played on through it), not just its first second", absf(M.t - fposmod(lf_t0 + 3.0, Music.LOOP)) < 1e-6, [lf_t0, M.t])
+	# asked for the overtime 0.02 s before a bar line: the other set starts at the bar line after (too late to start it for this one)
+	M.t = (int(floorf(M.t / Music.BAR)) % (Music.BARS - 2) + 1) * Music.BAR - 0.02; var bl_t: float = M.t; M.update(0.05, ot, 0.0)
+	var bl_in: float = M.switch_in; var bl_sw: bool = M.switching; var bl_wait := 0.0
+	while (M.switching or M.ot) and bl_wait < 10.0: M.update(0.05, base, 0.05); bl_wait += 0.05
+	check("asked for the overtime 0.02 s before a bar line, its set comes in at the bar line after, not one it could not be started in time for", bl_sw and absf(bl_in - (Music.BAR + 0.02)) < 1e-4 and not M.ot, [bl_t, bl_in, bl_wait])
 	# a blast close by: the tape stretches
 	Snd.listener = Vector3.ZERO; M.blast(Vector3(10, 0, 0)); run.call(base, 0.5); var tp0: float = M.pitch
 	M.blast(Vector3(3, 0, 0)); run.call(base, 0.5); var tp1: float = M.pitch; var tpv: float = M._n.xylo.pitch_scale
@@ -2057,6 +2221,18 @@ func _music(gm: Game, en: Enemies, pl: Player, w: World) -> void:
 	var ps := base.duplicate(); ps.paused = true; var v_play: float = M._n.xylo.volume_db; run.call(ps, 0.2); var v_pause: float = M._n.xylo.volume_db
 	M.volume = 0.0; run.call(base, 0.2); var v_off: float = M._n.xylo.volume_db; M.volume = 0.6
 	check("paused, the music goes quieter (-8 dB); the 음악 setting at 0, silent", absf((v_pause - v_play) - linear_to_db(0.4)) < 0.2 and v_off < -90.0, [v_play, v_pause, v_off])
+	# a new sound takes a voice that is free, not the next in turn while that one still plays (a long siren was cut off by a click)
+	var fv_v := Snd.volume; Snd.volume = 0.7; var fv_long: AudioStream = Snd.takes("siren")[0]
+	for i9 in Snd._players.size():
+		Snd._players[i9].stop()
+		if i9 != 5: Snd._players[i9].stream = fv_long; Snd._players[i9].play()
+	Snd._next = 2; Snd.play("coin"); var fv_used := (Snd._next - 1 + Snd._players.size()) % Snd._players.size()
+	var fv_kept: bool = Snd._players[2].playing and Snd._players[2].stream == fv_long and Snd._players[5].stream != fv_long
+	Snd.play("toy_boom"); var ty_p: AudioStreamPlayer = Snd._players[(Snd._next - 1 + Snd._players.size()) % Snd._players.size()]; var ty_db: float = ty_p.volume_db
+	for p9 in Snd._players: p9.stop()
+	Snd.volume = fv_v
+	check("stage 5's own sounds are kept at half level as all the rest (tools/make_sounds.py) and turned back up as they play: as loud as before", absf(ty_db - linear_to_db(0.7 / Snd.SCALE)) < 0.01, ty_db)
+	check("a new sound takes a free voice (the sixth here), not the next one in turn while that one still plays", fv_used == 5 and fv_kept, [fv_used, fv_kept])
 	var st_ui := Ui.new(); add_child(st_ui); var st_box := VBoxContainer.new(); st_ui.add_child(st_box); st_ui._settings_rows(st_box, true)
 	var st_labels := []
 	for n9 in st_box.find_children("*", "Label", true, false): st_labels.push_back((n9 as Label).text)
@@ -2331,6 +2507,22 @@ func _aim_clear() -> void:
 			if n > 0: bad.push_back("%s %s: %d" % [id, sg, n])
 			if optic != null and _hits(_tris(optic, at + optic.position), 0.0) == 0: bad.push_back("%s %s: the optic is off the eye line" % [id, sg])
 		g.visible = false
+	# the parts' materials are one set for all eight guns; the machine gun's heat as the browser game's (in its linear numbers)
+	var pm_with := Weapons.ORDER.filter(func(i): return (gmm.models[i].parts.muzzle as Dictionary).has("sup"))
+	var pm_mat := func(i) -> Material: return ((gmm.models[i].parts.muzzle.sup as Node3D).get_child(0) as MeshInstance3D).material_override
+	var pm_same: bool = pm_with.size() >= 2 and pm_with.all(func(i): return pm_mat.call(i) == pm_mat.call(pm_with[0]))
+	gmm.heat("lmg", 1.0); var ht_m: StandardMaterial3D = gmm.models.lmg.hot[0]; var ht_l := ht_m.albedo_color.srgb_to_linear(); var ht_e := ht_m.emission.srgb_to_linear()
+	var ht_ok: bool = absf(ht_l.r - (0x3b / 255.0 + (0x8a / 255.0 - 0x3b / 255.0) * 0.85)) < 1e-3 and absf(ht_l.g - (0x40 / 255.0 + (0x0d / 255.0 - 0x40 / 255.0) * 0.85)) < 1e-3 \
+		and absf(ht_l.b - (0x48 / 255.0 + (0x06 / 255.0 - 0x48 / 255.0) * 0.85)) < 1e-3 and absf(ht_e.r - 0.42) < 1e-3 and absf(ht_e.g - 0.012) < 1e-3 and absf(ht_e.b - 0.004) < 1e-3
+	gmm.heat("lmg", 0.0); ht_ok = ht_ok and ht_m.albedo_color.is_equal_approx(ht_m.get_meta("paint", ht_m.get_meta("color"))) and not ht_m.emission_enabled
+	var hd_all := 0; var hd_bad := 0
+	for hd_n in holder.find_children("*", "MeshInstance3D", true, false):
+		var hd_m = (hd_n as MeshInstance3D).material_override
+		if hd_m is BaseMaterial3D and (hd_m as BaseMaterial3D).transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
+			hd_all += 1; hd_bad += 0 if (hd_m as BaseMaterial3D).stencil_reference == MoonShadow.HAND and (hd_m as BaseMaterial3D).stencil_flags == BaseMaterial3D.STENCIL_FLAG_WRITE else 1
+	check("the gun in your hands marks its pixels (MoonShadow.HAND), and the occlusion passes them by from the mark alone (no 0.9 m cut, so a wall you stand against keeps its occlusion)",
+		hd_all > 100 and hd_bad == 0 and MoonShadow.HAND == 4 and AoView.APPLY_SHADER.contains("compare_greater, 3") and not AoView.APPLY_SHADER.contains("near_skip"), [hd_all, hd_bad])
+	check("the guns' parts share one set of materials; the machine gun heats to the browser game's red (its paint towards 0x8a0d06 by 0.85, a glow of 0.42, 0.012, 0.004) and cools back", pm_same and ht_ok, [pm_with, ht_l, ht_e])
 	var MS = load("res://scripts/main.gd")
 	for id in Toys.ORDER:
 		var t := Toys.build(id); holder.add_child(t)

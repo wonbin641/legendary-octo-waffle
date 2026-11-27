@@ -98,6 +98,7 @@ func sheet(key: String, title: String, code: String, max_w := 760.0) -> Array:
 
 func layout() -> void:
 	_layout_maps()
+	if ov.has("grid"): (ov.grid as GridContainer).columns = 5 if size.x >= 560 else 2   # the result's five numbers: on one line, or two to a line on a narrow screen
 	for key in screens:
 		var root: Control = screens[key]
 		if not root.has_meta("panel"): continue
@@ -108,6 +109,7 @@ func layout() -> void:
 func show_screen(key: String) -> void:
 	cur = key
 	for k in screens: (screens[k] as Control).visible = k == key
+	_opening = true   # (opened afresh: its list starts at the top)
 	match key:
 		"menu": refresh_menu()
 		"shop": render_shop()
@@ -119,7 +121,20 @@ func show_screen(key: String) -> void:
 		"pause": render_pause()
 		"brief": _brief_gear()   # (back from the layout or the shop: the guns to deploy with, the kit, whether 출동 can be pressed)
 		"over": _over_money()    # (back from the shop: the bag as it is now)
+	_opening = false
 	if key != "": _focus_first.call_deferred(screens[key])
+
+var _opening := false
+## a list drawn again in its place (a button in it pressed): its scroller stays where it was, not sent back to the top (the
+## rows go and come back, and for that moment there is nothing to scroll). Put back once the new rows are laid out
+func _hold_scroll(list: Control) -> void:
+	if _opening or not is_inside_tree(): return
+	var sc := list.get_parent() as ScrollContainer
+	if sc == null or sc.scroll_vertical <= 0: return
+	var at := sc.scroll_vertical
+	var put := func() -> void:
+		if is_instance_valid(sc): sc.scroll_vertical = at
+	put.call_deferred(); get_tree().process_frame.connect(put, CONNECT_ONE_SHOT)
 
 func _focus_first(n: Node) -> void:
 	for c in n.find_children("*", "Button", true, false):
@@ -352,7 +367,7 @@ func _head(t: String, color := STEEL) -> Label:
 ## the shop in stage 5's run (its briefing, its pause, its result sheet): the toy room hands you its nine toy guns, so there no gun is
 ## rented, given bullets or put in the layout (what you rented before waits for the next stage: Game.return_rentals)
 func toy_shop() -> bool:
-	return game != null and game.stage == 9 and (in_stage or back_stack.has("brief") or back_stack.has("over"))
+	return game != null and game.stage == Store.ST_TOY and (in_stage or back_stack.has("brief") or back_stack.has("over"))
 
 func _gun_row(id: String, rec := false) -> Control:
 	var W: Dictionary = Custom.weapon(id); var rented: bool = Store.save.rented.has(id); var owned: bool = Store.save.owned.has(id); var free: bool = id == "pistol" or Store.settings.dev
@@ -363,8 +378,9 @@ func _gun_row(id: String, rec := false) -> Control:
 	elif not has: bs.push_back(["대여", func() -> void: shop_msg.text = Meta.rent(id, mid); _after_buy(), Store.save.money < fee])
 	elif rented and not owned and not mid and not Store.settings.dev: bs.push_back(["대여 취소", func() -> void: shop_msg.text = Meta.cancel_rent(id); _after_buy()])
 	if has and mid and not toy and Weapons.AMMO100.has(id):
-		var c: int = 0 if Store.settings.dev else Weapons.AMMO100[id]; var rk: bool = W.get("rocket", false); var st: Dictionary = guns.wstate[id]
-		bs.push_back([("로켓 +1 · " if rk else "총알 +100 · ") + (Store.won(c) if c > 0 else "무료") + (" (%d/12)" % int(st.mag + st.reserve) if rk else ""), func() -> void: shop_msg.text = Meta.buy_ammo(id, guns); _after_buy(), Store.save.money < c])
+		var pk := Meta.ammo_pack(id, guns); var c: int = pk[1]; var rk: bool = W.get("rocket", false); var st: Dictionary = guns.wstate[id]; var full := Meta.ammo_room(id, guns) < 1
+		bs.push_back([("로켓 +1 · " if rk else ("총알 가득" if full else "총알 +%d · " % int(pk[0]))) + ("" if (full and not rk) else (Store.won(c) if c > 0 else "무료")) + (" (%d/12)" % int(st.mag + st.reserve) if rk else ""),
+			func() -> void: shop_msg.text = Meta.buy_ammo(id, guns); _after_buy(), Store.save.money < c or full])
 	var in_lo: bool = Store.save.loadout.has(id)
 	var state := "" if (not has or toy) else ("%d번 칸" % (Store.save.loadout.find(id) + 1) if in_lo else "빈 칸이 없어 무기 편성에서 넣어 주세요" if not Store.save.loadout.has(null) else "무기 편성에서 넣어 주세요")
 	if has and not toy and not in_lo and Store.save.loadout.has(null): bs.push_back(["무기 편성", func() -> void: Meta.place(id); _after_buy()])
@@ -381,7 +397,7 @@ func _after_buy() -> void:
 	render_shop()
 
 func render_shop() -> void:
-	clear(shop_list); var mid := in_stage
+	_hold_scroll(shop_list); clear(shop_list); var mid := in_stage
 	shop_money.text = "가방 " + Store.won(Store.save.money)
 	var toy := toy_shop()
 	shop_head.text = "상점 · 개발자 모드: 모두 무료" if Store.settings.dev else ("상점 · 장난감 방" if toy else ("상점 · 대여는 이번 스테이지 동안" if mid else "상점 · 아이템과 무기 대여"))
@@ -431,7 +447,7 @@ func _arrows(row: HBoxContainer, up: Callable, down: Callable, can_up: bool, can
 	var d := btn("▼", "small", down); d.disabled = not can_down; d.tooltip_text = "뒤 번호로"; row.add_child(d)
 ## the guns in your hands in key order, each with arrows to move it (the pause; the toy room's nine toy guns there)
 func _gun_order(into: VBoxContainer, again: Callable) -> void:
-	var toys: bool = game.stage == 9; var lay: Array = guns.loadout; var held := lay.filter(func(x): return x != null)
+	var toys: bool = game.stage == Store.ST_TOY; var lay: Array = guns.loadout; var held := lay.filter(func(x): return x != null)
 	into.add_child(_head("무기 순서 · 숫자 키 %d-%d번" % [1, lay.size()]))
 	for i in lay.size():
 		var id = lay[i]
@@ -442,8 +458,8 @@ func _gun_order(into: VBoxContainer, again: Callable) -> void:
 		_arrows(row, func() -> void: _move_gun(id, -1, toys, again), func() -> void: _move_gun(id, 1, toys, again), at > 0, at < held.size() - 1)
 
 func render_loadout() -> void:
-	clear(lo_list); (screens.loadout.get_meta("cu") as Button).visible = not in_stage
-	if in_stage and game.stage == 9:   # the toy room hands you all nine toy guns: only their order (keys 1-9) changes
+	_hold_scroll(lo_list); clear(lo_list); (screens.loadout.get_meta("cu") as Button).visible = not in_stage
+	if in_stage and game.stage == Store.ST_TOY:   # the toy room hands you all nine toy guns: only their order (keys 1-9) changes
 		_gun_order(lo_list, render_loadout)
 		lo_list.add_child(lbl("장난감 방에서는 장난감 총 아홉 자루를 모두 듭니다 · 화살표로 숫자 키 차례를 바꿉니다", f_body, 13, INK, true))
 		return
@@ -551,7 +567,7 @@ func _cx_card(c: Dictionary, stages: bool) -> Control:
 	return p
 
 func render_codex() -> void:
-	clear(cx_list)
+	_hold_scroll(cx_list); clear(cx_list)
 	var every := Codex.foes(); var open_n := every.filter(func(e): return Codex.seen(e.st)).size()
 	var tabs := hbox(4); cx_list.add_child(tabs)
 	for t in [["gun", "총기도감"], ["enemy", "적 도감 %d/%d" % [open_n, every.size()]]]:
@@ -954,8 +970,8 @@ func open_brief(stage: int) -> void:
 
 ## stage 5's modes, as a row of buttons on its briefing: the one picked lit, a press builds the room for another
 func _mode_buttons(stage: int) -> void:
-	clear(br_modes); br_modes.visible = stage == 9
-	if stage != 9: return
+	clear(br_modes); br_modes.visible = stage == Store.ST_TOY
+	if stage != Store.ST_TOY: return
 	var cur_mode := ToyMatch.picked()
 	br_modes.add_child(lbl("모드", f_mono, 12, STEEL))
 	for k: String in ToyMatch.MODES:
@@ -967,14 +983,14 @@ func _pick_mode(k: String) -> void:
 	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("press"); open_brief(9)
 
 func _brief_gear() -> void:
-	if sel == 9:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
+	if sel == Store.ST_TOY:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
 		var k := ToyMatch.picked()
 		br_gear.text = "장난감 무기 9종 · 1-9번 키" + {"rush": " · 건전지를 들면 다트 권총과 30cm 자만", "escort": " · 화물칸 탄약 상자에서 보급", "freeze": " · 탄산 캔 G"}.get(k, ""); br_go.disabled = false; return
 	var ready := []; var lo := game.layout()
 	for i in 7:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
-	br_gear.text = ("지도 오른쪽 아래 구석(동남쪽 끝)에 내립니다\n" if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
+	br_gear.text = ("지도 오른쪽 아래 구석(동남쪽 끝)에 내립니다\n" if sel == Store.ST_ARMED else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
 func _deploy() -> void:
@@ -1049,7 +1065,7 @@ func _build_over() -> void:
 	var s := sheet("over", "작전 결과 보고", "—", 620.0); var body: VBoxContainer = s[1]
 	ov.code = s[0].get_meta("code"); ov.stamp = lbl("작전 실패", f_title, 20, ALARM); body.add_child(ov.stamp)
 	ov.title = lbl("", f_title, 40, INK, true); body.add_child(ov.title)
-	var grid := GridContainer.new(); grid.columns = 5 if size.x >= 560 else 2; grid.add_theme_constant_override("h_separation", 18); grid.add_theme_constant_override("v_separation", 8); body.add_child(grid)
+	var grid := GridContainer.new(); grid.columns = 5 if size.x >= 560 else 2; grid.add_theme_constant_override("h_separation", 18); grid.add_theme_constant_override("v_separation", 8); body.add_child(grid); ov.grid = grid
 	for k in [["kills", "처치"], ["earn", "번 돈"], ["hs", "헤드샷"], ["acc", "명중률"], ["time", "시간"]]:
 		var v := vbox(0); v.add_child(lbl(k[1], f_mono, 11, STEEL)); ov[k[0]] = lbl("0", f_bold, 20, INK); v.add_child(ov[k[0]]); grid.add_child(v)
 	ov.best = lbl("", f_body, 13, STEEL, true); body.add_child(ov.best)

@@ -9,10 +9,19 @@ var open_chest: Callable = Callable()
 var list: Array = []
 var chests: Array = []
 
+## one ball and one material for each kind of drop, shared by every drop (none is changed on its own)
+var _ball: SphereMesh = null; var _drop_mat := {}
+func _drop_look(kind: String) -> StandardMaterial3D:
+	var hp := kind == "hp"
+	if not _drop_mat.has(hp):
+		var mat := Gfx.std(World.lin("d8262e" if hp else "5ed6b0"), 0.15, 0.1); mat.emission_enabled = true; mat.emission = Color(0.5, 0.05, 0.06) if hp else Color(0.1, 0.45, 0.33)
+		_drop_mat[hp] = mat
+	return _drop_mat[hp]
+
 func drop(kind: String, x: float, z: float, y_hint := 0.0) -> void:
 	var g := Node3D.new(); add_child(g)
-	var m := MeshInstance3D.new(); var s := SphereMesh.new(); s.radius = 0.15; s.height = 0.3; m.mesh = s
-	var mat := Gfx.std(World.lin("d8262e" if kind == "hp" else "5ed6b0"), 0.15, 0.1); mat.emission_enabled = true; mat.emission = Color(0.5, 0.05, 0.06) if kind == "hp" else Color(0.1, 0.45, 0.33); m.material_override = mat; g.add_child(m)
+	if _ball == null: _ball = SphereMesh.new(); _ball.radius = 0.15; _ball.height = 0.3
+	var m := MeshInstance3D.new(); m.mesh = _ball; m.material_override = _drop_look(kind); g.add_child(m)
 	var y := Phys.ground_at(x, y_hint + 0.6, z, 0.2) + 0.5
 	g.position = Vector3(x, y, z)
 	list.push_back({"g": g, "kind": kind, "t": randf() * TAU, "life": INF, "base_y": y})

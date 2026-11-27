@@ -47,6 +47,7 @@ var group: Node3D = null
 var crates: Array = []      # {idx, hp, x, z, y, dead, b}
 var crate_mm: MultiMesh = null
 var crate_mmi: MultiMeshInstance3D = null; var crate_xf: Array = []   # the crates' node and where each one stands
+var _crate_dirty := false   # a crate broke this frame: the crates are drawn again at its end
 var lamps: Array = []       # {x, y, z}
 var blink: Array = []
 var lights: Array[OmniLight3D] = []
@@ -121,14 +122,14 @@ func _ready() -> void:
 	moon = DirectionalLight3D.new(); moon.shadow_enabled = false; moon.light_specular = 1.0; moon.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	moon.directional_shadow_max_distance = 80.0; moon.shadow_bias = 0.06; moon.shadow_normal_bias = 1.5; add_child(moon)
 	moon_shadow = MoonShadow.new(); add_child(moon_shadow); moon_shadow.setup(shadow_map_size)
-	shadow_mat = ShaderMaterial.new(); var ssh := Shader.new(); ssh.code = MoonShadow.LAYER_SHADER % Gfx.ALBEDO_GLSL; shadow_mat.shader = ssh; shadow_mat.render_priority = Gfx.PRIO_SHADOW
+	shadow_mat = ShaderMaterial.new(); var ssh := Shader.new(); ssh.code = MoonShadow.LAYER_SHADER % [Gfx.ALBEDO_GLSL, Gfx.UNSHOW_GLSL]; shadow_mat.shader = ssh; shadow_mat.render_priority = Gfx.PRIO_SHADOW
 	shadow_mat.set_shader_parameter("shadow_map", moon_shadow.get_texture()); shadow_mat.set_shader_parameter("map_size", float(shadow_map_size)); shadow_mat.set_shader_parameter("flip", 1.0)
 	shadow_mat.set_shader_parameter("lamp_range", LAMP_RANGE); shadow_mat.set_shader_parameter("lamp_atten", LAMP_ATTEN)
 	var sq := QuadMesh.new(); sq.size = Vector2(2, 2)
 	shadow_layer = MeshInstance3D.new(); shadow_layer.name = "ShadowLayer"; shadow_layer.mesh = sq; shadow_layer.material_override = shadow_mat
 	shadow_layer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; shadow_layer.extra_cull_margin = 16384.0; add_child(shadow_layer)
 	ao = AoView.new(); add_child(ao); ao.setup(); ao.make_blur(self)
-	ao_mat = ShaderMaterial.new(); var ash := Shader.new(); ash.code = AoView.APPLY_SHADER % Gfx.ALBEDO_GLSL; ao_mat.shader = ash; ao_mat.render_priority = Gfx.PRIO_AO
+	ao_mat = ShaderMaterial.new(); var ash := Shader.new(); ash.code = AoView.APPLY_SHADER % [Gfx.ALBEDO_GLSL, Gfx.UNSHOW_GLSL]; ao_mat.shader = ash; ao_mat.render_priority = Gfx.PRIO_AO
 	ao_mat.set_shader_parameter("ao_tex", ao.blur_v.get_texture())
 	var aq := QuadMesh.new(); aq.size = Vector2(2, 2)
 	ao_layer = MeshInstance3D.new(); ao_layer.name = "AoLayer"; ao_layer.mesh = aq; ao_layer.material_override = ao_mat
@@ -154,6 +155,7 @@ func _process(_dt: float) -> void:
 	shadow_mat.set_shader_parameter("shadow_clip", moon_shadow.world_to_clip())
 	var lp := PackedVector4Array()
 	for l: OmniLight3D in lights: lp.push_back(Vector4(l.position.x, l.position.y, l.position.z, l.light_energy if l.visible else 0.0))
+	while lp.size() < 6: lp.push_back(Vector4.ZERO)   # the shader's six, always all sent: none left over from a stage with more lamps
 	shadow_mat.set_shader_parameter("lamp_pos", lp)
 
 ## the browser game's quality ladder on a computer (src/03b_gfx.js Gfx): five levels. Each sets the picture's pixel ratio
@@ -329,13 +331,32 @@ func _build_backdrop() -> void:
 	var mast := MeshInstance3D.new(); var sm := SphereMesh.new(); sm.radius = 0.7; sm.height = 1.4; sm.radial_segments = 8; sm.rings = 6
 	mast.mesh = sm; mast.material_override = Gfx.backdrop(Gfx.unlit(lin("ff3a3a"), false)); mast.position = Vector3(96, 47, 88); night.add_child(mast); _backdrop_blink.push_back(mast); _port.push_back(mast)
 
+## which kind of place a stage is built as (each kind keeps the textures it paints, to be built again quickly)
+static func stage_kind(stage: int) -> String:
+	var S: Dictionary = STAGE_STYLE[stage]
+	if S.get("ship", false): return "ship"
+	if S.get("lab", false): return "lab"
+	if S.get("savanna", false): return "safari"
+	if S.get("toy", false): return "toy"
+	return "village" if stage == 2 else "docks"
+
+## the painted textures the other kinds keep are let go once a stage of another kind is built (the one played again, as after
+## a death, keeps its own): only the place being played holds its textures
+static func forget_textures(keep: String) -> void:
+	if keep != "village": Gfx.forget_cached(["dirt"])
+	if keep != "docks": Gfx.forget_cached(["side:", "door:"])   # (the yard's ground, walls and crates are every stage's: kept)
+	if keep != "lab": Lab._tx.clear()
+	if keep != "safari": Safari._tx.clear()
+	if keep != "ship": Ship._tx.clear()
+
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; toy = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; _crate_dirty = false; toy = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
 	var S: Dictionary = STAGE_STYLE[stage]; style = S
+	forget_textures(stage_kind(stage))
 	if grade: grade.tune(S)
 	var R := Rng.new(S.seed)
 	var G := Node3D.new(); G.name = "Stage"; add_child(G); group = G
@@ -568,16 +589,23 @@ func _place_crates(G: Node3D, count: int, cand: Callable, fits: Callable, with_y
 		var c: Array = cand.call(); var x: float = c[0]; var z: float = c[1]
 		var y: float = c[2] if with_y else 0.0
 		if not (fits.call(x, z, y) if with_y else fits.call(x, z)): continue
+		var cr := {"idx": xs.size(), "hp": 45.0, "x": x, "z": z, "y": y, "dead": false}
 		xs.push_back(Transform3D(Basis(Vector3.UP, randf_range(-0.2, 0.2)), Vector3(x, y + 0.6, z)))
-		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": y, "dead": false}
 		cr.b = Phys.add_collider(x - 0.6, y, z - 0.6, x + 0.6, y + 1.2, z + 0.6, "wood", cr); crates.push_back(cr); i += 1
 	var mmi := Gfx.multimesh(Gfx.box(Vector3(1.2, 1.2, 1.2)), xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, _tex.crate); G.add_child(mmi); MoonShadow.caster(mmi); crate_mm = mmi.multimesh; crate_mmi = mmi; crate_xf = xs.duplicate()
 
 ## a broken crate gone from the picture: the crates are drawn again from a new MultiMesh (one changed in place does not
-## always reach the screen on the web renderer, and the broken crate stayed in view)
+## always reach the screen on the web renderer, and the broken crate stayed in view). However many break in one frame (a blast,
+## a save loaded), the new MultiMesh is made once, at the end of that frame, before it is drawn
 func hide_crate(c: Dictionary) -> void:
 	if crate_mm == null or c.idx >= crate_xf.size(): return
 	crate_xf[c.idx] = Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(c.x, -5, c.z))
+	if not _crate_dirty: _crate_dirty = true; _redraw_crates.call_deferred()
+
+func _redraw_crates() -> void:
+	if not _crate_dirty: return
+	_crate_dirty = false
+	if crate_mm == null: return
 	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.mesh = crate_mm.mesh; mm.instance_count = crate_xf.size()
 	for i in crate_xf.size(): mm.set_instance_transform(i, crate_xf[i])
 	crate_mm = mm

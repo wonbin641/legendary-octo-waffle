@@ -702,7 +702,7 @@ func break_floor() -> void:
 		var n: Node3D = t.n; t.d = randf_range(0, 0.9) * (0.4 + 0.6 * Vector2(n.position.x - REACTOR.x, n.position.z - REACTOR.z).length() / PYR_OX); t.vy = 0.0; t.sx = randf_range(-1.6, 1.6); t.sz = randf_range(-1.6, 1.6)
 	for o in enemies.list:
 		if o.alive and o.type == "mine" and in_pit(o.pos.x, o.pos.z) and (o.bs == "hidden" or o.bs == "arm"): o.bs = "fall"; o.vy = 0.0; o.vel = Vector3.ZERO
-	Phys.build_nav(); Phys.update_flow(player.pos.x, player.pos.z)
+	Phys.nav_patch_boxes(pit.cols); Phys.update_flow(player.pos.x, player.pos.z)
 	if fx:
 		for i in 7: fx.explode(Vector3(REACTOR.x + randf_range(-PYR_OX, PYR_OX) * 0.8, 0.3, REACTOR.z + randf_range(-PYR_OZ, PYR_OZ) * 0.8), i < 2)
 	Snd.play("boom", 1.0, Vector3(REACTOR.x, 0, REACTOR.z)); Snd.play("alarm"); player.shake = maxf(player.shake, 0.9); Snd.buzz(260)

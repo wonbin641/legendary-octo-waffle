@@ -186,7 +186,8 @@ def buzzy(f, dur, vel, table, tilt, att, vib, scoop, noise_amt, rel=0.06):
     ph = glide_phase(f, n, wob); K = int(SR * 0.45 / f)
     hs = np.arange(1, K + 1); amps = (1.0 / hs ** tilt) * formant(hs * f, table)
     y = np.zeros(n)
-    for h, a in zip(hs, amps): y += a * np.sin(h * ph)
+    for i in range(0, K, 32):   # every harmonic at once, 32 at a time (a low long note has hundreds of thousands of samples)
+        y += amps[i:i + 32] @ np.sin(hs[i:i + 32, None] * ph[None, :])
     flutter = 1.0 + 0.12 * slow_noise(n, 140)
     y = y / (np.max(np.abs(y)) + 1e-12) * flutter
     y += noise_amt * band(RNG.standard_normal(n), 1500, 5000)
@@ -260,16 +261,21 @@ def room_ir(rt, dark=2600.0):
         h[int(d * SR)] += a * np.sqrt(np.sum(h ** 2) / n) * 40
     return h / np.sqrt(np.sum(h ** 2))
 
-IR = None
-def wet(x, amt, circular):
-    """x with the room added (circularly for a loop: the tail of the end comes round to the start)"""
+IR = None   # the room's impulse response: main() makes it first (its noise drawn before the music's), or wet() when it is first needed
+def wet(x, amt, circular, ir=None):
+    """x with the room added (circularly for a loop: the tail of the end comes round to the start). ir: the room (else IR)"""
     if amt <= 0: return x
+    global IR
+    if ir is None:
+        if IR is None: IR = room_ir(0.9)
+        ir = IR
+    IR_ = ir
     n = len(x)
     if circular:
-        H = np.fft.rfft(IR, n); r = np.fft.irfft(np.fft.rfft(x) * H, n)
+        H = np.fft.rfft(IR_, n); r = np.fft.irfft(np.fft.rfft(x) * H, n)
     else:
-        m = n + len(IR); H = np.fft.rfft(IR, m); r = np.fft.irfft(np.fft.rfft(np.concatenate([x, np.zeros(len(IR))])) * H, m)
-        x = np.concatenate([x, np.zeros(len(IR))])
+        m = n + len(IR_); H = np.fft.rfft(IR_, m); r = np.fft.irfft(np.fft.rfft(np.concatenate([x, np.zeros(len(IR_))])) * H, m)
+        x = np.concatenate([x, np.zeros(len(IR_))])
     return x + amt * r
 
 # ---------------- writing it down ----------------

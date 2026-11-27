@@ -8,11 +8,14 @@
    - 16비트에 담으려고 SCALE배로 줄여 적고, 게임이 그만큼 되돌립니다(godot/scripts/snd.gd의 SCALE).
    - 브라우저판에 없는 Godot판만의 소리는 GODOT_OWN에 브라우저판과 같은 재료(noise, tone)로 적어 두고 같은 방법으로 만듭니다.
      기관총(shot_lmg)은 1.6.1부터 Godot판만의 소리입니다(주인의 요청: 브라우저판의 것이 크고 시끄러워서, 더 낮고 둔탁하게).
+   - 소리가 비어 나오면(조합이 깨졌을 때) 빈 파일을 쓰지 않고 멈춥니다. 네 번 모두 만들어 견주고, 넷이 다 같을 때만 하나를 둡니다.
    쓰는 법: node tools/render_sounds.js            모두 다시 (Playwright와 그 크로미엄이 필요합니다)
-           node tools/render_sounds.js shot_lmg   이름을 준 것만 */
+           node tools/render_sounds.js shot_lmg   이름을 준 것만
+           RENDER_OUT=/tmp/x node tools/render_sounds.js   다른 곳에 (견주어 볼 때) */
 const { chromium } = require('playwright');
 const fs = require('fs'); const path = require('path');
-const ROOT = path.join(__dirname, '..'); const OUT = path.join(ROOT, 'godot', 'sounds');
+const ROOT = path.join(__dirname, '..'); const OUT = process.env.RENDER_OUT || path.join(ROOT, 'godot', 'sounds');
+fs.mkdirSync(OUT, { recursive: true });
 const SR = 44100, SCALE = 0.5, VARIANTS = 4;
 const src = fs.readFileSync(path.join(ROOT, 'src', '03_core.js'), 'utf8');
 const a = src.indexOf('const Sound = (() => {'); const b = src.indexOf('\n})();', a);
@@ -53,18 +56,19 @@ const SOUNDS = {
 /* the loops, made seamless: [name, call that starts it, seconds to let it settle, loop length (whole periods of all its parts)] */
 const LOOPS = { rotor: ['rotor(1)', 2.5, 6.0], jet_lo: ['jet(0.45)', 1.5, 3.0], jet_hi: ['jet(0.85)', 1.5, 3.0] };   // the jetpack hovering, and pushing up
 
-function wav(int16, file) {
-  const n = int16.length, buf = Buffer.alloc(44 + n * 2);
+/* a mono 16-bit WAV around the samples (little-endian bytes, as the page hands them over) */
+function wav(pcm, file) {
+  const n = pcm.length / 2, buf = Buffer.alloc(44);
   buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8); buf.write('fmt ', 12); buf.writeUInt32LE(16, 16);
   buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22); buf.writeUInt32LE(SR, 24); buf.writeUInt32LE(SR * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
-  buf.write('data', 36); buf.writeUInt32LE(n * 2, 40); for (let i = 0; i < n; i++) buf.writeInt16LE(int16[i], 44 + i * 2);
-  fs.writeFileSync(file, buf);
+  buf.write('data', 36); buf.writeUInt32LE(n * 2, 40);
+  fs.writeFileSync(file, Buffer.concat([buf, pcm]));
 }
 
 (async () => {
   const browser = await chromium.launch(); const page = await browser.newPage();
   await page.goto('about:blank');
-  await page.evaluate(({ MODULE, SR }) => {
+  await page.evaluate(({ MODULE, SR, SCALE }) => {
     /* one fresh Sound per render, on an offline context of its own: as the browser game's, but no compressor (the game's mixer has it) */
     window.__render = async (call, seconds, from, len) => {
       let ctx = null;
@@ -81,32 +85,32 @@ function wav(int16, file) {
       const data = (await ctx.startRendering()).getChannelData(0);
       const s = Math.floor((from || 0) * SR), e = len ? s + Math.round(len * SR) : data.length;
       let end = e; if (!len) { while (end > s && Math.abs(data[end - 1]) < 1e-4) end--; end = Math.min(e, end + Math.round(0.01 * SR)); }
-      let peak = 0; const out = new Array(end - s);
-      for (let i = s; i < end; i++) { out[i - s] = data[i]; peak = Math.max(peak, Math.abs(data[i])); }
-      return { out, peak };
+      // the samples as 16-bit numbers, SCALE times the level, sent back as the bytes themselves (base64), not a list of numbers
+      let peak = 0; const q = new Int16Array(end - s);
+      for (let i = s; i < end; i++) { q[i - s] = Math.max(-32767, Math.min(32767, Math.round(data[i] * SCALE * 32767))); peak = Math.max(peak, Math.abs(data[i])); }
+      const bytes = new Uint8Array(q.buffer); let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return { pcm: btoa(bin), peak, n: q.length };
     };
-  }, { MODULE, SR });
+  }, { MODULE, SR, SCALE });
   let worst = 0; const made = [];
   const save = (name, r) => {
+    if (r.peak < 1e-4 || r.n === 0) throw new Error(name + ' came out silent: its call in the browser game\'s Sound has changed or broken');
+    if (r.peak * SCALE > 1) throw new Error(name + ' is too loud for SCALE (peak ' + r.peak.toFixed(3) + '): nothing written for it');   // (before its file, not after: no clipped file left behind)
     worst = Math.max(worst, r.peak);
-    const q = Int16Array.from(r.out, (v) => Math.max(-32767, Math.min(32767, Math.round(v * SCALE * 32767))));
-    wav(q, path.join(OUT, name + '.wav')); made.push(name);
+    wav(Buffer.from(r.pcm, 'base64'), path.join(OUT, name + '.wav')); made.push(name);
   };
   const only = process.argv.slice(2);   // (names given: only those)
   for (const n of only) if (!(n in SOUNDS) && !(n in LOOPS)) throw new Error('no such sound: ' + n);
   for (const [name, call] of Object.entries(SOUNDS)) {
     if (only.length && !only.includes(name)) continue;
-    const takes = [];
-    for (let k = 0; k < VARIANTS; k++) {
-      const r = await page.evaluate(([c]) => window.__render(c, 4.0), [call]);
-      if (k === 1 && r.out.length === takes[0].out.length && r.out.every((v, i) => v === takes[0].out[i])) break;   // the same every time: one is enough
-      takes.push(r);
-    }
+    let takes = [];
+    for (let k = 0; k < VARIANTS; k++) takes.push(await page.evaluate(([c]) => window.__render(c, 4.0), [call]));
+    if (takes.every((r) => r.pcm === takes[0].pcm)) takes = takes.slice(0, 1);   // the same all four times: one is enough (a sound picked from a few at random can come out the same twice)
     takes.forEach((r, k) => save(k === 0 ? name : `${name}__${k}`, r));
     for (let k = takes.length; k < VARIANTS; k++) { const f = path.join(OUT, `${name}__${k}.wav`); if (fs.existsSync(f)) fs.unlinkSync(f); }
   }
   for (const [name, [call, settle, len]] of Object.entries(LOOPS)) if (!only.length || only.includes(name)) save(name, await page.evaluate(([c, s, l]) => window.__render(c, s + l + 0.5, s, l), [call, settle, len]));
   await browser.close();
-  if (worst * SCALE > 1) throw new Error('a sound is too loud for SCALE: peak ' + worst);
   console.log(made.length, 'files from', only.length || Object.keys(SOUNDS).length + Object.keys(LOOPS).length, 'sounds; loudest peak', worst.toFixed(3), '(stored at', (worst * SCALE).toFixed(3) + ')');
 })();

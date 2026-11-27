@@ -65,11 +65,12 @@ const WEB_MIX := """window.__yarrSnd = (function (A) {
 		const b = o.ready() ? A.buses[bus] : null;
 		if (!b) return false;
 		let p = b.__yarr;
-		if (!p) {   // the bus carries Godot's six channels: down to the two first, then the panner
+		if (!p) {   // the bus carries Godot's six channels: down to the two first, to one for a sound with a place, then the panner
 			const two = A.ctx.createGain(); two.channelCount = 2; two.channelCountMode = 'explicit';
-			p = put(b, [two, A.ctx.createStereoPanner()]); p.channelCountMode = 'explicit';
+			const one = A.ctx.createGain(); one.channelCountMode = 'explicit';
+			p = put(b, [two, one, A.ctx.createStereoPanner()]); p.__one = one;   // (the panner keeps its own channel settings, as every browser takes them)
 		}
-		p.channelCount = placed ? 1 : 2; p.pan.value = placed ? pan : 0;
+		p.__one.channelCount = placed ? 1 : 2; p.pan.value = placed ? pan : 0;
 		return true;
 	};
 	o.now = () => (A.ctx ? A.ctx.currentTime : 0);   // the browser's audio clock
@@ -138,6 +139,15 @@ func place(at: Vector3) -> Vector2:
 	var rx := cos(listener_yaw) * d.x - sin(listener_yaw) * d.z
 	return Vector2(k, clampf(rx / (dist + 2.0), -0.8, 0.8))
 
+## a voice for a new sound: the first one free from where the last went, or (all twelve playing) the next in turn
+func _free_voice() -> int:
+	var n := _players.size(); var i := _next
+	for j in n:
+		var c := (_next + j) % n
+		if not _players[c].playing: i = c; break
+	_next = (i + 1) % n
+	return i
+
 ## WebAudio's StereoPanner on one channel (equal power) as Godot's panner (left 1 - p, right 1 + p) and a level: [p, level]
 static func pan_as_web(pan: float) -> Vector2:
 	var x := (pan + 1.0) * 0.5; var gl := cos(x * PI * 0.5); var gr := sin(x * PI * 0.5)
@@ -147,11 +157,11 @@ func play(name: String, gain := 1.0, at = null) -> void:
 	if keep_log: played.push_back(name)
 	var t := takes(name)
 	if t.is_empty() or volume <= 0.0: return
-	var i := _next; _next = (_next + 1) % _players.size(); var p := _players[i]
+	var i := _free_voice(); var p := _players[i]
 	p.stream = t[randi() % t.size()]
-	if name.begins_with("toy_"):   # stage 5's own sounds: as they always were
+	if name.begins_with("toy_"):   # stage 5's own sounds: as they always were (stored at half level as the rest: tools/make_sounds.py)
 		if at != null: gain *= clampf(1.6 / (1.0 + (at as Vector3).distance_to(listener) * 0.09), 0.04, 1.0)
-		p.bus = "Master"; p.volume_db = linear_to_db(maxf(0.0001, gain * volume)); p.pitch_scale = randf_range(0.96, 1.04); p.play(); return
+		p.bus = "Master"; p.volume_db = linear_to_db(maxf(0.0001, gain * volume / SCALE)); p.pitch_scale = randf_range(0.96, 1.04); p.play(); return
 	var level := gain * volume / SCALE; var pn := 0.0; var kp := place(at) if at != null else Vector2(1.0, 0.0)
 	# a sound with a place goes through the panner (a sound without one reaches both ears whole, as there)
 	if _web != null and _web.pan(_voice_bus[i], kp.y, at != null): level *= kp.x   # (the browser's own panner, on the web)

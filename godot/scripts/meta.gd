@@ -91,24 +91,41 @@ static func place(id: String) -> int:
 	Store.save.loadout[i] = id; Store.persist(); return i + 1
 
 static func rent(id: String, mid: bool) -> String:
-	var W: Dictionary = Weapons.LIST[id]; var fee := Weapons.rent(id)
+	var W: Dictionary = Weapons.LIST[id]; var fee := 0 if Store.settings.dev else Weapons.rent(id)   # (developer mode: everything free)
+	if id == "pistol" or Store.save.owned.has(id): return W.name + " · 이미 가진 무기입니다"   # (the shop shows no rent button then: a second press, or a stale one, does nothing)
+	if Store.save.rented.has(id): return W.name + " · 이미 대여 중입니다"
 	if Store.save.money < fee: return Store.won(fee - Store.save.money) + " 더 필요합니다"
 	spend(fee); Store.save.rented.push_back(id)
 	var slot := place(id); Store.persist(); Snd.play("buy")
 	return W.name + " 대여 · " + ("이번 스테이지가 끝나면 반납" if mid else "다음 스테이지 한 번 쓰고 반납") + (" · %d번 칸에 넣었습니다" % slot if slot > 0 else " · 빈 칸이 없어 무기 편성에서 넣어 주세요")
 
 static func cancel_rent(id: String) -> String:
-	Store.save.rented.erase(id); refund(Weapons.rent(id)); Snd.play("reload0")
-	return Weapons.LIST[id].name + " 대여를 취소했습니다 · " + Store.won(Weapons.rent(id)) + " 돌려받음"
+	if not Store.save.rented.has(id): return ""   # (nothing rented: nothing to give back)
+	var fee := 0 if Store.settings.dev else Weapons.rent(id)   # (what renting costs now: nothing in developer mode, as rent() takes)
+	Store.save.rented.erase(id); refund(fee); Snd.play("reload0")
+	return Weapons.LIST[id].name + " 대여를 취소했습니다 · " + Store.won(fee) + " 돌려받음"
+
+## how many more rounds a gun can take in the middle of a stage: a rocket up to its 12 (in the tube and carried), the other guns
+## up to their full reserve (the browser game sells them without end; this port stops at the reserve: the owner's rule, 1.6.2)
+static func ammo_room(id: String, guns: Guns) -> int:
+	var W: Dictionary = Weapons.LIST[id]; var st: Dictionary = guns.wstate[id]
+	if W.get("rocket", false): return int(maxf(0.0, W.reserve + W.mag - st.mag - st.reserve))
+	if W.reserve == INF or st.reserve == INF: return 0   # (the pistol's rounds never run out: none to buy)
+	return int(maxf(0.0, W.reserve - st.reserve))
+## the next pack for a gun: [rounds, price] (100 rounds, or what still fits for its share of the price; one rocket)
+static func ammo_pack(id: String, guns: Guns) -> Array:
+	var n := 1 if Weapons.LIST[id].get("rocket", false) else mini(100, ammo_room(id, guns))
+	var full: int = 0 if Store.settings.dev else Weapons.AMMO100[id]
+	return [n, full if (n >= 100 or Weapons.LIST[id].get("rocket", false)) else ceili(full * n / 100.0)]
 
 ## 100 more rounds (one rocket) for a gun in the middle of a stage
 static func buy_ammo(id: String, guns: Guns) -> String:
-	var W: Dictionary = Weapons.LIST[id]; var c: int = 0 if Store.settings.dev else Weapons.AMMO100[id]; var st: Dictionary = guns.wstate[id]
-	var room: float = maxf(0.0, W.reserve + W.mag - st.mag - st.reserve) if W.get("rocket", false) else INF
+	var W: Dictionary = Weapons.LIST[id]; var st: Dictionary = guns.wstate[id]
+	if ammo_room(id, guns) < 1: return W.name + " · 더 들 수 없습니다"
+	var pk := ammo_pack(id, guns); var n: int = pk[0]; var c: int = pk[1]
 	if Store.save.money < c: return Store.won(c - Store.save.money) + " 더 필요합니다"
-	if room < 1.0: return W.name + " · 더 들 수 없습니다"
-	spend(c); st.reserve += 1 if W.get("rocket", false) else 100; Snd.play("reload1")
-	return W.name + (" 로켓 1발 · %d/12" % int(st.mag + st.reserve) if W.get("rocket", false) else " 총알 100발 · %d발" % int(st.reserve))
+	spend(c); st.reserve += n; Snd.play("reload1")
+	return W.name + (" 로켓 1발 · %d/12" % int(st.mag + st.reserve) if W.get("rocket", false) else " 총알 %d발 · %d발" % [n, int(st.reserve)])
 
 ## put a gun in a slot (or empty it); a gun sits in one slot only
 ## the weapon order, changed in the middle of a stage too: a gun swaps places with the next gun before it (step -1) or after it

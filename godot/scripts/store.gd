@@ -2,6 +2,8 @@ extends Node
 ## What is kept between sessions: the save (money, cleared stages, guns, items) and the settings. In the browser it lives in
 ## localStorage; elsewhere in a file. The Godot trial keeps its own keys, apart from the browser game's (a save code carries progress over).
 
+const ST_ARMED := 5   # the inner number of stage 1-2 (the armed docks)
+const ST_TOY := 9     # the inner number of stage 5 (the toy room)
 const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # 9 is stage 5, the toy room
 const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4", 9: "5"}
 const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [9], 9: []}
@@ -10,6 +12,10 @@ signal saved   # the save has just been written on the device (the account, Clou
 
 var save := {}
 var settings := {}
+# the checks: everything written is kept in memory only, never on this machine's disk (nor its browser storage), so running
+# them leaves whoever plays here their own save and settings
+var ephemeral := false
+var _mem := {}
 # inside a stage, what you earned there is only yours once you get out: storage keeps what you came in with
 var money_lock = null
 var ivory_lock = null
@@ -42,12 +48,14 @@ func save_level(l: int) -> void:
 
 func _read(key: String):
 	var text := ""
-	if OS.has_feature("web"): text = str(JavaScriptBridge.eval("(function(){try{return localStorage.getItem('yarr07.godot.%s')||''}catch(e){return ''}})()" % key))
+	if ephemeral: text = str(_mem.get(key, ""))
+	elif OS.has_feature("web"): text = str(JavaScriptBridge.eval("(function(){try{return localStorage.getItem('yarr07.godot.%s')||''}catch(e){return ''}})()" % key))
 	elif FileAccess.file_exists("user://%s.json" % key): text = FileAccess.get_file_as_string("user://%s.json" % key)
 	return JSON.parse_string(text) if text != "" else null
 
 func _write(key: String, value) -> void:
 	var text := JSON.stringify(value)
+	if ephemeral: _mem[key] = text; return
 	if OS.has_feature("web"): JavaScriptBridge.eval("try{localStorage.setItem('yarr07.godot.%s', %s)}catch(e){}" % [key, JSON.stringify(text)])
 	else:
 		var f := FileAccess.open("user://%s.json" % key, FileAccess.WRITE)

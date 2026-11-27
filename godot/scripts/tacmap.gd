@@ -48,7 +48,7 @@ static func _colors() -> Dictionary:
 	return COLOR
 
 static func half_of(st: int) -> float:
-	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == 9 else 68.0)))
+	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == Store.ST_TOY else 68.0)))
 
 func setup(st: int) -> void:
 	stage = st; H = half_of(st); CX = 19.0 if st == 4 else 0.0; CZ = 0.0   # the ship runs east of 0
@@ -81,9 +81,12 @@ func draw(ci, size: Vector2) -> void:
 	var X := func(x: float) -> float: return o.x + (x - CX + H + PAD) * k
 	var Z := func(z: float) -> float: return o.y + (z - CZ + H + PAD) * k
 	var T: Dictionary = THEME[stage]; var w: World = game.world
+	# the world built is this map's own stage: otherwise nothing of another stage (its tower, its pit, its enemies, its walls)
+	# is drawn on it, only the ground's grid
+	var live: bool = w != null and game.stage == stage
 	ci.draw_rect(r, Color(str(T.bg)))
 	# the ground: the safari's waterhole and tracks, the yard's painted lines, a grid
-	if stage == 7 and w.safari != null:
+	if live and stage == 7 and w.safari != null:
 		var W := Safari.WATER
 		ci.draw_circle(Vector2(X.call(W.x), Z.call(W.z)), W.r * k, Color("4a6a7a")); ci.draw_arc(Vector2(X.call(W.x), Z.call(W.z)), W.r * k, 0, TAU, 64, Color("6a4a30"), 6.0 * k)
 		for line: Array in w.safari.roads:
@@ -91,7 +94,7 @@ func draw(ci, size: Vector2) -> void:
 			for p: Vector2 in line: pts.push_back(Vector2(X.call(p.x), Z.call(p.y)))
 			ci.draw_polyline(pts, Color(138 / 255.0, 106 / 255.0, 69 / 255.0, 0.9), 6.0 * k)
 			for q in pts: ci.draw_circle(q, 3.0 * k, Color(138 / 255.0, 106 / 255.0, 69 / 255.0, 0.9))   # round joins
-	if stage in [1, 5, 6]:
+	if stage in [1, Store.ST_ARMED, 6]:   # the docks: 1, 1-2 and 1-1
 		var yl := Color(201 / 255.0, 150 / 255.0, 44 / 255.0, 0.25)
 		for z in [-33.0, -11.0, 11.0, 33.0]: ci.draw_rect(Rect2(X.call(-64.0), Z.call(z) - kb, 128.0 * k, 2.0 * kb), yl)
 		for x in [-36.0, -12.0, 12.0, 36.0]: ci.draw_rect(Rect2(X.call(x) - kb, Z.call(-64.0), 2.0 * kb, 128.0 * k), yl)
@@ -102,7 +105,7 @@ func draw(ci, size: Vector2) -> void:
 	v = ceilf((CZ - H) / step) * step
 	while v <= CZ + H: ci.draw_line(Vector2(X.call(CX - H), Z.call(v)), Vector2(X.call(CX + H), Z.call(v)), gc, gw); v += step
 	# the ship: once the hall's floor has fallen in, its stepped pit, each step a shade darker, the landings picked out, the depths marked
-	if stage == 4 and w.ship != null and w.ship.broken:
+	if live and stage == 4 and w.ship != null and w.ship.broken:
 		var cx: float = Ship.REACTOR.x; var cz: float = Ship.REACTOR.z
 		var rect := func(ax: float, az: float) -> Rect2: return Rect2(X.call(cx - ax), Z.call(cz - az), 2.0 * ax * k, 2.0 * az * k)
 		ci.draw_rect(rect.call(Ship.PYR_OX, Ship.PYR_OZ), Color("1b2232"))
@@ -116,9 +119,9 @@ func draw(ci, size: Vector2) -> void:
 			if s2.land: _text(ci, f_mono, "%dm" % roundi(s2.y), X.call(cx), Z.call(cz - float(s2.az) + float(s2.w) / 2.0), fs, pc)
 		_text(ci, f_mono, "%dm" % roundi(Ship.PYR_BOTTOM), X.call(cx), Z.call(cz - w.ship.pyr_bz + 2.0), fs, pc)
 	# what stands in the way. crates, cage walls, the watchtower and doors are drawn live; ceilings and lintels are overhead
-	var toy := stage == 9; var list: Array = Phys.colliders
+	var toy := stage == Store.ST_TOY; var list: Array = Phys.colliders if live else []
 	if toy:   # the toy room: the floor and the room's walls left out, the furniture in the order of its height so the tops show
-		list = Phys.colliders.filter(func(b: Phys.Box) -> bool: return b.maxy > 0.05 and b.maxy - b.miny <= 30.0)
+		list = list.filter(func(b: Phys.Box) -> bool: return b.maxy > 0.05 and b.maxy - b.miny <= 30.0)
 		list.sort_custom(func(a: Phys.Box, b: Phys.Box) -> bool: return a.maxy < b.maxy)
 	for b: Phys.Box in list:
 		if b.kind == "wood" and b.ref != null: continue
@@ -131,12 +134,12 @@ func draw(ci, size: Vector2) -> void:
 		ci.draw_rect(Rect2(X.call(b.minx), Z.call(b.minz), maxf(1.5 * kb, bw * k), maxf(1.5 * kb, bd * k)), Color(col))
 	if toy:   # the furniture's names (ToyRoom.NAMES), under everything that moves
 		for nm: Array in ToyRoom.NAMES: _text(ci, f_bold, str(nm[0]), X.call(float(nm[1])), Z.call(float(nm[2])), roundi(19.0 * u), INKC, "center", 4.5 * u, Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.9))
-	if stage == 2 and w.village != null:
+	if live and stage == 2 and w.village != null:
 		for q: Array in w.village.pines: ci.draw_circle(Vector2(X.call(q[0]), Z.call(q[1])), float(q[3]) * k, Color(58 / 255.0, 74 / 255.0, 34 / 255.0, 0.85))
 		for q: Array in w.village.fires:
 			var rr := (2.0 + float(q[3]) * 2.5) * k
 			_radial(ci, Vector2(X.call(q[0]), Z.call(q[2])), rr, [[0.0, Color(1.0, 170 / 255.0, 60 / 255.0, 0.95)], [0.4, Color(1.0, 90 / 255.0, 20 / 255.0, 0.6)], [1.0, Color(1.0, 60 / 255.0, 10 / 255.0, 0.0)]])
-	if stage == 7 and w.safari != null:
+	if live and stage == 7 and w.safari != null:
 		for q: Array in w.safari.trees: ci.draw_circle(Vector2(X.call(q[0]), Z.call(q[1])), float(q[3]) * k, Color(58 / 255.0, 74 / 255.0, 34 / 255.0, 0.85))
 	ci.draw_rect(Rect2(X.call(CX - H), Z.call(CZ - H), 2.0 * H * k, 2.0 * H * k), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.5), false, 2.0 * kb)
 	# ---- what moves ----
@@ -146,11 +149,12 @@ func draw(ci, size: Vector2) -> void:
 	_text(ci, f_mono, "N ↑", o.x + edge + 20.0 * u, o.y + edge + 11.5 * u, roundi(13.0 * u), INKC)
 	var bw2 := bar * k + 16.0 * u
 	# the scale in the bottom right corner, or the bottom left when the drop point is down there (1-2's), so it shows
-	var sc_x := o.x + S - edge - bw2 if not (X.call(w.start.x) > o.x + S * 0.6 and Z.call(w.start.z) > o.y + S * 0.6) else o.x + edge
+	var sc_x := o.x + S - edge - bw2 if not (live and X.call(w.start.x) > o.x + S * 0.6 and Z.call(w.start.z) > o.y + S * 0.6) else o.x + edge
 	ci.draw_rect(Rect2(sc_x, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP)
 	ci.draw_rect(Rect2(sc_x + bw2 - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
 	_text(ci, f_mono, "%dm" % int(bar), sc_x + bw2 - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
 	# the lab's cages: shut ones as bars with the number and the seconds left, open ones as the walls lying flat
+	if not live: return
 	if w.lab != null:
 		var L: Lab = w.lab
 		for c: Dictionary in L.cages:
@@ -195,7 +199,7 @@ func draw(ci, size: Vector2) -> void:
 			if e.toy and game.enemies.toys != null and game.enemies.toys.camo(e): col.a = 0.45   # a soldier gone still: fainter
 			ci.draw_circle(ep, rr, col)
 			if e.alert or e.angry: ci.draw_arc(ep, rr + 2.0 * u, 0, TAU, 24, Color.WHITE, 1.2 * u)
-	if stage == 9 and game.tm != null:   # stage 5's team modes: the mode's own marks, and our blue soldiers
+	if stage == Store.ST_TOY and game.tm != null:   # stage 5's team modes: the mode's own marks, and our blue soldiers
 		game.tm.mode.tac(ci, X, Z, k, u)
 		for a in game.tm.allies:
 			if a.alive and not bool(a.k.get("gone", false)):
@@ -242,15 +246,15 @@ static func _radial(ci, c: Vector2, r: float, stops: Array) -> void:
 func legend(live: bool) -> Array:
 	var lab := stage == 3 or stage == 8; var out := []
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
-	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == 5 else ("내리는 곳" if stage == 9 else "헬기에서 내리는 곳")))
-	out.push_back(["lz", lz, SODIUM, "" if stage == 9 else ("문" if lab else ("A" if stage == 4 else "H"))])
-	if stage == 9 and game != null and game.tm != null:   # stage 5's team modes: their own marks
+	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
+	out.push_back(["lz", lz, SODIUM, "" if stage == Store.ST_TOY else ("문" if lab else ("A" if stage == 4 else "H"))])
+	if stage == Store.ST_TOY and game != null and game.tm != null:   # stage 5's team modes: their own marks
 		for it: Array in game.tm.mode.legend(): out.push_back(["en", it[2], Color(str(it[1])), ""])
 		out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
 		return out
 	for kd: Array in KINDS[stage]: out.push_back(["en", kd[2], Color(str(kd[1])), ""])
 	if stage == 7: out.push_back(["tw", "감시탑 · 체력", Color("8a6440"), ""])
-	elif stage != 9: out.push_back(["bo", "보스", Color("ff2d3d"), ""])
+	elif stage != Store.ST_TOY: out.push_back(["bo", "보스", Color("ff2d3d"), ""])
 	out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
 	if lab: out.push_back(["cg", "우리 · 번호와 열리는 시간", Color("c9d2da"), ""])
 	if live: out.push_back(["al", "흰 테두리 · 나를 쫓는 중", Color.WHITE, ""])

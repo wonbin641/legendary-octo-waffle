@@ -1,0 +1,6 @@
+{
+	"_note": "Numbers the owner of this port set apart from the browser game's (reference_stage1.json keeps the browser game's own). The checks compare the port's weapons with the reference, these taking the place of the reference's where they are named.",
+	"weapons": {
+		"rocket": {"price": 150000, "rent": 45000, "browser": {"price": 300000, "rent": 90000}}
+	}
+}

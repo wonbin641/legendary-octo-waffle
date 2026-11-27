@@ -1216,7 +1216,9 @@ func _kong(e: Enemies.Foe, dt: float, _time: float, dist: float, face_yaw: float
 	else:
 		if sp > 0.1: kong_gait(P, k, sp, dt, gallop, sc)
 		kong_pose(e, P, 1.0 - exp(-dt * rate))
-		# keep the head and chest hit spheres on the moving body
+		# keep the head and chest hit spheres on the moving body: the body put where it is this frame first (it is moved there
+		# after this, so the spheres were read where it stood the frame before, a step behind it at a charge)
+		e.g.position = e.pos; e.g.rotation.y = e.yaw + e.yaw_off
 		var cy := cos(e.yaw); var sy := sin(e.yaw)
 		for pp in e.parts:
 			if pp.has("node"):
@@ -1277,10 +1279,12 @@ func ride_off(forced: bool, msg := "") -> void:
 	m = null; tier = 0
 	if a.alive: _free(a)
 	var gap := a.R + Player.R + 0.35; var cy := cos(a.yaw); var sy := sin(a.yaw); var x := a.pos.x; var z := a.pos.z
+	var lift := 0.2   # no room on any side: down where it stands, on nothing higher than a low step (the browser game's 0.6 put
+	                  # you on top of a low crate or rail beside it; the owner's review)
 	for o in [[cy, -sy], [-cy, sy], [-sy, -cy], [sy, cy]]:
 		var px: float = a.pos.x + o[0] * gap; var pz: float = a.pos.z + o[1] * gap
-		if absf(px) < Phys.HALF - 1 and absf(pz) < Phys.HALF - 1 and Phys.collide_at(px, a.pos.y + 0.05, pz, Player.R, Player.HEIGHT) == null: x = px; z = pz; break
-	player.pos = Vector3(x, Phys.ground_at(x, a.pos.y + 0.6, z, Player.R), z); player.vel = Vector3.ZERO; player.grounded = true
+		if absf(px) < Phys.HALF - 1 and absf(pz) < Phys.HALF - 1 and Phys.collide_at(px, a.pos.y + 0.05, pz, Player.R, Player.HEIGHT) == null: x = px; z = pz; lift = 0.6; break
+	player.pos = Vector3(x, Phys.ground_at(x, a.pos.y + lift, z, Player.R), z); player.vel = Vector3.ZERO; player.grounded = true
 	if msg != "": _feed(msg)
 	elif not forced: _feed("내렸습니다")
 

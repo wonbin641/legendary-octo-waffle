@@ -97,10 +97,11 @@ func _say(s: String) -> void:
 
 ## the web build plays everything as the browser's own samples, each made from its file the first time it plays: made one by
 ## one beforehand instead (in the briefing, early in a match), so no frame has to wait for six at once
-func _warm(list: Array) -> void:
+func _warm(list: Array) -> void:   # players, or the names of one-offs
 	if not OS.has_feature("web"): return
-	for p: AudioStreamPlayer in list:
-		if p.stream != null and not _pending.has(p.stream) and not AudioServer.is_stream_registered_as_sample(p.stream): _pending.push_back(p.stream)
+	for x in list:
+		var s: AudioStream = (x as AudioStreamPlayer).stream if x is AudioStreamPlayer else _stream(str(x), false)
+		if s != null and not _pending.has(s) and not AudioServer.is_stream_registered_as_sample(s): _pending.push_back(s)
 
 func _warm_step() -> void:
 	if _pending.is_empty(): return
@@ -108,10 +109,11 @@ func _warm_step() -> void:
 	if not AudioServer.is_stream_registered_as_sample(s): AudioServer.register_stream_as_sample(s)
 
 ## seconds of audio since the last frame: the browser's own audio clock on the web (it stands still while the page's audio
-## is put to sleep), the wall clock elsewhere; never more than a second at once
+## is put to sleep), the wall clock elsewhere. All of it: the players went on through a long frame, so where the music is
+## follows (the envelopes, fades and the like, take at most a second of it: update's env_dt)
 func _elapsed() -> float:
 	var now := Snd.audio_clock()
-	var d := 0.0 if _clock < 0.0 else clampf(now - _clock, 0.0, 1.0)
+	var d := 0.0 if _clock < 0.0 else maxf(0.0, now - _clock)
 	_clock = now
 	return d
 
@@ -121,28 +123,30 @@ func _elapsed() -> float:
 ## on), teams (a team mode: the trumpets). dt, when given, stands in for the audio's clock (the tests)
 func update(_frame_dt: float, ctx: Dictionary, dt := -1.0) -> void:
 	if dt < 0.0: dt = _elapsed()
+	var env_dt := minf(dt, 1.0)   # (levels, fades, the filter, the tape: at most a second at once; where the music is: all of dt)
 	var want: String = ctx.get("what", "")
 	if want == "march" and what != "march" and what != "leadin": _start_match()
 	elif want == "lobby" and what != "lobby": _start_lobby()
 	elif want == "" and what != "": _say("stop"); what = ""
 	var master := GAIN * volume * Snd.volume
 	# the lobby's music box
-	lobby_fade = move_toward(lobby_fade, 1.0 if what == "lobby" else 0.0, dt / (1.0 if what == "lobby" else 0.4))
+	lobby_fade = move_toward(lobby_fade, 1.0 if what == "lobby" else 0.0, env_dt / (1.0 if what == "lobby" else 0.4))
 	_vol(_lobby, LOBBY * master * lobby_fade)
 	if lobby_fade <= 0.0 and _lobby.playing: _lobby.stop()
-	if what == "lobby": _warm_step()
-	# the march: silent under the drum, heard from its first bar
+	if what == "lobby" or what == "leadin": _warm_step()
+	# the march: silent under the drum, heard from its first bar. Where it is moves at the pitch the players played at since the
+	# last frame (_pitch_set: what they were given at the end of it), so a tape stretch adds nothing up wrong
 	if what == "leadin":
-		t += dt * pitch
-		if t >= LOOP - 0.5 * dt: t = maxf(0.0, t - LOOP); _begin_march()
-	elif what == "march": _march(dt, ctx)
+		t += dt * _pitch_set
+		if t >= LOOP - 0.5 * dt: t = fposmod(t - LOOP, LOOP) if t - LOOP > 0.0 else 0.0; _begin_march()
+	elif what == "march": _march(dt, env_dt, ctx)
 	if what != "march" and what != "leadin":
 		lp = LP_OPEN
-		fade = move_toward(fade, 0.0, dt / 2.0)
+		fade = move_toward(fade, 0.0, env_dt / 2.0)
 		if fade <= 0.0: _stop_march()
 	var paused: bool = ctx.get("paused", false)
 	var m2 := master * fade * (0.4 if paused else 1.0)
-	_tape(dt)
+	_tape(env_dt)
 	for k in LAYERS:
 		_vol(_n[k], level[k] * m2 * (1.0 - w_ot)); _vol(_o[k], level[k] * m2 * w_ot)
 	_vol(_o.alarm, 0.8 * m2 * w_ot)
@@ -167,13 +171,15 @@ func _start_lobby() -> void:
 func _start_match() -> void:
 	_say("leadin"); what = "leadin"; ot = false; w_ot = 0.0; switching = false; heat = 0.0; battle = false; kick = KICKOFF; since_spawn = 0.0
 	_shots = -1; _hp = -1.0; _out = false; horn_t = 6.0; tape_t = TAPE; pitch = 1.0; _warm_t = 0.0; fade = 0.0
+	_pitch_set = 1.0
+	for p in _all(): p.pitch_scale = 1.0   # (a match ended in the middle of a tape stretch: this one starts true)
 	for k in LAYERS: level[k] = 0.0
 	_stop_march(); _leadin.stop()
 	_db.clear(); _vol(_leadin, 0.0)
 	for k in LAYERS: _vol(_n[k], 0.0)
 	_leadin.play(); t = LOOP - LEADIN
 	for k in LAYERS: _n[k].play(t)   # (all in the one frame: they go round together, and with the drum)
-	_warm(_n.values())
+	_warm(_n.values() + ["ot_bell", "trumpet_us", "trumpet_them"])   # (the one-offs too, under the drum: none waits when it comes)
 
 func _begin_march() -> void:
 	_say("march"); what = "march"; fade = 1.0; state = "battle"
@@ -184,11 +190,10 @@ func _stop_march() -> void:
 		if p.playing: p.stop()
 
 ## the march's frame: where it is, the state and the layers' levels, the overtime's change of set at a bar line
-func _march(dt: float, ctx: Dictionary) -> void:
+func _march(adt: float, dt: float, ctx: Dictionary) -> void:   # adt: all the audio since the last frame (where the music is); dt: at most a second of it
 	var lp_len := OT_LOOP if ot else LOOP
-	t += dt * pitch
-	if t >= lp_len: t -= lp_len
-	kick = maxf(0.0, kick - dt)
+	t = fposmod(t + adt * _pitch_set, lp_len)
+	kick = maxf(0.0, kick - adt)
 	# a fight: your shots, your hurts, enemies about you
 	var shots: int = ctx.get("shots", 0); var hp: float = ctx.get("hp", 0.0)
 	if _shots >= 0 and shots > _shots and shots - _shots < 60: heat += 0.06 * (shots - _shots)
@@ -212,8 +217,8 @@ func _march(dt: float, ctx: Dictionary) -> void:
 	var want_ot: bool = ctx.get("ot", false)
 	if want_ot != ot and not switching: _prepare(want_ot)
 	if switching:
-		switch_in -= dt * pitch
-		if switch_in <= 0.5 * dt * pitch: _switch()
+		switch_in -= adt * _pitch_set
+		if switch_in <= 0.5 * adt * _pitch_set: _switch()
 	w_ot = move_toward(w_ot, 1.0 if ot else 0.0, dt / XFADE)
 	if w_ot <= 0.0 or w_ot >= 1.0: _quiet_other()
 	# (the web: the overtime's layers made ready a while into a timed match, one every second and a half)
@@ -231,6 +236,7 @@ func _march(dt: float, ctx: Dictionary) -> void:
 func _prepare(to_ot: bool) -> void:
 	var bar := OT_BAR if ot else BAR
 	var b := int(floorf(t / bar + 0.0001)) + 1               # the next bar line
+	if b * bar - t < 0.05: b += 1                             # (too close to start the other set in time, maybe right at its end: the one after)
 	switch_in = b * bar - t                                   # (in music: both sets keep the one pitch, so they meet in it)
 	var nb := BAR if ot else OT_BAR; var nl := LOOP if ot else OT_LOOP
 	t_next = b % BARS * nb
@@ -240,7 +246,7 @@ func _prepare(to_ot: bool) -> void:
 	switching = true; _say("prepare " + ("overtime" if to_ot else "march"))
 
 func _switch() -> void:
-	switching = false; ot = not ot; t = t_next - switch_in   # (the other set, playing all along, is just there)
+	switching = false; ot = not ot; t = fposmod(t_next - switch_in, OT_LOOP if ot else LOOP)   # (the other set, playing all along, is just there)
 	_say("overtime" if ot else "overtime off")
 	if ot: shot("ot_bell", 0.9)
 

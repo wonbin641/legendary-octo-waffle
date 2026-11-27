@@ -124,7 +124,12 @@ static func decode(text: String):
 		for i in Weapons.ORDER.size():
 			var c: int = o["c%d" % i]
 			if c == 0 or (c & 15) >= Custom.PAINTS.size(): continue
-			custom[Weapons.ORDER[i]] = {"sight": Custom.PARTS.sight.list[(c >> 8) & 3].id, "muzzle": Custom.PARTS.muzzle.list[(c >> 6) & 3].id, "under": Custom.PARTS.under.list[(c >> 4) & 3].id, "paint": Custom.PAINTS[c & 15].id}
+			var gid: String = Weapons.ORDER[i]; var cu := {"paint": Custom.PAINTS[c & 15].id}
+			for sl: Array in [["sight", 8], ["muzzle", 6], ["under", 4]]:   # only parts there are, and that this gun takes (a made-up code puts nothing odd on it)
+				var L: Array = Custom.PARTS[sl[0]].list; var k: int = (c >> int(sl[1])) & 3
+				var pid: String = L[k].id if k < L.size() else L[0].id
+				cu[sl[0]] = pid if Custom.fits(gid, sl[0], pid) else L[0].id
+			custom[gid] = cu
 	return {"custom": custom, "v": 4, "money": o.money, "cleared": cleared, "best": best, "loadout": lo, "rented": [], "owned": owned,
 		"items": {"helmet": o.get("ih", 0), "vest": o.get("iv", 0), "jet": o.get("ij", 0), "ivory": o.get("ivory", 0)}}
 

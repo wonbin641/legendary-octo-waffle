@@ -133,7 +133,19 @@ static func moon_tex() -> ImageTexture:
 			img.set_pixel(x, y, c)
 	return tex(img)
 
-static func asphalt_tex() -> ImageTexture:
+## the painted textures made once and kept, by what they were made from (a stage built again reuses its containers' sides
+## instead of painting them again; World.forget_textures lets the docks' and the village's go once another kind is built)
+static var _tex_cache := {}
+static func _cached(key: String, make: Callable) -> ImageTexture:
+	if not _tex_cache.has(key): _tex_cache[key] = make.call()
+	return _tex_cache[key]
+static func forget_cached(prefixes: Array) -> void:
+	for k: String in _tex_cache.keys():
+		for p: String in prefixes:
+			if k.begins_with(p): _tex_cache.erase(k); break
+
+static func asphalt_tex() -> ImageTexture: return _cached("asphalt", func() -> ImageTexture: return _asphalt())
+static func _asphalt() -> ImageTexture:
 	var img := Image.create(512, 512, false, Image.FORMAT_RGBA8); img.fill(Color("2a2e35"))
 	speckle(img, 9000, [Color("33373f"), Color("24272d"), Color("3a3e46"), Color("1f2227")], 2)
 	for i in 14:  # oil stains
@@ -153,7 +165,8 @@ static func asphalt_tex() -> ImageTexture:
 	return tex(img)
 
 ## stage 2's ground, the browser game's canvas: trampled earth, patches greener and browner, short strokes of grass
-static func dirt_tex() -> ImageTexture:
+static func dirt_tex() -> ImageTexture: return _cached("dirt", func() -> ImageTexture: return _dirt())
+static func _dirt() -> ImageTexture:
 	var img := Image.create(512, 512, false, Image.FORMAT_RGBA8); img.fill(Color("25261b"))
 	speckle(img, 9000, [Color("2e2d21"), Color("201f16"), Color("2a3121"), Color("1c2317"), Color("33301f")], 2.2)
 	for i in 18:
@@ -165,7 +178,8 @@ static func dirt_tex() -> ImageTexture:
 		fline(img, Vector2(x, y), Vector2(x + randf_range(-2, 2), y - randf_range(3, 7)), blades[randi() % 3])
 	return tex(img)
 
-static func concrete_tex() -> ImageTexture:
+static func concrete_tex() -> ImageTexture: return _cached("concrete", func() -> ImageTexture: return _concrete())
+static func _concrete() -> ImageTexture:
 	var img := Image.create(256, 256, false, Image.FORMAT_RGBA8); img.fill(Color("7d8088"))
 	speckle(img, 5000, [Color("868991"), Color("73767e"), Color("8e9199"), Color("6b6e75")], 2)
 	for i in 10:
@@ -173,7 +187,8 @@ static func concrete_tex() -> ImageTexture:
 		for y in 256: blend_rect(img, x, y, w, 1, Color(0.157, 0.157, 0.176, 0.35 * (1.0 - y / 256.0)))
 	return tex(img)
 
-static func crate_tex() -> ImageTexture:
+static func crate_tex() -> ImageTexture: return _cached("crate", func() -> ImageTexture: return _crate())
+static func _crate() -> ImageTexture:
 	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8); img.fill(Color("7a5a36"))
 	for y in range(0, 128, 16):
 		img.fill_rect(Rect2i(0, y, 128, 15), Color("6d5030") if y % 32 != 0 else Color("82603a"))
@@ -188,6 +203,8 @@ static func crate_tex() -> ImageTexture:
 ## a container's long side as the browser game paints it (World.sideTex): corrugation, rails, rust running down, grime,
 ## and the ISO code, the size-type code and the owner's mark in the same type
 static func side_tex(color: Color, code: String, owner: String, long: bool) -> ImageTexture:
+	return _cached("side:%s:%s:%s:%s" % [color.to_html(), code, owner, long], func() -> ImageTexture: return _side(color, code, owner, long))
+static func _side(color: Color, code: String, owner: String, long: bool) -> ImageTexture:
 	var w := 512 if long else 256; var h := 128
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8); img.fill(color)
 	var k := 0; var x := 0.0
@@ -206,7 +223,8 @@ static func side_tex(color: Color, code: String, owner: String, long: bool) -> I
 	text(img, owner.substr(0, 3), title, 34, 18, 86, "left", "alphabetic", Color8(240, 236, 226, 179))
 	return tex(img)
 
-static func door_tex(color: Color) -> ImageTexture:
+static func door_tex(color: Color) -> ImageTexture: return _cached("door:" + color.to_html(), func() -> ImageTexture: return _door(color))
+static func _door(color: Color) -> ImageTexture:
 	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8); img.fill(color)
 	var d := shade(color, 0.6)
 	img.fill_rect(Rect2i(0, 0, 128, 6), d); img.fill_rect(Rect2i(0, 122, 128, 6), d); img.fill_rect(Rect2i(0, 0, 6, 128), d); img.fill_rect(Rect2i(122, 0, 6, 128), d); img.fill_rect(Rect2i(62, 6, 3, 116), d)
@@ -463,6 +481,12 @@ static func scene_for(F: Vector3, e: float) -> Vector3:
 static func albedo_of(L: Vector3) -> Vector3:
 	if fplus: return L   # (Forward+ takes ALBEDO as it is)
 	return Vector3(_poly_inv(L.x), _poly_inv(L.y), _poly_inv(L.z))
+## the vertex colour a see-through speck's material decodes into the linear colour L: Forward+'s SEE_SHADER decodes its
+## vertex colours with the true sRGB curve (so they are encoded with it here; given L as it is, it was decoded twice and the
+## specks came out darker), the compatibility renderer's own material with the cubic albedo_of inverts
+static func vcol_of(L: Vector3) -> Vector3:
+	if fplus: return Vector3(_srgb(maxf(L.x, 0.0)), _srgb(maxf(L.y, 0.0)), _srgb(maxf(L.z, 0.0)))
+	return albedo_of(L)
 static func _poly_inv(v: float) -> float:
 	var s := pow(maxf(v, 0.0), 1.0 / 2.2)
 	for i in 8:

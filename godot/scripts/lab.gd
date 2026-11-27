@@ -377,7 +377,7 @@ func populate(put: Callable, SR: World.Rng, boss_opts: Dictionary) -> void:
 func open(c: Dictionary) -> void:
 	c.open = true; c.opened_t = t
 	for p in c.panels: Phys.remove_collider(p.col); p.fall_t = 0.0; p.wob = 0.0
-	Phys.build_nav(); Phys.update_flow(player.pos.x, player.pos.z)
+	Phys.nav_patch_boxes(c.panels.map(func(pn: Dictionary) -> Phys.Box: return pn.col)); Phys.update_flow(player.pos.x, player.pos.z)
 	var left := 0
 	for e in c.animals:
 		if e.alive: left += 1; e.caged = false; e.release_t = randf_range(0.15, 0.9); e.alert = true; e.awake = true   # awake however far away you are, so they really come out

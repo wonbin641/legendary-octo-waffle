@@ -23,9 +23,8 @@ func pick(a: Array) -> String: return a[int(floor(R.next() * a.size()))]
 func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	R = rng
 	# ground: trampled earth and dark grass (the browser game's canvas, 24 times each way)
-	if _dirt == null: _dirt = Gfx.dirt_tex()
 	var gm := PlaneMesh.new(); gm.size = Vector2(260, 260); var ground := MeshInstance3D.new(); ground.mesh = gm
-	var grm := Gfx.std(Color.WHITE, 1.0, 0.0, _dirt); grm.uv1_scale = Vector3(24, 24, 1); ground.material_override = grm; G.add_child(ground)
+	var grm := Gfx.std(Color.WHITE, 1.0, 0.0, Gfx.dirt_tex()); grm.uv1_scale = Vector3(24, 24, 1); ground.material_override = grm; G.add_child(ground)
 	# the edge of the village: a palisade of sharpened logs
 	var E := 67.0
 	for q in [[0.0, -E - 0.6, 2 * E + 2, 1.2], [0.0, E + 0.6, 2 * E + 2, 1.2], [-E - 0.6, 0.0, 1.2, 2 * E + 2], [E + 0.6, 0.0, 1.2, 2 * E + 2]]:
@@ -117,8 +116,8 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 		if not ok: continue
 		var turn := randf_range(-0.2, 0.2)
 		if not in_hut: ghosts.push_back(Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood")); ghost_at.push_back(Vector2(x, z)); i += 1; continue
+		var cr := {"idx": xs.size(), "hp": 45.0, "x": x, "z": z, "y": 0.0, "dead": false}   # its place among the crates drawn (the ghosts are not drawn)
 		xs.push_back(Transform3D(Basis(Vector3.UP, turn), Vector3(x, 0.6, z)))
-		var cr := {"idx": i, "hp": 45.0, "x": x, "z": z, "y": 0.0, "dead": false}
 		cr.b = Phys.add_collider(x - 0.6, 0, z - 0.6, x + 0.6, 1.2, z + 0.6, "wood", cr); w.crates.push_back(cr); i += 1
 	var mmi := Gfx.multimesh(Gfx.box(Vector3(1.2, 1.2, 1.2)), xs); mmi.material_override = Gfx.std(Color.WHITE, 0.9, 0.0, w._tex.crate); G.add_child(mmi); MoonShadow.caster(mmi); w.crate_mm = mmi.multimesh; w.crate_mmi = mmi; w.crate_xf = xs.duplicate()
 
@@ -130,7 +129,6 @@ func build(w: World, G: Node3D, S: Dictionary, rng: World.Rng) -> void:
 	Phys.index_colliders(); Phys.build_nav()
 	w.start = {"x": 0.0, "z": 8.0, "yaw": 0.0}; w.spawns.clear()
 
-static var _dirt: ImageTexture   # made once, the first time the village is built
 
 ## a pine's crown: three cones stacked (the browser game's crownGeo), its foot at 0
 static func crown_mesh() -> ArrayMesh:

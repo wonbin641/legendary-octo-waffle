@@ -84,16 +84,28 @@ func update(dt: float) -> void:
 			if p.r > 1.15: p.r = 0.46 + randf() * 0.22; p.a = randf() * TAU; p.v = 0.7 + randf() * 0.6; p.l = 0.08 + randf() * 0.14
 
 # ---------------- drawing ----------------
-## a radial glow over the whole view, as the browser's "radial-gradient(ellipse at center, ...)": stops [[at, colour], ...]
-func _radial_tex(key: String, stops: Array) -> GradientTexture2D:
+## the radial glows over the whole view, each with its own stops [[at, colour], ...] (one table: a key always has the same picture)
+const GLOW_STOPS := {
+	"hurt": [[0.0, Color(1, 40 / 255.0, 60 / 255.0, 0)], [0.45, Color(1, 40 / 255.0, 60 / 255.0, 0)], [1.0, Color(1, 40 / 255.0, 60 / 255.0, 0.55)]],
+	"low": [[0.0, Color(120 / 255.0, 0, 20 / 255.0, 0)], [0.55, Color(120 / 255.0, 0, 20 / 255.0, 0)], [1.0, Color(120 / 255.0, 0, 20 / 255.0, 0.6)]],
+	"toxic": [[0.0, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0)], [0.35, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0)], [1.0, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0.5)]],
+	"stun": [[0.0, Color(1, 1, 1, 0.18)], [0.45, Color(200 / 255.0, 200 / 255.0, 210 / 255.0, 0.35)], [1.0, Color(20 / 255.0, 20 / 255.0, 30 / 255.0, 0.75)]],
+	"down": [[0.0, Color(0, 0, 0, 0.35)], [0.5, Color(0, 0, 0, 0.5)], [1.0, Color(0.05, 0.02, 0.02, 0.85)]],
+	"watch": [[0.0, Color(1, 0.85, 0.5, 0)], [0.6, Color(1, 0.85, 0.5, 0.0)], [1.0, Color(1, 0.75, 0.35, 0.4)]],
+	"wind": [[0.0, Color(70 / 255.0, 1, 150 / 255.0, 0)], [0.5, Color(70 / 255.0, 1, 150 / 255.0, 0)], [1.0, Color(70 / 255.0, 1, 150 / 255.0, 0.24)]],
+}
+
+## a radial glow over the whole view, as the browser's "radial-gradient(ellipse at center, ...)", from its stops in GLOW_STOPS
+func _radial_tex(key: String) -> GradientTexture2D:
 	if _tex.has(key): return _tex[key]
+	var stops: Array = GLOW_STOPS[key]
 	var gr := Gradient.new(); gr.offsets = PackedFloat32Array(stops.map(func(q): return float(q[0]))); gr.colors = PackedColorArray(stops.map(func(q): return q[1]))
 	var t := GradientTexture2D.new(); t.gradient = gr; t.fill = GradientTexture2D.FILL_RADIAL; t.fill_from = Vector2(0.5, 0.5); t.fill_to = Vector2(0.5 + 0.7071, 0.5); t.width = 256; t.height = 256
 	_tex[key] = t; return t
 
-func _glow(ci: Control, key: String, stops: Array, a: float) -> void:
+func _glow(ci: Control, key: String, a: float) -> void:
 	if a <= 0.004: return
-	ci.draw_texture_rect(_radial_tex(key, stops), Rect2(Vector2.ZERO, ci.size), false, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+	ci.draw_texture_rect(_radial_tex(key), Rect2(Vector2.ZERO, ci.size), false, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
 
 func _w(font: Font, text: String, fs: int) -> float: return font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 
@@ -113,15 +125,15 @@ func draw(ci: Control) -> void:
 	var pct := clampf(pl.hp / Player.MAX_HP, 0.0, 1.0) * 100.0
 	# ---- over the view ----
 	_wind(ci, s, c)
-	_glow(ci, "hurt", [[0.0, Color(1, 40 / 255.0, 60 / 255.0, 0)], [0.45, Color(1, 40 / 255.0, 60 / 255.0, 0)], [1.0, Color(1, 40 / 255.0, 60 / 255.0, 0.55)]], hurt_t * 2.2)
-	if g.stage != 2 and pct < 35.0: _glow(ci, "low", [[0.0, Color(120 / 255.0, 0, 20 / 255.0, 0)], [0.55, Color(120 / 255.0, 0, 20 / 255.0, 0)], [1.0, Color(120 / 255.0, 0, 20 / 255.0, 0.6)]], (0.55 + sin(t * 6.0) * 0.25) * (1.0 - pct / 35.0) + 0.2)
+	_glow(ci, "hurt", hurt_t * 2.2)
+	if g.stage != 2 and pct < 35.0: _glow(ci, "low", (0.55 + sin(t * 6.0) * 0.25) * (1.0 - pct / 35.0) + 0.2)
 	var inf := g.infected; var poi := g.poison_t > 0.0; var T := 0.0
 	if inf or poi:
 		T = minf(g.infect_t, g.poison_t) if (inf and poi) else (g.infect_t if inf else g.poison_t)
-		_glow(ci, "toxic", [[0.0, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0)], [0.35, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0)], [1.0, Color(70 / 255.0, 190 / 255.0, 90 / 255.0, 0.5)]], 0.55 + sin(t * 9.0) * 0.25 + maxf(0.0, 5.0 - T) * 0.06)
-	if pl.stun_t > 0.0: _glow(ci, "stun", [[0.0, Color(1, 1, 1, 0.18)], [0.45, Color(200 / 255.0, 200 / 255.0, 210 / 255.0, 0.35)], [1.0, Color(20 / 255.0, 20 / 255.0, 30 / 255.0, 0.75)]], clampf(pl.stun_t, 0.0, 1.0) * (0.75 + sin(t * 7.0) * 0.15))
-	if g.tm != null and pl.out: _glow(ci, "down", [[0.0, Color(0, 0, 0, 0.35)], [0.5, Color(0, 0, 0, 0.5)], [1.0, Color(0.05, 0.02, 0.02, 0.85)]], 1.0)   # down: the view darkens
-	if g.tm != null and g.tm.key == "freeze" and str(g.tm.mode.phase) in ["open", "look"]: _glow(ci, "watch", [[0.0, Color(1, 0.85, 0.5, 0)], [0.6, Color(1, 0.85, 0.5, 0.0)], [1.0, Color(1, 0.75, 0.35, 0.4)]], 0.6 + 0.4 * sin(t * 5.0))
+		_glow(ci, "toxic", 0.55 + sin(t * 9.0) * 0.25 + maxf(0.0, 5.0 - T) * 0.06)
+	if pl.stun_t > 0.0: _glow(ci, "stun", clampf(pl.stun_t, 0.0, 1.0) * (0.75 + sin(t * 7.0) * 0.15))
+	if g.tm != null and pl.out: _glow(ci, "down", 1.0)   # down: the view darkens
+	if g.tm != null and g.tm.key == "freeze" and str(g.tm.mode.phase) in ["open", "look"]: _glow(ci, "watch", 0.6 + 0.4 * sin(t * 5.0))
 	_scope_and_cross(ci, s, c, W, guns, pl)
 	_dmgdir(ci, c, pl)
 	if g.tm != null: _friends(ci, g)
@@ -176,14 +188,14 @@ func draw(ci: Control) -> void:
 	var ax := s.x - 16.0; var ay := s.y - bottom
 	var mag := str(int(st.mag)); var res := "/ " + ("∞" if float(st.reserve) == INF else str(int(st.reserve)))
 	var rw := _w(f_mono, res, 18); _t(ci, f_mono, res, ax, ay - 22, 18, STEEL, "right"); _t(ci, f_mono, mag, ax - rw - 8, ay - 40, 40, ALARM if int(st.mag) <= ceili(float(W.mag) * 0.25) else INK, "right")
-	var wn: String = Toys.NAMES[guns.cur] if g.stage == 9 else str(W.model) + " " + str(W.name) + (" · 이동 -%d%%" % roundi((1.0 - float(W.moveMul)) * 100.0) if W.get("heavy", false) else "") + (" · 과열" if (W.get("heat", false) and st.get("hot", false)) else "")
+	var wn: String = Toys.NAMES[guns.cur] if g.stage == Store.ST_TOY else str(W.model) + " " + str(W.name) + (" · 이동 -%d%%" % roundi((1.0 - float(W.moveMul)) * 100.0) if W.get("heavy", false) else "") + (" · 과열" if (W.get("heat", false) and st.get("hot", false)) else "")
 	_t(ci, f_title, wn, ax, ay - 40 - 6 - 22, 18, SODIUM, "right")
 	if not touch:
 		var x := ax; var sy := s.y - 96.0 - 18.0
 		for i in range(guns.loadout.size() - 1, -1, -1):
 			var id = guns.loadout[i]
 			if id == null: continue
-			var txt := "%d %s" % [i + 1, (Toys.NAMES[id] if g.stage == 9 else Custom.weapon(id).short)]; var tw := _w(f_mono, txt, 11) + 14.0; x -= tw
+			var txt := "%d %s" % [i + 1, (Toys.NAMES[id] if g.stage == Store.ST_TOY else Custom.weapon(id).short)]; var tw := _w(f_mono, txt, 11) + 14.0; x -= tw
 			var on: bool = id == (guns.pending if guns.pending != null else guns.cur)
 			_panel(ci, Rect2(x, sy, tw, 18), SODIUM if on else PANEL, SODIUM if on else LINE); _t(ci, f_mono, txt, x + 7, sy + 1, 11, NIGHT if on else STEEL, "left", false); x -= 4.0
 
@@ -380,7 +392,7 @@ func _scope_and_cross(ci: Control, s: Vector2, c: Vector2, W: Dictionary, guns: 
 ## running with the SMG: green streaks rushing out past the edges, a faint green round the rim
 func _wind(ci: Control, s: Vector2, c: Vector2) -> void:
 	if wind_k < 0.012: return
-	_glow(ci, "wind", [[0.0, Color(70 / 255.0, 1, 150 / 255.0, 0)], [0.5, Color(70 / 255.0, 1, 150 / 255.0, 0)], [1.0, Color(70 / 255.0, 1, 150 / 255.0, 0.24)]], wind_k)
+	_glow(ci, "wind", wind_k)
 	var R := c.length()
 	for p in wind:
 		var fade := clampf((p.r - 0.44) / 0.18, 0.0, 1.0) * clampf((1.15 - p.r) / 0.25, 0.0, 1.0)

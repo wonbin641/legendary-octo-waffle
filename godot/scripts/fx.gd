@@ -35,6 +35,11 @@ class Pool:
 	var cursor := 0
 	var shown := 0
 	var _vx := PackedVector3Array(); var _col := PackedColorArray(); var _uv := PackedVector2Array(); var _idx := PackedInt32Array()
+	# the surface is made once at its full size; each frame only the specks' corners and colours go to it again (the specks
+	# not in flight drawn at no size), not a new surface. Where the engine lays its buffers out other than expected (a corner
+	# 12 bytes, a colour 4), it is made again each frame as before
+	static var regions := true   # (false: made again each frame, as before: for the checks to compare)
+	var _whole := false; var _astride := 0; var _coff := 0; var _attr := PackedByteArray(); var _lit := 0
 
 	func _init(n: int, add: bool, tex: Texture2D) -> void:
 		cap = n
@@ -49,6 +54,21 @@ class Pool:
 			var o := i * 4
 			_uv[o] = Vector2(0, 0); _uv[o + 1] = Vector2(1, 0); _uv[o + 2] = Vector2(1, 1); _uv[o + 3] = Vector2(0, 1)
 			_idx[i * 6] = o; _idx[i * 6 + 1] = o + 1; _idx[i * 6 + 2] = o + 2; _idx[i * 6 + 3] = o; _idx[i * 6 + 4] = o + 2; _idx[i * 6 + 5] = o + 3
+		if regions: _make_whole()
+
+	func _make_whole() -> void:
+		var nv := cap * 4; var arr := []; arr.resize(Mesh.ARRAY_MAX)
+		var zv := PackedVector3Array(); zv.resize(nv); var zc := PackedColorArray(); zc.resize(nv)
+		arr[Mesh.ARRAY_VERTEX] = zv; arr[Mesh.ARRAY_COLOR] = zc; arr[Mesh.ARRAY_TEX_UV] = _uv; arr[Mesh.ARRAY_INDEX] = _idx
+		mesh.clear_surfaces(); mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var fmt := mesh.surface_get_format(0)
+		var vstride := RenderingServer.mesh_surface_get_format_vertex_stride(fmt, nv); _astride = RenderingServer.mesh_surface_get_format_attribute_stride(fmt, nv)
+		_coff = RenderingServer.mesh_surface_get_format_offset(fmt, nv, Mesh.ARRAY_COLOR); var uoff := RenderingServer.mesh_surface_get_format_offset(fmt, nv, Mesh.ARRAY_TEX_UV)
+		if vstride != 12 or _astride != 12 or not ((_coff == 0 and uoff == 4) or (_coff == 8 and uoff == 0)):
+			mesh.clear_surfaces(); _whole = false; return
+		_attr.resize(nv * _astride); _attr.fill(0)
+		for v in nv: _attr.encode_float(v * _astride + uoff, _uv[v].x); _attr.encode_float(v * _astride + uoff + 4, _uv[v].y)
+		_whole = true; _lit = 0
 
 	func emit(at: Vector3, vel: Vector3, life: float, s0: float, s1: float, col: Color, grav: float, drag: float, raw := false) -> void:
 		if not raw: col = Fx.shown(col)
@@ -71,8 +91,19 @@ class Pool:
 			var c: Color = s[6]; var z: float = lerpf(s[4], s[5], k); var r := rx * z; var u := uy * z; var o := n * 4
 			_vx[o] = q - r - u; _vx[o + 1] = q + r - u; _vx[o + 2] = q + r + u; _vx[o + 3] = q - r + u
 			var cc := Color(c.r, c.g, c.b, c.a * (1.0 - k * k)); _col[o] = cc; _col[o + 1] = cc; _col[o + 2] = cc; _col[o + 3] = cc
+			if _whole:   # the colour as the engine stores a vertex colour: four bytes, each channel times 255 cut down to a whole number
+				var c8 := int(clampf(cc.r * 255.0, 0.0, 255.0)) | (int(clampf(cc.g * 255.0, 0.0, 255.0)) << 8) | (int(clampf(cc.b * 255.0, 0.0, 255.0)) << 16) | (int(clampf(cc.a * 255.0, 0.0, 255.0)) << 24)
+				var at := o * _astride + _coff
+				_attr.encode_u32(at, c8); _attr.encode_u32(at + _astride, c8); _attr.encode_u32(at + 2 * _astride, c8); _attr.encode_u32(at + 3 * _astride, c8)
 			n += 1; i += 1
-		if n > 0 or shown > 0:
+		if _whole:
+			var m := maxi(n, _lit)   # those in flight now, and those that were last frame (gone now: drawn at no size)
+			for j in range(n * 4, m * 4): _vx[j] = Vector3.ZERO
+			if m > 0:
+				mesh.surface_update_vertex_region(0, 0, _vx.slice(0, m * 4).to_byte_array())
+				mesh.surface_update_attribute_region(0, 0, _attr.slice(0, m * 4 * _astride))
+			_lit = n
+		elif n > 0 or shown > 0:
 			mesh.clear_surfaces()
 			if n > 0:
 				var arr := []; arr.resize(Mesh.ARRAY_MAX)
@@ -81,7 +112,10 @@ class Pool:
 		shown = n
 
 	func reset() -> void:
-		p.clear(); cursor = 0; shown = 0; mesh.clear_surfaces()
+		p.clear(); cursor = 0; shown = 0
+		if _whole:   # every corner back to nothing, the surface kept
+			_vx.fill(Vector3.ZERO); mesh.surface_update_vertex_region(0, 0, _vx.to_byte_array()); _lit = 0
+		else: mesh.clear_surfaces()
 
 ## the soft round speck: white, its edge fading out as smoothstep(0.5, 0.05, distance from the middle)
 static func _dot_tex() -> ImageTexture:
@@ -106,7 +140,7 @@ static func shown(c: Color) -> Color:
 	if not _shown.has(k):
 		if _shown.size() >= SHOWN_MAX: _shown.clear()
 		var t := Vector3(minf(q.x / 255.0, 0.97), minf(q.y / 255.0, 0.97), minf(q.z / 255.0, 0.97))   # tone mapping never quite reaches white
-		var a := Gfx.albedo_of(Gfx.scene_for(t, exposure)); _shown[k] = Color(a.x, a.y, a.z)
+		var a := Gfx.vcol_of(Gfx.scene_for(t, exposure)); _shown[k] = Color(a.x, a.y, a.z)
 	var r: Color = _shown[k]
 	return Color(r.r, r.g, r.b, c.a)
 

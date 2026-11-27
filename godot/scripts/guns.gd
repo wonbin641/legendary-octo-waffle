@@ -166,7 +166,7 @@ func _auto_crate() -> void:
 		var b: Phys.Box = c.b
 		var q := Vector3(clampf(o.x, b.minx, b.maxx), clampf(o.y, b.miny, b.maxy), clampf(o.z, b.minz, b.maxz)); var d := q.distance_to(o)
 		var dx: float = c.x - player.pos.x; var dz: float = c.z - player.pos.z; var h := maxf(sqrt(dx * dx + dz * dz), 0.0001)
-		if d < bd and (dx * fx_ + dz * fz) / h > 0.35: best = c; bd = d  # within about 70 degrees of straight ahead
+		if d < bd and (dx * fx_ + dz * fz) / h > 0.35 and Phys.line_of_sight(o, q): best = c; bd = d  # within about 70 degrees of straight ahead, and not through a wall
 	if best != null: melee_start(best)
 
 func _melee_update(dt: float) -> void:
@@ -317,8 +317,8 @@ func _finish_reload() -> void:
 func switch_to(id) -> void:
 	if lock_to != "" and id != lock_to and id != null:
 		_say(hint, ["건전지를 든 동안은 다트 권총과 30cm 자만 쓸 수 있습니다", 1.6]); return
-	if id == null or not slots.has(id) or id == cur or switch_t > 0.0 or busy > 0.0: return
-	reload_t = 0.0; pending = id; switch_t = 0.36; Snd.play("reload0")
+	if id == null or not slots.has(id) or id == cur or switch_t > 0.0 or busy > 0.0 or melee_on: return   # (not in the middle of a jab)
+	reload_t = 0.0; _pump_t = -1.0; pending = id; switch_t = 0.36; Snd.play("reload0")   # (the gun put away does not pump after it)
 
 ## straight to this gun, whatever you were doing with the one in hand (the battery comes into your arms)
 func force_to(id: String) -> void:
@@ -349,7 +349,8 @@ func update(dt: float) -> void:
 	if _auto_reload_t > 0.0:
 		_auto_reload_t -= dt
 		if _auto_reload_t <= 0.0 and _auto_reload_for == cur and st().mag == 0: start_reload()
-	if look_mode == "touch" and auto_fire and not W.get("grenade", false) and not W.get("rocket", false) and not trigger and cooldown <= 0.0 and reload_t <= 0.0 and switch_t <= 0.0 and st().mag > 0 and not player.sprinting:
+	if look_mode == "touch" and auto_fire and not W.get("grenade", false) and not W.get("rocket", false) and not trigger and cooldown <= 0.0 and reload_t <= 0.0 and switch_t <= 0.0 and st().mag > 0 and not player.sprinting \
+			and busy <= 0.0 and not melee_on and not player.out:   # (no looking along the sights while the gun cannot fire anyway)
 		var f := -cam.global_basis.z; var o := cam.global_position
 		var reach: float = W.falloff[1] if W.has("falloff") else minf(W.range, 70.0)
 		# a wooden crate under the crosshair too, but only within 12 m (farther off, the shots woke the area and used rented ammo)
