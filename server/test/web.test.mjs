@@ -35,9 +35,9 @@ const browser = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=sw
 
 // the game opened in a browser of its own (its own storage: another device), told where the server is. One at a time:
 // without a graphics card the game draws a few frames a second, and two at once starve each other
-async function open(from) {
+async function open(from, toApi = true) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  await ctx.addInitScript((a) => { window.YARR07_API = a; }, api);
+  if (toApi) await ctx.addInitScript((a) => { window.YARR07_API = a; }, api);
   const p = await ctx.newPage(), errs = [], asked = [];
   p.on("console", (m) => { if (m.type() === "error") errs.push(m.text().slice(0, 200)); });
   p.on("pageerror", (e) => errs.push("" + e));
@@ -90,6 +90,14 @@ s = await c.until((x) => !x.busy);
 const n = (await db.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n;
 check("the same game from a page the server does not list gets nothing: the browser will not hand over the answer, nobody is signed in",
   s.in === false && s.money === 0 && n === 3 && c.errs.some((e) => /CORS|Access-Control|blocked/i.test(e)), { s, sessions: n, errs: c.errs.slice(0, 2) });
+
+await c.ctx.close();
+step("opening the game from a page the server does not list, told of no server (as the claude.ai artifact is)");
+const d = await open(other, false);
+s = await d.y("acct");
+check("there the game shows no account at all (rather than one whose every request the browser would refuse), and asks nothing of any server",
+  s.on === false && s.in === false && d.asked.length === 0, { s, asked: d.asked });
+await d.ctx.close();
 
 await browser.close(); await mf.dispose(); web.close(); stranger.close();
 console.log(fails === 0 ? `ALL OK (${oks})` : `${fails} FAILED`);

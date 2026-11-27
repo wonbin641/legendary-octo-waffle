@@ -2525,6 +2525,10 @@ func _accounts() -> void:
 		and k_all == "2891b140f4147d4ea1a2f5cc779f1cb15a3e2fcdf76d61be2c908745fa65c6a9" and k_parts == k_all and K.key_of("someone", "Correct horse", 50) != K.key_of("someone", "correct horse", 50), "%d ms" % t_k)
 	var web_re := RegEx.new(); web_re.compile("^https://[a-z0-9.-]+\\.[a-z]+$")
 	check("the game's account server is an https address out on the net (never one on this machine), and the checks have it switched off", web_re.search(K.BASE) != null and not K.BASE.contains("127.0.0.1") and not K.BASE.contains("localhost") and not C.enabled(), K.BASE)
+	var toml := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://").path_join("../server/wrangler.toml"))
+	var orx := RegEx.new(); orx.compile("(?m)^ORIGINS = \"([^\"]*)\""); var om := orx.search(toml)
+	var listed: Array = Array(om.get_string(1).split(",")).map(func(x): return str(x).strip_edges()) if om != null else []
+	check("the web game turns its account on only on the pages the server answers from a browser (the same list as server/wrangler.toml's ORIGINS)", om != null and listed == K.WEB_PAGES, [listed, K.WEB_PAGES])
 	check("an id is 3 to 16 of a-z, 0-9 and _, a password 8 to 64 letters of any kind",
 		K.id_error("ab") != "" and K.id_error("has space") != "" and K.id_error("한글아이디") != "" and K.id_error("a".repeat(17)) != "" and K.id_error("Upper") != "" and K.id_error("good_id_1") == ""
 		and K.pw_error("1234567") != "" and K.pw_error("12345678") == "" and K.pw_error("한글 비밀번호도") == "" and K.pw_error("p".repeat(65)) != "")

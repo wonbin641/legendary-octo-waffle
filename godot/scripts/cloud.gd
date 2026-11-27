@@ -13,6 +13,9 @@ extends Node
 ## its own takes the account's; an account with none takes the device's.
 
 const BASE := "https://accounts.yarr07.workers.dev"   # the server (server/ at the top of the repository); "" would mean none: then the game shows no account at all
+## the pages the server answers from a browser (server/wrangler.toml, ORIGINS): the web game anywhere else (the claude.ai
+## artifact, a copy on another site) shows no account, rather than one whose every request the browser would refuse
+const WEB_PAGES := ["https://wonbin641.github.io"]
 const ROUNDS := 100000    # the key's stretching (the server's kdf 1)
 const ID_MIN := 3; const ID_MAX := 16; const PW_MIN := 8; const PW_MAX := 64
 const RETRY := 15.0; const RETRY_MAX := 300.0   # the server not reached: again in 15 s, then twice as long each time, 5 minutes at most
@@ -39,10 +42,11 @@ func signed_in() -> bool: return token != ""
 func asking() -> bool: return not ask.is_empty()
 
 func _ready() -> void:
-	if OS.has_feature("web"):   # (the browser checks: a server on this very machine, and nowhere else)
+	if OS.has_feature("web"):
 		var o := str(JavaScriptBridge.eval("(function(){try{return window.YARR07_API||''}catch(e){return ''}})()"))
 		var re := RegEx.new(); re.compile("^http://(127\\.0\\.0\\.1|localhost):[0-9]{2,5}$")
-		if re.search(o) != null: base = o
+		if re.search(o) != null: base = o   # (the browser checks: a server on this very machine, and nowhere else)
+		elif not WEB_PAGES.has(str(JavaScriptBridge.eval("(function(){try{return location.origin||''}catch(e){return ''}})()"))): base = ""
 	var d = Store._read(store_key)
 	if d is Dictionary and str(d.get("token", "")) != "":
 		id = str(d.get("id", "")); token = str(d.token); rev = int(d.get("rev", 0)); dirty = bool(d.get("dirty", false)); at = int(d.get("at", 0))
