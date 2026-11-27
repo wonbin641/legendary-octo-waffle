@@ -100,6 +100,17 @@ const check = (name, ok, info) => { console.log((ok ? 'ok   ' : 'FAIL ') + name 
   const marLoud = await loudness(); const st = await y('music');
   check('the match: after the drum the march\'s six layers, started in the one moment and each looped by the browser (they go round together)',
     mar.length === 6 && mar.every((n) => n.loop && n.bus[0] === mbus) && spread < 0.003 && st.what === 'march' && marLoud > 0, { n: mar.length, spread, what: st.what, marLoud });
+  // the layers are not started "now" one after another (the clock can tick between two of them on a busy page): the drum and
+  // the six were given the one moment, a little ahead on the browser's audio clock
+  const group = () => p.evaluate(() => { const g = window.__yarrSnd.group; return { at: g.at, asked: g.asked, n: g.n, late: g.late, lead: window.__yarrSnd.lead }; });
+  const g1 = await group();
+  check('the drum and the march\'s six layers were given the one moment to begin at, 0.05 s ahead on the browser\'s audio clock',
+    g1.n === 7 && Math.abs(g1.lead - 0.05) < 1e-6 && Math.abs(g1.at - g1.asked - g1.lead) < 1e-9 && mar.length === 6 && mar.every((n) => n.at === g1.at), g1);
+  const ms = await p.evaluate(() => { const f = window.__yarrSnd.musicStart; return [f(10, 10.05, 28, 1, 32), f(10.2, 10.05, 28, 1, 32), f(10.2, 10.05, 31.9, 1, 32), f(10.2, 10.05, 28, 0.62, 32), f(10.049, 10.05, 0, 1, 32)]; });
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  check('a layer whose turn comes after the moment has gone by (a page held up that long) begins from as far on as the others have got to: in step all the same',
+    ms[0][0] === 10.05 && ms[0][1] === 28 && ms[0][2] === false && near(ms[1][0], 10.203) && near(ms[1][1], 28.153) && ms[1][2] === true && near(ms[2][1], 0.053)
+    && near(ms[3][1], 28 + 0.153 * 0.62) && near(ms[4][0], 10.052) && near(ms[4][1], 0.002) && ms[4][2] === true, ms);
   await y('at 30 0 0');
   const lpOf = () => p.evaluate((b) => { const f = window.__yarrSnd.A.buses[b].__yarr; return f instanceof BiquadFilterNode ? { type: f.type, hz: f.frequency.value } : null; }, mbus);
   await until('the music to settle under the bed', async () => { const l = await lpOf(); return (await y('music')).state === 'bed' && l !== null && Math.abs(l.hz - 900) < 30; }, 40000);
@@ -114,6 +125,8 @@ const check = (name, ok, info) => { console.log((ok ? 'ok   ' : 'FAIL ') + name 
   const ot = await music(); const ots = ot.filter((n) => n.dur === 25.6); const ospread = ots.length ? Math.max(...ots.map((n) => n.at)) - Math.min(...ots.map((n) => n.at)) : 99;
   check('the last 30 seconds: the overtime\'s seven layers take over, started together and looped by the browser, the march\'s stopped',
     ots.length === 7 && ots.every((n) => n.loop) && ospread < 0.003 && ot.every((n) => n.dur !== 32) && (await y('music')).ot === true, { n: ots.length, ospread, all: ot.length });
+  const g2 = await group();
+  check('the overtime\'s seven were given one moment of their own', g2.n === 7 && g2.at > g1.at && ots.length === 7 && ots.every((n) => n.at === g2.at), g2);
   noErrors('in stage 5\'s music');
   await y('menu'); await until('the music to stop at the menu', async () => (await music()).length === 0, 20000);
   check('back at the menu: no music', (await music()).length === 0, await music());

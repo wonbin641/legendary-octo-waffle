@@ -254,9 +254,10 @@ func update(dt: float) -> void:
 	if not ended: stats.time += dt
 	# the enemies' way to you, every 0.3 s as the browser game's: at most 3 ms of the search a frame (a fast computer does it
 	# all at once, as there; a slow one over a few frames, the enemies keeping the last way meanwhile), the next once it is done
-	flow_t -= dt
-	if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
-	if Phys.flow_busy: Phys.flow_step(flow_budget)
+	if world.toy == null:   # (stage 5's toys find their own ways, by their posts and the match's paths: nobody there reads this search)
+		flow_t -= dt
+		if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
+		if Phys.flow_busy: Phys.flow_step(flow_budget)
 	stats.shots = guns.shots; stats.hits = guns.hits
 	if _chest_wait and loot.pending() == null: _chest_wait = false; finish()
 	result_tick(dt)

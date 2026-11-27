@@ -94,14 +94,25 @@ func _node(parent: Node3D, at: Vector3, parts: Array, key: String, mat: Material
 
 func _hpart(o: Vector3, r: float, mult := 1.0, weak := false) -> Dictionary: return {"o": o, "r": r, "mult": mult, "weak": weak, "bomb": false}
 
+## the two sides of a team match wear their side's colour, whatever kind of toy they are: theirs reds, ours blues (the
+## sweep's toys keep the colours they came in). What stays its own: skin, a block person's yellow head and hands and dark
+## legs, wheels, windows, guns
+const THEIRS := {"soldier": ["c62828", "941c1c"], "suit": ["d62828", "9e1b32", "e04a3a", "b3202a"], "trim": ["6d0f16", "ef5350", "7a1016", "ff6b5e"], "car": ["e63946", "c1121f", "ef5350", "a4161a"]}
+const OURS := {"soldier": ["203f8a", "2f5cc0"], "suit": ["1d4ed8", "1e3a8a", "3b82f6", "2563eb"], "trim": ["0f2a6b", "60a5fa", "132f7a", "93c5fd"], "car": ["3d7dca", "1d4ed8", "5b9bf0", "1e40af"]}
+static func side_of(opts: Dictionary) -> Dictionary:
+	var s := str(opts.get("side", ""))
+	return THEIRS if s == "them" else (OURS if s == "us" else {})
+
 func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	e.toy = true; e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; en.add_child(e.g)
 	var role: String = opts.get("role", "")
 	e.k = {"role": role, "still": 0.0, "reveal": 0.0, "post": Vector3.ZERO, "move_t": 0.0, "jumps": 0, "glide": false, "v": 0.0, "heading": 0.0, "quiet": 9.0, "shed": 0, "wall_cd": rnd(4, 9), "climb": false, "back_t": 0.0}
 	var human := [_hpart(Vector3(0, 1.72, 0.01), 0.15, 1.0, true), _hpart(Vector3(0, 1.3, 0), 0.3), _hpart(Vector3(0, 0.95, 0), 0.22, 0.9), _hpart(Vector3(0, 0.48, 0), 0.24, 0.7)]
+	var side := side_of(opts); var ti := int(opts.get("tint", 0))
 	match type:
 		"soldier":   # one colour all over, on a flat base, a rifle moulded into the hands
-			var mat := Gfx.std(World.lin(["3f7a3a", "b89b63", "203f8a"][clampi(int(opts.get("tint", 0)), 0, 2)]), 0.45); e.k.mat = mat; e.k.alpha = 1.0   # green, tan; blue for ours in the team modes
+			var sc: String = side.soldier[ti % 2] if not side.is_empty() else ["3f7a3a", "b89b63", "203f8a"][clampi(ti, 0, 2)]   # green, tan (and a blue); a team match's by their side
+			var mat := Gfx.std(World.lin(sc), 0.45); e.k.mat = mat; e.k.alpha = 1.0
 			var W := "ffffff"; var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, W], [0.16, 0.09, 0.27, 0, -0.88, 0.05, W]]
 			_node(e.g, Vector3.ZERO, [[0.7, 0.05, 0.5, 0, 0.025, 0.05, W]], "ts_base", mat)
 			e.leg_l = _node(e.g, Vector3(-0.11, 0.92, 0), leg, "ts_leg", mat); e.leg_r = _node(e.g, Vector3(0.11, 0.92, 0), leg, "ts_leg", mat)
@@ -112,7 +123,7 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 			var car = opts.get("car", null)
 			if car != null: e.k.car = car; e.carried = true; car.k.rider = e; carry(car)   # standing on the cabin roof of its car
 		"figure":   # a hero in bright colours with a cape
-			var c1: String = ["d62828", "1d4ed8", "f4b400", "7b2cbf"][int(opts.get("tint", 0)) % 4]; var c2: String = ["f4b400", "d62828", "1d4ed8", "f4b400"][int(opts.get("tint", 0)) % 4]
+			var c1: String = (side.suit if not side.is_empty() else ["d62828", "1d4ed8", "f4b400", "7b2cbf"])[ti % 4]; var c2: String = (side.trim if not side.is_empty() else ["f4b400", "d62828", "1d4ed8", "f4b400"])[ti % 4]
 			var leg2 := [[0.15, 0.9, 0.17, 0, -0.45, 0, c1], [0.17, 0.2, 0.28, 0, -0.82, 0.05, c2]]
 			e.leg_l = _node(e.g, Vector3(-0.11, 0.92, 0), leg2, "tf_leg" + c1); e.leg_r = _node(e.g, Vector3(0.11, 0.92, 0), leg2, "tf_leg" + c1)
 			e.upper = _node(e.g, Vector3(0, 0.92, 0), [[0.46, 0.62, 0.26, 0, 0.36, 0, c1], [0.2, 0.2, 0.02, 0, 0.42, 0.14, c2], [0.22, 0.25, 0.24, 0, 0.8, 0.01, "e0b895"], [0.24, 0.1, 0.25, 0, 0.9, -0.01, c1]], "tf_up" + c1)
@@ -121,18 +132,19 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 			e.head = _node(e.upper, Vector3(0, 0.62, -0.14), [[0.5, 0.85, 0.03, 0, -0.42, 0, c2]], "tf_cape" + c2)   # the cape, hanging down the back
 			e.parts = human; e.muzzle = Vector3(0.2, 1.42, 0.9); e.k.tint = c1; e.k.acc = c2
 		"rc":   # a little car with a wind-up key
-			var cc: String = ["e63946", "3d7dca", "f77f00", "5fbf8f"][int(opts.get("tint", 0)) % 4]
+			var cc: String = (side.car if not side.is_empty() else ["e63946", "3d7dca", "f77f00", "5fbf8f"])[ti % 4]
 			e.body = _node(e.g, Vector3.ZERO, rc_body(cc, true), "tr_body" + cc); e.k.tint = cc
 			e.head = _node(e.g, Vector3(0, 0.6, -0.86), [[0.06, 0.06, 0.2, 0, 0, -0.08, "c9ced6"], [0.34, 0.2, 0.05, 0, 0, -0.2, "c9a227"]], "tr_key")   # the key, turning on its back
 			e.parts = [_hpart(Vector3(0, 0.42, 0), 0.55), _hpart(Vector3(0, 0.6, -0.95), 0.2, 1.0, true)]; e.eye_h = 0.6; e.muzzle = Vector3(0, 0.5, 0.9)
 		_:   # a block person: square legs, a square body, a round yellow head with a stud on top
-			var cb: String = ["d62828", "1d4ed8", "2a9d8f", "f77f00"][int(opts.get("tint", 0)) % 4]; var acc: String = BRICK_ACC[int(opts.get("tint", 0)) % 4]
+			var cb: String = (side.suit if not side.is_empty() else ["d62828", "1d4ed8", "2a9d8f", "f77f00"])[ti % 4]; var acc: String = (side.trim if not side.is_empty() else BRICK_ACC)[ti % 4]
 			var leg3 := [[0.2, 0.75, 0.24, 0, -0.38, 0, "24272c"]]
 			e.leg_l = _node(e.g, Vector3(-0.12, 0.78, 0), leg3, "tb_leg"); e.leg_r = _node(e.g, Vector3(0.12, 0.78, 0), leg3, "tb_leg")
 			e.upper = _node(e.g, Vector3(0, 0.78, 0), brick_up(cb, acc, true, true), "tb_uphc" + cb); e.k.hat = true; e.k.cape = true; e.k.acc = acc
 			e.arm_l = _node(e.upper, Vector3(-0.32, 0.56, 0), [[0.13, 0.5, 0.14, 0, -0.24, 0, cb], [0.14, 0.14, 0.16, 0, -0.52, 0.02, "f4d35e"]], "tb_arm" + cb)
 			e.arm_r = _node(e.upper, Vector3(0.32, 0.56, 0), [[0.13, 0.5, 0.14, 0, -0.24, 0, cb], [0.14, 0.14, 0.16, 0, -0.52, 0.02, "f4d35e"], [0.07, 0.34, 0.1, 0, -0.72, 0.03, "8d99ae"]], "tb_gun" + cb)
 			e.parts = [_hpart(Vector3(0, 1.6, 0), 0.17, 1.0, true), _hpart(Vector3(0, 1.15, 0), 0.32), _hpart(Vector3(0, 0.75, 0), 0.24, 0.9), _hpart(Vector3(0, 0.38, 0), 0.24, 0.7)]; e.muzzle = Vector3(0.22, 1.3, 0.8); e.k.tint = cb
+	en.bake_far(e, e.k.mat if type == "soldier" else en._mat)   # (far off it is drawn as the one mesh: see lod)
 	e.bar = Node3D.new(); e.bar.visible = false; en.add_child(e.bar)
 	var bg := MeshInstance3D.new(); bg.mesh = en._bar_mesh; bg.material_override = en._bar_bg; bg.scale = Vector3(0.7, 0.07, 1); e.bar.add_child(bg)
 	e.fill = MeshInstance3D.new(); e.fill.mesh = en._bar_mesh; e.fill.material_override = en._bar_fill; e.fill.scale = Vector3(0.66, 0.045, 1); e.bar.add_child(e.fill)
@@ -216,6 +228,7 @@ func _burst(e: Enemies.Foe, dt: float, a: int, b: int, gap: float, p0: float, p1
 	return false
 
 func _walk(e: Enemies.Foe, sp: float, dt: float, aim: bool) -> void:
+	if e.is_far: e.walk += dt * sp * 2.6; e.flinch = maxf(0.0, e.flinch - dt * 5.0); return   # (far off its one mesh stands as it was made: nothing to pose)
 	e.walk += dt * sp * 2.6; var s := sin(e.walk) * clampf(sp / 3.0, 0.0, 1.0) * 0.7
 	e.leg_l.rotation.x = s; e.leg_r.rotation.x = -s
 	if aim: e.arm_r.rotation = Vector3(-PI / 2 + 0.05, 0, 0); e.arm_l.rotation = Vector3(-1.25, 0, 0.5)
@@ -278,14 +291,60 @@ func _soldier(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: flo
 
 ## the soldier's see-through plastic: quick to go and quick to come back (a blink); gone, it is not drawn at all, shadow and all
 func _fade(e: Enemies.Foe, want: float, dt: float) -> void:
-	var k := e.k; k.alpha = lerpf(float(k.alpha), want, 1.0 - exp(-dt * 14.0))
+	var k := e.k; var was := float(k.alpha); k.alpha = lerpf(was, want, 1.0 - exp(-dt * 14.0))
 	if absf(float(k.alpha) - want) < 0.01: k.alpha = want
+	if float(k.alpha) == was and k.has("gone"): return   # (as it was: the plastic is not told again, every frame, what it already is)
 	var m: StandardMaterial3D = k.mat
 	m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if float(k.alpha) > 0.98 else BaseMaterial3D.TRANSPARENCY_ALPHA; m.albedo_color.a = float(k.alpha)
 	k.gone = float(k.alpha) < 0.03; brk.fade(e, float(k.alpha))
-	for c in e.g.get_children(): (c as Node3D).visible = not bool(k.gone)
+	show(e)
 ## out of sight right now (blinked out): its health bar stays hidden too
 func gone(e: Enemies.Foe) -> bool: return e.type == "soldier" and bool(e.k.get("gone", false))
+
+# ---------------- far off, and the sun's shadow ----------------
+## Far off a toy is drawn as one mesh, its parts merged as they stood (made with the toy, and again when what is on it
+## changes), and it casts the sun's shadow only from near: as people do in the other stages (Enemies.far_line, ESH), by the
+## quality level and never on a phone. A hundred toys of five or six parts each, every part drawn once more for the shadow,
+## was most of what the room cost to draw
+const FAR := 28.0; const FAR_PHONE := 18.0
+
+## looked at a few times a second (Enemies.update's own look at each enemy; the match's at ours)
+func lod(e: Enemies.Foe, phone: bool, esh: float) -> void:
+	var far := e.far != null and e.alive and not e.k.has("dead") and e.dist > (FAR_PHONE if phone else FAR)
+	if far != e.is_far: e.is_far = far; show(e)
+	var sh := not phone and e.dist < esh
+	if e.casts != (1 if sh else 0): cast(e, sh)
+
+## what of a toy is drawn: nothing of a soldier blinked out; far off the one mesh, near its parts
+func show(e: Enemies.Foe) -> void:
+	var gone := bool(e.k.get("gone", false)); var far: bool = e.is_far and e.far != null
+	for c in e.g.get_children(): (c as Node3D).visible = not gone and ((c == e.far) == far)
+
+## its parts again and no far mesh (it is falling: the parts are what breaks)
+func near(e: Enemies.Foe) -> void:
+	if e.far != null:
+		if e.k.has("body"): (e.k.body as Array).erase(e.far)
+		e.g.remove_child(e.far); e.far.queue_free(); e.far = null
+	e.is_far = false; show(e)
+
+## what is on a toy has changed (a helmet shot off, a hat back on, a car's cabin open): the far mesh made again
+func rebake(e: Enemies.Foe) -> void:
+	if e.far == null or not e.alive: return
+	var old := e.far; var mat: Material = brk._skin_of(e)
+	en.bake_far(e, mat)
+	if e.k.has("body"):
+		(e.k.body as Array).erase(old)
+		if e.far != null: (e.k.body as Array).push_back(e.far)
+	if e.far != null and e.casts == 0: e.far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	show(e)
+
+## whether a toy casts the sun's shadow (what is put on it later follows: World reads the mark)
+func cast(e: Enemies.Foe, on: bool) -> void:
+	e.casts = 1 if on else 0; e.g.set_meta("shadow", on); cast_all(e.g, on)
+static func cast_all(n: Node, on: bool) -> void:
+	if n is GeometryInstance3D and not n.has_meta("no_cast"):
+		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if on else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for c in n.get_children(): cast_all(c, on)
 
 # ---------------- riders: plastic soldiers standing on the wind-up cars ----------------
 ## the rider goes where its car goes (the car is not his to steer), turns to face you and shoots when he sees you, as a trooper

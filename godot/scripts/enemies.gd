@@ -513,13 +513,14 @@ func _separate() -> void:
 ## the browser game's bakeFar: far away an enemy is drawn as one mesh in the pose it was built in, instead of five or more
 ## moving parts. As there, only the parts coloured by their vertices go in (not a gun's gold, a blade or the vest's light),
 ## all drawn with the body's material, so a hit's flash still shows. The same build makes the same mesh, so it is kept
-func bake_far(e: Foe) -> void:
+func bake_far(e: Foe, only: Material = null) -> void:   # (only: just the meshes that wear this: a toy's body, not what a hit has left on it)
 	if e.far != null: e.g.remove_child(e.far); e.far.queue_free(); e.far = null
 	e.body_known = false   # (the body's meshes found again next time: the far mesh is one of them)
 	var items := []; var key := ""; var mat: Material = null
 	for n in e.g.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if not (mi.mesh is ArrayMesh): continue   # (a box or ball made as such has no vertex colours, as three.js's own geometries)
+		if only != null and mi.material_override != only: continue
 		var t := Transform3D.IDENTITY; var a: Node = mi
 		while a != e.g: t = (a as Node3D).transform * t; a = a.get_parent()
 		for s in mi.mesh.get_surface_count():
@@ -864,6 +865,7 @@ func update(dt: float, _time: float) -> void:
 				if e.far != null and e.is_far != far: set_far(e, far)
 				var sh := not phone and e.dist < esh
 				if e.casts != (1 if sh else 0): cast_shadow(e, sh)
+			else: toys.lod(e, phone, esh)   # (a toy: one mesh far off and the sun's shadow only near, as they)
 		if e.downed: _update_downed(e, dt); e.g.position = e.pos; continue
 		if e.ridden:   # you are on it: you steer it; just the hit flash here, as the browser game's
 			if e.flash_t > 0.0: e.flash_t -= dt; _glow(e, "flash")
@@ -884,7 +886,8 @@ func update(dt: float, _time: float) -> void:
 		if e.toy:
 			toys.update(e, dt, dist, to, face_yaw)
 			if not e.alive: continue
-			e.g.position = e.pos; e.g.rotation.y = e.yaw
+			if e.g.position != e.pos: e.g.position = e.pos   # (a toy standing still is not moved again to where it is: every part of it would be placed anew)
+			if absf(e.g.rotation.y - e.yaw) > 0.00001: e.g.rotation.y = e.yaw
 			if e.hp < e.max_hp:   # a soldier gone still shows its bar from half as far
 				e.bar.visible = e.g.visible and not toys.gone(e) and (not toys.camo(e) or e.dist < vis * 0.5); e.bar.position = Vector3(e.pos.x, e.pos.y + e.H + 0.4 * e.scale, e.pos.z)
 				var tf := clampf(e.hp / e.max_hp, 0.0, 1.0); e.fill.scale.x = 0.66 * tf; e.fill.position.x = -0.33 * (1.0 - tf)

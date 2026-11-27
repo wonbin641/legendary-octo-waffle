@@ -89,6 +89,44 @@ const WEB_MIX := """window.__yarrSnd = (function (A) {
 		}
 		return true;
 	};
+	// the music's layers that go round together begin at one moment of the audio's clock. Godot's web runtime starts each sample
+	// "now", one after another as the frame ends: on a busy page the clock ticks between two of them, and those layers go round
+	// a few thousandths of a second apart for good. So the first of a frame's starts names a moment a little ahead (lead) and
+	// the rest of that frame's begin on it too
+	o.syncIds = new Set(); o.lead = 0; o.musicAt = 0; o.group = { at: 0, asked: 0, n: 0, late: 0 };
+	o.musicStart = (now, at, off, rate, dur) => {   // when a layer begins and from where: [when, from, late]
+		if (at >= now + 0.003) return [at, off, false];
+		const when = now + 0.003;   // (its moment gone by, or all but: a little ahead of now, from as far on as the others have got)
+		let from = off + (when - at) * rate;
+		if (dur > 0) from = ((from % dur) + dur) % dur;
+		return [when, from, true];
+	};
+	o.togetherMusic = (ids, lead) => {
+		for (const id of String(ids).split(',')) if (id) o.syncIds.add(id);
+		const P = A.SampleNode && A.SampleNode.prototype;
+		if (!P || typeof P.start !== 'function' || typeof P._pause !== 'function') return false;
+		o.lead = lead;
+		if (!P.__yarrTogether) {
+			const start = P.start, pause = P._pause;
+			P.start = function () {
+				if (this.isStarted || !this._source || !o.syncIds.has(String(this.streamObjectId))) return start.call(this);
+				const now = A.ctx.currentTime;
+				if (!o.musicAt) {   // the first of this frame's: the moment for them all (the frame's starts done, the next ones name a new one)
+					o.musicAt = now + o.lead; o.group = { at: o.musicAt, asked: now, n: 0, late: 0 };
+					queueMicrotask(() => { o.musicAt = 0; });
+				}
+				const buf = this._source.buffer;
+				const s = o.musicStart(now, o.musicAt, this.offset, this._source.playbackRate.value, buf ? buf.duration : 0);
+				o.group.n++; if (s[2]) o.group.late++;
+				this._sourceStartTime = o.musicAt;   // (where it is counts from the moment, for one begun late too: it began further on)
+				this._source.start(s[0], s[1]);
+				this.isStarted = true;
+			};
+			P._pause = function () { pause.call(this); if (this.pauseTime < 0) this.pauseTime = 0; };   // (paused before its moment came)
+			P.__yarrTogether = true;
+		}
+		return true;
+	};
 	o.lowpass = (bus, hz) => {   // the music's bus: a low-pass, gliding to its new frequency
 		const b = A.ctx && A.buses ? A.buses[bus] : null;
 		if (!b) return false;
@@ -112,6 +150,15 @@ func music_loops(streams: Array) -> void:
 	var ids := PackedStringArray()
 	for st: AudioStream in streams: ids.push_back(str(st.get_instance_id()))
 	_web.loopMusic(",".join(ids))
+
+## the music's layers that go round together, on the web: all that are started in one frame begin at the one moment of the
+## browser's audio clock, MUSIC_LEAD ahead (see WEB_MIX). Returns the lead the music has to reckon with: none anywhere else
+const MUSIC_LEAD := 0.05
+func music_together(streams: Array) -> float:
+	if _web == null: return 0.0
+	var ids := PackedStringArray()
+	for st: AudioStream in streams: ids.push_back(str(st.get_instance_id()))
+	return MUSIC_LEAD if _web.togetherMusic(",".join(ids), MUSIC_LEAD) else 0.0
 
 ## the music's low-pass (under the bed): Godot's filter on the bus, the browser's own on the web (where the bus carries none)
 func music_lowpass(hz: float) -> void:

@@ -69,6 +69,7 @@ var _snd_at := {}
 var _mats := {}
 var _tread_t := 0.0
 var _made := 0               # pieces made since the last frame
+var _cast_on := true         # what lies about casts the sun's shadow (where the toys do: not at the lowest quality level, not on a phone)
 
 func _init() -> void:
 	rng.seed = 0x70795f62
@@ -78,7 +79,7 @@ func cap() -> int: return CAP_PHONE if tf.en.phone else CAP
 func on() -> bool: return tf.world != null and tf.world.toy != null and tf.en != null and tf.en.is_inside_tree()
 
 func _root() -> Node3D:
-	if root == null or not is_instance_valid(root): root = Node3D.new(); root.name = "Breaks"; tf.en.add_child(root)
+	if root == null or not is_instance_valid(root): root = Node3D.new(); root.name = "Breaks"; root.set_meta("shadow", _cast_on); tf.en.add_child(root)
 	return root
 
 func clear() -> void:
@@ -356,6 +357,7 @@ func _shed_soldier(e: Enemies.Foe, what: String, dir: Vector3) -> void:
 	var k := e.k; k[what] = false
 	var hel := bool(k.get("helmet", false)); var pk := bool(k.get("pack", false))
 	(e.upper.get_child(0) as MeshInstance3D).mesh = tf.en._box_mesh("ts_up" + ("h" if hel else "") + ("p" if pk else ""), ToyFoes.soldier_up(hel, pk))
+	tf.rebake(e)
 	var W := "ffffff"; var m: StandardMaterial3D = k.mat; var col: Color = k.get("col0", Color(m.albedo_color, 1.0))
 	var d := Vector3(dir.x, 0.0, dir.z); d = d.normalized() if d.length() > 0.01 else Vector3(0, 0, 1)
 	if what == "helmet":
@@ -381,7 +383,8 @@ func _mark(e: Enemies.Foe, at: Vector3) -> void:
 	if not e.k.has("marks"): e.k.marks = {}
 	var marks: Dictionary = e.k.marks
 	if not marks.has(name):
-		var mi := MeshInstance3D.new(); mi.mesh = ArrayMesh.new(); mi.material_override = _mark_mat(); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; anchor.add_child(mi)
+		var mi := MeshInstance3D.new(); mi.mesh = ArrayMesh.new(); mi.material_override = _mark_mat(); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; mi.set_meta("no_cast", true); anchor.add_child(mi)
+		mi.transparency = clampf(1.0 - float(e.k.get("alpha", 1.0)), 0.0, 1.0)   # (as see-through as the plastic it is on is now: fade tells it of changes)
 		marks[name] = {"mi": mi, "list": []}
 	var L: Array = marks[name].list
 	L.push_back([c + q, nrm, rnd(0.075, 0.11), rnd(0.0, TAU)])
@@ -452,6 +455,7 @@ func dress(e: Enemies.Foe, dir := Vector3.ZERO) -> void:
 	k.hat = hat; k.cape = cape
 	var cb := str(k.get("tint", "d62828")); var acc := str(k.acc)
 	(e.upper.get_child(0) as MeshInstance3D).mesh = tf.en._box_mesh("tb_up" + ("h" if hat else "") + ("c" if cape else "") + cb, ToyFoes.brick_up(cb, acc, hat, cape))
+	tf.rebake(e)
 
 func _brick_bit(e: Enemies.Foe, what: String, d: Vector3) -> Piece:
 	var acc := str(e.k.acc); var ut := e.upper.global_transform; var mat := _skin_of(e)
@@ -475,6 +479,7 @@ func _open_rc(e: Enemies.Foe) -> void:
 	k.panel = tf._node(e.g, Vector3(0, 0.49, -0.5), [[0.7, 0.26, 0.8, 0, 0.13, 0.4, "dfe8ee"]], "tr_cabin", mat)   # hinged at its back edge
 	k.pan = 0.0
 	if k.has("body"): (k.body as Array).append_array([(k.guts as Node3D).get_child(0), (k.panel as Node3D).get_child(0)])
+	tf.rebake(e); tf.show(e)
 
 ## how far the cabin stands open when nothing shakes it
 static func rc_gape(f: float) -> float: return 0.0 if f > 0.66 else (0.16 if f > 0.33 else 0.38)
@@ -584,7 +589,7 @@ func _strands(e: Enemies.Foe, show: bool) -> void:
 	if not k.has("strands"):
 		var made := []
 		for i in 2:
-			var mi := MeshInstance3D.new(); mi.mesh = _strand_mesh(); mi.material_override = _goo_mat(str(k.goo)); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; e.g.add_child(mi); made.push_back(mi)
+			var mi := MeshInstance3D.new(); mi.mesh = _strand_mesh(); mi.material_override = _goo_mat(str(k.goo)); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; mi.set_meta("no_cast", true); e.g.add_child(mi); made.push_back(mi)
 		k.strands = made
 	var legs := [e.leg_l, e.leg_r]; var lift := (floor_at(e.pos.x, e.pos.y, e.pos.z, e.R) - e.pos.y) / maxf(e.g.scale.y, 0.01)   # (the floor the blob lies on, in his own measure)
 	for i in 2:
@@ -672,6 +677,7 @@ func fell(e: Enemies.Foe, weak: bool, dir, seen := true) -> void:
 		var col: Color = (k.mat as StandardMaterial3D).albedo_color if e.type == "soldier" else Color(str(k.get("tint", "d62828")))
 		for i in 10: bit(Vector3(e.pos.x, e.pos.y + e.H * rnd(0.2, 0.9), e.pos.z), Color(col, 1.0), rnd(0.4, 0.8), _rv(3.0, 1.0, 5.0), 0.06, 0.04, 15.0)
 		e.g.visible = false; stats.bursts = int(stats.bursts) + 1; return
+	tf.near(e)   # (its parts, not the one mesh it was far off: the parts are what breaks)
 	var d := Vector3(dir.x, 0.0, dir.z) if dir != null else Vector3.ZERO
 	d = d.normalized() if d.length() > 0.01 else Vector3(-sin(e.yaw), 0.0, -cos(e.yaw))
 	var blast: bool = tf.en.blast or tf.en.cause in ["rocket", "gl"]
@@ -830,7 +836,7 @@ func pack(at: Vector3, fwd: Vector3, team: String, mine := false) -> void:
 	var halves := []
 	for s: float in [-1.0, 1.0]:
 		var hn := Node3D.new(); n.add_child(hn); hn.position = Vector3(s * 0.75, 0, -0.47)
-		var mi := MeshInstance3D.new(); mi.mesh = half_mesh(s); mi.material_override = _clear_mat(); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; hn.add_child(mi); halves.push_back(hn)
+		var mi := MeshInstance3D.new(); mi.mesh = half_mesh(s); mi.material_override = _clear_mat(); mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; mi.set_meta("no_cast", true); hn.add_child(mi); halves.push_back(hn)
 	packs.push_back({"n": n, "t": 0.0, "halves": halves, "card": card, "mine": mine})
 	snd("toy_rip", at + Vector3(0, 1.2, 0), 0.9 if mine else 0.7, 0.12); stats.packs = int(stats.packs) + 1
 	for i in 6: bit(at + Vector3(rnd(-0.5, 0.5), rnd(0.8, 2.2), rnd(-0.2, 0.5)), Color(Color(col).lightened(0.4), 0.9), rnd(0.5, 0.9), _rv(1.6, 0.5, 2.5), 0.03, 0.02, 6.0)
@@ -989,6 +995,10 @@ func tick(dt: float) -> void:
 		if root != null: clear()
 		return
 	clock += dt; _made = 0
+	var cast_now: bool = not tf.en.phone and tf.en.esh > 0.0
+	if cast_now != _cast_on:
+		_cast_on = cast_now
+		if root != null and is_instance_valid(root): root.set_meta("shadow", cast_now); ToyFoes.cast_all(root, cast_now)
 	if _warm_n > 0:
 		_warm_n -= 1
 		if _warm_n == 0 and _warm != null and is_instance_valid(_warm): _warm.queue_free(); _warm = null

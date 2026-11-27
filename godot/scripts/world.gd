@@ -227,6 +227,7 @@ func govern(delta: float) -> void:
 ## the moon's shadow picture at this many texels a side (the browser game's shadowSize)
 func set_shadow_size(n: int) -> void:
 	if Gfx.fplus: RenderingServer.directional_shadow_atlas_set_size(n, true)   # (Forward+: the moon's own shadow map)
+	elif toy != null: RenderingServer.directional_shadow_atlas_set_size(mini(n, shadow_map_size), true)   # (stage 5's sun on the web and the phone app: the ladder's size, no bigger than the device's own)
 	if moon_shadow.size.x == n: return
 	moon_shadow.size = Vector2i(n, n); shadow_mat.set_shader_parameter("map_size", float(n))
 
@@ -246,7 +247,10 @@ func _flush_fresh() -> void:
 		var a: Node = n.get_parent(); var sh = null   # (a body marked "shadow" says whether what is on it casts: see Enemies.cast_shadow)
 		while a != null:
 			if sh == null and a.has_meta("shadow"): sh = a.get_meta("shadow")
-			if a in caster_roots: MoonShadow.caster(n, sh != false); MoonShadow.no_receive(n); break
+			if a in caster_roots:
+				MoonShadow.caster(n, sh != false); MoonShadow.no_receive(n)
+				if toy != null and sh == false: (n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # (stage 5's sun: what is put on a toy that casts no shadow casts none)
+				break
 			if a == hand_root: (n as VisualInstance3D).layers = 1 << (Gfx.IN_HAND - 1); _after_ao(n); break
 			a = a.get_parent()
 	_fresh.clear()
@@ -388,7 +392,7 @@ func build_stage(stage: int) -> void:
 		moon.shadow_enabled = true; moon.shadow_caster_mask = 1 << (MoonShadow.CASTER - 1); shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	else: moon.shadow_enabled = false; shadow_layer.visible = true; moon_shadow.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	ao_mat.set_shader_parameter("strength", ao.tune(S)); ao_mat.set_shader_parameter("exposure", Gfx.exposure(e)); set_ao(use_ao)
-	for l in lights: l.light_color = lin(S.lamp[0]); l.light_energy = 0.0; l.set_meta("on", false)
+	for l in lights: l.light_color = lin(S.lamp[0]); l.light_energy = 0.0; l.set_meta("on", false); l.visible = not S.get("toy", false)   # (stage 5 has no lamps: its six are not there to be looked up for every thing drawn)
 	_lamp_t = 0.0
 	(get_node("Night") as Node3D).visible = not S.get("toy", false)
 	sun_spr.visible = S.get("day", false)
@@ -403,7 +407,9 @@ func build_stage(stage: int) -> void:
 		if Gfx.fplus: moon.light_energy = float(S.moon[1]) * TOY_FPLUS_SUN
 		hemi_up.light_energy = 0.0; hemi_dn.light_energy = 0.0
 		moon.shadow_enabled = true; moon.shadow_caster_mask = 0xFFFFFFFF; shadow_layer.visible = false; moon_shadow.render_target_update_mode = SubViewport.UPDATE_DISABLED; set_ao(false)
-		toy = ToyRoom.new(); toy.tm = toy_tm; toy.build(self, G); return
+		toy = ToyRoom.new(); toy.tm = toy_tm; toy.build(self, G)
+		if not Gfx.fplus: RenderingServer.directional_shadow_atlas_set_size(mini(int(GFX_LEVELS[gfx_level].shadow), shadow_map_size), true)   # (as set_shadow_size, for the room just made)
+		return
 	(get_node("Night") as Node3D).visible = not S.get("day", false) and not S.get("indoor", false)
 	# the harbour skyline and ship only belong to the docks; the village gets the stars and a bigger moon
 	for p in _port: p.visible = is_yard(stage)

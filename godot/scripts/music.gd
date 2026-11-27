@@ -12,6 +12,8 @@ extends Node
 ## The music keeps its own time by the audio's clock (the browser's on the web, where a slow page can draw few frames a
 ## second), and what has to meet a bar line is started early and silent, so it meets it in the audio itself: the march's
 ## layers start with the drum, two bars before their first bar; the overtime's set starts before the bar line it takes over at.
+## On the web the layers started in one frame begin at one moment of the browser's audio clock, a little ahead (lead): the
+## music reckons with it, so a set still meets its bar line.
 
 const DIR := "res://music/"
 const BPM := 120.0; const OT_BPM := 150.0; const BARS := 16
@@ -51,6 +53,8 @@ var fade := 0.0              # the whole march's level (in and out)
 var lobby_fade := 0.0
 var w_ot := 0.0              # how much of the overtime's set is heard (0 the march's, 1 the overtime's)
 var switching := false; var switch_in := 0.0; var t_next := 0.0   # a change of set on its way: music-seconds to the bar line, where the other set will be
+var started := 0.0           # where the other set was started (seconds into its loop)
+var lead := 0.0              # the web: the layers begin this long after they are started, all at the one moment (Snd.music_together)
 var since_spawn := 99.0
 var horn_t := 6.0; var horn_us := true
 var _shots := -1; var _hp := -1.0; var _out := false
@@ -75,6 +79,10 @@ func _ready() -> void:
 	for p: AudioStreamPlayer in _n.values() + _o.values() + [_lobby]:
 		if p.stream != null: loops.push_back(p.stream)
 	Snd.music_loops(loops)
+	var together := []
+	for p: AudioStreamPlayer in _n.values() + _o.values() + [_leadin]:
+		if p.stream != null: together.push_back(p.stream)
+	lead = Snd.music_together(together)
 
 func _stream(name: String, loop: bool) -> AudioStream:
 	if not _streams.has(name):
@@ -179,6 +187,7 @@ func _start_match() -> void:
 	for k in LAYERS: _vol(_n[k], 0.0)
 	_leadin.play(); t = LOOP - LEADIN
 	for k in LAYERS: _n[k].play(t)   # (all in the one frame: they go round together, and with the drum)
+	t -= lead                        # (the web: the drum and they begin that much later)
 	_warm(_n.values() + ["ot_bell", "trumpet_us", "trumpet_them"])   # (the one-offs too, under the drum: none waits when it comes)
 
 func _begin_march() -> void:
@@ -236,13 +245,13 @@ func _march(adt: float, dt: float, ctx: Dictionary) -> void:   # adt: all the au
 func _prepare(to_ot: bool) -> void:
 	var bar := OT_BAR if ot else BAR
 	var b := int(floorf(t / bar + 0.0001)) + 1               # the next bar line
-	if b * bar - t < 0.05: b += 1                             # (too close to start the other set in time, maybe right at its end: the one after)
+	if b * bar - t < 0.05 + lead: b += 1                      # (too close to start the other set in time, maybe right at its end: the one after)
 	switch_in = b * bar - t                                   # (in music: both sets keep the one pitch, so they meet in it)
 	var nb := BAR if ot else OT_BAR; var nl := LOOP if ot else OT_LOOP
 	t_next = b % BARS * nb
-	var start := fposmod(t_next - switch_in, nl)
+	started = fposmod(t_next - switch_in + lead * _pitch_set, nl)   # (the web: it begins lead later, so from that much further on)
 	var to: Dictionary = _n if ot else _o
-	for k in to: _vol(to[k], 0.0); to[k].play(start)
+	for k in to: _vol(to[k], 0.0); to[k].play(started)
 	switching = true; _say("prepare " + ("overtime" if to_ot else "march"))
 
 func _switch() -> void:

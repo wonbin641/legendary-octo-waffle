@@ -21,7 +21,6 @@ var m            # main: the game, the player, the guns, the look mode (as Hud.m
 var hud: Hud
 var t := 0.0
 var boards := {}           # the flip boards: name -> {"n": the number shown, "old": the one before, "f": how far the card has turned (1: still)}
-var flown: Array = []      # rounds a shot has taken from the tray, in the air: {icon, pocket, p, v, rot, spin, age, n, k}
 var stickers: Array = []   # hit stickers round the crosshair: {kind, ang, dist, age, life, rot, col, r}
 var tray_gun := ""; var tray_mag := -1; var tray_kick := 0.0
 var dial_full := 0.0       # the longest time the clock has had to show: its hand's full turn
@@ -36,30 +35,17 @@ var wet_t := 0.0           # ...and how long your shoes squeak for it
 const CELLS := 10
 const LOW := 20.0          # per cent: from here down the cells are red and blink, and the sticker is on
 const RING_AT := 30.0      # seconds left: from here the clock rings
-const FLY := 0.4           # seconds a round is in the air after a shot takes it from the tray
 const NONE := [0.0, 0.0, 0.0, 0.0]
 const WET := 7.0           # seconds a soaking lasts
 const DROPS := 26          # drops on the glass at once
 
 func reset() -> void:
-	boards.clear(); flown.clear(); stickers.clear(); sigs.clear(); tray_gun = ""; tray_mag = -1; tray_kick = 0.0; dial_full = 0.0; ringing = false; _rang = false; drops.clear(); wet_t = 0.0
+	boards.clear(); stickers.clear(); sigs.clear(); tray_gun = ""; tray_mag = -1; tray_kick = 0.0; dial_full = 0.0; ringing = false; _rang = false; drops.clear(); wet_t = 0.0
 	if hud != null and hud.is_toy(): K.sheet(); plan_tex()   # (the toy room is starting: its pictures made now, not in the fight)
 
 # ---------------- what there is to show ----------------
 ## how many of the battery's ten cells are lit for this much health (per cent): any health at all lights one
 static func cells_lit(pct: float) -> int: return clampi(ceili(pct / (100.0 / CELLS)), 0, CELLS)
-
-## how many rounds one pocket of a gun's tray stands for: ToyKit.TRAY's, or more when the magazine is bigger than the tray
-## (a gun fitted with a longer one)
-static func per_pocket(id: String, cap: float) -> int:
-	var T: Dictionary = K.TRAY.get(id, K.TRAY.pistol)
-	return maxi(int(T.per), ceili(cap / float(int(T.cols) * int(T.rows))))
-
-## the tray for a gun holding `mag` rounds of the `cap` it takes: its icon and pockets (ToyKit.TRAY), how many pockets are
-## full and how much of the next
-static func tray_state(id: String, mag: float, cap: float) -> Dictionary:
-	var T: Dictionary = K.TRAY.get(id, K.TRAY.pistol); var per := float(per_pocket(id, cap))
-	return {"icon": T.icon, "cols": T.cols, "rows": T.rows, "per": int(per), "full": int(floorf(mag / per + 1e-4)), "part": fmod(mag, per) / per}
 
 static func _is_clock(v: String) -> bool:
 	var q := v.split(":")
@@ -130,17 +116,6 @@ static func layout(s: Vector2, touch: bool, ins: Array = NONE) -> Dictionary:
 
 func _layout() -> Dictionary: return layout(_size, _touch, m.safe_in if _touch else NONE)
 
-## the inside of the tray, where the pockets are (in the tray's own measure)
-static func tray_inner(touch: bool) -> Rect2: return Rect2(8, 27, 92, 36) if touch else Rect2(18, 45, 148, 56)
-## the middle of the tray's pocket number i (they fill from the top left, row by row)
-static func pocket_at(inner: Rect2, cols: int, rows: int, i: int) -> Vector2:
-	var cw := inner.size.x / cols; var ch := inner.size.y / rows
-	return inner.position + Vector2(cw * (i % cols + 0.5), ch * (mini(i / cols, rows - 1) + 0.5))
-## how tall a round is drawn in a tray of these pockets
-static func round_size(inner: Rect2, T: Dictionary) -> float:
-	if T.icon == "rocket": return minf(inner.size.y * 0.5, inner.size.x / 3.2)
-	return minf(minf(inner.size.x / int(T.cols), inner.size.y / int(T.rows)) * 0.92, 24.0)
-
 # ---------------- what the game tells it ----------------
 ## a hit: a star sticker pops up by the crosshair (an orange one and a small one for the head; a ddakji and a burst of
 ## stars for a kill)
@@ -174,19 +149,10 @@ func update(dt: float) -> void:
 	for k in boards:
 		var b: Dictionary = boards[k]
 		if b.f < 1.0: b.f = minf(1.0, float(b.f) + dt / 0.3)
-	# a shot takes rounds out of the tray, from the last pocket back: they fly up off it
+	# a shot jolts the gun's card
 	var guns: Guns = m.guns; var mag := int(guns.st().mag)
-	if guns.cur == tray_gun and mag < tray_mag and guns.reload_t <= 0.0:
-		var L := _layout(); var R: Rect2 = L.tray; var tk := float(L.tray_k); var cap := float(guns.w().mag); var T := tray_state(guns.cur, float(mag), cap); var per := int(T.per)
-		var inner := tray_inner(_touch); var n := int(T.cols) * int(T.rows); var hi := ceili(float(tray_mag) / per); var lo := ceili(float(mag) / per)
-		for i in range(hi - 1, maxi(lo, hi - 4) - 1, -1):
-			flown.push_back({"icon": T.icon, "pocket": i, "p": R.position + pocket_at(inner, int(T.cols), int(T.rows), mini(i, n - 1)) * tk, "v": Vector2(_rng.randf_range(-150.0, -40.0), _rng.randf_range(-420.0, -320.0)),
-				"rot": 0.0, "spin": _rng.randf_range(-9.0, 9.0), "age": 0.0, "n": i, "k": round_size(inner, T) * tk})
-		tray_kick = 1.0
+	if guns.cur == tray_gun and mag < tray_mag and guns.reload_t <= 0.0: tray_kick = 1.0
 	tray_gun = guns.cur; tray_mag = mag; tray_kick = maxf(0.0, tray_kick - dt * 7.0)
-	for i in range(flown.size() - 1, -1, -1):
-		var p: Dictionary = flown[i]; p.age += dt; p.v.y += 700.0 * dt; p.p += p.v * dt; p.rot += p.spin * dt
-		if p.age > FLY: flown.remove_at(i)
 	for i in range(stickers.size() - 1, -1, -1):
 		stickers[i].age += dt
 		if stickers[i].age > stickers[i].life: stickers.remove_at(i)
@@ -233,8 +199,8 @@ func _sync() -> void:
 	_mark("low", 1)
 	# the tray: kicked by a shot
 	var tn: Control = nodes.tray; var TR: Rect2 = L.tray; tn.position = TR.position + Vector2(0, tray_kick * 2.5); tn.scale = Vector2.ONE * float(L.tray_k); tn.rotation = _sway(2.0)
-	var cap := float(guns.w().mag); var st: Dictionary = guns.st(); var T := tray_state(guns.cur, _shown(guns, cap), cap)
-	_mark("tray", [guns.cur, int(st.mag), str(st.reserve), int(T.full), int(float(T.part) * 4.0), str(guns.pending), str(guns.loadout), int(clampf(guns.melee_cd / 0.62, 0.0, 1.0) * 6.0),
+	var st: Dictionary = guns.st()
+	_mark("tray", [guns.cur, int(st.mag), str(st.reserve), str(guns.pending), str(guns.loadout), int(clampf(guns.melee_cd / 0.62, 0.0, 1.0) * 6.0),
 		int(g.tm.mode.cans) if (g.tm != null and g.tm.key == "freeze") else -1, _touch])
 	# the top group, and the clock in it (shaking as it rings)
 	var pn: Control = nodes.top; pn.position = L.top; pn.scale = Vector2.ONE * float(L.top_k)
@@ -252,7 +218,7 @@ func _sync() -> void:
 	for q: Array in hud.feed:
 		var age := float(q[2]); fsig.push_back([q[0], q[1], q[3], int(age * 60.0) if age < 0.16 else (int(age * 30.0) if age > 2.4 else 0)])
 	_mark("feed", [fsig, _touch, _size])
-	_mark("over", int(t * 120.0) if not (flown.is_empty() and hud.pops.is_empty()) else 0)
+	_mark("over", int(t * 120.0) if not hud.pops.is_empty() else 0)
 	_mark("glass", int(t * 120.0) if not drops.is_empty() else 0)
 
 # ---------------- drawing ----------------
@@ -325,43 +291,31 @@ func battery(ci, s: Vector2, touch: bool, items: Array) -> void:
 	K.at(ci, Transform2D.IDENTITY)
 
 # ---- the gun, bottom right ----
-## the rounds shown in the tray now: what is in the gun, or while it reloads the pockets filling one after another
-func _shown(guns: Guns, cap: float) -> float:
-	var mag := float(int(guns.st().mag))
-	return lerpf(mag, cap, clampf(1.0 - guns.reload_t / float(guns.w().reload), 0.0, 1.0)) if guns.reload_t > 0.0 else mag
-
-## the tray on its card, from the top left corner of its place (a phone's is smaller, without the capsules)
+## the gun's card, from the top left corner of its place: the toy's name on a strip of tape, how many rounds are in it on
+## a yellow sticker and how many more you carry on a price tag (no pictures of the rounds: the numbers say it). A phone's
+## is smaller, a long name on two lines, and has no capsules
+const NAME_FS := 24; const NAME_FS_TOUCH := 18   # (1.6 times what the name was: 15, a phone's 11)
 func draw_tray(ci, touch: bool) -> void:
 	var guns: Guns = m.guns; var W: Dictionary = guns.w(); var st: Dictionary = guns.st()
 	var id: String = guns.cur; var mag := int(st.mag); var cap := float(W.mag); var res := "/ " + ("∞" if float(st.reserve) == INF else str(int(st.reserve)))
-	var name: String = Toys.NAMES.get(id, str(W.name)); var lowmag := mag <= ceili(cap * 0.25); var filling: bool = guns.reload_t > 0.0
-	var T := tray_state(id, _shown(guns, cap), cap); var n_pockets := int(T.cols) * int(T.rows); var inner := tray_inner(touch)
+	var name: String = Toys.NAMES.get(id, str(W.name)); var lowmag := mag <= ceili(cap * 0.25); var num := K.RED.darkened(0.2) if lowmag else K.INK
 	if touch:
 		K.card(ci, Rect2(0, 12, 108, 86), K.KRAFT, 6.0)
-		K.sub(ci, Vector2(54, 9), -0.03); K.tape(ci, Rect2(-54, -8, 108, 16), K.tape_col(2)); K.text(ci, name, 0, -8, 11, K.INK, "center"); K.unsub(ci)
-		K.plastic(ci, Rect2(4, 24, 100, 42), 8.0)
-		var mw := K.width(str(mag), 22); var rw := K.width(res, 13)
-		K.sticker(ci, Rect2(104.0 - mw - rw - 22.0, 69, mw + rw + 20.0, 24), K.YELLOW, 6.0)
-		K.text(ci, str(mag), 104.0 - rw - 12.0, 69, 22, K.RED.darkened(0.2) if lowmag else K.INK, "right"); K.text(ci, res, 98, 76, 13, K.INK, "right")
+		var lines: Array = K.two_lines(name, NAME_FS_TOUCH, 102.0); var th := 5.0 + 20.0 * lines.size()
+		K.sub(ci, Vector2(54, 3.0 + th / 2.0), -0.03); K.tape(ci, Rect2(-54, -th / 2.0, 108, th), K.tape_col(2))
+		for i in lines.size(): K.text(ci, str(lines[i]), 0, -th / 2.0 + 1.0 + i * 20.0, NAME_FS_TOUCH, K.INK, "center")
+		K.unsub(ci)
+		var top := 6.0 + th + 4.0; var room := 94.0 - top; var fs := 30 if lines.size() == 1 else 24   # (what is left of the card under the tape)
+		var mw := K.width(str(mag), fs); var rw := K.width(res, 14); var sw := minf(100.0, mw + rw + 22.0); var sy := top + (room - (fs + 6.0)) / 2.0
+		K.sticker(ci, Rect2(54.0 - sw / 2.0, sy, sw, fs + 6.0), K.YELLOW, 6.0)
+		K.text(ci, str(mag), 54.0 - sw / 2.0 + 9.0, sy - 1.0, fs, num, "left"); K.text(ci, res, 54.0 + sw / 2.0 - 8.0, sy + fs - 13.0, 14, K.INK, "right")
 	else:
 		K.card(ci, Rect2(0, 12, 264, 100), K.KRAFT, 8.0)
 		K.solid(ci, Rect2(14, 20, 24, 5), Color(0, 0, 0, 0.3))   # the slot it hung from in the shop
-		K.sub(ci, Vector2(140, 25), -0.02); var tw := maxf(120.0, K.width(name, 15) + 26.0); K.tape(ci, Rect2(-tw / 2.0, -10, tw, 20), K.tape_col(2)); K.text(ci, name, 0, -10, 15, K.INK, "center"); K.unsub(ci)
-		K.plastic(ci, Rect2(10, 40, 164, 66), 12.0)
-		K.sticker(ci, Rect2(182, 40, 74, 40), K.YELLOW, 12.0); K.text(ci, str(mag), 219, 39, 33, K.RED.darkened(0.2) if lowmag else K.INK, "center")
-		K.price_tag(ci, Rect2(184, 85, 72, 21)); K.text(ci, res, 250, 85, 15, Color.WHITE, "right")
-	# the rounds in their pockets
-	var ik := round_size(inner, T)
-	for i in n_pockets:
-		var c := pocket_at(inner, int(T.cols), int(T.rows), i)
-		if i < int(T.full):
-			var pop := 1.0   # the pocket a reload has just filled: a little bigger for a moment
-			if filling and i == int(T.full) - 1: pop = 1.0 + 0.35 * (1.0 - float(T.part))
-			K.ammo(ci, T.icon, c, ik * pop, 1.0, i)
-		else:
-			K.pocket(ci, c, ik)
-			if i == int(T.full) and float(T.part) > 0.02: K.ammo(ci, T.icon, c, ik, float(T.part) * 0.8, i)
-	if not touch: _capsules(ci, guns)
+		K.sub(ci, Vector2(132, 35), -0.02); var tw := maxf(150.0, K.width(name, NAME_FS) + 30.0); K.tape(ci, Rect2(-tw / 2.0, -16, tw, 32), K.tape_col(2)); K.text(ci, name, 0, -16, NAME_FS, K.INK, "center"); K.unsub(ci)
+		K.sticker(ci, Rect2(34, 58, 104, 48), K.YELLOW, 12.0); K.text(ci, str(mag), 86, 57, 41, num, "center")
+		K.price_tag(ci, Rect2(148, 68, 88, 28)); K.text(ci, res, 229, 69, 20, Color.WHITE, "right")
+		_capsules(ci, guns)
 
 func tray(ci, s: Vector2, touch: bool) -> void:
 	_size = s; _touch = touch; var L := _layout(); var R: Rect2 = L.tray
@@ -383,7 +337,7 @@ func _capsules(ci, guns: Guns) -> void:
 		var id = lay[i]
 		if id == null: continue
 		var on: bool = id == cur; var r := 15.0 if on else 11.0; x -= r; var c := Vector2(x, -5.0 - (5.0 if on else 0.0))
-		var icon: String = K.TRAY.get(str(id), K.TRAY.pistol).icon   # (what it shoots: easier to tell apart this small than the toy itself)
+		var icon: String = K.ROUND.get(str(id), "dart")   # (what it shoots: easier to tell apart this small than the toy itself)
 		capsule(ci, c, r, Color(str(K.BRICKS[i % 5])), 0.5 if on else 0.0, func() -> void: K.ammo(ci, icon, c + Vector2(0, -r * 0.3), r * (0.42 if icon == "rocket" else 0.95), 1.0, i))
 		K.text(ci, str(i + 1), c.x, c.y + (1.0 if on else 0.0), 11, Color.WHITE, "center")
 		if on: K.ring(ci, c, r + 3.5, K.YELLOW)
@@ -653,14 +607,11 @@ func draw_glass(ci) -> void:
 func glass(ci, s: Vector2, touch: bool) -> void:
 	_size = s; _touch = touch; K.hold = true; draw_glass(ci); K.flush(ci)
 
-# ---- over everything: the rounds a shot has sent flying, the money a kill pays dropping out of the bag's tag ----
+# ---- over everything: the money a kill pays dropping out of the bag's tag ----
 func draw_over(ci) -> void:
 	var L := _layout(); var o: Vector2 = L.top; var tk := float(L.top_k)
 	for p: Array in hud.pops:
 		var k: float = float(p[1]) / 1.2; K.text(ci, str(p[0]), o.x + _pop_at.x * tk, o.y + (_pop_at.y + 22.0 * k) * tk, 14, Color(K.ORANGE.darkened(0.15), 1.0 - k), "right", 3, Color(1, 1, 1, 1.0 - k))
-	for p: Dictionary in flown:
-		K.at(ci, Transform2D(float(p.rot), Vector2.ONE, 0.0, p.p)); K.ammo(ci, p.icon, Vector2.ZERO, p.k, clampf((FLY - float(p.age)) / (FLY * 0.5), 0.0, 1.0), p.n)
-	K._xf = Transform2D.IDENTITY
 
 func over(ci, s: Vector2, touch: bool) -> void:
 	_size = s; _touch = touch; K.hold = true; draw_over(ci); K.flush(ci)

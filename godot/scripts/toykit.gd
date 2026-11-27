@@ -233,21 +233,10 @@ static func pin(ci, p: Vector2, r: float, col: Color, a := 1.0) -> void:
 	disc(ci, p, r, Color(col.darkened(0.3), a)); disc(ci, p, r * 0.72, Color(col, a)); disc(ci, p + Vector2(-r * 0.26, -r * 0.3), r * 0.24, Color(1, 1, 1, 0.8 * a))
 
 # ---------------- the toys' ammunition ----------------
-## what a gun's rounds look like in the tray, how many pockets the tray has for them (across, down) and how many rounds a
-## pocket stands for (the gatling's 240 bands lie eight to a pocket)
-const TRAY := {
-	"pistol": {"icon": "dart", "cols": 6, "rows": 2, "per": 1},
-	"shotgun": {"icon": "drop", "cols": 6, "rows": 1, "per": 1},
-	"rifle": {"icon": "dart2", "cols": 10, "rows": 3, "per": 1},
-	"smg": {"icon": "cap", "cols": 10, "rows": 4, "per": 1},
-	"sniper": {"icon": "tack", "cols": 5, "rows": 1, "per": 1},
-	"gl": {"icon": "ball", "cols": 6, "rows": 1, "per": 1},
-	"lmg": {"icon": "band", "cols": 10, "rows": 3, "per": 8},
-	"rocket": {"icon": "rocket", "cols": 1, "rows": 1, "per": 1},
-	"flame": {"icon": "puff", "cols": 10, "rows": 3, "per": 4},
-}
+## what each toy shoots (the picture in its capsule above the gun's card)
+const ROUND := {"pistol": "dart", "shotgun": "drop", "rifle": "dart2", "smg": "cap", "sniper": "tack", "gl": "ball", "lmg": "band", "rocket": "rocket", "flame": "puff"}
 
-## one round, about k pixels tall, standing with its middle at c; n picks a bouncy ball's colour
+## one round, about k pixels tall, with its middle at c; n picks a bouncy ball's colour
 static func ammo(ci, icon: String, c: Vector2, k: float, a := 1.0, n := 0) -> void:
 	match icon:
 		"dart", "dart2":   # a foam dart: the shaft and its rubber head (the pistol's white with a red sucker, the blaster's blue with an orange tip)
@@ -272,9 +261,6 @@ static func ammo(ci, icon: String, c: Vector2, k: float, a := 1.0, n := 0) -> vo
 			solid(ci, Rect2(c.x - L * 0.02, c.y - k * 0.2, L * 0.34, k * 0.4), Color(RED, a)); solid(ci, Rect2(c.x + L * 0.2, c.y - k * 0.2, L * 0.07, k * 0.4), Color(YELLOW, a))
 			disc(ci, Vector2(c.x + L * 0.32, c.y), k * 0.2, Color(YELLOW, a))
 			solid(ci, Rect2(c.x - L * 0.06, c.y - k * 0.4, maxf(1.0, k * 0.06), k * 0.22), Color(BLUE, a))
-
-## an empty pocket of the tray
-static func pocket(ci, c: Vector2, k: float) -> void: disc(ci, c, k * 0.2, Color(0, 0, 0, 0.16))
 
 # ---------------- the nine toy guns, from the side ----------------
 static var _shapes := {}

@@ -171,6 +171,7 @@ func route(from: Vector3, to: Vector3, bias := {}) -> Array:
 func add_unit(team: String, type: String, at: Vector3, opts := {}) -> Enemies.Foe:
 	var o := {"role": "sniper" if str(opts.get("gun", "")) == "sniper" else "trooper", "tint": 2 if team == "us" else int(opts.get("tint", 0)), "yaw": float(opts.get("yaw", 0.0 if team == "them" else PI)), "y": at.y}
 	o.merge(opts, true)
+	o.side = team   # (it wears its side's colour: theirs reds, ours blues)
 	if team == "us": o.tint = 2
 	var e := en.spawn(type, at.x, at.z, o)
 	e.k.team = team; e.k.job = str(opts.get("job", "push")); e.k.base_job = e.k.job; e.k.gun = str(opts.get("gun", "ally" if team == "us" else "trooper"))
@@ -328,7 +329,8 @@ func _shot_at(u: Enemies.Foe, at: Vector3, G: Array) -> void:
 
 ## where a toy and its health bar are drawn (the enemies' own loop does this for theirs)
 func place(u: Enemies.Foe) -> void:
-	u.g.position = u.pos; u.g.rotation.y = u.yaw
+	if u.g.position != u.pos: u.g.position = u.pos
+	if absf(u.g.rotation.y - u.yaw) > 0.00001: u.g.rotation.y = u.yaw
 	if u.hp < u.max_hp and u.g.visible and not bool(u.k.get("gone", false)):
 		u.bar.visible = true; u.bar.position = Vector3(u.pos.x, u.pos.y + u.H + 0.4 * u.scale, u.pos.z)
 		var f := clampf(u.hp / u.max_hp, 0.0, 1.0); u.fill.scale.x = 0.66 * f; u.fill.position.x = -0.33 * (1.0 - f)
@@ -429,6 +431,9 @@ func update(dt: float) -> void:
 		toys.brk.pack(back.pos, Vector3(sin(back.yaw), 0.0, cos(back.yaw)), q.team)   # (out of a new package)
 	for a in allies.duplicate():
 		if not a.alive: continue
+		a.lod -= dt
+		if a.lod <= 0.0:   # (ours are not on the enemies' list, which looks at its own: how far off each is, for how it is drawn)
+			a.lod = 0.4; a.dist = Vector2(player.pos.x - a.pos.x, player.pos.z - a.pos.z).length(); toys.lod(a, en.phone, en.esh)
 		unit(a, dt); place(a)
 		if a.alive and not bool(a.k.get("gone", false)) and en.animals.m == null: en._keep_out(a)
 	_part_allies()

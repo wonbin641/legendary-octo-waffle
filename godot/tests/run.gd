@@ -1076,6 +1076,7 @@ func _ready() -> void:
 	_lmg_sound()
 	_toy_screen(gm, en, pl, g, pr, w, cam, lt)
 	_toy_breaks(gm, en, pl, g, pr, w, cam, fxn)
+	_toy_far(gm, en, pl, g, pr, w, cam)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -2013,6 +2014,30 @@ func _team_modes(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 		and tm.allies.all(func(a): return a.k.team == "us" and not en.list.has(a)) and en.list.all(func(e): return e.k.team == "them"), [tm.allies.size(), en.list.size()])
 	var a0: Enemies.Foe = tm.allies[0]; var ray_o := a0.pos + Vector3(0, 1.2, 5.0)
 	check("our soldiers are blue, and nothing of yours hits them (your shots pass through)", (a0.k.mat as StandardMaterial3D).albedo_color.is_equal_approx(World.lin("203f8a")) and en.raycast(ray_o, Vector3(0, 0, -1), 20.0) == null)
+	# each side in its colour, whatever kind of toy: theirs reds, ours blues (the sweep's toys keep the colours they came in)
+	var hue_of := func(u: Enemies.Foe) -> Array:   # the hues of what it wears
+		if u.type == "soldier": return [(u.k.mat as StandardMaterial3D).albedo_color.h]
+		return [Color(str(u.k.tint)).h] + ([Color(str(u.k.acc)).h] if u.k.has("acc") else [])
+	var is_red := func(h: float) -> bool: return h < 0.03 or h > 0.95
+	var is_blue := func(h: float) -> bool: return h > 0.57 and h < 0.65
+	var sides_ok := true; var kinds_seen := {}; var side_bad := []
+	for kk: String in ["rush", "escort", "freeze"]:
+		Store.settings.toyMode = kk; gm.begin(9)
+		for u: Enemies.Foe in gm.tm.units("them"):
+			kinds_seen[u.type] = true
+			for h: float in hue_of.call(u):
+				if not is_red.call(h): sides_ok = false; side_bad.push_back([kk, u.type, h])
+		for u: Enemies.Foe in gm.tm.units("us"):
+			for h: float in hue_of.call(u):
+				if not is_blue.call(h): sides_ok = false; side_bad.push_back([kk, "us " + u.type, h])
+	Store.settings.toyMode = "sweep"; gm.begin(9); var sweep_hues := {}
+	for u: Enemies.Foe in en.list:
+		if u.type != "soldier": sweep_hues[str(u.k.tint)] = true
+	var sweep_green: bool = en.list.any(func(u): return u.type == "soldier" and (u.k.mat as StandardMaterial3D).albedo_color.is_equal_approx(World.lin("3f7a3a")))
+	check("a team match's two sides wear their side's colour, whatever kind of toy: every one of theirs reds (suit, cape, hat, car), ours blues; the sweep's toys keep the colours they came in (green and tan soldiers, a blue hero, an orange car)",
+		sides_ok and kinds_seen.size() >= 3 and sweep_green and sweep_hues.has("1d4ed8") and sweep_hues.has("f77f00") and ToyFoes.side_of({}).is_empty() and ToyFoes.side_of({"side": "them"}) == ToyFoes.THEIRS,
+		[side_bad.slice(0, 6), kinds_seen.keys(), sweep_hues.keys()])
+	Store.settings.toyMode = "rush"; gm.begin(9); tm = gm.tm; a0 = tm.allies[0]; ray_o = a0.pos + Vector3(0, 1.2, 5.0)   # (the rush again, as it was begun above)
 	var bad_r := _walk_edges(tm)
 	check("battery rush: every way the toys take round the room can be walked (floor, under the bed, desk, bridge, mattress, the stairs, the drops)", bad_r.is_empty(), bad_r)
 	# their round hits ours; ours hits theirs and pays you nothing
@@ -2287,6 +2312,22 @@ func _music(gm: Game, en: Enemies, pl: Player, w: World) -> void:
 	st_ui.queue_free()
 	check("the settings: 음악 under 음량 (stage 5's music, 70 to start with)", st_labels.has("음악") and st_labels.find("음악") == st_labels.find("음량") + 2 and float(Store.settings.get("music", -1.0)) >= 0.0
 		and str(load("res://scripts/store.gd").source_code).contains('"music": 0.7'), st_labels)
+	# the web's lead: there the layers started in one frame begin a moment later, all at the one moment of the browser's audio
+	# clock (Snd.music_together), and the music reckons with it. A long lead here (0.4 s), to tell it from a frame
+	run.call({}, 2.5); var ld_keep: float = M.lead; var ld_none: float = Snd.music_together([M._leadin.stream]); M.lead = 0.4
+	M.update(0.05, base, 0.05); var ld_t0: float = M.t; var ld_wait := 0.05
+	while M.what == "leadin" and ld_wait < 10.0: M.update(0.05, base, 0.05); ld_wait += 0.05
+	M.t = 5.0; M.update(0.05, ot, 0.0); var ld_in: float = M.switch_in; var ld_from: float = M.started; var ld_next: float = M.t_next
+	var ld_w := 0.0
+	while (M.switching or M.ot) and ld_w < 10.0: M.update(0.05, base, 0.05); ld_w += 0.05
+	M.t = 3.0 * Music.BAR - 0.3; M.update(0.05, ot, 0.0); var ld_in2: float = M.switch_in
+	ld_w = 0.0
+	while (M.switching or M.ot) and ld_w < 10.0: M.update(0.05, base, 0.05); ld_w += 0.05
+	M.lead = ld_keep
+	check("the web's lead (there the layers begin a moment after they are started, all at the one moment): the march's first bar comes that much later, the other set is started from that much further on so it still meets its bar line, and a bar line nearer than the lead is left for the one after; none of it anywhere else",
+		ld_keep == 0.0 and ld_none == 0.0 and absf(ld_t0 - (Music.LOOP - Music.LEADIN - 0.4 + 0.05)) < 1e-3 and absf(ld_wait - (Music.LEADIN + 0.4)) < 0.06
+		and absf(ld_in - 1.0) < 1e-6 and absf(ld_next - 3.0 * Music.OT_BAR) < 1e-6 and absf(ld_from - (ld_next - ld_in + 0.4)) < 1e-6 and absf(ld_in2 - (Music.BAR + 0.3)) < 1e-4,
+		[ld_keep, ld_none, ld_t0, ld_wait, ld_in, ld_next, ld_from, ld_in2])
 	run.call({}, 2.5); var s_end: Dictionary = M.status()
 	check("anywhere but stage 5: nothing", s_end.what == "" and s_end.playing.is_empty(), s_end.playing)
 	# what Main tells it (Main.music_for), and the blasts that reach it from the toy room
@@ -2994,23 +3035,20 @@ func _toy_screen(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	check("above it what you carry: the vest as spare building blocks (six left of ten), the jetpack as a wind-up dial with how to start it, the helmet a sticker",
 		gone_blocks == 4 and ri.has("조끼") and ri.has("헬멧") and ri.has("Space 두 번") and ri.spr_of("bar") >= 10, [gone_blocks, ri.spr_of("bar"), ri.texts.map(func(q): return q[0])])
 	Store.save.items = Store.save0().items
-	# ---- the rounds in their tray ----
-	var caps_ok := true
-	for id: String in Toys.ORDER:
-		var Wd: Dictionary = Weapons.LIST[id] if Weapons.LIST.has(id) else Weapons.EXTRA[id]; var Tr: Dictionary = ToyKit.TRAY[id]
-		caps_ok = caps_ok and int(Tr.cols) * int(Tr.rows) * int(Tr.per) == int(Wd.mag) and ToyHud.CROSS.has(id) and int(ToyHud.tray_state(id, float(Wd.mag), float(Wd.mag)).full) == int(Tr.cols) * int(Tr.rows)
-	var lm := ToyHud.tray_state("lmg", 100.0, 240.0); var big := ToyHud.tray_state("rifle", 45.0, 60.0)
-	check("the rounds lie in a tray, each toy its own (darts, drops, caps, tacks, balls, bands, a rocket, puffs): the pockets hold the magazine exactly, the gatling's 240 bands eight to a pocket, a longer magazine more to each",
-		caps_ok and ToyKit.TRAY.size() == 9 and int(lm.full) == 12 and is_equal_approx(float(lm.part), 0.5) and int(lm.per) == 8 and int(big.per) == 2 and int(big.full) == 22 and is_equal_approx(float(big.part), 0.5), [caps_ok, lm, big])
-	gm.begin(9); pl.chute = false; H.reset(); g.cur = "rifle"; g.pending = null; g.reload_t = 0.0; g.st().mag = 30; T.update(0.016); var l0 := T.flown.size()
-	g.st().mag = 29; T.update(0.016); var fl := T.flown.size(); var f0: Dictionary = (T.flown[0] as Dictionary).duplicate() if fl > 0 else {}; var ro := DrawRec.new(); T.over(ro, ro.size, false)
-	var tray_at: Rect2 = ToyHud.layout(Vector2(1280, 720), false).tray; var from_tray := tray_at.grow(4.0).has_point(f0.get("p", Vector2.ZERO))
-	for i in 30: T.update(0.02)
-	var fl_end := T.flown.size()
-	g.st().mag = 10; T.update(0.016); T.flown.clear(); g.reload_t = float(g.w().reload) * 0.5; g.st().mag = 12; T.update(0.016); var l3 := T.flown.size()   # (a reload on its way)
-	var rl := DrawRec.new(); T.tray(rl, Vector2(914, 411), true); var darts := rl.spr_of("disc", ToyKit.ORANGE); g.reload_t = 0.0
-	check("a shot takes a round out of the tray's last pocket and it flies off; a reload fills the pockets back one after another (half way through, with 12 in it: 21 of the blaster's 30 darts)",
-		l0 == 0 and fl == 1 and f0.get("icon") == "dart2" and f0.get("pocket") == 29 and from_tray and ro.spr_of("disc", ToyKit.ORANGE) == 1 and fl_end == 0 and l3 == 0 and darts == 21, [l0, fl, f0, fl_end, l3, darts])
+	# ---- the gun's card: the toy's name and the numbers, no pictures of the rounds ----
+	var gc_caps := true
+	for id: String in Toys.ORDER: gc_caps = gc_caps and ToyKit.ROUND.has(id) and ToyHud.CROSS.has(id)
+	gm.begin(9); pl.chute = false; H.reset(); g.cur = "rifle"; g.pending = null; g.reload_t = 0.0; g.st().mag = 30; g.st().reserve = 480; T.update(0.016); var gc_k0 := T.tray_kick
+	g.st().mag = 29; T.update(0.016); var gc_k1 := T.tray_kick
+	var gc_d := DrawRec.new(); T.tray(gc_d, gc_d.size, false); var gc_t := DrawRec.new(); T.tray(gc_t, Vector2(914, 411), true); var gc_o := DrawRec.new(); T.over(gc_o, gc_o.size, false)
+	var gc_name_d: Array = gc_d.texts.filter(func(q): return q[0] == "너프 블래스터"); var gc_name_t: Array = gc_t.texts.filter(func(q): return q[0] == "너프 블래스터")
+	g.st().mag = 5; T.update(0.016); var gc_t5 := DrawRec.new(); T.tray(gc_t5, Vector2(914, 411), true)   # (fewer rounds in it: nothing less is drawn, only another number)
+	g.cur = "sniper"; T.update(0.016); var gc_s := DrawRec.new(); T.tray(gc_s, Vector2(914, 411), true); var gc_two: Array = gc_s.texts.map(func(q): return q[0])
+	g.cur = "rifle"; g.st().mag = 30; T.update(0.016)
+	check("the gun's card: the toy's name 1.6 times as large as it was (24 for 15, a phone's 18 for 11; a long name on gc_two lines there), what is in the gun and what you carry as numbers, and no pictures of the rounds (nothing drawn for each, nothing flying off at a shot); a shot jolts the card; each toy keeps its round for its capsule and its own crosshair",
+		gc_caps and ToyKit.ROUND.size() == 9 and gc_k0 == 0.0 and gc_k1 > 0.8 and gc_name_d.size() == 1 and int(gc_name_d[0][2]) == ToyHud.NAME_FS and ToyHud.NAME_FS == 24 and ToyHud.NAME_FS_TOUCH == 18
+		and gc_name_t.size() == 1 and int(gc_name_t[0][2]) == 18 and gc_d.has("29") and gc_d.has("/ 480") and gc_t.has("29") and gc_t.has("/ 480") and gc_t5.has("5") and gc_t5.blits.size() == gc_t.blits.size()
+		and gc_o.blits.is_empty() and gc_o.texts.is_empty() and gc_two.has("레이저") and gc_two.has("포인터 라이플"), [gc_caps, gc_k0, gc_k1, gc_name_d, gc_name_t, gc_t.blits.size(), gc_t5.blits.size(), gc_o.blits.size(), gc_two])
 	# ---- the clock and the boards ----
 	var tops := {}
 	for k: String in ["rush", "escort", "freeze"]: Store.settings.toyMode = k; gm.begin(9); tops[k] = ToyHud.top_model(gm.tm.mode.hud_cells())
@@ -3136,6 +3174,79 @@ func _toy_screen(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 ## stage 5: toys break (scripts/toybreak.gd). What a hit leaves on each kind, what the water gun, a soda can and the spray
 ## can leave, how each kind falls, the pieces lying about and who treads on them, the claw and the broom's shadow, the
 ## package a toy comes back out of, water on the glass; and that none of it takes from the game's own random numbers
+## stage 5's toys drawn cheaply: far off each is one mesh, its parts merged; a toy casts the sun's shadow only from near, by
+## the quality level and never on a phone (as people elsewhere); nothing still is told again where it is; and the walking
+## grid's search, which no toy reads, is left out
+func _toy_far(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D) -> void:
+	var set0: Dictionary = (Store.settings as Dictionary).duplicate(true); var esh0 := en.esh; var phone0 := en.phone
+	Store.settings.toyMode = "sweep"; gm.begin(9); pl.chute = false; pl.reset(0.0, 60.0, 0.0); pl.invuln = 1e9
+	var tf: ToyFoes = en.toys; var B: ToyBreak = tf.brk
+	var verts := func(mi: MeshInstance3D) -> int:
+		var n := 0
+		for si in mi.mesh.get_surface_count(): n += (mi.mesh as ArrayMesh).surface_get_array_len(si)
+		return n
+	var parts_of := func(e: Enemies.Foe) -> Array: return e.g.find_children("*", "MeshInstance3D", true, false).filter(func(n): return n != e.far)
+	var shown := func(e: Enemies.Foe) -> Array:   # [the far mesh is drawn, how many of its parts are]
+		return [e.far != null and e.far.is_visible_in_tree(), parts_of.call(e).filter(func(n): return (n as MeshInstance3D).is_visible_in_tree()).size()]
+	var look := func(e: Enemies.Foe) -> void: e.dist = Vector2(pl.pos.x - e.pos.x, pl.pos.z - e.pos.z).length(); tf.lod(e, en.phone, en.esh)
+	var kinds := {}; var made_ok := true
+	for e in en.list:
+		if kinds.has(e.type): continue
+		kinds[e.type] = e; var sum := 0
+		for n in parts_of.call(e): sum += int(verts.call(n))
+		made_ok = made_ok and e.far != null and int(verts.call(e.far)) == sum and not e.is_far
+	check("every toy is made with its far mesh: all its parts merged into one (as many corners as they have together), not yet drawn", made_ok and kinds.size() == 4, kinds.keys())
+	var so: Enemies.Foe = kinds.soldier; var bk: Enemies.Foe = kinds.brick; var car: Enemies.Foe = kinds.rc; en.phone = false; en.esh = 28.0
+	for e: Enemies.Foe in [so, bk, car]: e.g.visible = true
+	so.pos = Vector3(0, 0, 20); so.g.position = so.pos; look.call(so); var far40: Array = shown.call(so); var is40 := so.is_far
+	so.pos = Vector3(0, 0, 50); so.g.position = so.pos; look.call(so); var near10: Array = shown.call(so)
+	so.pos = Vector3(0, 0, 38); so.g.position = so.pos; look.call(so); var at22: Array = shown.call(so)
+	en.phone = true; look.call(so); var at22_phone: Array = shown.call(so); en.phone = false; look.call(so)
+	check("a toy 40 m off is drawn as its one mesh and none of its parts; 10 m off as its parts; 22 m off as its parts on a computer and as the one mesh on a phone (28 m and 18 m, as people in the other stages)",
+		is40 and far40 == [true, 0] and near10[0] == false and near10[1] >= 5 and at22[0] == false and at22_phone == [true, 0] and ToyFoes.FAR == Enemies.far_line(false, false, false, false) and ToyFoes.FAR_PHONE == 18.0, [far40, near10, at22, at22_phone])
+	# far off nothing is posed (the mesh stands as it was made); its steps still count
+	so.pos = Vector3(0, 0, 20); so.g.position = so.pos; look.call(so); var leg0: float = so.leg_l.rotation.x; var walk0 := so.walk; tf._walk(so, 3.0, 0.1, false); var leg_far: float = so.leg_l.rotation.x; var walk1 := so.walk
+	so.pos = Vector3(0, 0, 50); so.g.position = so.pos; look.call(so); tf._walk(so, 3.0, 0.1, false); var leg_near: float = so.leg_l.rotation.x
+	check("far off a toy's legs and arms are not posed (nobody sees them), though its steps are counted; near they swing", leg_far == leg0 and walk1 > walk0 and leg_near != leg0, [leg0, leg_far, leg_near])
+	# what is on it changes: the far mesh is made again without it
+	var v_far0: int = verts.call(so.far); B._shed_soldier(so, "helmet", Vector3(0, 0, -1)); var v_far1: int = verts.call(so.far)
+	var v_bk0: int = verts.call(bk.far); bk.hp = bk.max_hp * 0.5; B.dress(bk); var v_bk1: int = verts.call(bk.far); bk.hp = bk.max_hp; B.dress(bk); var v_bk2: int = verts.call(bk.far)
+	check("a helmet shot off, a hat lost and put back: the far mesh is made again as the toy now is", v_far1 < v_far0 and v_bk1 < v_bk0 and v_bk2 == v_bk0 and so.far != null and not so.far.visible, [v_far0, v_far1, v_bk0, v_bk1, v_bk2])
+	# a soldier blinked out is not drawn at all, far or near; back, it is drawn as its distance says
+	so.pos = Vector3(0, 0, 20); so.g.position = so.pos; look.call(so); so.k.gone = true; tf.show(so); var gone_far: Array = shown.call(so)
+	so.k.gone = false; tf.show(so); var back_far: Array = shown.call(so)
+	check("a soldier blinked out is not drawn, far off either; back, it is its one mesh again", gone_far == [false, 0] and back_far == [true, 0], [gone_far, back_far])
+	# the sun's shadow: from near only, by the level (none at the lowest), never on a phone; marks never
+	var casts := func(e: Enemies.Foe) -> Array:   # [how many of its meshes cast, how many do not]
+		var on := 0; var off := 0
+		for n in e.g.find_children("*", "GeometryInstance3D", true, false):
+			if (n as GeometryInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF: off += 1
+			else: on += 1
+		return [on, off]
+	bk.pos = Vector3(2, 0, 52); bk.g.position = bk.pos; en.esh = 28.0; look.call(bk); var c_near: Array = casts.call(bk)
+	en.esh = 0.0; look.call(bk); var c_low: Array = casts.call(bk)
+	en.esh = 28.0; en.phone = true; look.call(bk); var c_phone: Array = casts.call(bk); en.phone = false
+	bk.pos = Vector3(2, 0, 10); bk.g.position = bk.pos; look.call(bk); var c_far: Array = casts.call(bk)
+	so.pos = Vector3(0, 0, 52); so.g.position = so.pos; look.call(so); en.damage(so, 4.0, so.pos + Vector3(0.05, 1.2, 0.3), Vector3(0, 0, -1), false); var marks: Dictionary = so.k.get("marks", {})
+	var mark_off := not marks.is_empty() and marks.values().all(func(q): return (q.mi as MeshInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+	check("a toy casts the sun's shadow from within the level's reach only (28 m here): not at the lowest level, not on a phone, not from 50 m; a stress mark on it never does",
+		c_near[1] == 0 and c_near[0] >= 5 and c_low[0] == 0 and c_phone[0] == 0 and c_far[0] == 0 and mark_off and so.casts == 1, [c_near, c_low, c_phone, c_far, mark_off])
+	# what has broken off follows the same rule
+	en.esh = 28.0; B.tick(0.02); var pc := B.make("t_far_piece", [[0.3, 0.3, 0.3, 0, 0, 0, "ffffff"]], Transform3D(Basis.IDENTITY, Vector3(3, 0.5, 52)), Vector3.ZERO, Vector3.ZERO, "plastic")
+	var pm := pc.n.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D; var p_on := pm.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	en.esh = 0.0; B.tick(0.02); var p_low: bool = pm.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and B.root.get_meta("shadow") == false
+	en.esh = 28.0; B.tick(0.02); var p_back := pm.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	check("the pieces lying about cast it where the toys do: not at the lowest level, and again above it", p_on and p_low and p_back, [p_on, p_low, p_back])
+	# it falls: its parts are what breaks, and the far mesh is gone
+	car.pos = Vector3(-3, 0, 20); car.g.position = car.pos; look.call(car); var car_far := car.is_far
+	en.damage(car, 1e6, car.pos + Vector3(0, 0.5, 0.3), Vector3(0, 0, -1), false)
+	check("a toy that falls far off falls as its parts (the far mesh is gone)", car_far and car.far == null and not car.is_far and car.body.is_visible_in_tree(), [car_far, car.far == null])
+	check("the room has no lamps: its six are not there to be reckoned with for everything drawn; and the walking grid's search, which no toy reads, is not run", w.lights.all(func(l): return not l.visible), w.lights.map(func(l): return l.visible))
+	var ft0 := gm.flow_t; gm.update(0.4); var ft1 := gm.flow_t; var busy9 := Phys.flow_busy
+	gm.begin(1); var lamps_back: bool = w.lights.all(func(l): return l.visible); var f1 := gm.flow_t; gm.update(0.4); var f1b := gm.flow_t
+	check("...the search is left alone in stage 5; in the yard it runs as ever, and the lamps are back", ft1 == ft0 and not busy9 and lamps_back and f1b > 0.0 and f1b <= 0.3 + 1e-6, [ft0, ft1, busy9, lamps_back, f1, f1b])
+	en.esh = esh0; en.phone = phone0; Store.settings = set0; pl.invuln = 0.0
+
 func _toy_breaks(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, fxn: Fx) -> void:
 	var save0: Dictionary = (Store.save as Dictionary).duplicate(true); var set0: Dictionary = (Store.settings as Dictionary).duplicate(true); var log0: bool = Snd.keep_log
 	var fx0 = en.fx; var pfx0 = pr.fx; var wet0: Callable = pr.on_wet; en.fx = fxn; pr.fx = fxn
