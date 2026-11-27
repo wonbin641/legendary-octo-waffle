@@ -196,14 +196,15 @@ func _vitals(ci, s: Vector2, touch: bool, rm: Realm, f: Realm.Fighter) -> void:
 # ---------------- your weapon, at the bottom right ----------------
 func _weapon(ci, s: Vector2, touch: bool, rm: Realm, f: Realm.Fighter) -> void:
 	var fm: Font = h.m.f_mono; var ft: Font = h.m.f_title
-	var ax := s.x - 16.0; var ay := s.y - (12.0 if touch else 18.0)
-	if touch: ay -= 296.0; ax = s.x - 16.0   # (a phone: above the round buttons)
-	h._t(ci, ft, str(Races.R[f.race].weapon), ax, ay - 68, 18, Hud.SODIUM, "right")
+	var ax := s.x - 16.0 - (float(h.m.safe_in[2]) if touch else 0.0); var ay := s.y - (12.0 if touch else 18.0)
+	if touch: ay = 132.0 + float(h.m.safe_in[1])   # (a phone: under the map button, over the round buttons)
+	h._t(ci, ft, str(Races.R[f.race].weapon), ax, ay - 70, 16 if touch else 18, Hud.SODIUM, "right")
 	match f.race:
 		"elf", "dwarf":
 			var W: Dictionary = Races.WEAPON[f.race]; var mag := rm.kit.mag(f)
 			var res := "/ %d" % mag; var rw: float = h._w(fm, res, 18)
-			h._t(ci, fm, res, ax, ay - 22, 18, Hud.STEEL, "right"); h._t(ci, fm, str(f.ammo), ax - rw - 8, ay - 40, 40, Hud.ALARM if f.ammo <= mag / 4 else Hud.INK, "right")
+			var big := 30 if touch else 40   # (a phone: a little smaller, clear of the load button under it)
+			h._t(ci, fm, res, ax, ay - 22, 18, Hud.STEEL, "right"); h._t(ci, fm, str(f.ammo), ax - rw - 8, ay - 10 - big, big, Hud.ALARM if f.ammo <= mag / 4 else Hud.INK, "right")
 			if f.reload_t > 0.0:
 				ci.draw_rect(Rect2(ax - 120, ay - 46, 120, 4), Color(1, 1, 1, 0.15)); ci.draw_rect(Rect2(ax - 120, ay - 46, 120.0 * (1.0 - f.reload_t / float(W.reload)), 4), Hud.SODIUM)
 		"orc":
