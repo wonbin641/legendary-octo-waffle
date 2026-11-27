@@ -16,6 +16,8 @@ const THEME := {
 	7: {"bg": "3b3a24", "grid": [240, 230, 190, 0.07], "block": "857560", "blockHi": "9a8a70", "wall": "6a5a3a", "label": "사파리 감시탑"},
 	# stage 5 is the Godot version's own: a wooden floor, the furniture lighter the higher its top
 	9: {"bg": "2e261f", "grid": [255, 235, 205, 0.06], "block": "6f5d49", "blockHi": "9b8466", "wall": "c9b48f", "label": "장난감 방"},
+	# stage 6-1, the elves' wood: moss, pale marble and silver bark (drawn as two bands, see _draw_strip)
+	10: {"bg": "16211f", "grid": [200, 255, 240, 0.06], "block": "6f7f7a", "blockHi": "a9b6b2", "wall": "cfd8d4", "label": "은빛 경계림"},
 }
 ## what each dot colour means, per stage; the legend under the map is built from the same table
 const KINDS := {
@@ -28,6 +30,7 @@ const KINDS := {
 	8: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "고릴라 졸개"], ["tame", "5ed6b0", "길들인 동물"]],
 	7: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "로랜드고릴라"], ["tame", "5ed6b0", "길들인 동물"]],
 	9: [["soldier", "7fc96b", "플라스틱 군인"], ["figure", "ff7a3a", "액션 피규어"], ["rc", "4f8cff", "태엽·RC 유닛"], ["brick", "ffd23a", "조립 블록 피규어"]],
+	10: [["elf_ranger", "ff5260", "석궁병"], ["elf_blade", "ff9a3a", "바람검사"], ["elf_sniper", "ffd23a", "저격수 · 나무 위"], ["elf_mage", "c58bff", "비전술사"]],
 }
 const MAP_KIND := {"cctv": "cctv", "patrol": "patrol", "droneA": "droneA", "mine": "mine", "gdrone": "midboss", "bdrone": "boss"}
 const MELEE_KITS := ["saber", "saber2", "bat", "bomber", "dagger"]
@@ -43,11 +46,12 @@ var H := 68.0; var CX := 0.0; var CZ := 0.0
 
 static func _colors() -> Dictionary:
 	if COLOR.is_empty():
-		for st in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
+		for st in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
 			for k: Array in KINDS[st]: COLOR[k[0]] = Color(str(k[1]))
 	return COLOR
 
 static func half_of(st: int) -> float:
+	if st == Store.ST_ELF: return ElfWood.HALF   # (its map is folded in two: see _draw_strip)
 	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == Store.ST_TOY else 68.0)))
 
 func setup(st: int) -> void:
@@ -59,7 +63,7 @@ static func enemy_color(e: Enemies.Foe) -> Color:
 	var C := _colors()
 	if e.animal: return C["tame" if e.tamed else ("gorilla" if (e.kong and not e.boss) else (str(e.T.get("mode", "")) if str(e.T.get("mode", "")) in ["cat", "prey"] else "big"))]
 	if e.robot: return C.get(MAP_KIND.get(e.type, ""), Color("8ec8ff"))
-	if e.toy: return C.get(e.type, Color("ff5260"))
+	if e.toy or e.folk: return C.get(e.type, Color("ff5260"))
 	if e.kit in MELEE_KITS: return C[e.kit]
 	return C.get(e.type, Color("ff5260"))
 
@@ -77,6 +81,7 @@ func to_world(size: Vector2, p: Vector2) -> Vector2:
 func draw(ci, size: Vector2) -> void:
 	var r := square(size); var S := r.size.x
 	if S < 8.0: return
+	if stage == Store.ST_ELF: _draw_strip(ci, r); return
 	var o := r.position; var k := S / (2.0 * (H + PAD)); var kb := S / 1024.0; var u := S / 600.0
 	var X := func(x: float) -> float: return o.x + (x - CX + H + PAD) * k
 	var Z := func(z: float) -> float: return o.y + (z - CZ + H + PAD) * k
@@ -241,21 +246,144 @@ static func _radial(ci, c: Vector2, r: float, stops: Array) -> void:
 			if r0 <= 0.0: ci.draw_polygon(PackedVector2Array([c, pts[1], pts[2]]), PackedColorArray([c0, c1, c1]))
 			else: ci.draw_polygon(pts, PackedColorArray([c0, c1, c1, c0]))
 
+# ---------------- stage 6-1: a map seven times as long as it is wide ----------------
+## The Silverwood is 308 m from west to east and 44 m across. On the map's square it is folded once: the west half is the
+## upper band, the east half the lower one (you cross the upper band from left to right, then the lower). A dashed line
+## shows the fold. Nothing built stands on the fold (x = 0); only the path crosses it.
+const STRIP_W := 154.0; const STRIP_D := 48.0; const STRIP_GAP := 16.0
+
+## where a point of the ground is on the picture (o: the square's corner, k: pixels to the metre)
+static func strip_at(o: Vector2, k: float, x: float, z: float) -> Vector2:
+	var band := 0 if x < 0.0 else 1; var top := ((STRIP_W + 2.0 * PAD) - (2.0 * STRIP_D + STRIP_GAP)) * 0.5 + 4.0
+	return Vector2(o.x + (PAD + x - (ElfWood.X0 if band == 0 else 0.0)) * k, o.y + (top + band * (STRIP_D + STRIP_GAP) + z + STRIP_D * 0.5) * k)
+
+## a box of the ground, on whichever band it lies (cut in two where it crosses the fold)
+func _strip_rect(ci, o: Vector2, k: float, x0: float, z0: float, x1: float, z1: float, col: Color, filled := true, width := 1.0) -> void:
+	for band in 2:
+		var a := maxf(x0, ElfWood.X0 if band == 0 else 0.0); var b := minf(x1, -0.001 if band == 0 else ElfWood.X1)
+		if b <= a: continue
+		var p := strip_at(o, k, a, z0); var q := strip_at(o, k, b, z1)
+		ci.draw_rect(Rect2(p, Vector2(maxf(q.x - p.x, 1.0), maxf(q.y - p.y, 1.0))), col, filled, width if not filled else -1.0)
+
+## a line along the ground (cut where it crosses the fold)
+func _strip_line(ci, o: Vector2, k: float, a: Vector2, b: Vector2, col: Color, width: float) -> void:
+	if (a.x < 0.0) != (b.x < 0.0):
+		var t := (0.0 - a.x) / (b.x - a.x); var m := a.lerp(b, t)
+		var west := a if a.x < 0.0 else b; var east := b if a.x < 0.0 else a
+		ci.draw_line(strip_at(o, k, west.x, west.y), strip_at(o, k, -0.001, m.y), col, width); ci.draw_line(strip_at(o, k, 0.0, m.y), strip_at(o, k, east.x, east.y), col, width)
+	else: ci.draw_line(strip_at(o, k, a.x, a.y), strip_at(o, k, b.x, b.y), col, width)
+
+func _draw_strip(ci, r: Rect2) -> void:
+	var S := r.size.x; var o := r.position; var k := S / (STRIP_W + 2.0 * PAD); var kb := S / 1024.0; var u := S / 600.0
+	var T: Dictionary = THEME[stage]; var w: World = game.world
+	var live: bool = w != null and game.stage == stage and w.wood != null
+	var at := func(x: float, z: float) -> Vector2: return strip_at(o, k, x, z)
+	ci.draw_rect(r, Color(str(T.bg)))
+	# the ground of each band: moss, the ravine and its stream, the tower's court of stone; a grid line every 20 m
+	var WZ := ElfWood.WZ
+	for seg: Array in [[ElfWood.X0, -66.0, "25382c"], [-66.0, 22.0, "2b4233"], [22.0, ElfWood.PIT_X0, "25382c"], [ElfWood.PIT_X0, ElfWood.PIT_X1, "131b1c"], [ElfWood.PIT_X1, 112.0, "2d3832"], [112.0, ElfWood.X1, "3a3f47"]]:
+		_strip_rect(ci, o, k, seg[0], -WZ, seg[1], WZ, Color(str(seg[2])))
+	var g: Array = T.grid; var gc := Color(g[0] / 255.0, g[1] / 255.0, g[2] / 255.0, g[3]); var v := -140.0
+	while v < ElfWood.X1:
+		if absf(v) > 0.5: ci.draw_line(at.call(v, -WZ), at.call(v, WZ), gc, maxf(1.0, kb))
+		v += 20.0
+	var pts := [[-128.0, 0.0], [-108.0, -2.0], [-90.0, 2.5], [-70.0, -1.0], [-44.0, 0.0], [-6.0, 0.0], [20.0, 1.0], [46.0, 0.0], [ElfWood.PIT_X0, 0.0], [ElfWood.PIT_X1, 0.0], [113.0, 0.0]]
+	for i in pts.size() - 1: _strip_line(ci, o, k, Vector2(pts[i][0], pts[i][1]), Vector2(pts[i + 1][0], pts[i + 1][1]), Color(0.56, 0.6, 0.55, 0.55), 3.2 * k)
+	var sp := [[66.0, -22.0], [63.5, -15.0], [69.0, -6.0], [72.0, 3.0], [66.5, 11.0], [63.0, 18.0], [64.5, 22.0]]
+	for i in sp.size() - 1: _strip_line(ci, o, k, Vector2(sp[i][0], sp[i][1]), Vector2(sp[i + 1][0], sp[i + 1][1]), Color(0.62, 0.83, 0.86, 0.75), 4.0 * k)
+	# the steps down into the ravine and up out of it (hatched), the crystal bridge over it
+	for st: Array in [[ElfWood.PIT_X0, 13.0, ElfWood.PIT_X0 + 10.0, 17.0], [ElfWood.PIT_X1 - 10.0, -17.0, ElfWood.PIT_X1, -13.0]]:
+		_strip_rect(ci, o, k, st[0], st[1], st[2], st[3], Color("4c5652"))
+		for i in 5: ci.draw_line(at.call(st[0] + 1.0 + i * 2.0, st[1]), at.call(st[0] + 1.0 + i * 2.0, st[3]), Color(0.1, 0.13, 0.13, 0.9), maxf(1.0, kb))
+	_strip_rect(ci, o, k, ElfWood.PIT_X0, -3.0, ElfWood.PIT_X1, 3.0, Color("c3ccc8"))
+	# what stands in the way (the trunks are drawn round, the tower by hand; planks up in the boughs are drawn after, see-through)
+	var list: Array = Phys.colliders if live else []; var up: Array = []
+	for b: Phys.Box in list:
+		if b.ref != null or b.maxy <= 0.05 or w.wood.mirrors.has(b): continue
+		var bw := b.maxx - b.minx; var bd := b.maxz - b.minz
+		if bw * bd < 0.5 or bw > 100.0 or bd > 40.0: continue   # (slivers; the wood's edges)
+		if Vector2((b.minx + b.maxx) * 0.5 - ElfWood.TC.x, (b.minz + b.maxz) * 0.5 - ElfWood.TC.y).length() < ElfWood.T_DECK + 1.0: continue
+		if b.kind == "wood": up.push_back(b); continue
+		if b.miny > 3.0 and b.maxy - b.miny < 1.0: continue   # (lintels, roofs)
+		_strip_rect(ci, o, k, b.minx, b.minz, b.maxx, b.maxz, Color(str(T.blockHi if b.maxy > 5.0 else T.block)))
+	# the moonwell's pavilion, the tower (its core, the stair round it, the library's gallery)
+	var well := at.call(ElfWood.WELL.x, ElfWood.WELL.z) as Vector2
+	ci.draw_circle(well, 8.0 * k, Color(0.8, 0.84, 0.82, 0.28)); ci.draw_arc(well, 8.0 * k, 0, TAU, 40, Color(str(T.wall)), 1.5 * u); ci.draw_circle(well, ElfWood.WELL_R * k, Color("8ff7ea"))
+	var tc := at.call(ElfWood.TC.x, ElfWood.TC.y) as Vector2
+	ci.draw_circle(tc, 21.0 * k, Color(1, 1, 1, 0.04)); ci.draw_arc(tc, 21.0 * k, deg_to_rad(100.0), deg_to_rad(260.0), 28, Color(str(T.block)), 2.0 * u)
+	ci.draw_arc(tc, (ElfWood.T_CORE + ElfWood.T_DECK) * 0.5 * k, PI - deg_to_rad(262.0), PI, 40, Color(0.79, 0.83, 0.82, 0.5), (ElfWood.T_DECK - ElfWood.T_CORE) * k)
+	ci.draw_arc(tc, (ElfWood.T_CORE + ElfWood.T_STAIR) * 0.5 * k, 0, TAU, 48, Color(str(T.block)), (ElfWood.T_STAIR - ElfWood.T_CORE) * k)
+	ci.draw_circle(tc, ElfWood.T_CORE * k, Color(str(T.blockHi))); ci.draw_arc(tc, ElfWood.T_CORE * k, 0, TAU, 40, Color(str(T.wall)), 1.5 * u)
+	if live:
+		for q: Array in w.wood.trees: ci.draw_circle(at.call(q[0], q[1]), maxf(float(q[2]) * 0.82 * k, 2.0 * u), Color("dfe7e3"))
+		for b: Phys.Box in up: _strip_rect(ci, o, k, b.minx, b.minz, b.maxx, b.maxz, Color(0.62, 0.42, 0.25, 0.78))
+	# the border of each band, the fold between them, the names of the four parts of the way
+	for band in 2:
+		var p := at.call(ElfWood.X0 if band == 0 else 0.0, -WZ) as Vector2; var q := at.call(-0.001 if band == 0 else ElfWood.X1, WZ) as Vector2
+		ci.draw_rect(Rect2(p, q - p), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.5), false, 2.0 * kb)
+	var f0 := at.call(-0.001, 0.0) as Vector2; var f1 := at.call(0.0, 0.0) as Vector2; var mid := (f0.y + f1.y) * 0.5; var fc := Color(SODIUM, 0.75)
+	for seg: Array in [[f0 + Vector2(2.0 * u, 0), Vector2(f0.x + PAD * k * 0.6, f0.y)], [Vector2(f0.x + PAD * k * 0.6, f0.y), Vector2(f0.x + PAD * k * 0.6, mid)], [Vector2(f0.x + PAD * k * 0.6, mid), Vector2(f1.x - PAD * k * 0.6, mid)],
+			[Vector2(f1.x - PAD * k * 0.6, mid), Vector2(f1.x - PAD * k * 0.6, f1.y)], [Vector2(f1.x - PAD * k * 0.6, f1.y), f1 - Vector2(2.0 * u, 0)]]:
+		ci.draw_dashed_line(seg[0], seg[1], fc, 1.6 * u, 5.0 * u)
+	ci.draw_colored_polygon(PackedVector2Array([f1 + Vector2(-1.0 * u, 0), f1 + Vector2(-7.0 * u, -4.0 * u), f1 + Vector2(-7.0 * u, 4.0 * u)]), fc)
+	for nm: Array in [["은빛 경계림", ElfWood.X0], ["달샘 회랑", -66.0], ["공명 수정 협곡", 22.0], ["대마법사의 탑", 112.0]]:
+		var p := at.call(float(nm[1]), -WZ) as Vector2
+		ci.draw_line(p, p - Vector2(0, 9.0 * u), Color(INKC, 0.6), 1.2 * u); _text(ci, f_bold, str(nm[0]), p.x + 5.0 * u, p.y - 9.0 * u, roundi(12.0 * u), INKC, "left", 3.5 * u, Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.9))
+	# north and the scale, on chips in the picture's corners
+	var edge := PAD * k + 8.0 * u; var bar := 20.0
+	ci.draw_rect(Rect2(o.x + edge, o.y + edge, 40.0 * u, 22.0 * u), CHIP); _text(ci, f_mono, "N ↑", o.x + edge + 20.0 * u, o.y + edge + 11.5 * u, roundi(13.0 * u), INKC)
+	var bw2 := bar * k + 16.0 * u; var sc_x := o.x + S - edge - bw2
+	ci.draw_rect(Rect2(sc_x, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP); ci.draw_rect(Rect2(sc_x + bw2 - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
+	_text(ci, f_mono, "%dm" % int(bar), sc_x + bw2 - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
+	if not live: return
+	# what the place does: the moonwell, the portals (each with where it takes you), the puffballs, the amplifying circle
+	_tag(ci, "달샘", well.x, well.y - 12.0 * u, u, Color("8ff7ea"))
+	for q: Dictionary in w.wood.portals:
+		var a := at.call((q.a as Vector3).x, (q.a as Vector3).z) as Vector2; var b := at.call((q.b as Vector3).x, (q.b as Vector3).z) as Vector2
+		ci.draw_dashed_line(a, b, Color(0.72, 0.57, 1.0, 0.7), 1.2 * u, 3.0 * u); ci.draw_arc(a, 4.5 * u, 0, TAU, 20, Color("b892ff"), 2.0 * u); ci.draw_circle(b, 2.4 * u, Color("b892ff"))
+	for q: Dictionary in w.wood.puffs:
+		if q.c != null: ci.draw_circle(at.call(float(q.x), float(q.z)), 2.6 * u, Color("a56bff")); ci.draw_arc(at.call(float(q.x), float(q.z)), 2.6 * u, 0, TAU, 12, Color("e6d4ff"), 1.0 * u)
+	ci.draw_arc(at.call(ElfWood.AMP.x, ElfWood.AMP.z), maxf(ElfWood.AMP_R * k, 4.0 * u), 0, TAU, 24, Color("ffd66b"), 1.6 * u)
+	# where you start
+	var s0: Dictionary = w.start; var sq := at.call(float(s0.x), float(s0.z)) as Vector2
+	ci.draw_circle(sq, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sq, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
+	_tag(ci, "시작하는 곳", sq.x + 15.0 * u, sq.y + 0.5 * u, u, SODIUM, "left")
+	for e: Enemies.Foe in game.enemies.list:
+		if not e.alive: continue
+		var ep := at.call(e.pos.x, e.pos.z) as Vector2
+		if e.boss:
+			ci.draw_circle(ep, 7.0 * u, Color("ff2d3d")); ci.draw_arc(ep, 7.0 * u, 0, TAU, 28, Color.WHITE, 1.6 * u); _tag(ci, "보스", ep.x, ep.y - 13.0 * u, u, Color.WHITE)
+		else:
+			ci.draw_circle(ep, 3.2 * u, enemy_color(e))
+			if e.alert: ci.draw_arc(ep, 3.2 * u + 2.0 * u, 0, TAU, 24, Color.WHITE, 1.2 * u)
+	var pl: Player = game.player; var pp := at.call(pl.pos.x, pl.pos.z) as Vector2; var ang := atan2(-cos(pl.yaw), -sin(pl.yaw))
+	var fov := deg_to_rad(cam.fov if cam != null else 75.0) * 0.6; var cone := PackedVector2Array([pp]); var cc := PackedColorArray([Color(ME, 0.45)])
+	for i in 17:
+		var a := ang - fov / 2.0 + fov * i / 16.0; cone.push_back(pp + Vector2(cos(a), sin(a)) * 60.0 * u); cc.push_back(Color(ME, 0.0))
+	ci.draw_polygon(cone, cc)
+	var rot := func(p: Vector2) -> Vector2: return pp + p.rotated(ang) * u
+	var arrow := PackedVector2Array([rot.call(Vector2(11, 0)), rot.call(Vector2(-7, 7)), rot.call(Vector2(-3, 0)), rot.call(Vector2(-7, -7))])
+	ci.draw_colored_polygon(arrow, ME); arrow.push_back(arrow[0]); ci.draw_polyline(arrow, Color("0d1220"), 1.5 * u)
+
 # ---------------- the legend ----------------
 ## the legend's items: [kind, text, colour, letter]; drawn by legend_icon
 func legend(live: bool) -> Array:
 	var lab := stage == 3 or stage == 8; var out := []
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
-	out.push_back(["lz", lz, SODIUM, "" if stage == Store.ST_TOY else ("문" if lab else ("A" if stage == 4 else "H"))])
+	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
+	out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])
 	if stage == Store.ST_TOY and game != null and game.tm != null:   # stage 5's team modes: their own marks
 		for it: Array in game.tm.mode.legend(): out.push_back(["en", it[2], Color(str(it[1])), ""])
 		out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
 		return out
 	for kd: Array in KINDS[stage]: out.push_back(["en", kd[2], Color(str(kd[1])), ""])
 	if stage == 7: out.push_back(["tw", "감시탑 · 체력", Color("8a6440"), ""])
-	elif stage != Store.ST_TOY: out.push_back(["bo", "보스", Color("ff2d3d"), ""])
-	out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
+	elif stage != Store.ST_TOY: out.push_back(["bo", "보스 · 대마법사" if stage == Store.ST_ELF else "보스", Color("ff2d3d"), ""])
+	if stage == Store.ST_ELF:   # (no crates here: what the place does instead)
+		out.push_back(["en", "달샘 · 체력 회복", Color("8ff7ea"), ""]); out.push_back(["al", "포탈 · 점선 끝으로 이동", Color("b892ff"), ""]); out.push_back(["en", "포자 버섯 · 쏘면 상승 기류", Color("a56bff"), ""])
+		out.push_back(["cr", "나무 위 발판과 다리", Color(0.62, 0.42, 0.25), ""])
+	else: out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
 	if lab: out.push_back(["cg", "우리 · 번호와 열리는 시간", Color("c9d2da"), ""])
 	if live: out.push_back(["al", "흰 테두리 · 나를 쫓는 중", Color.WHITE, ""])
 	return out

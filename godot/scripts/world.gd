@@ -6,6 +6,9 @@ extends Node3D
 const CONT_COLORS := ["8c3a2b", "2c4f7c", "356b45", "c4682a", "7b8288", "2f7a7a", "6a2a35", "b8ab8a"]
 const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
+	# 6-1, the elves' Silverwood: dusk under great pale trees, the air blue-green, lanterns and crystals for light
+	10: {"wood": true, "fog": [0.026, 0.07, 0.078], "density": 0.011, "zenith": [0.005, 0.016, 0.03], "glow": [0.03, 0.1, 0.1], "hemi": ["86a8b0", "20302a", 0.72], "moon": ["c4e6ff", 0.62], "lamp": ["8ff7ea", 0.8],
+		"seed": 91, "sunOff": [-36, 62, -28], "exposure": 1.12},
 	# stage 5, the toy room: a sunny bedroom, bright and warm
 	9: {"toy": true, "fog": [0.55, 0.62, 0.68], "density": 0.004, "zenith": [0.55, 0.62, 0.68], "glow": [0.0, 0.0, 0.0], "hemi": ["ffffff", "cdb99a", 0.5], "moon": ["fff1d6", 0.62], "lamp": ["ffffff", 0.0], "seed": 77, "crates": 24, "sunOff": [30, 60, 34], "exposure": 0.95},
 	# 1-2: the same docks later that night, a little colder, laid out differently
@@ -83,6 +86,7 @@ var on_crate: Callable = Callable()   # called with the crate when one breaks
 var fx: Fx = null
 var toy: ToyRoom = null
 var toy_tm = null   # stage 5's team mode (ToyMatch) to build into the room, or null for the sweep
+var wood: ElfWood = null   # stage 6-1: the elves' Silverwood and the Archmage's tower
 const TOY_FPLUS_SUN := 2.5   # (the toy room's sun on Forward+: see build_stage)
 var village: Village = null
 var lab: Lab = null
@@ -342,6 +346,7 @@ static func stage_kind(stage: int) -> String:
 	if S.get("lab", false): return "lab"
 	if S.get("savanna", false): return "safari"
 	if S.get("toy", false): return "toy"
+	if S.get("wood", false): return "wood"
 	return "village" if stage == 2 else "docks"
 
 ## the painted textures the other kinds keep are let go once a stage of another kind is built (the one played again, as after
@@ -355,7 +360,7 @@ static func forget_textures(keep: String) -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; _crate_dirty = false; toy = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; _crate_dirty = false; toy = null; wood = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -415,6 +420,7 @@ func build_stage(stage: int) -> void:
 	for p in _port: p.visible = is_yard(stage)
 	(moon_spr.mesh as QuadMesh).size = Vector2.ONE * (92.0 if stage == 2 else 62.0)   # (a billboard keeps no node scale)
 	if not is_yard(stage): blink.clear()
+	if S.get("wood", false): wood = ElfWood.new(); wood.build(self, G); return   # (stage 6-1: no crates there, as in all of stage 6)
 	if S.get("ship", false): Phys.set_world_size(166.0); Phys.set_nav(334, 1.0); ship = Ship.new(); ship.build(self, G, S, R); return
 	if S.get("lab", false): Phys.set_world_size(Lab.HALF + 1); Phys.set_nav(int(2 * Lab.HALF + 8), 1.0); lab = Lab.new(); lab.build(self, G, S, R); return
 	if S.get("savanna", false): Phys.set_world_size(178.0); Phys.set_nav(180, 2.0); safari = Safari.new(); safari.build(self, G, S, R); return
@@ -628,8 +634,9 @@ func damage_crate(c: Dictionary, dmg: float, _at: Vector3) -> void:
 	else: hide_crate(c)
 	Phys.remove_collider(c.b); Phys.nav_patch(c.b.minx, c.b.minz, c.b.maxx, c.b.maxz)  # just round it, not the whole grid
 	var at := Vector3(c.x, c.y + 0.6, c.z)
-	if fx: fx.chunks(at, 9, 0.28, "wood"); fx.puff(at, 4, 0.35, 0.6)
-	Snd.play("crack", 1.0, at)
+	if not c.get("puff", false):   # (a puffball is no crate: it bursts its own way, see ElfWood.puffed)
+		if fx: fx.chunks(at, 9, 0.28, "wood"); fx.puff(at, 4, 0.35, 0.6)
+		Snd.play("crack", 1.0, at)
 	if on_crate.is_valid(): on_crate.call(c)
 
 func update_world(dt: float, t: float, px: float, pz: float) -> void:

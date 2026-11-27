@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""스테이지 5(Godot판에만 있는 장난감 방)의 효과음(godot/sounds/toy_*.wav)을 만듭니다. 파이썬 표준 라이브러리만 씁니다.
+"""Godot판에만 있는 스테이지의 효과음을 만듭니다: 스테이지 5 장난감 방(godot/sounds/toy_*.wav)과 스테이지 6-1 엘프의 숲(elf_*.wav). 파이썬 표준 라이브러리만 씁니다.
 브라우저판에 있는 소리는 브라우저판 자신의 코드로 tools/render_sounds.js가 만듭니다(예전에 손으로 옮겨 두었던 브라우저판 소리의 조합은 지웠습니다).
 - 잡음은 처음 만들 때와 같은 난수를 씁니다(시드 7, 예전에 앞에서 만들던 브라우저판 소리들이 쓰던 만큼 건너뛰고): 소리가 바뀌지 않습니다.
 - render_sounds.js와 같이 SCALE배(절반)로 줄여 적고, 게임이 그만큼 되돌립니다(godot/scripts/snd.gd의 SCALE).
@@ -124,6 +124,35 @@ SOUNDS = {
     'toy_crane': lambda: [T('sawtooth', 140, 196, 0.5, 0.2), N(0.5, 'bandpass', 900, 1300, 3, 0.16), N(0.03, 'bandpass', 1500, 900, 2, 0.6, 0.5), T('square', 430, 300, 0.03, 0.14, 0.5)],
     # a broom across the floor: two strokes
     'toy_sweep': lambda: [N(0.5, 'bandpass', 1200, 2800, 0.8, 0.55), N(0.6, 'bandpass', 1000, 2400, 0.8, 0.5, 0.62), N(0.4, 'highpass', 4200, 5600, 0.7, 0.16, 0.1)],
+    # ---- stage 6-1, the elves' Silverwood (scripts/folk.gd, scripts/elfwood.gd): glass, wind and bells. no gunfire either ----
+    # a repeating crossbow's bolt of light: a short bright note falling, glass over it
+    'elf_bolt': lambda: [T('triangle', 1700, 720, 0.08, 0.5), T('sine', 2700, 1350, 0.05, 0.2), N(0.03, 'highpass', 5000, 3000, 0.8, 0.3)],
+    # a longbow let go: the string's thrum and the arrow's rush
+    'elf_arrow': lambda: [T('sine', 190, 92, 0.17, 0.65), N(0.16, 'bandpass', 1900, 600, 1.0, 0.5), T('triangle', 950, 420, 0.05, 0.2)],
+    # a mage's ball of light sent on its way: a hum rising; and its burst
+    'elf_orb': lambda: [T('sine', 220, 520, 0.4, 0.34), T('sine', 330, 780, 0.4, 0.2), N(0.3, 'bandpass', 900, 2200, 2, 0.14)],
+    'elf_pop': lambda: [T('sine', 300, 80, 0.2, 0.8), N(0.18, 'lowpass', 2600, 300, 0.7, 0.85), T('sine', 1400, 500, 0.1, 0.25)],
+    # a blade dancer: the swing through the air, the cut landing, the wind under a leap
+    'elf_swish': lambda: [N(0.12, 'bandpass', 1400, 3600, 1.2, 0.6)],
+    'elf_cut': lambda: [N(0.05, 'bandpass', 2600, 1200, 1.5, 0.9), T('square', 700, 250, 0.05, 0.22), T('sine', 2400, 1700, 0.08, 0.14, 0.01)],
+    'elf_wind': lambda: [N(0.25, 'bandpass', 700, 2400, 0.9, 0.5), N(0.2, 'highpass', 3000, 5000, 0.7, 0.16)],
+    # a step through the air: gone with a rising note, there with a falling one
+    'elf_blink': lambda: [T('sine', 900, 2400, 0.09, 0.4), T('sine', 2400, 700, 0.14, 0.3, 0.07), N(0.1, 'highpass', 4000, 6000, 0.8, 0.18)],
+    # a rune drawn on the floor: three notes stacked, held
+    'elf_rune': lambda: [T('sine', 660, 658, 0.3, 0.3), T('sine', 990, 988, 0.3, 0.2, 0.05), T('sine', 1320, 1316, 0.35, 0.16, 0.1)],
+    # the great sphere's beam waking
+    'elf_beam': lambda: [T('sawtooth', 110, 220, 0.9, 0.28), T('sine', 440, 880, 0.9, 0.24), N(0.8, 'bandpass', 1200, 2600, 2, 0.18)],
+    # a wind chime: an obelisk's warning, a bolt off mirror bark, the amplifying circle
+    'elf_chime': lambda: [T('sine', 2093, 2089, 0.5, 0.34), T('sine', 2637, 2632, 0.45, 0.24, 0.06), T('sine', 3136, 3130, 0.4, 0.18, 0.13)],
+    # a gravity-spore puffball bursting: a soft thump and the spores hissing up
+    'elf_puff': lambda: [N(0.3, 'lowpass', 1700, 250, 0.7, 0.9), T('sine', 150, 60, 0.15, 0.5), N(0.5, 'highpass', 3000, 5200, 0.7, 0.2, 0.05)],
+    # a portal taking you: a sweep up and a bell where you arrive
+    'elf_portal': lambda: [T('sine', 300, 1200, 0.3, 0.4), T('sine', 450, 1800, 0.3, 0.24), N(0.35, 'bandpass', 800, 3000, 1.5, 0.24), T('sine', 1568, 1560, 0.4, 0.2, 0.25)],
+    # the moonwell's water as it mends you: three drops, each a little higher
+    'elf_well': lambda: [T('sine', 880, 1500, 0.06, 0.3), T('sine', 1040, 1750, 0.06, 0.26, 0.11), T('sine', 1240, 2100, 0.06, 0.22, 0.2), N(0.3, 'lowpass', 900, 500, 0.8, 0.1)],
+    # the alchemist's bomb (stage 6's shared throwable): the flask breaking, what was in it going up with a whoosh
+    'elf_flask': lambda: [N(0.05, 'highpass', 5200, 2600, 0.8, 1.0), T('square', 2400, 1500, 0.02, 0.14), N(0.3, 'lowpass', 2600, 260, 0.7, 1.1, 0.02), T('sine', 240, 62, 0.28, 0.85, 0.02),
+                  N(0.02, 'highpass', 6000, 4000, 0.8, 0.4, 0.12), N(0.02, 'highpass', 6500, 4200, 0.8, 0.3, 0.2), N(0.35, 'bandpass', 900, 2600, 1.2, 0.2, 0.05)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]
@@ -145,4 +174,4 @@ for name, layers in worked:
     data = b''.join(struct.pack('<h', int(round(max(-1.0, min(1.0, math.tanh(v * 0.55))) * SCALE * 32767))) for v in mix)
     with wave.open(os.path.join(out_dir, name + '.wav'), 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(data)
     made += 1
-print(made, 'toy sounds, stored at', SCALE, 'of full level')
+print(made, 'sounds, stored at', SCALE, 'of full level')

@@ -21,6 +21,11 @@ func _mesh(scale_: Vector3, color: String) -> MeshInstance3D:
 func grenade(from: Vector3, dir: Vector3, W: Dictionary) -> void:
 	list.push_back({"kind": "grenade", "pos": from, "src": from, "vel": dir * 40.0, "dmg": float(W.dmg), "radius": float(W.splash), "life": 6.0, "bounced": false, "m": _mesh(Vector3.ONE * 0.05, "3d4430")})
 
+## stage 6's shared throwable, the alchemist's bomb: a flask thrown by hand in an arc; it bursts on whatever it meets
+## (once a step away from the hand that threw it)
+func flask(from: Vector3, vel: Vector3, W: Dictionary) -> void:
+	list.push_back({"kind": "flask", "pos": from, "src": from, "vel": vel, "dmg": float(W.dmg), "radius": float(W.splash), "life": 6.0, "bounced": false, "arm": 1.2, "m": _mesh(Vector3(0.12, 0.17, 0.12), "7fe3c8")})
+
 ## the guided rocket: a short straight boost, then it steers after the enemy it locked when fired (at most 3 rad a second)
 func rocket(from: Vector3, dir: Vector3, W: Dictionary, target) -> void:
 	list.push_back({"kind": "rocket", "pos": from, "src": from, "speed": 24.0, "vel": dir * 24.0, "dmg": float(W.dmg), "radius": float(W.splash), "splash_dmg": float(W.get("splashDmg", W.dmg * 0.5)),
@@ -104,6 +109,13 @@ func _rocket_hit(p: Dictionary, e) -> void:
 
 func _explode(p: Dictionary) -> void:
 	var c: Vector3 = p.pos
+	if p.kind == "flask":   # the alchemist's bomb: green fire and glass, a ring of light; it does not hurt whoever threw it
+		if fx:
+			fx.sparks(c, 14, [0.5, 1.0, 0.8], 5.0)
+			for i in 18: fx.glow(c, Vector3(randf_range(-1, 1), randf_range(-0.2, 1), randf_range(-1, 1)).normalized() * randf_range(2.0, float(p.radius) * 1.6), 0.55, 0.7, 0.06, Color(0.45, 1.0, 0.75, 0.85), 0.0, 2.0)
+		Snd.play("elf_flask", 1.0, c); enemies.noise(c, 40)
+		player.shake = maxf(player.shake, clampf(0.4 - c.distance_to(player.pos) * 0.02, 0.0, 0.4))
+		enemies.splash(c, p.radius, p.dmg); _crates_near(c, p.radius); return
 	if fx: fx.explode(c, true)
 	Snd.play("boom", 1.0, c); enemies.noise(c, 60)
 	if stage == Store.ST_TOY: Music.blast(c)   # (the toy room's music: the tape stretches)
@@ -192,7 +204,7 @@ func update(dt: float) -> void:
 			for s in 3:
 				if dead: break
 				p.pos += p.vel * (dt / 3.0)
-				var armed: bool = (p.pos as Vector3).distance_to(p.src) > 8.0
+				var armed: bool = (p.pos as Vector3).distance_to(p.src) > float(p.get("arm", 8.0))
 				var impact: bool = p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.05 or Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1) != null
 				if not impact:   # an enemy's body: as the rocket finds it (its height and girth; a flier round its middle), never the one you ride
 					for e in enemies.list:
@@ -209,7 +221,9 @@ func update(dt: float) -> void:
 					else:
 						if fx: fx.puff(p.pos, 3, 0.4, 0.35)
 						dead = true
-			if fx and randf() < 0.6: fx.puff(p.pos, 1, 0.55, 0.18)
+			if fx and p.kind == "flask":
+				if randf() < 0.5: fx.glow(p.pos, Vector3.ZERO, 0.3, 0.12, 0.02, Color(0.5, 1.0, 0.8, 0.6))   # (what is in it shines as it flies)
+			elif fx and randf() < 0.6: fx.puff(p.pos, 1, 0.55, 0.18)
 			if not dead: (p.m as MeshInstance3D).position = p.pos
 		if dead or p.life <= 0.0: (p.m as MeshInstance3D).queue_free(); list.remove_at(i)
 

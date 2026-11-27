@@ -267,6 +267,7 @@ func fire(exact = null) -> void:   # exact: a direction to send the shot along a
 				elif k < 3 and fx: fx.tracer(muz, at)
 			else:
 				var at := o + d * s_t
+				if k == 0 and world.wood != null: world.wood.shot_by(o, d, s_t)   # (stage 6-1: a shot that misses sets the lanterns by its way swinging)
 				if s_hit and s_box != null and s_box.kind == "wood" and s_box.ref != null: world.damage_crate(s_box.ref, W.dmg, at)
 				if s_hit and k < 4 and s_box != null and s_box.kind == "metal" and randf() < 0.5: Snd.play("metal", 1.0, at)
 				if s_hit and k < 4 and fx and not toy:   # where it struck: sparks (more off metal), a little dust (more off concrete)

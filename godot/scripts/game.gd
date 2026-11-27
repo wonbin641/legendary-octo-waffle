@@ -11,6 +11,10 @@ const STAGES := {
 	7: {"name": "사파리 감시탑", "enemy": "animal", "goal": 93, "unit": "마리", "label": "동물", "intro": "넓은 사파리의 동물 93마리 · 5분 뒤 모두 가운데 감시탑으로 습격 · 탑 체력 10,000 · 기린은 긴 목으로 탑 위까지 칩니다"},
 	8: {"name": "차례 연구소", "enemy": "animal", "goal": 84, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
 	9: {"name": "장난감 방", "enemy": "toy", "goal": 100, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 플라스틱 군인 30, 액션 피규어 22, 태엽·RC 유닛 24, 조립 블록 피규어 24"},
+	10: {"name": "은빛 경계림", "enemy": "elf", "goal": 61, "unit": "명", "label": "엘프", "intro": "서쪽 숲 경계에서 동쪽 끝 대마법사의 나선형 탑까지 · 지하 수로, 뿌리 길, 수관 다리 세 층 · 회복은 달샘에서만 · 탑 꼭대기의 대마법사를 쓰러뜨리면 끝"},
+	11: {"name": "드워프", "enemy": "dwarf", "goal": 0, "unit": "명", "label": "드워프", "intro": "준비 중"},
+	12: {"name": "오크", "enemy": "orc", "goal": 0, "unit": "명", "label": "오크", "intro": "준비 중"},
+	13: {"name": "악마", "enemy": "demon", "goal": 0, "unit": "명", "label": "악마", "intro": "준비 중"},
 	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 보스 드론을 잡으면 끝 · 바닥의 스파이더 마인 조심"},
 }
 const BOSS := {
@@ -21,6 +25,7 @@ const BOSS := {
 	8: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
 	4: {"type": "bdrone", "name": "최첨단 감시 드론 B-3", "josa": "이", "scale": 1.0, "hp": 9000, "dmgMul": 1.0},
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
+	10: {"type": "archmage", "name": "대마법사", "josa": "가", "scale": 1.0, "hp": 6500, "dmgMul": 1.0},   # (stood by ElfWood on top of its tower)
 }
 
 var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var proj: Proj; var loot: Loot; var fx: Fx
@@ -34,6 +39,10 @@ var result := ""
 var replay := false
 var boss: Enemies.Foe = null
 var boss_msg := ""
+## stage 6's shared throwable: the alchemist's bomb. One in the hand; FLASK.cd seconds after a throw the next is ready (a rack
+## of white jade takes FLASK.rack seconds off the wait as you pass it: ElfWood.update)
+const FLASK := {"cd": 12.0, "dmg": 240.0, "splash": 5.0, "rack": 2.0, "speed": 17.0}
+var flask_cd := 0.0; var flasks := 0   # the wait left; how many you have thrown this stage
 var stats := {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 var bonus_guns: Array = []
 var _result_t := -1.0
@@ -78,6 +87,7 @@ func begin(stage_: int) -> void:
 	var an := enemies.animals; an.player = player; an.game = self; an.world = world; an.fx = fx; player.rider = an; player.on_toss_land = an.toss_land
 	var tf := enemies.toys; tf.player = player; tf.game = self; tf.world = world; tf.fx = fx; tf.proj = proj
 	var rb := enemies.robots; rb.player = player; rb.game = self; rb.world = world; rb.fx = fx; rb.proj = proj
+	var fk := enemies.folk; fk.player = player; fk.game = self; fk.world = world; fk.fx = fx; fk.proj = proj
 	if tm != null: tm.clear()
 	tm = null
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
@@ -87,6 +97,8 @@ func begin(stage_: int) -> void:
 	world.build_stage(stage); calm = 0; sp = null; mid = null
 	if tm != null: tm.room = world.toy
 	if world.toy != null: tf.brk.prepare()   # (the breakages' pictures and materials, made as the room is, not at the first hit)
+	fk.wood = world.wood
+	if world.wood != null: world.wood.player = player; world.wood.game = self; world.wood.enemies = enemies; world.wood.fx = fx; world.wood.proj = proj
 	if world.ship != null: world.ship.player = player; world.ship.game = self; world.ship.enemies = enemies; world.ship.fx = fx
 	player.toss_ceil = Lab.CEIL if world.lab != null else INF
 	if world.lab != null: world.lab.player = player; world.lab.game = self
@@ -97,8 +109,10 @@ func begin(stage_: int) -> void:
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
 	if stage == Store.ST_TOY: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
+	if world.start.has("y"): player.pos.y = float(world.start.y)   # (a start that is not on the ground: 6-1's terrace)
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false
+	flask_cd = 0.0; flasks = 0
 	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
 	# down in the corner at the bottom right of the map (the east and south ends), facing in
 	if stage == Store.ST_ARMED:
@@ -110,7 +124,7 @@ func begin(stage_: int) -> void:
 		var c = open_spot(Phys.HALF - 6.0, Phys.HALF - 6.0)
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
-	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
+	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else (" 탑 꼭대기 천문대에 있습니다" if world.wood != null else " 어딘가에 있습니다")) + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
 	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
 
@@ -119,6 +133,7 @@ static func boss_pay(B: Dictionary) -> int:
 	var t: String = B.type; var base := 1000
 	if Animals.ANIMALS.has(t): base = int(Animals.ANIMALS[t].money)
 	elif Robots.ROBOTS.has(t): base = int(Robots.ROBOTS[t].get("money", 1000))
+	elif Folk.KINDS.has(t): base = int(Folk.KINDS[t].money)
 	return base * 20 * Store.PAY
 
 ## the nearest open ground to a point on the map: room to land, not on a container, inside the fence; you face the middle of the docks
@@ -157,8 +172,9 @@ func populate() -> void:
 			var o := {"yaw": SR.rng(0, TAU), "y": p.get("y", 0.0)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
-	if world.lab != null or world.safari != null or world.ship != null or world.toy != null:
-		if world.lab != null: world.lab.populate(put, SR, BOSS[stage])
+	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null:
+		if world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
+		elif world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
 		elif world.toy != null and tm != null: tm.mode.populate()   # (a team mode: the two sides, not the hundred toys)
 		elif world.toy != null: enemies.toys.populate(put, SR)
@@ -252,9 +268,10 @@ func _populate_armed(SR: World.Rng, ok: Callable, find: Callable, put: Callable,
 
 func update(dt: float) -> void:
 	if not ended: stats.time += dt
+	flask_cd = maxf(0.0, flask_cd - dt)
 	# the enemies' way to you, every 0.3 s as the browser game's: at most 3 ms of the search a frame (a fast computer does it
 	# all at once, as there; a slow one over a few frames, the enemies keeping the last way meanwhile), the next once it is done
-	if world.toy == null:   # (stage 5's toys find their own ways, by their posts and the match's paths: nobody there reads this search)
+	if world.toy == null and world.wood == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
 		flow_t -= dt
 		if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
 		if Phys.flow_busy: Phys.flow_step(flow_budget)
@@ -401,7 +418,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	if tm != null: tm.on_kill(e, weak); return
 	kills += 1; stats.kills += 1
 	if e.tamed: calm = maxi(0, calm - 1)   # it was already counted
-	var base := int(e.T.get("money", 1000)) if ((e.animal and not e.minion) or e.robot or e.toy) else 1000
+	var base := int(e.T.get("money", 1000)) if ((e.animal and not e.minion) or e.robot or e.toy or e.folk) else 1000
 	if weak: stats.heads += 1
 	# a kill with a shot to the head pays 1.5 times; a boss twenty times; a stage you have already cleared pays nothing
 	# so does a zombie finished off before it ever got back up (the two multiply)
@@ -425,7 +442,8 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 			for o in enemies.list.duplicate():
 				if o.extra: enemies.vanish(o)
 			world.ship.on_down(e)
-		if stage == 4: finish()   # the ship is won with its boss drone: open its chest and you are out (the owner's rule)
+		if e.folk: enemies.folk.boss_down(e)
+		if stage == 4 or world.wood != null: finish()   # the ship is won with its boss drone, the Silverwood with its Archmage: open the chest and you are out
 	elif e.T.get("mid", false):
 		_say(feed, ["중간 보스 " + e.name + " 처치", pay, true])
 		_say(banner, ["중간 보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "운전실을 장악했습니다", 2.4]); mid = null
@@ -438,7 +456,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	elif e.bee_fall: pass   # counted in one line above
 	elif e.self_det: _say(feed, ["스파이더 마인이 터졌습니다" if e.type == "mine" else "자폭맨이 터졌습니다", 0, true])
 	elif e.no_pay and e.animal: _say(feed, ["타고 있던 " + str(e.T.name) + ("이" if Animals.batchim(str(e.T.name)) else "가") + " 쓰러졌습니다", 0, true])
-	else: _say(feed, [(str(e.T.name) if e.animal else STAGES[stage].label) + (" · 머리 명중" if weak else " 처치"), pay, weak])
+	else: _say(feed, [(str(e.T.name) if (e.animal or e.folk) else STAGES[stage].label) + (" · 머리 명중" if weak else " 처치"), pay, weak])
 	var left := goal - kills - calm; var S: Dictionary = STAGES[stage]
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "화살표가 남은 적 쪽을 가리킵니다" if (left == 10 and stage != 4) else "가방 " + Store.won(Store.save.money), 1.8])
 	if kills + calm >= goal and goal > 0: finish()
@@ -447,6 +465,9 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 func on_crate(c: Dictionary) -> void:
 	if str(c.get("trap", "")) != "" and tm != null: tm.mode.trap_broken(c); return   # (the train escort: a trap on the track, shot to bits)
 	if c.get("wall", false): return   # a brick figure's little wall: nothing inside
+	if c.get("puff", false):   # (stage 6-1) a gravity-spore puffball, burst: its spores lift whoever stands there
+		if world.wood != null: world.wood.puffed(c)
+		return
 	loot.drop("anti" if stage == 2 else "hp", c.x, c.z, c.y)
 
 func take_loot(kind: String) -> bool:
@@ -458,6 +479,15 @@ func take_loot(kind: String) -> bool:
 		var stopped := an.bleed_n > 0; an.bleed_stop()   # the potion also stops bleeding
 		Snd.play("pickup_hp"); _say(feed, ["회복 물약 · 체력 +%d (최대 체력의 10%%)" % int(heal) + (" · 출혈 멎음" if stopped else ""), 0]); return true
 	return false
+
+func has_flask() -> bool: return Store.realm(stage) != "" and tm == null
+## throw it the way you look, a little upwards (your own speed goes with it); false when there is none to throw
+func throw_flask() -> bool:
+	if not has_flask() or ended or flask_cd > 0.0 or player.hp <= 0.0 or player.out or player.stun_t > 0.0: return false
+	var cam: Camera3D = guns.cam; var f: Vector3 = -cam.global_basis.z
+	flask_cd = float(FLASK.cd); flasks += 1
+	proj.flask(cam.global_position + f * 0.6 - cam.global_basis.y * 0.15, f * float(FLASK.speed) + Vector3(0, 4.5, 0) + Vector3(player.vel.x, 0, player.vel.z) * 0.5, FLASK)
+	Snd.play("elf_swish"); enemies.noise(player.pos, 12.0); return true
 
 ## the boss's chest: a gun you do not own yet, yours for good (once you are out alive), and every gun's ammo filled
 func open_chest() -> void:
@@ -480,7 +510,7 @@ func open_chest() -> void:
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
-		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if stage == 4 else "상자를 열어야 헬기가 옵니다", 3.0])
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if stage == 4 else "상자를 열면 탑을 떠납니다" if world.wood != null else "상자를 열어야 헬기가 옵니다", 3.0])
 		return
 	_leave_animals()
 	if player.jet_on:   # still in the air when the last one falls: the jetpack off and down for the way out, as there
@@ -491,7 +521,7 @@ func finish() -> void:
 	var key := "t%d" % stage; var t := int(stats.time)
 	if not Store.save.best.has(key) or t < int(Store.save.best[key]): Store.save.best[key] = t
 	Store.persist(); Snd.play("clear")
-	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", "헬기가 데리러 옵니다 · " + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
+	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", ("탑의 마력이 잦아듭니다 · " if world.wood != null else "헬기가 데리러 옵니다 · ") + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
 	result = "clear"; _result_kind = "clear"; _result_t = 1.7
 
 ## a team mode won: the record, the first win's bonus, and the result sheet (no helicopter: you are already home)

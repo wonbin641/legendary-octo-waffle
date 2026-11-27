@@ -241,7 +241,7 @@ func fresh(a: Dictionary) -> bool: return shape(a) == shape(Store.save0())
 ## a save in a line, for the choice: the bag, the stages cleared, the guns owned
 static func summary(d: Dictionary) -> String:
 	var cl = d.get("cleared", []); var ow = d.get("owned", [])
-	return "가방 %s · 클리어 %d / %d · 가진 총 %d자루" % [Store.won(int(d.get("money", 0))), (cl as Array).size() if cl is Array else 0, Store.STAGE_ORDER.size(), ((ow as Array).size() if ow is Array else 0) + 1]
+	return "가방 %s · 클리어 %d / %d · 가진 총 %d자루" % [Store.won(int(d.get("money", 0))), (cl as Array).size() if cl is Array else 0, Store.playable().size(), ((ow as Array).size() if ow is Array else 0) + 1]
 
 ## a moment on the server's clock, as this device's day and time
 static func when(unix: int) -> String:

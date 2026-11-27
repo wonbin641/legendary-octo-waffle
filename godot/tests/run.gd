@@ -309,8 +309,13 @@ func _ready() -> void:
 	Store.save.cleared = [1]; var ul_1 := [Store.stage_open(6), Store.stage_open(5)]; Store.save.cleared = [1, 6]; ul_1.push_back(Store.stage_open(5))
 	Store.save.cleared = [3]; var ul_3 := [Store.stage_open(7), Store.stage_open(8)]; Store.save.cleared = [3, 7]; ul_3.push_back(Store.stage_open(8))
 	Store.save.cleared = [5, 8]; var ul_kept := [Store.stage_open(5), Store.stage_open(8), Store.stage_open(6), Store.stage_open(7)]; Store.save.cleared = []
-	check("the five main stages (1 to 5) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
-		Store.STAGE_ORDER.size() == 9 and ul_open == [1, 2, 3, 4, 9] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(10), [ul_open, ul_1, ul_3, ul_kept])
+	Store.save.cleared = [10]; var ul_6 := [Store.stage_open(10), Store.stage_open(11), Store.stage_open(12), Store.stage_open(13)]; var ul_6n := [Store.next_stages(9), Store.next_stages(10)]; Store.save.cleared = []
+	check("the five main stages (1 to 5) and stage 6's first place (6-1) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
+		Store.STAGE_ORDER.size() == 13 and Store.playable().size() == 10 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(14), [ul_open, ul_1, ul_3, ul_kept])
+	check("stage 6 is four places, each held by one people (6-1 the elves, 6-2 the dwarves, 6-3 the orcs, 6-4 the demons): each after the first waits for the one before it; those not made yet (6-2 to 6-4) are named on the board and do not open",
+		[10, 11, 12, 13].map(func(s6): return Store.STAGE_TAG[s6]) == ["6-1", "6-2", "6-3", "6-4"] and [10, 11, 12, 13].map(func(s6): return Store.realm(s6)) == ["elf", "dwarf", "orc", "demon"] and Store.realm(9) == ""
+		and not Store.NEEDS.has(10) and Store.NEEDS[11] == 10 and Store.NEEDS[12] == 11 and Store.NEEDS[13] == 12 and Store.SOON == [11, 12, 13] and ul_6 == [true, false, false, false] and ul_6n == [[10], []]
+		and Game.STAGES[10].enemy == "elf" and Game.STAGES[11].enemy == "dwarf" and Game.STAGES[12].enemy == "orc" and Game.STAGES[13].enemy == "demon", [ul_6, ul_6n])
 	Store.save = keep_save; Store.settings.dev = keep_dev
 	# a grenade passing low by a man (knee high) bursts on him: his body found by its height and girth (it was a ball round his
 	# middle, and a grenade at his knees flew on to burst on the ground behind him)
@@ -455,7 +460,7 @@ func _ready() -> void:
 	check("the guided rocket launcher rents for 45,000 (half the browser game's 90,000)", Weapons.rent("rocket") == 45000 and Weapons.LIST.rocket.price == 150000)
 	Store.settings.dev = true
 	var dv_cl: Array = Store.save.cleared.duplicate(); Store.save.cleared = []
-	check("developer mode: every stage open (the side stages too, nothing cleared), every gun free to carry", Store.STAGE_ORDER.all(func(s9): return Store.stage_open(s9)) and Store.gun_available("rocket"))
+	check("developer mode: every stage there is to play is open (the side stages too, nothing cleared; not those only named so far), every gun free to carry", Store.playable().all(func(s9): return Store.stage_open(s9)) and not Store.stage_open(11) and Store.gun_available("rocket"))
 	Store.settings.god = true; var dv_chips: Array = Hud.new()._items(false); Store.settings.god = false; var dv_off: Array = Hud.new()._items(false)
 	var hg_hud := Hud.new(); var hg_ok := true
 	for hg_k: String in Hud.GLOW_STOPS:
@@ -1293,11 +1298,11 @@ func _ready() -> void:
 	var shown_of := func() -> int:
 		return en.list.filter(func(e): return e.alive and not e.ridden and not (e.type == "mine" and (e.bs == "hidden" or e.bs == ""))).size()
 	var map_bad := []
-	for st9 in [1, 6, 5, 2, 3, 7, 8, 4, 9]:
+	for st9 in [1, 6, 5, 2, 3, 7, 8, 4, 9, 10]:
 		gm.begin(st9); var rc9: MapRec = map_of.call(st9)
-		var where9: String = {3: "출입문", 8: "출입문", 4: "에어록"}.get(st9, "내리는 곳")
+		var where9: String = {3: "출입문", 8: "출입문", 4: "에어록", 10: "시작하는 곳"}.get(st9, "내리는 곳")
 		if rc9.dots() != shown_of.call() or not rc9.texts.has("N ↑") or not rc9.texts.has(where9): map_bad.push_back("%d: %d dots / %d, %s" % [st9, rc9.dots(), shown_of.call(), str(rc9.texts.slice(0, 4))])
-	check("the tactical map opens on all nine stages: a mark for every enemy, north, the scale and the drop point", map_bad.is_empty(), map_bad)
+	check("the tactical map opens on all ten stages: a mark for every enemy, north, the scale and the drop point", map_bad.is_empty(), map_bad)
 	gm.begin(9); var nm_rc: MapRec = map_of.call(9); var nm_bad := []
 	var nm_h := {"책장": ToyRoom.SHELF_Y, "옷장": ToyRoom.WARD_Y, "책상": ToyRoom.DESK_Y, "2층침대": ToyRoom.BUNK_Y}
 	for nm: Array in ToyRoom.NAMES:

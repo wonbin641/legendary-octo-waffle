@@ -106,7 +106,7 @@ func _ready() -> void:
 
 ## a check of a built copy of the game (... --headless -- --smoke): every stage started and played two seconds, then out
 func _smoke() -> void:
-	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "9"]:
+	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "9", "10"]:
 		command("start " + st); command("sim 2")
 		print("smoke: stage %s %s, %d enemies" % [Store.STAGE_TAG.get(int(st), st), state, enemies.list.size()])
 	var was := ToyMatch.picked()
@@ -383,6 +383,8 @@ func _touch_pills(all := false) -> Dictionary:
 	if all or (enemies.animals.m != null and enemies.animals.target != null): p["off"] = [pill.call("내리기", 76, 40, 18, 13, row + 64.0), "내리기"]
 	if game.tm != null and game.tm.key == "freeze" and not all:   # bedtime: the soda cans left
 		var ct := "탄산 캔 %d" % game.tm.mode.cans; p["can"] = [pill.call(ct, 16, 46, 22, 15, row + 116.0), ct]
+	if game.has_flask() and not all:   # stage 6: the alchemist's bomb (the seconds left while it is not ready)
+		var ft := "연금술 폭탄" if game.flask_cd <= 0.0 else "연금술 폭탄 %d초" % ceili(game.flask_cd); p["flask"] = [pill.call(ft, 16, 46, 22, 15, row + 116.0), ft]
 	return p
 
 func _sbox(bg: Color, line: Color, r: int, bw := 1.5) -> StyleBoxFlat:
@@ -442,7 +444,7 @@ func enter_play(intro := false) -> void:
 	if cu_light != null: cu_light.visible = false
 	guns.look_mode = look_mode; apply_settings(); hudd.reset(); ui.in_stage = true
 	if world.ship != null: world.ship.on_cut = _boss_cut
-	if intro and world.toy == null:   # (the toy room has its own way in: you come down under a parachute)
+	if intro and world.toy == null and world.wood == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
 	else: _go_play()
 
@@ -450,6 +452,7 @@ func enter_play(intro := false) -> void:
 func _go_play() -> void:
 	_set_state("playing"); request_lock(); player.invuln = maxf(player.invuln, 1.5)
 	if game.boss_msg != "": banner("스테이지 " + Store.STAGE_TAG[game.stage], game.boss_msg, 3.5)
+	if game.has_flask(): game.say_feed("연금술 폭탄 · " + ("아래 버튼으로" if look_mode == "touch" else "G 키로") + " 던집니다 · %d초마다 하나" % int(Game.FLASK.cd))   # (stage 6's shared throwable)
 	hint("1번 우리가 10초 뒤에 열립니다 · 창살 사이로 쏠 수 있습니다" if world.lab != null else ("마우스 이동으로 조준 · Q/E로 회전 · M 키로 지도" if look_mode == "drag" else ("오른쪽 위 지도 버튼으로 적 위치를 볼 수 있습니다" if look_mode == "touch" else "M 키로 작전 지도를 볼 수 있습니다")), 3.5)
 
 ## the ship: standing at a sealed door, a short look at what waits inside before it locks behind you
@@ -461,7 +464,7 @@ func _back_to_play() -> void:
 	_set_state("playing"); player.invuln = maxf(player.invuln, 1.0); request_lock()
 
 func _on_result(kind: String) -> void:
-	if kind == "clear" and state == "playing" and world.toy == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
+	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_outro(func() -> void: _show_result("clear")); return
 	_show_result(kind)
 
@@ -531,6 +534,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_V: guns.melee_start()
 			if e.physical_keycode == KEY_F: game.use_antidote()
 			if e.physical_keycode == KEY_G and game.tm != null and game.tm.key == "freeze": game.tm.mode.throw_can()   # (bedtime: a soda can)
+			elif e.physical_keycode == KEY_G and game.has_flask(): game.throw_flask()   # (stage 6: the alchemist's bomb)
 			elif (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G:
 				if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
 			if e.physical_keycode == KEY_X and enemies.animals.m != null: enemies.animals.ride_off(false)
@@ -583,6 +587,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				"off": enemies.animals.ride_off(false)
 				"swap": guns.cycle(1)
 				"can": if game.tm != null and game.tm.key == "freeze": game.tm.mode.throw_can()
+				"flask": game.throw_flask()
 			if hit != "": touch_ui.queue_redraw(); return
 			if joy_id < 0 and (r.pad as Rect2).grow(12).has_point(p):
 				joy_id = e.index; _pad_steer(p)
@@ -628,6 +633,7 @@ func _tick(dt: float) -> void:
 	time += dt
 	_read_keys(); player.update(dt, cam, time)
 	if world.toy: world.toy.update(dt, player)
+	if world.wood: world.wood.update(dt, player)   # (stage 6-1: the wind path, the moonwell, the portals and the rest)
 	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 	if world.lab != null: world.lab.anim(dt, time)

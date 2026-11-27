@@ -189,7 +189,7 @@ func draw(ci) -> void:
 	_vbars(ci, s, g, pl, f_title, f_bold)
 	# ---- health, bottom left ----
 	var bottom := 12.0 if touch else 18.0; var vw := minf(200.0, s.x * 0.4) if touch else minf(280.0, s.x * 0.42); var vx := 16.0
-	var items := _items(touch); var iy := s.y - bottom
+	var items := _items(touch, g); var iy := s.y - bottom
 	if not items.is_empty(): iy -= 20.0
 	if g.stage == 2:   # the village has no health: the antidotes you carry
 		var y0 := iy - 34.0
@@ -301,9 +301,11 @@ func _vbars(ci, s: Vector2, g: Game, pl: Player, f_title: Font, f_bold: Font) ->
 		for i in lines.size(): _t(ci, f_bold, lines[i], cxm, r.end.y + 6 + i * 17, 13, INK, "center")
 		x -= 64.0 + 16.0
 
-func _items(touch: bool) -> Array:
+## g: the game, for what only a stage gives you (stage 6's alchemist's bomb: ready, or the seconds until it is)
+func _items(touch: bool, g: Game = null) -> Array:
 	var it: Dictionary = Store.save.items; var chips := []
 	if Store.settings.dev and Store.settings.god: chips.push_back(["무적 · 개발자 모드", "jet"])
+	if g != null and g.has_flask(): chips.push_back([("연금술 폭탄 준비" if touch else "연금술 폭탄 · G") if g.flask_cd <= 0.0 else "연금술 폭탄 %d초" % ceili(g.flask_cd), "jet" if g.flask_cd <= 0.0 else ""])
 	if int(it.helmet) > 0: chips.push_back(["헬멧", ""])
 	if int(it.vest) > 0: chips.push_back(["조끼 %d/10" % int(it.vest), "low" if int(it.vest) <= 3 else ""])
 	if int(it.jet) > 0: chips.push_back(["제트팩 · 점프 두 번" if touch else "제트팩 · Space 두 번", "jet"])

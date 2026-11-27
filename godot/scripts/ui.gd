@@ -8,10 +8,14 @@ const ALARM := Color("ff5260"); const VITAL := Color("5ed6b0"); const LINE := Co
 const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 오른쪽 아래 구석에서 시작",
 	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만 · 해독약 상자는 오두막 안에만", 7: "넓은 사파리 · 5분 뒤 동물 93마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
 	9: "아이 방 전체가 싸움터 · 장난감 100개 · 플라스틱 군인, 액션 피규어, 태엽·RC 유닛, 조립 블록 피규어",
-	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 (잡으면 끝) · 숨은 스파이더 마인"}
-const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82]}
-const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8]]
-const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # stages the Godot version can play so far
+	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 (잡으면 끝) · 숨은 스파이더 마인",
+	10: "엘프의 숲 · 서쪽 경계에서 동쪽 대마법사의 탑까지 · 엘프 60명과 대마법사 · 회복 물약 상자 없음 · 달샘 연못이 체력을 채워 줍니다",
+	11: "드워프의 땅 · 준비 중", 12: "오크의 땅 · 준비 중", 13: "악마의 땅 · 준비 중"}
+# (stage 6's four places hang under stage 5: 6-1 below it, 6-2 below that, then back to the left with 6-3 and up to 6-4)
+const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82],
+	10: [0.91, 0.50], 11: [0.91, 0.82], 12: [0.705, 0.82], 13: [0.705, 0.50]}
+const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8], [9, 10], [10, 11], [11, 12], [12, 13]]
+const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10]   # stages the Godot version can play so far
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var game: Game; var guns: Guns
@@ -267,6 +271,7 @@ func _place_nodes() -> void:
 		var p := _node_pos(s); (stage_btns[s] as Button).position = Vector2(clampf(p.x - w / 2, 2, board.size.x - w - 2), p.y - 22.0); (stage_btns[s] as Button).size = Vector2(w, h)
 
 func _status(s: int) -> Array:   # [state, line]
+	if Store.SOON.has(s): return ["soon", "준비 중"]   # (named on the board, not made yet)
 	var open := Store.stage_open(s); var done: bool = Store.save.cleared.has(s); var best := int(Store.save.best.get("t%d" % s, 0))
 	if not open: return ["locked", "잠김 · %s 클리어 후" % Store.STAGE_TAG[Store.NEEDS[s]]] if Store.NEEDS.has(s) else ["locked", "잠김"]
 	if done: return ["done", "클리어" + (" " + Store.fmt_time(best) if best > 0 else "")]
@@ -290,16 +295,18 @@ func _draw_board() -> void:
 		elif st[0] == "done":   # cleared: filled, with a tick
 			board.draw_circle(p, r, VITAL); board.draw_polyline(PackedVector2Array([p + Vector2(-r * 0.4, 0), p + Vector2(-r * 0.1, r * 0.3), p + Vector2(r * 0.42, -r * 0.32)]), NIGHT, 2.5)
 		elif st[0] == "open": board.draw_circle(p, r, NIGHT); board.draw_arc(p, r, 0, TAU, 32, SODIUM, 3.0)   # open: an empty ring
-		else:   # locked: a dashed ring and a padlock
+		else:   # locked: a dashed ring and a padlock (one not made yet: three dots)
 			board.draw_circle(p, r, NIGHT)
 			for k in 10: board.draw_arc(p, r, k * TAU / 10, k * TAU / 10 + TAU / 20, 6, Color(STEEL, 0.9), 2.0)
-			board.draw_rect(Rect2(p + Vector2(-r * 0.32, -r * 0.05), Vector2(r * 0.64, r * 0.45)), STEEL); board.draw_arc(p + Vector2(0, -r * 0.05), r * 0.24, PI, TAU, 10, STEEL, 2.0)
+			if st[0] == "soon":
+				for k in 3: board.draw_circle(p + Vector2((k - 1) * r * 0.42, 0), r * 0.11, STEEL)
+			else: board.draw_rect(Rect2(p + Vector2(-r * 0.32, -r * 0.05), Vector2(r * 0.64, r * 0.45)), STEEL); board.draw_arc(p + Vector2(0, -r * 0.05), r * 0.24, PI, TAU, 10, STEEL, 2.0)
 		# the label under the dot
 		var b: Button = stage_btns[s]; var box := Rect2(b.position + Vector2(0, 22.0 + r + 4), Vector2(b.size.x, 58.0 if pc else 46.0))
 		board.draw_rect(box, Color(0.055, 0.075, 0.13, 0.9) if picked else Color(NIGHT, 0.7)); board.draw_rect(box, SODIUM if picked else LINE, false, 1.0)
 		var fs := 14 if pc else 10; var y := box.position.y + (14 if pc else 11)
 		board.draw_string(f_mono, Vector2(box.position.x, y), Store.STAGE_TAG[s], HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, STEEL)
-		board.draw_string(f_title, Vector2(box.position.x, y + fs + 3), Game.STAGES[s].name, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, fs, STEEL if st[0] == "locked" else INK)
+		board.draw_string(f_title, Vector2(box.position.x, y + fs + 3), Game.STAGES[s].name, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, fs, STEEL if (st[0] == "locked" or st[0] == "soon") else INK)
 		board.draw_string(f_mono, Vector2(box.position.x, y + fs + (18 if pc else 14)), st[1], HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, VITAL if st[0] == "done" else (SODIUM if st[0] == "open" else STEEL))
 	if pc:   # legend
 		var y := board.size.y - 14.0
@@ -309,7 +316,7 @@ func _draw_board() -> void:
 func refresh_menu() -> void:
 	if strip == null: return
 	var n_clear: int = Store.save.cleared.size()
-	strip_r.text = "가방 %s    클리어 %d / %d" % [Store.won(Store.save.money), n_clear, Store.STAGE_ORDER.size()]
+	strip_r.text = "가방 %s    클리어 %d / %d" % [Store.won(Store.save.money), n_clear, Store.playable().size()]
 	strip_l.text = "● 7번 야드 관제" + ("  ·  개발자 모드 켜짐" if Store.settings.dev else "") + ("  ·  " + account_badge() if Cloud.enabled() else "")
 	var cxb: Button = rail_btns[4]; var cx_ok := Codex.ready()   # the book opens with your first clear (always in developer mode)
 	if cxb.disabled == cx_ok: cxb.disabled = not cx_ok; cxb.set_meta("label", "도감" if cx_ok else "도감 · 첫 클리어 후"); _layout_menu()
@@ -327,6 +334,7 @@ func refresh_menu() -> void:
 	var built := BUILT.has(sel)
 	d_go.disabled = not open or not built
 	d_msg.text = ("스테이지 %s을 깨면 열립니다" % Store.STAGE_TAG[Store.NEEDS[sel]] if Store.NEEDS.has(sel) else "") if not open else ("" if built else "이 스테이지는 아직 Godot판에 옮기지 않았습니다")
+	if Store.SOON.has(sel): d_msg.text = "준비 중인 스테이지입니다 · 맵이 정해지면 열립니다"
 	board.queue_redraw()
 
 func _to_brief() -> void:
@@ -1143,8 +1151,8 @@ func show_result(kind: String) -> void:
 	for i in 2:
 		var b: Button = [ov.next, ov.next2][i]; b.visible = i < nx.size()
 		if i < nx.size(): b.set_meta("st", nx[i]); b.text = "스테이지 %s%s" % [Store.STAGE_TAG[nx[i]], "으로" if Store.STAGE_TAG[nx[i]].ends_with("1") or Store.STAGE_TAG[nx[i]].ends_with("3") else "로"]; b.disabled = not BUILT.has(nx[i])
-	var all_done: bool = Store.STAGE_ORDER.all(func(s): return Store.save.cleared.has(s))
-	ov.best_head = (("모든 스테이지를 깼습니다 · " if all_done else "헬기로 탈출해 번 돈을 챙겼습니다 · ") if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else ""))
+	var all_done: bool = Store.playable().all(func(s): return Store.save.cleared.has(s))
+	ov.best_head = (("모든 스테이지를 깼습니다 · " if all_done else ("탑을 떠나 번 돈을 챙겼습니다 · " if Store.realm(game.stage) != "" else "헬기로 탈출해 번 돈을 챙겼습니다 · ")) if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else ""))
 	if game.tm != null: ov.best_head = (("이겨서 번 돈을 챙겼습니다 · 최고 기록 " + Store.fmt_time(float(Store.save.best.get(game.tm.mode.record_key(), 0)))) if clear_ else ("져서 이번에 번 %s을 잃었습니다" % Store.won(st.earned) if st.earned > 0 else "다시 도전해 보세요")) + " · "
 	back_stack.clear(); show_screen("over")   # (which writes the bag on the last line: _over_money)
 

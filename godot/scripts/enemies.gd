@@ -33,8 +33,8 @@ const SKIN := ["c99a7a", "a8775a", "e0b895", "7d5a44"]
 const KEEP_PAD := 0.14
 const NEAR9 := [-1025, -1024, -1023, -1, 0, 1, 1023, 1024, 1025]   # a 10 m square's key and its eight neighbours'
 const FAR_SHOT := {"deagle": "far_deagle", "smg": "far_smg", "rifle": "far_rifle", "lmg": "far_rifle", "shotgun": "far_shotgun", "sniper": "far_sniper"}
-const ACT_R := {1: 55.0, 6: 55.0, 5: 55.0, 2: 45.0, 3: 95.0, 8: 95.0, 7: 95.0, 4: 55.0}
-const VIS_R := {1: 85.0, 6: 85.0, 5: 85.0, 2: 72.0, 3: 165.0, 8: 165.0, 7: 150.0, 4: 90.0}
+const ACT_R := {1: 55.0, 6: 55.0, 5: 55.0, 2: 45.0, 3: 95.0, 8: 95.0, 7: 95.0, 4: 55.0, 10: 75.0}
+const VIS_R := {1: 85.0, 6: 85.0, 5: 85.0, 2: 72.0, 3: 165.0, 8: 165.0, 7: 150.0, 4: 90.0, 10: 140.0}
 
 class Foe:
 	var type := "thug"; var T: Dictionary; var K: Dictionary; var kit := "pistol"
@@ -56,6 +56,7 @@ class Foe:
 	var dash_used := false; var rage := false; var charge_cd := 0.0; var state_t := 0.0; var hit_done := false; var cx := 0.0; var cz := 0.0; var attack_cd := 0.0; var moan_t := 0.0
 	# robots (stage 4)
 	var toy := false   # stage 5
+	var folk := false  # stage 6: one of its peoples (an elf, a dwarf, an orc, a demon)
 	var carried := false   # stage 5: a soldier riding a wind-up car (it goes where the car goes, and is not shoved off it)
 	var flash_t := 0.0; var glow := ""   # a hit: 0.08 s of orange glow (people and zombies); the raging boss glows red
 	var robot := false; var sealed := false; var from_bee := false; var bee_fall := false; var eye_h := 1.65; var bar_y := -99.0; var boss_guard := false
@@ -101,6 +102,7 @@ var banner: Callable = Callable()
 var animals: Animals
 var robots: Robots
 var toys: ToyFoes
+var folk: Folk
 var cause := ""        # what the hit being dealt right now comes from: a gun's name ("shotgun": stage 5's water gun), or nothing
 var blast := false     # ...and whether it is a blast's (splash damage)
 var _bar_green: StandardMaterial3D
@@ -119,6 +121,7 @@ func _ready() -> void:
 	animals = Animals.new(); animals.en = self
 	robots = Robots.new(); robots.en = self
 	toys = ToyFoes.new(); toys.en = self
+	folk = Folk.new(); folk.en = self
 	_bar_mesh = QuadMesh.new(); _bar_mesh.size = Vector2(1, 1)
 
 func _box_mesh(key: String, parts: Array) -> ArrayMesh:
@@ -191,11 +194,12 @@ func _saber_mat(dual: bool, halo: bool) -> Material:
 
 func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	var beast: bool = Animals.ANIMALS.has(type)
-	var bot: bool = Robots.ROBOTS.has(type); var tk: bool = ToyFoes.TOYS.has(type)
-	var e := Foe.new(); e.type = type; e.T = Animals.ANIMALS[type] if beast else (Robots.ROBOTS[type] if bot else (ToyFoes.TOYS[type] if tk else ETYPES[type])); e.kit = opts.get("kit", "pistol"); e.K = KITS.get(e.kit, KITS.pistol)
+	var bot: bool = Robots.ROBOTS.has(type); var tk: bool = ToyFoes.TOYS.has(type); var fk: bool = Folk.KINDS.has(type)
+	var e := Foe.new(); e.type = type; e.T = Animals.ANIMALS[type] if beast else (Robots.ROBOTS[type] if bot else (ToyFoes.TOYS[type] if tk else (Folk.KINDS[type] if fk else ETYPES[type]))); e.kit = opts.get("kit", "pistol"); e.K = KITS.get(e.kit, KITS.pistol)
 	if beast: animals.build(e, type, opts)
 	elif bot: robots.build(e, type)
 	elif tk: toys.build(e, type, opts)
+	elif fk: folk.build(e, type, opts)
 	else: _build(e)
 	if opts.get("helmet", false):   # a full-face motorcycle helmet: the first shot to the head knocks it off
 		e.helmet = true; e.helmet_node = _helmet(); e.upper.add_child(e.helmet_node)
@@ -224,7 +228,7 @@ func spawn(type: String, x: float, z: float, opts := {}) -> Foe:
 	if type == "zombie": e.speed = 1.7 if e.boss else randf_range(1.25, 2.0)
 	e.pos = Vector3(x, opts.get("y", 0.0), z); e.yaw = opts.get("yaw", randf() * TAU)
 	e.lod = randf() * 0.5; e.los_t = randf() * 0.3; e.fire_t = randf_range(0.8, 1.6); e.strafe = 1.0 if randf() < 0.5 else -1.0; e.strafe_t = randf_range(1, 2.5); e.walk = randf() * TAU
-	if not bot and not tk and not beast: e.muzzle = Vector3(0.2, 1.42, e.K.end)   # robots and toys carry their own
+	if not bot and not tk and not beast and not fk: e.muzzle = Vector3(0.2, 1.42, e.K.end)   # robots, toys and stage 6's peoples carry their own
 	if type != "zombie" and e.K.has("run"): e.speed = maxf(e.speed, e.K.run * 0.9)   # melee men close the distance quickly even before they see you
 	e.g.position = e.pos; e.g.rotation = Vector3(0, e.yaw, 0); e.g.scale = Vector3.ONE * sc
 	if type == "zombie": e.upper.rotation = Vector3(0.28, 0, 0)   # a zombie stoops from the start, asleep or not (as the browser game's spawn)
@@ -313,6 +317,7 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool, quiet :=
 	if not e.boss and not e.ridden: e.vel.x += dir.x * shove; e.vel.z += dir.z * shove
 	if e.toy: toys.brk.struck(e, _at, dir, weak, dmg)   # (stage 5: what the hit leaves on the toy)
 	if e.toy and e.hp > 0.0: toys.on_hurt(e)
+	if e.folk and e.hp > 0.0: folk.on_hurt(e, dir)
 	if e.animal: animals.provoke(e)
 	elif e.type == "zombie": alarm(e)
 	else:
@@ -624,7 +629,7 @@ func clear() -> void:
 	for f in flying: f[0].queue_free()
 	list.clear(); dying.clear(); flying.clear(); downs.clear()
 	if animals.player != null: animals.reset()
-	robots.clear(); toys.clear()
+	robots.clear(); toys.clear(); folk.clear()
 
 # ---------------- the people's AI ----------------
 func stop_dist(e: Foe) -> float:
@@ -893,6 +898,14 @@ func update(dt: float, _time: float) -> void:
 				var tf := clampf(e.hp / e.max_hp, 0.0, 1.0); e.fill.scale.x = 0.66 * tf; e.fill.position.x = -0.33 * (1.0 - tf)
 			else: e.bar.visible = false
 			continue
+		if e.folk:
+			folk.update(e, dt, dist, to, face_yaw)
+			if not e.alive: continue
+			e.g.position = e.pos; e.g.rotation.y = e.yaw
+			if e.hp < e.max_hp:
+				e.bar.visible = e.g.visible; e.bar.position = Vector3(e.pos.x, e.pos.y + e.H + 0.4 * e.scale, e.pos.z)
+				var ff := clampf(e.hp / e.max_hp, 0.0, 1.0); e.fill.scale.x = 0.66 * ff; e.fill.position.x = -0.33 * (1.0 - ff)
+			continue
 		if e.robot:
 			robots.update(e, dt, dist, to, face_yaw)
 			if not e.alive: continue
@@ -969,6 +982,7 @@ func update(dt: float, _time: float) -> void:
 	if animals.m != null and animals.m.alive: animals.seat()
 	if robots.world != null: robots.tick(dt)
 	if toys.world != null: toys.tick(dt)
+	if folk.world != null: folk.tick(dt)
 	update_dying(dt)
 
 ## helmets tumbling away, and the fallen tipping over, lying a while, then sinking away (as the browser game's updateDying:
