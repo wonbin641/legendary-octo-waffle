@@ -110,6 +110,7 @@ func _rocket_hit(p: Dictionary, e) -> void:
 func _explode(p: Dictionary) -> void:
 	var c: Vector3 = p.pos
 	if p.kind == "flask":   # the alchemist's bomb: green fire and glass, a ring of light; it does not hurt whoever threw it
+		c -= (p.vel as Vector3).normalized() * 0.2   # (a hand's breadth back the way it came: outside what it struck, so a roof or a wall shelters who is behind it)
 		if fx:
 			fx.sparks(c, 14, [0.5, 1.0, 0.8], 5.0)
 			for i in 18: fx.glow(c, Vector3(randf_range(-1, 1), randf_range(-0.2, 1), randf_range(-1, 1)).normalized() * randf_range(2.0, float(p.radius) * 1.6), 0.55, 0.7, 0.06, Color(0.45, 1.0, 0.75, 0.85), 0.0, 2.0)

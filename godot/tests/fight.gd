@@ -1,5 +1,5 @@
 extends Node
-## Auto-play: in each of the browser game's eight stages and the toy room a bot fights as a person would, with no invincibility and nothing
+## Auto-play: in each of the browser game's eight stages, the toy room and the elves' Silverwood (6-1) a bot fights as a person would, with no invincibility and nothing
 ## switched on in developer mode, through the game's own input handling only: the keyboard (W A S D, space, R, F, through
 ## Godot's Input as a real key press) and the mouse (movement to aim, the left button to fire, through the game's
 ## _unhandled_input). It turns onto the nearest enemy it can see at a hand's speed and fires once it is on it, side-steps
@@ -10,11 +10,11 @@ extends Node
 ## the result), the view sinks, then the result sheet.
 ## Run: godot --headless --path godot res://tests/fight.tscn
 
-const STAGES := [1, 6, 5, 2, 3, 7, 8, 4, 9]   # 9: stage 5, the toy room, in its first mode
+const STAGES := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10]   # 9: stage 5, the toy room, in its first mode; 10: stage 6-1, the elves' Silverwood
 # the least each fight must come to (about half what the bot does now: a fight that kills next to nothing fails), and the
 # moments a stage is built round that it must reach: bitten and an antidote injected, a cage opening, the siege. The ship's
 # doors and key lie past where the bot falls (about 14 s in, at the start passage), so stage 4 counts its kills only
-const MIN_KILLS := {1: 5, 6: 4, 5: 10, 2: 3, 3: 3, 7: 4, 8: 6, 4: 2, 9: 1}
+const MIN_KILLS := {1: 5, 6: 4, 5: 10, 2: 3, 3: 3, 7: 4, 8: 6, 4: 2, 9: 1, 10: 7}
 const MOMENTS := {2: ["infected", "antidote"], 3: ["cage"], 7: ["stampede"], 8: ["cage"]}
 const SECONDS := {8: 200.0}   # 3-2 lets its animals out one at a time, the first ones tame: it takes longer to be bitten
 const SECONDS_ELSE := 80.0

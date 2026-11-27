@@ -34,7 +34,8 @@ var dealt := {}              # what each way of hurting you has cost you this st
 var sent := {}               # ...and how many of each were sent your way
 
 func clear() -> void:
-	shots.clear(); lines.clear(); runes.clear(); root = null; boss = null; beam_on = false; dealt.clear(); sent.clear(); _later.clear()
+	if root != null and is_instance_valid(root): root.queue_free()   # (what was in the air, the lines and the runes go with it)
+	shots.clear(); lines.clear(); runes.clear(); root = null; boss = null; beam_on = false; dealt.clear(); sent.clear(); _later.clear(); _beam_nodes.clear()
 
 func _hurt(kind: String, dmg: float, from: Vector3, zone := "body") -> void:
 	var before := player.hp; player.hurt(dmg, from, zone); dealt[kind] = float(dealt.get(kind, 0.0)) + (before - player.hp)
@@ -70,7 +71,7 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	# the body: a slim coat, a belt, the head with its long hair and its pointed ears
 	var up := [[0.4, 0.62, 0.24, 0, 0.36, 0, coat], [0.42, 0.07, 0.26, 0, 0.1, 0, trim], [0.2, 0.24, 0.22, 0, 0.8, 0.01, SKIN],
 		[0.23, 0.1, 0.25, 0, 0.93, -0.01, hair], [0.24, 0.42, 0.06, 0, 0.68, -0.13, hair],
-		[0.03, 0.13, 0.05, -0.115, 0.86, -0.02, SKIN, [0.5, 0, 0.3]], [0.03, 0.13, 0.05, 0.115, 0.86, -0.02, SKIN, [0.5, 0, -0.3]]]
+		[0.035, 0.2, 0.07, -0.125, 0.88, -0.03, SKIN, [0.55, 0, 0.42]], [0.035, 0.2, 0.07, 0.125, 0.88, -0.03, SKIN, [0.55, 0, -0.42]]]   # (the ears: long, swept up and back)
 	if type == "elf_sniper": up.append_array([[0.3, 0.2, 0.3, 0, 0.9, -0.03, coat], [0.46, 0.5, 0.05, 0, 0.36, -0.15, trim]])   # a hood and a cloak
 	if type == "elf_blade": up.append_array([[0.44, 0.2, 0.28, 0, 0.56, 0, trim], [0.12, 0.1, 0.3, -0.26, 0.64, 0, trim], [0.12, 0.1, 0.3, 0.26, 0.64, 0, trim]])   # a breastplate, shoulder plates
 	if robe: up.append_array([[0.5, 0.56, 0.05, 0, 0.3, -0.15, trim], [0.1, 0.5, 0.26, 0, 0.36, 0.01, trim]])
@@ -93,7 +94,8 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 	var P: Dictionary = opts.get("post", {})
 	e.k = {"post": Vector3(float(P.get("x", 0.0)), float(P.get("y", 0.0)), float(P.get("z", 0.0))), "perch": bool(P.get("perch", false)), "cd": randf_range(0.6, 1.6), "burst": 0, "burst_t": 0.0,
 		"side": 1.0 if randf() < 0.5 else -1.0, "side_t": randf_range(1.0, 2.5), "trick": randf_range(2.0, 5.0), "aim": 0.0, "blink": randf_range(3.0, 6.0), "strike": 0.0, "hit": false,
-		"dash": randf_range(0.4, 1.2), "zig": 1.0, "zig_t": 0.5, "leap": randf_range(2.0, 4.0), "back": 0.0, "wait": type == "elf_blade", "phase": 1, "act": 2.5, "port": 4.0, "seen_t": 0.0}
+		"dash": randf_range(0.4, 1.2), "zig": 1.0, "zig_t": 0.5, "leap": randf_range(2.0, 4.0), "back": 0.0, "wait": type == "elf_blade", "phase": 1, "act": 2.5, "port": 4.0, "seen_t": 0.0,
+		"fly": 0.0, "fv": Vector2.ZERO}
 
 # ---------------- seeing ----------------
 ## whether an elf sees you now: in its sight, nothing in the way, and not while you are in the ferns or the mist with it far off
@@ -199,9 +201,16 @@ func _trick(e: Enemies.Foe, from: Vector3, path: Array) -> void:
 	_later.push_back({"t": float(TRICK.warn), "f": func() -> void:
 		if e.alive: shoot("bolt", from, (q - from).normalized() * float(TRICK.speed), dmg, 1, "trick"); Snd.play("elf_bolt", 1.0, from)})
 
+const STEP_UP := {"min": 2.2, "max": 12.0, "reach": 14.0, "over": 1.3}   # the wind step: how far up it carries a blade dancer, from how far off, how far over your level
 func _blade(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float, _seen: bool) -> void:
 	var k := e.k; var f := to / maxf(dist, 0.001); var dy := absf(player.pos.y - e.pos.y)
 	en._turn_toward(e, face_yaw, 10.0, dt); e.vel *= exp(-dt * 5.0)
+	if float(k.fly) > 0.0:   # in the air on the wind step: where it was sent, until it comes down
+		k.fly = float(k.fly) - dt; var fv: Vector2 = k.fv
+		en._ground_move(e, fv.x, fv.y, dt); _pose(e, 6.0, dt, "blades")
+		if e.vy <= 0.0 and e.pos.y <= Phys.ground_at(e.pos.x, e.pos.y, e.pos.z, e.R) + 0.02: k.fly = 0.0
+		if fx != null and randf() < dt * 24.0: fx.glow(Vector3(e.pos.x, e.pos.y + 0.3, e.pos.z), Vector3.ZERO, 0.3, 0.3, 0.05, Color(0.75, 1.0, 0.95, 0.5), 0.0, 1.0)
+		return
 	if float(k.strike) > 0.0:   # the cut: it lands a moment in
 		k.strike = float(k.strike) - dt
 		if not bool(k.hit) and float(k.strike) <= 0.42:
@@ -222,10 +231,15 @@ func _blade(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float
 	var sp := 9.2 if dashing else e.speed
 	var head := (f + Vector2(-f.y, f.x) * float(k.zig) * (0.55 if dist > 4.0 else 0.0)).normalized() * sp
 	var grounded := e.pos.y <= Phys.ground_at(e.pos.x, e.pos.y, e.pos.z, e.R) + 0.02
+	var up := player.pos.y - e.pos.y
+	if grounded and float(k.leap) <= 0.0 and up > float(STEP_UP.min) and up < float(STEP_UP.max) and dist < float(STEP_UP.reach) and dist > 1.0:
+		# the wind step up to where you stand (a deck in the boughs, the tower's gallery): one great leap, the wind under it
+		var h := up + float(STEP_UP.over); var vy := sqrt(2.0 * 18.0 * h); var t_all := vy / 18.0 + sqrt(2.0 * float(STEP_UP.over) / 18.0)
+		k.leap = randf_range(4.0, 6.0); e.vy = vy; e.pos.y += 0.06; k.fly = t_all + 0.4; k.fv = (to / t_all).limit_length(14.0); _wind(e); return
 	if grounded and float(k.leap) <= 0.0 and dist > 5.0 and dist < 10.0 and dy < 3.0:
-		k.leap = randf_range(3.5, 5.5); e.vy = 7.2; e.vel.x = f.x * 6.5; e.vel.z = f.y * 6.5; _wind(e)
+		k.leap = randf_range(3.5, 5.5); e.vy = 7.2; e.pos.y += 0.06; e.vel.x = f.x * 6.5; e.vel.z = f.y * 6.5; _wind(e)   # (off the ground a hair, or the ground takes the leap back)
 	var blocked := en._ground_move(e, head.x + e.vel.x, head.y + e.vel.z, dt)
-	if blocked and grounded: e.vy = 8.6; _wind(e)   # the wind step: up and over
+	if blocked and grounded: e.vy = 8.6; e.pos.y += 0.06; _wind(e)   # over what stands in the way
 	elif blocked and e.vy < 1.0 and e.vy > -4.0 and not bool(k.get("twice", false)): e.vy = 6.5; k.twice = true   # ...and once more in the air
 	if grounded: k.twice = false
 	if dashing and fx != null and randf() < dt * 30.0: fx.glow(Vector3(e.pos.x, e.pos.y + 0.9, e.pos.z), Vector3.ZERO, 0.25, 0.3, 0.05, Color(0.7, 1.0, 0.95, 0.5), 0.0, 1.0)
@@ -395,7 +409,7 @@ func shoot(kind: String, from: Vector3, vel: Vector3, dmg: float, bounces := 0, 
 		n.mesh = _unit_box(); n.material_override = _mat(kind, Color(0.75, 1.0, 0.95, 0.95) if kind == "bolt" else Color(1.0, 0.97, 0.8, 0.95))
 	_root().add_child(n)
 	var s := {"kind": kind, "pos": from, "vel": vel, "dmg": dmg, "life": float(ORB.life) if kind == "orb" else 2.6, "n": bounces, "r": 0.0, "splash": float(ORB.splash) if kind == "orb" else 0.0,
-		"turn": float(ORB.turn) if kind == "orb" else 0.0, "node": n, "amp": false, "src": src}
+		"turn": float(ORB.turn) if kind == "orb" else 0.0, "node": n, "amp": false, "src": src, "speed": vel.length()}
 	shots.push_back(s); _place(s)
 
 func _place(s: Dictionary) -> void:
@@ -443,9 +457,10 @@ func tick(dt: float) -> void:
 	for i in range(shots.size() - 1, -1, -1):
 		var s: Dictionary = shots[i]; s.life = float(s.life) - dt
 		var v: Vector3 = s.vel; var p: Vector3 = s.pos
-		if float(s.turn) > 0.0:   # it follows you
+		if float(s.turn) > 0.0:   # it follows you: it slows to turn (so it cannot circle you for ever) and comes on again once it points at you
 			var want := (chest - p).normalized(); var cur := v.normalized(); var ang := cur.angle_to(want)
-			if ang > 0.001: v = cur.slerp(want, minf(1.0, float(s.turn) * dt / ang)) * v.length(); s.vel = v
+			if ang > 0.001: cur = cur.slerp(want, minf(1.0, float(s.turn) * dt / ang))
+			v = cur * float(s.speed) * (1.0 - 0.75 * minf(1.0, ang / 1.2)); s.vel = v
 		var step := v * dt; var len := step.length()
 		if float(s.life) <= 0.0 or len <= 0.0: _burst(s, p); _gone(s); shots.remove_at(i); continue
 		var d := step / len

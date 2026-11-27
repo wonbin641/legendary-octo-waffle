@@ -50,7 +50,7 @@ var spinners: Array = []      # the astrolabes' rings and the great sphere's: {n
 var perches: Array = []       # where the Archmage steps to, round the sphere
 var books: Node3D = null
 var well_t := 0.0; var mist := 0.0; var mist_n: MeshInstance3D = null; var wind_t := 0.0; var port_cd := 0.0; var spin := 1.0
-var _told := {}; var _shots := 0; var _fired := 9.0; var _ob_t := 0.0
+var _told := {}; var _shots := 0; var _fired := 9.0; var _ob_t := 0.0; var _well_snd := 0.0
 
 # ---------------- building helpers ----------------
 func _k(x: float) -> MeshKit: return kits[clampi(int((x - X0) / 77.0), 0, 3)]
@@ -268,7 +268,7 @@ func _glade() -> void:
 	k.cyl(wx, 0.5, wz, WELL_R + 0.35, WELL_R + 0.35, 0.16, C_MARBLE2, 20, false); k.disc(wx, 0.66, wz, WELL_R + 0.35, C_MARBLE2, 20, WELL_R)
 	clear.disc(wx, 0.6, wz, WELL_R, Color(C_WATER, 0.72), 20)
 	glow.disc(wx, 0.56, wz, WELL_R * 0.55, C_CYAN.darkened(0.15), 16)
-	world.lamps.push_back({"x": wx, "y": 3.4, "z": wz})
+	world.lamps.push_back({"x": wx, "y": 4.8, "z": wz})
 	# the stars set in the floor: lines of light that show where you are through smoke
 	var stars := [[-9.0, -4.0], [-4.5, -10.5], [3.0, -11.5], [10.0, -6.0], [11.5, 2.5], [6.0, 10.0], [-3.0, 11.5], [-10.5, 6.0]]
 	for i in stars.size():
@@ -472,8 +472,9 @@ func fern(x: float, z: float, r: float, y := 0.0) -> void:
 		m.quad(Vector3(px, h * 0.6, pz) + lean * 0.5 - side * 0.7, Vector3(px, h * 0.6, pz) + lean * 0.5 + side * 0.7, Vector3(px, h, pz) + lean + side * 0.08, Vector3(px, h, pz) + lean - side * 0.08, Color(0.36, 0.86, 0.74, 0.86))
 		m.strip(Vector3(px, h * 0.45, pz) + lean * 0.3, Vector3(px, h * 0.9, pz) + lean * 0.4 + side * 1.6, 0.34, Color(0.5, 0.95, 0.82, 0.8), false)
 	var mat := Gfx.unlit(Color.WHITE, false); mat.vertex_color_use_as_albedo = true; mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var node := m.node(Gfx.see_through(mat), G); node.position = Vector3(x, y, z); node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	ferns.push_back({"x": x, "y": y, "z": z, "r": r, "mat": mat, "a": 1.0, "n": node})
+	# (what is drawn with: the material itself on the web's renderer, a shader made from it on the computer's: its alpha is set through Gfx)
+	var shown := Gfx.see_through(mat); var node := m.node(shown, G); node.position = Vector3(x, y, z); node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ferns.push_back({"x": x, "y": y, "z": z, "r": r, "mat": shown, "a": 1.0, "n": node})
 
 ## a gravity-spore puffball: anything that hits it bursts it, and for four seconds the air over it carries you up
 func puffball(x: float, z: float, y := 0.0) -> void:
@@ -587,7 +588,8 @@ func _dress() -> void:
 	# the mist that rises off the moonwell
 	var mm := MeshKit.new(); mm.dome(0, 0, 0, 6.2, Color(0.82, 0.95, 1.0, 0.5), 14, 4, 0.6, false, Color(0.9, 1.0, 1.0, 0.2)); mm.dome(0, 0, 0, 6.1, Color(0.82, 0.95, 1.0, 0.4), 14, 4, 0.6, true)
 	var mmat := Gfx.unlit(Color(1, 1, 1, 0.0), false); mmat.vertex_color_use_as_albedo = true; mmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mmat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mist_n = mm.node(Gfx.see_through(mmat), G); mist_n.position = Vector3(WELL.x, 0.5, WELL.z); mist_n.visible = false; mist_n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; mist_n.set_meta("mat", mmat)
+	var mshown := Gfx.see_through(mmat)
+	mist_n = mm.node(mshown, G); mist_n.position = Vector3(WELL.x, 0.5, WELL.z); mist_n.visible = false; mist_n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; mist_n.set_meta("mat", mshown)
 	# where the Archmage steps to
 	for i in 6: var a := i * TAU / 6.0 + 0.5; perches.push_back(Vector3(TC.x + cos(a) * 5.2, T_F3, TC.y + sin(a) * 5.2))
 	for a: float in [deg_to_rad(200.0), deg_to_rad(270.0), deg_to_rad(330.0)]: perches.push_back(Vector3(TC.x + cos(a) * 9.4, T_F3, TC.y + sin(a) * 9.4))
@@ -693,7 +695,9 @@ func update(dt: float, p: Player) -> void:
 		_fired += dt
 	var live: bool = game == null or not game.ended
 	# the wind path: on it, and for a few seconds after, your feet are a third faster
-	if p.pos.x > WIND[0] and p.pos.x < WIND[1] and absf(p.pos.z) < WIND[2] and p.pos.y < 1.0: wind_t = 4.0; _tell("wind", "바람길 가속 진 · 이동 속도 +30%")
+	if p.pos.x > WIND[0] and p.pos.x < WIND[1] and absf(p.pos.z) < WIND[2] and p.pos.y < 1.0:
+		if wind_t <= 0.0: Snd.play("elf_wind", 0.7)   # (the wind takes you up as you step onto it)
+		wind_t = 4.0; _tell("wind", "바람길 가속 진 · 이동 속도 +30%")
 	else: wind_t = maxf(0.0, wind_t - dt)
 	p.slow_mul = 1.3 if wind_t > 0.0 else 1.0
 	if wind_t > 0.0 and fx != null and Vector2(p.vel.x, p.vel.z).length() > 3.0 and randf() < dt * 14.0:
@@ -701,8 +705,10 @@ func update(dt: float, p: Player) -> void:
 	# the moonwell: its water mends you; hold it five seconds and mist rises to hide you
 	var in_well := Vector2(p.pos.x - WELL.x, p.pos.z - WELL.z).length() < WELL_R and p.pos.y < WELL.y + 1.2 and p.pos.y > -0.2
 	if in_well and live and p.hp > 0.0:
-		well_t += dt
-		if p.hp < Player.MAX_HP: p.hp = minf(Player.MAX_HP, p.hp + 15.0 * dt)
+		well_t += dt; _well_snd -= dt
+		if p.hp < Player.MAX_HP:
+			p.hp = minf(Player.MAX_HP, p.hp + 15.0 * dt)
+			if _well_snd <= 0.0: _well_snd = 1.4; Snd.play("elf_well", 0.6)   # (drops falling, while it mends you)
 		_tell("well", "생명의 달샘 · 초당 체력 15 회복 · 5초 머물면 물안개")
 		if fx != null and randf() < dt * 8.0: fx.glow(Vector3(WELL.x + randf_range(-2.0, 2.0), WELL.y + 0.1, WELL.z + randf_range(-2.0, 2.0)), Vector3(0, randf_range(0.6, 1.4), 0), 0.9, 0.12, 0.02, Color(0.6, 1.0, 0.95, 0.7), 0.0, 0.5)
 		if well_t >= 5.0 and mist < 1.0: _tell("mist", "물안개가 피어오릅니다 · 정자 안에서는 멀리서 보이지 않습니다")
@@ -710,7 +716,7 @@ func update(dt: float, p: Player) -> void:
 	mist = move_toward(mist, 1.0 if well_t >= 5.0 else 0.0, dt / (1.2 if well_t >= 5.0 else 4.0))
 	if mist_n != null:
 		mist_n.visible = mist > 0.01
-		if mist_n.visible: (mist_n.get_meta("mat") as StandardMaterial3D).albedo_color.a = mist; mist_n.rotation.y += dt * 0.1
+		if mist_n.visible: Gfx.set_alpha(mist_n.get_meta("mat") as Material, mist); mist_n.rotation.y += dt * 0.1
 	# the portals
 	if port_cd <= 0.0 and live:
 		for q: Dictionary in portals:
@@ -756,7 +762,7 @@ func update(dt: float, p: Player) -> void:
 	for f: Dictionary in ferns:
 		var inside := absf(p.pos.y - float(f.y)) < 1.5 and Vector2(p.pos.x - float(f.x), p.pos.z - float(f.z)).length() < float(f.r)
 		var want := 0.22 if inside else 1.0
-		if absf(float(f.a) - want) > 0.005: f.a = move_toward(float(f.a), want, dt * 3.0); (f.mat as StandardMaterial3D).albedo_color.a = float(f.a)
+		if absf(float(f.a) - want) > 0.005: f.a = move_toward(float(f.a), want, dt * 3.0); Gfx.set_alpha(f.mat as Material, float(f.a))
 	# the lanterns swing as you run by
 	var sp := Vector2(p.vel.x, p.vel.z).length()
 	for L: Dictionary in lanterns:
@@ -782,7 +788,7 @@ func _amplify() -> void:
 		for s: Dictionary in enemies.folk.shots:
 			if bool(s.amp): continue
 			var q: Vector3 = s.pos
-			if Vector2(q.x - AMP.x, q.z - AMP.z).length() < AMP_R and q.y < 6.0: s.amp = true; s.vel = (s.vel as Vector3) * 1.5; s.r = float(s.r) + 0.25; s.splash = float(s.splash) * 1.5; _amp_fx(q)
+			if Vector2(q.x - AMP.x, q.z - AMP.z).length() < AMP_R and q.y < 6.0: s.amp = true; s.vel = (s.vel as Vector3) * 1.5; s.speed = float(s.speed) * 1.5; s.r = float(s.r) + 0.25; s.splash = float(s.splash) * 1.5; _amp_fx(q)
 	if proj != null:
 		for q: Dictionary in proj.list:
 			if q.get("amp", false) or not q.has("radius"): continue

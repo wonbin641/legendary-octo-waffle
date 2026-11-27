@@ -7,7 +7,7 @@ const CONT_COLORS := ["8c3a2b", "2c4f7c", "356b45", "c4682a", "7b8288", "2f7a7a"
 const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
 	# 6-1, the elves' Silverwood: dusk under great pale trees, the air blue-green, lanterns and crystals for light
-	10: {"wood": true, "fog": [0.026, 0.07, 0.078], "density": 0.011, "zenith": [0.005, 0.016, 0.03], "glow": [0.03, 0.1, 0.1], "hemi": ["86a8b0", "20302a", 0.72], "moon": ["c4e6ff", 0.62], "lamp": ["8ff7ea", 0.8],
+	10: {"wood": true, "fog": [0.026, 0.07, 0.078], "density": 0.011, "zenith": [0.005, 0.016, 0.03], "glow": [0.03, 0.1, 0.1], "hemi": ["86a8b0", "20302a", 0.72], "moon": ["c4e6ff", 0.62], "lamp": ["8ff7ea", 0.62],
 		"seed": 91, "sunOff": [-36, 62, -28], "exposure": 1.12},
 	# stage 5, the toy room: a sunny bedroom, bright and warm
 	9: {"toy": true, "fog": [0.55, 0.62, 0.68], "density": 0.004, "zenith": [0.55, 0.62, 0.68], "glow": [0.0, 0.0, 0.0], "hemi": ["ffffff", "cdb99a", 0.5], "moon": ["fff1d6", 0.62], "lamp": ["ffffff", 0.0], "seed": 77, "crates": 24, "sunOff": [30, 60, 34], "exposure": 0.95},

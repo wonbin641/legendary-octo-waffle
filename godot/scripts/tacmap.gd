@@ -30,7 +30,7 @@ const KINDS := {
 	8: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "고릴라 졸개"], ["tame", "5ed6b0", "길들인 동물"]],
 	7: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "로랜드고릴라"], ["tame", "5ed6b0", "길들인 동물"]],
 	9: [["soldier", "7fc96b", "플라스틱 군인"], ["figure", "ff7a3a", "액션 피규어"], ["rc", "4f8cff", "태엽·RC 유닛"], ["brick", "ffd23a", "조립 블록 피규어"]],
-	10: [["elf_ranger", "ff5260", "석궁병"], ["elf_blade", "ff9a3a", "바람검사"], ["elf_sniper", "ffd23a", "저격수 · 나무 위"], ["elf_mage", "c58bff", "비전술사"]],
+	10: [["elf_ranger", "ff5260", "석궁병"], ["elf_blade", "ff9a3a", "바람검사"], ["elf_sniper", "ffd23a", "저격수 · 나무 위"], ["elf_mage", "ff7ad9", "비전술사"]],
 }
 const MAP_KIND := {"cctv": "cctv", "patrol": "patrol", "droneA": "droneA", "mine": "mine", "gdrone": "midboss", "bdrone": "boss"}
 const MELEE_KITS := ["saber", "saber2", "bat", "bomber", "dagger"]

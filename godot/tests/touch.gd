@@ -192,6 +192,17 @@ func _ready() -> void:
 	check("in the toy room's fight the paper map at the top right is the map button (a tap on it opens the tactical map), and the battery, the tray and the map lie under none of the touch controls",
 		paper == lay.map and paper.size.x > 46.0 and map_open and under.is_empty(), [paper, ui.cur, under])
 	if map_open: main.close_map(); await _frames()
+	# stage 6: the alchemist's bomb is a pill low in the middle of the screen; a tap throws one, and the pill counts the seconds to the next
+	main.command("start 10"); await get_tree().create_timer(0.8).timeout; await _tap(Vector2(450, 200)); await get_tree().create_timer(0.2).timeout
+	var fp: Dictionary = main._touch_pills(); var f_has := fp.has("flask"); var f_rect: Rect2 = fp.flask[0] if f_has else Rect2(); var f_word := str(fp.flask[1]) if f_has else ""
+	var f_clear := not f_rect.intersects(main._touch_rects().pad as Rect2); var fb: Dictionary = main._touch_buttons()
+	for k in fb:
+		if f_rect.grow(float(fb[k][1])).has_point(fb[k][0]): f_clear = false   # (under none of the round buttons)
+	await _tap(f_rect.get_center()); await get_tree().create_timer(0.2).timeout
+	var f_after := str(main._touch_pills().get("flask", [null, ""])[1]); var f_thrown: int = main.game.flasks; var f_cd: float = main.game.flask_cd
+	await _tap(f_rect.get_center()); await _frames(4)
+	check("on stage 6-1 the alchemist's bomb is a button low in the middle of the phone's screen, under none of the other controls: a tap throws one, then it counts the seconds to the next and a tap does nothing",
+		f_has and f_word == "연금술 폭탄" and f_clear and f_rect.size.y >= 44.0 and f_thrown == 1 and f_cd > 11.0 and f_after == "연금술 폭탄 12초" and main.game.flasks == 1, [f_rect, f_word, f_clear, f_thrown, f_cd, f_after])
 	main.to_menu(); Store.save = keep_save; Store.settings = keep_settings; Store.persist(); Store.persist_settings()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)

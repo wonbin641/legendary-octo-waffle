@@ -1082,6 +1082,7 @@ func _ready() -> void:
 	_toy_screen(gm, en, pl, g, pr, w, cam, lt)
 	_toy_breaks(gm, en, pl, g, pr, w, cam, fxn)
 	_toy_far(gm, en, pl, g, pr, w, cam)
+	_elf_wood(gm, en, pl, g, pr, w, cam, fxn, lt)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -3566,3 +3567,345 @@ func _toy_breaks(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	check("in the other stages nothing breaks: someone who falls tips over as ever, no piece is made, and the toy room's leavings are cleared when a stage begins",
 		not th.k.has("dead") and absf(absf(th.g.rotation.x) - 1.45) < 0.01 and B.pieces.is_empty() and B.root == null and not B.on(), [th.k.has("dead"), th.g.rotation.x, B.pieces.size()])
 	Store.save = save0; Store.settings = set0; Snd.keep_log = log0; Snd.played.clear(); en.fx = fx0; pr.fx = pfx0; pr.on_wet = wet0; pl.invuln = 0.0; gm.begin(1)
+
+# ---------------- stage 6-1: the elves' Silverwood ----------------
+## the whole fight for a while on stage 6-1, as the game's frame runs it
+func _wood_tick(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, sec: float, lt = null) -> void:
+	for i in roundi(sec * 30.0):
+		pl.update(1.0 / 30.0, cam, 0.0); w.wood.update(1.0 / 30.0, pl); g.update(1.0 / 30.0); en.update(1.0 / 30.0, 0.0); pr.update(1.0 / 30.0)
+		if lt != null: lt.update(1.0 / 30.0)
+		gm.update(1.0 / 30.0)
+
+## a walk along waypoints with your own size and step (Player.R, HEIGHT; a step up of half a metre on the ground): [got there, where it ended]
+func _wood_walk(p: Vector3, pts: Array, speed := 5.4) -> Array:
+	var vy := 0.0; var grounded := true; var dt := 1.0 / 60.0
+	for i in pts.size():
+		var to := Vector2(pts[i][0], pts[i][1]); var t := 0.0; var best := 1e9; var best_t := 0.0
+		while true:
+			var d := to - Vector2(p.x, p.z); var dist := d.length()
+			if dist < 0.25: break
+			if dist < best - 0.02: best = dist; best_t = t
+			if t - best_t > 2.5: return [false, p]
+			var dir := d / dist
+			p = Phys.move_xz(p, dir.x * speed * dt, dir.y * speed * dt, Player.R, Player.HEIGHT, 0.5 if grounded else 0.2)[0]
+			var gy := Phys.ground_at(p.x, p.y, p.z, Player.R)
+			vy -= 19.0 * dt; p.y += vy * dt
+			if p.y <= gy: p.y = gy; vy = 0.0; grounded = true
+			elif p.y > gy + 0.05: grounded = false
+			t += dt
+	return [true, p]
+
+## nobody on the map but those a check puts there
+func _wood_alone(en: Enemies) -> void:
+	for e in en.list.duplicate(): en.vanish(e)
+	en.folk.dealt.clear(); en.folk.sent.clear()
+
+func _wood_elf(en: Enemies, type: String, x: float, y: float, z: float, perch := true) -> Enemies.Foe:
+	var e := en.spawn(type, x, z, {"y": y, "yaw": -PI / 2.0, "post": {"x": x, "y": y, "z": z, "perch": perch}})
+	e.lod = 0.0; e.los_t = 0.0; return e
+
+func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, fxn: Fx, lt) -> void:
+	reset_test_state(); seed(610)
+	var save0: Dictionary = Store.save
+	gm.begin(10); var W: ElfWood = w.wood; var fk: Folk = en.folk; var T := ElfWood.TC
+	# ---- the stage and its map ----
+	var kinds := {}
+	for e in en.list: kinds[e.type] = int(kinds.get(e.type, 0)) + 1
+	check("stage 6-1 is the elves' Silverwood: a strip seven times as long as it is wide (308 m by 44), walked from the west end, where you start on a terrace facing east, to the Archmage's tower at the east end; a ravine across it; 60 elves at their posts (32 crossbows, 13 blade dancers, 9 longbows, 6 mages) and the Archmage",
+		World.stage_kind(10) == "wood" and W != null and absf((ElfWood.X1 - ElfWood.X0) / (2.0 * ElfWood.WZ) - 7.0) < 1e-6 and Phys.HALF == ElfWood.HALF and absf(pl.pos.x - (ElfWood.X0 + 8.0)) < 0.01 and absf(pl.pos.y - ElfWood.START_Y) < 0.01
+		and absf(-sin(pl.yaw) - 1.0) < 1e-6 and Phys.floor_y(67.0, 10.0) == ElfWood.PIT_Y and Phys.floor_y(40.0, 10.0) == 0.0 and gm.goal == 61 and en.list.size() == 61
+		and kinds == {"elf_ranger": 32, "elf_blade": 13, "elf_sniper": 9, "elf_mage": 6, "archmage": 1} and gm.boss != null and gm.boss.type == "archmage" and absf(gm.boss.pos.y - ElfWood.T_F3) < 0.01, [kinds, pl.pos])
+	check("no crate there holds a potion: the only things to break are the five gravity-spore puffballs, and nothing else on the map is a crate",
+		w.crates.size() == 5 and w.crates.all(func(c): return c.get("puff", false)) and W.puffs.size() == 5 and lt.list.is_empty(), w.crates.size())
+	var ring := func(r: float, deg0: float, deg1: float, n: int) -> Array:
+		var out := []
+		for i in n + 1: var a := deg_to_rad(lerpf(deg0, deg1, float(i) / n)); out.push_back([T.x + cos(a) * r, T.y + sin(a) * r])
+		return out
+	var f1: Array = [[T.x - 15.0, 0.0]]; f1.append_array(ring.call(10.0, 180.0, -178.0, 72))
+	var routes := [
+		["the terrace's north stair to the path", Vector3(-146, 3, 0), [[-140, -10], [-128, -10], [-120, 0]], 0.0],
+		["the terrace's south stair", Vector3(-146, 3, 0), [[-140, 10], [-128, 10], [-120, 0]], 0.0],
+		["the path to the moonwell's pond", Vector3(-120, 0, 0), [[-108, -2], [-90, 2.5], [-70, -1], [-44, 0], [-31, 0], [-22, 0]], 0.5],
+		["the plank stair to the first deck", Vector3(-22, 0.5, 0), [[-13, 0], [-2, 13], [0.0, 13], [7.6, 13], [7.6, 15.4]], 8.0],
+		["the south decks and their bridges", Vector3(7.6, 8, 15.4), [[12.4, 15.4], [12.4, 13], [27.6, 13], [27.6, 15.4], [32.4, 15.4], [32.4, 13], [45.6, 13], [45.6, 15.4]], 8.0],
+		["the bridge across to the north decks", Vector3(27.6, 8, 15.4), [[27.6, 10.6], [30, 10.6], [30, -10.6], [32.4, -10.6]], 8.0],
+		["the north decks over the ravine to the crags", Vector3(32.4, 8, -10.6), [[32.4, -13], [45.6, -13], [45.6, -10.6], [50.4, -10.6], [50.4, -13], [64.6, -13], [64.6, -10.6], [69.4, -10.6], [69.4, -13], [83.6, -13], [83.6, -10.6], [88.4, -10.6], [88.4, -13], [92, -13]], 7.0],
+		["the crags' two tops", Vector3(92, 7, -13), [[94, -17], [101, -17], [104, -14]], 9.0],
+		["the gate, the crystal bridge, the gate", Vector3(20, 0, 1), [[46, 0], [53, 0], [81, 0], [88, 0], [100, -3]], 0.0],
+		["the west stair down into the ravine", Vector3(48, 0, 15), [[51.5, 15], [63, 15], [64, 8.5]], -6.0],
+		["the east stair up out of it", Vector3(64, -6, 10), [[70, -10], [71.5, -15], [83, -15], [86, -8]], 0.0],
+		["the hill of terraces to the round stone", Vector3(84, 0, 4), [[83, 9.5], [88.7, 9.5], [88.7, 13.3], [93.7, 13.3], [93.7, 16.9], [98.6, 16.9], [102, 16.5]], 10.42],
+		["the plank bridge to the library", Vector3(102, 10.42, 16.5), [[105, 10.8], [121, 10.8], [124.5, 9.0]], 10.0],
+		["the tower's first flight", Vector3(112, 0, 0), f1, 10.0],
+		["the gallery round to the east", Vector3(T.x - 12.0, 10, 0.5), ring.call(12.0, 180.0, 0.0, 36), 10.0],
+		["the second flight to the observatory", Vector3(T.x + 9.3, 10, 0), ring.call(9.3, 0.0, -355.0, 72), 20.0],
+		["round the great sphere", Vector3(T.x - 5.0, 20, 0), ring.call(5.0, 180.0, -180.0, 36), 20.0]]
+	var walk_bad := []
+	for r: Array in routes:
+		var res := _wood_walk(r[1], r[2]); var at: Vector3 = res[1]
+		if not res[0] or absf(at.y - float(r[3])) > 0.35: walk_bad.push_back("%s: ended (%.1f, %.2f, %.1f)" % [r[0], at.x, at.y, at.z])
+	check("every way of the map can be walked with your own size and step: the terrace's stairs, the path, the plank stair and the decks and bridges in the boughs, the gates and the crystal bridge, the stairs into and out of the ravine, the crags, the hill, the plank bridge, the tower's two flights round its outside, its gallery and its top (17 ways)",
+		walk_bad.is_empty() and routes.size() == 17, walk_bad)
+	var post_bad := []
+	for e in en.list:
+		if absf(Phys.ground_at(e.pos.x, e.pos.y + 0.3, e.pos.z, e.R) - e.pos.y) > 0.3 or Phys.collide_at(e.pos.x, e.pos.y + 0.05, e.pos.z, e.R, e.H) != null: post_bad.push_back("%s (%.1f, %.1f, %.1f)" % [e.type, e.pos.x, e.pos.y, e.pos.z])
+	check("every elf stands on something and inside nothing; eight of them up on the decks in the boughs, eight on the tower's stair and gallery, the Archmage on top", post_bad.is_empty() and en.list.filter(func(e): return absf(e.pos.y - ElfWood.TOP) < 0.01 and e.pos.x < 90.0).size() == 8
+		and en.list.filter(func(e): return Vector2(e.pos.x - T.x, e.pos.z - T.y).length() < ElfWood.T_DECK + 0.5).size() == 9, [post_bad, en.list.filter(func(e): return Vector2(e.pos.x - T.x, e.pos.z - T.y).length() < ElfWood.T_DECK + 0.5).size()])
+	# a deck's floor is planks with gaps: a shot straight down between two planks goes through to the ground, one on a plank stops there
+	var dk := Vector2(30.0, -13.0); var pw := 2.0 * ElfWood.DK / 8.0; var gap_z := dk.y - ElfWood.DK + 2.0 * pw
+	var through := Phys.raycast_static(Vector3(dk.x + 2.4, 12.0, gap_z), Vector3.DOWN, 20.0); var through_t := Phys.rh_t
+	var on_plank := Phys.raycast_static(Vector3(dk.x + 2.4, 12.0, gap_z + pw * 0.5), Vector3.DOWN, 20.0); var plank_t := Phys.rh_t
+	check("a deck in the boughs is eight planks with gaps between them: a shot straight down through a gap reaches the ground, one on a plank stops at the deck (8 m up); you stand on it all the same",
+		W.decks.size() == 8 and through and absf(through_t - 12.0) < 0.01 and on_plank and absf(plank_t - 4.0) < 0.01 and absf(Phys.ground_at(dk.x + 2.4, 8.5, gap_z, Player.R) - ElfWood.TOP) < 0.01, [through, through_t, plank_t])
+	check("the tower: a core nothing walks through, the gallery (the library) 10 m up three quarters of the way round it, the observatory 20 m up, the great sphere's foot in its middle; the pavilion over the moonwell has a roof",
+		Phys.collide_at(T.x, 5.0, T.y, 0.3, 1.7) != null and absf(Phys.ground_at(T.x + 12.0, 12.0, T.y, 0.3) - 10.0) < 0.01 and absf(Phys.ground_at(T.x - 5.0, 22.0, T.y, 0.3) - 20.0) < 0.01
+		and Phys.ground_at(T.x + cos(deg_to_rad(-135.0)) * 12.5, 12.0, T.y + sin(deg_to_rad(-135.0)) * 12.5, 0.3) < 9.0 and absf(Phys.ground_at(ElfWood.WELL.x, 9.0, ElfWood.WELL.z, 0.3) - 6.5) < 0.01)
+	# ---- what the place does ----
+	_wood_alone(en); pl.reset(ElfWood.WIND[0] + 10.0, 0.0, -PI / 2.0); pl.invuln = 0.0
+	_wood_tick(gm, en, pl, g, pr, w, cam, 0.2); var wind_on := pl.slow_mul
+	pl.pos = Vector3(-60.0, 0.0, 0.0); _wood_tick(gm, en, pl, g, pr, w, cam, 2.0); var wind_after := pl.slow_mul
+	_wood_tick(gm, en, pl, g, pr, w, cam, 2.5); var wind_gone := pl.slow_mul
+	pl.pos = Vector3(ElfWood.WIND[0] + 10.0, 0.0, ElfWood.WIND[2] + 2.0); _wood_tick(gm, en, pl, g, pr, w, cam, 0.2); var wind_beside := pl.slow_mul
+	check("the wind path (the first 35 m past the terrace): on its circles you are 30% faster on your feet, and for four seconds after you leave them; not beside it",
+		absf(wind_on - 1.3) < 1e-6 and absf(wind_after - 1.3) < 1e-6 and wind_gone == 1.0 and wind_beside == 1.0 and absf(ElfWood.WIND[1] - ElfWood.WIND[0] - 35.0) < 0.01, [wind_on, wind_after, wind_gone, wind_beside])
+	# the moonwell
+	pl.reset(ElfWood.WELL.x, ElfWood.WELL.z + 0.5, -PI / 2.0); pl.pos.y = ElfWood.WELL.y; pl.hp = 400.0
+	_wood_tick(gm, en, pl, g, pr, w, cam, 2.0); var well_hp := pl.hp; var mist_2s := W.mist; var hid_2s := W.hides(pl, 20.0)
+	_wood_tick(gm, en, pl, g, pr, w, cam, 4.5); var mist_on := W.mist; var hid_far := W.hides(pl, 20.0); var hid_near := W.hides(pl, 8.0)
+	g.shots += 1; _wood_tick(gm, en, pl, g, pr, w, cam, 0.1); var hid_shot := W.hides(pl, 20.0)
+	_wood_tick(gm, en, pl, g, pr, w, cam, 2.2); var hid_again := W.hides(pl, 20.0)
+	pl.hp = Player.MAX_HP - 5.0; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0); var well_full := pl.hp
+	pl.pos = Vector3(ElfWood.WELL.x + 9.0, 0.0, ElfWood.WELL.z); pl.hp = 400.0; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0); var well_out := pl.hp; var hid_out := W.hides(pl, 20.0)
+	_wood_tick(gm, en, pl, g, pr, w, cam, 4.5); var mist_off := W.mist
+	check("the moonwell: its water mends you 15 a second (never past full), nowhere else does anything; hold it five seconds and mist rises over the pavilion, in which nobody farther off than 9 m sees you until you fire (two seconds, then hidden again); out of the water the mist thins away",
+		absf(well_hp - 430.0) < 1.0 and mist_2s == 0.0 and not hid_2s and mist_on == 1.0 and hid_far and not hid_near and not hid_shot and hid_again and well_full == Player.MAX_HP and well_out == 400.0 and not hid_out and mist_off == 0.0,
+		[well_hp, mist_2s, mist_on, hid_far, hid_near, hid_shot, hid_again, well_full, well_out, mist_off])
+	# the veil ferns
+	var fern: Dictionary = W.ferns[2]; var fmat: Material = fern.mat
+	pl.pos = Vector3(float(fern.x), float(fern.y), float(fern.z)); _wood_tick(gm, en, pl, g, pr, w, cam, 2.5)
+	var fern_in := [W.hides(pl, 20.0), W.hides(pl, 6.0), Gfx.get_tint(fmat).a]
+	pl.pos = Vector3(float(fern.x) + float(fern.r) + 1.5, float(fern.y), float(fern.z)); _wood_tick(gm, en, pl, g, pr, w, cam, 2.5)
+	var fern_out := [W.hides(pl, 20.0), Gfx.get_tint(fmat).a]
+	check("a bed of veil ferns is a curtain from outside; stand in it and its fronds part (you see out through them) and nobody farther off than 9 m sees you; step out and it closes again (ten beds)",
+		W.ferns.size() == 10 and fern_in[0] and not fern_in[1] and float(fern_in[2]) < 0.3 and not fern_out[0] and float(fern_out[1]) > 0.95, [fern_in, fern_out])
+	Gfx.fplus = true; W.fern(-100.0, 19.0, 1.2); Gfx.fplus = false; var cf: Dictionary = W.ferns[W.ferns.size() - 1]   # (as the computer's renderer draws one: with a shader made from its material)
+	pl.pos = Vector3(-100.0, 0.0, 19.0); _wood_tick(gm, en, pl, g, pr, w, cam, 1.0); var cf_a := Gfx.get_tint(cf.mat as Material).a
+	W.ferns.erase(cf); (cf.n as Node).queue_free()
+	check("on the computer's renderer, where a see-through thing is drawn with a shader made from its material, a bed of ferns parts all the same (its alpha is set on what it is drawn with)", cf.mat is ShaderMaterial and cf_a < 0.3 and W.ferns.size() == 10, [cf_a])
+	# the portals
+	var po0: Dictionary = W.portals[0]; var po1: Dictionary = W.portals[1]
+	pl.pos = po0.a; pl.vel = Vector3.ZERO; W.port_cd = 0.0; _wood_tick(gm, en, pl, g, pr, w, cam, 0.1); var port_a := pl.pos
+	pl.pos = po1.a; _wood_tick(gm, en, pl, g, pr, w, cam, 0.1); var port_wait := pl.pos.distance_to(po1.a) < 0.5
+	_wood_tick(gm, en, pl, g, pr, w, cam, 1.6); var port_b := pl.pos
+	W.port_cd = 0.0; pl.pos = po0.b; _wood_tick(gm, en, pl, g, pr, w, cam, 0.3); var port_one_way := pl.pos.distance_to(po0.b) < 0.5
+	check("the portals: the circle by the stream down in the ravine puts you on the deck in the boughs over it, the one on the court's bastion in the tower's library; a second and a half before the next takes you; they go one way",
+		W.portals.size() == 2 and (po0.a as Vector3).y == ElfWood.PIT_Y and port_a.distance_to(po0.b) < 0.3 and absf(port_a.y - ElfWood.TOP) < 0.1 and port_wait and port_b.distance_to(po1.b) < 0.3 and absf(port_b.y - ElfWood.T_F2) < 0.1 and port_one_way, [port_a, port_b])
+	# a puffball
+	var pf: Dictionary = W.puffs[0]; var n_crates := w.crates.size(); var loot0: int = lt.list.size()
+	pl.pos = Vector3(float(pf.x) - 6.0, 0.0, float(pf.z)); _wood_tick(gm, en, pl, g, pr, w, cam, 0.1)
+	w.damage_crate(pf.c, 20.0, Vector3(pf.x, float(pf.y) + 0.5, pf.z))
+	var puff_now := [float(pf.lift), pf.c == null, w.crates.size(), lt.list.size() - loot0]
+	pl.pos = Vector3(pf.x, pf.y, float(pf.z) + 0.8); pl.vel = Vector3.ZERO; var puff_top := 0.0
+	for i in 90: _wood_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); puff_top = maxf(puff_top, pl.pos.y)
+	_wood_tick(gm, en, pl, g, pr, w, cam, 1.5); var puff_spent := float(pf.lift) <= 0.0
+	pl.pos = Vector3(pf.x, pf.y, float(pf.z) + 0.8); pl.vel = Vector3.ZERO; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0); var puff_no_lift := pl.pos.y < 0.5
+	pl.pos = Vector3(float(pf.x) - 6.0, 0.0, float(pf.z)); _wood_tick(gm, en, pl, g, pr, w, cam, 8.0); var puff_back := pf.c != null and w.crates.size() == n_crates
+	check("a gravity-spore puffball: one hit bursts it (nothing drops), and for four seconds the air over it carries you up past the bridges in the boughs (8 m); then nothing; nine seconds after bursting it has grown back",
+		absf(float(puff_now[0]) - 4.0) < 1e-6 and puff_now[1] and int(puff_now[2]) == n_crates - 1 and int(puff_now[3]) == 0 and puff_top > ElfWood.TOP + 0.5 and puff_top < ElfWood.TOP + 5.0 and puff_spent and puff_no_lift and puff_back, [puff_now, puff_top, puff_back])
+	# an obelisk
+	var ob: Dictionary = W.obelisks[3]; var omat: StandardMaterial3D = ob.mat
+	pl.pos = Vector3(float(ob.x) - 20.0, 0.0, float(ob.z)); Snd.keep_log = true; Snd.played.clear(); _wood_tick(gm, en, pl, g, pr, w, cam, 0.5); var ob_calm := [bool(ob.hot), omat.albedo_color.b > omat.albedo_color.r, Snd.played.has("elf_chime")]
+	var ob_elf := _wood_elf(en, "elf_blade", float(ob.x) + 5.0, 0.0, float(ob.z) + 1.0); _wood_tick(gm, en, pl, g, pr, w, cam, 0.5)
+	var ob_hot := [bool(ob.hot), omat.albedo_color.r > omat.albedo_color.b * 2.0, Snd.played.has("elf_chime")]
+	en.vanish(ob_elf); _wood_tick(gm, en, pl, g, pr, w, cam, 0.5); var ob_after := [bool(ob.hot), omat.albedo_color.b > omat.albedo_color.r]; Snd.keep_log = false
+	check("a rune obelisk (2 m tall, eight of them at the corners): its runes are blue; an elf within 8 m of it and they blink red and it rings; the elf gone, blue again",
+		W.obelisks.size() == 8 and ob_calm == [false, true, false] and ob_hot == [true, true, true] and ob_after == [false, true], [ob_calm, ob_hot, ob_after])
+	# the lanterns
+	var la: Dictionary = W.lanterns[4]; var lb: Dictionary = W.lanterns[9]; la.sway = 0.05; lb.sway = 0.05; var lat: Vector3 = la.at
+	W.shot_by(lat + Vector3(-10.0, 0.4, 0.3), Vector3(1, 0, 0), 30.0); var lan_shot := [float(la.sway), float(lb.sway)]
+	la.sway = 0.05; pl.reset(lat.x, lat.z, -PI / 2.0); pl.pos.y = 0.0; g.reset(["pistol"]); g.cur = "pistol"; g.cooldown = 0.0; pl.yaw = 0.0; pl.pitch = 0.0; pl.pos = Vector3(lat.x, lat.y - Player.EYE - 0.3, lat.z + 8.0); pl.update(0.0, cam, 0.0)
+	g.fire(Vector3(0, 0, -1)); var lan_gun := float(la.sway)
+	la.sway = 0.05; pl.pos = Vector3(lat.x, lat.y - 1.2, lat.z + 1.0); pl.vel = Vector3(7.0, 0, 0); W.update(1.0 / 30.0, pl); var lan_run := float(la.sway) > 0.05
+	check("the lanterns on their threads (18): a shot that passes within a metre of one sets it swinging (a missed shot from your gun does), and so does running close by; one farther off hangs still",
+		W.lanterns.size() == 18 and absf(lan_shot[0] - 0.6) < 1e-6 and absf(lan_shot[1] - 0.05) < 1e-6 and absf(lan_gun - 0.6) < 1e-6 and lan_run, [lan_shot, lan_gun, lan_run])
+	# the amplifying circle
+	pl.reset(-60.0, 0.0, 0.0); _wood_alone(en); fk.clear(); pr.clear()
+	var amp := ElfWood.AMP
+	fk.shoot("bolt", amp + Vector3(-6.0, 1.4, 0.0), Vector3(54.0, 0, 0), 11.0); fk.shoot("orb", amp + Vector3(-5.0, 1.4, 0.6), Vector3(13.0, 0, 0), 55.0); fk.shoot("bolt", amp + Vector3(-6.0, 1.4, 9.0), Vector3(54.0, 0, 0), 11.0)
+	var amp_b: Dictionary = fk.shots[0]; var amp_o: Dictionary = fk.shots[1]; var amp_far: Dictionary = fk.shots[2]; (amp_o as Dictionary).turn = 0.0
+	pr.flask(amp + Vector3(-4.0, 1.5, -0.5), Vector3(9.0, 3.0, 0), Game.FLASK); var amp_f: Dictionary = pr.list[0]
+	for i in 12: W.update(1.0 / 30.0, pl); fk.tick(1.0 / 30.0); pr.update(1.0 / 30.0)
+	var amp_got := [bool(amp_b.amp), (amp_b.vel as Vector3).length(), float(amp_b.r), bool(amp_o.amp), (amp_o.vel as Vector3).length(), float(amp_o.splash), bool(amp_far.amp), (amp_far.vel as Vector3).length(), amp_f.get("amp", false), float(amp_f.radius)]
+	for i in 6: W.update(1.0 / 30.0, pl)
+	check("the amplifying circle at the foot of the tower's stair: whatever flies through it goes half as fast again and bursts wider (an elf's bolt, a mage's ball, your alchemist's bomb), once each; what flies past beside it is left as it was",
+		amp_got[0] and absf(float(amp_got[1]) - 81.0) < 0.01 and absf(float(amp_got[2]) - 0.25) < 1e-6 and amp_got[3] and absf(float(amp_got[4]) - 19.5) < 0.01 and absf(float(amp_got[5]) - Folk.ORB.splash * 1.5) < 1e-6
+		and not amp_got[6] and absf(float(amp_got[7]) - 54.0) < 0.01 and amp_got[8] and absf(float(amp_got[9]) - Game.FLASK.splash * 1.5) < 1e-6 and (amp_b.vel as Vector3).length() < 81.1, amp_got)
+	fk.clear(); pr.clear()
+	# ---- the alchemist's bomb, stage 6's shared throwable ----
+	_wood_alone(en); pl.reset(-60.0, 0.0, -PI / 2.0); pl.invuln = 0.0; pl.update(0.0, cam, 0.0); gm.flask_cd = 0.0
+	var fl_hit := _wood_elf(en, "elf_ranger", -44.0, 0.0, 0.0); var fl_side := _wood_elf(en, "elf_mage", -44.0, 0.0, 4.0); var fl_far := _wood_elf(en, "elf_ranger", -44.0, 0.0, 12.0)
+	for e: Enemies.Foe in [fl_hit, fl_side, fl_far]: e.T = e.T.duplicate(); e.T.sight = 0.0   # (they only stand there)
+	var fl_first := gm.throw_flask(); var fl_cd := gm.flask_cd; var fl_again := gm.throw_flask(); var fl_n: int = pr.list.size()
+	_wood_tick(gm, en, pl, g, pr, w, cam, 2.0)
+	var fl_got := [fl_hit.alive, fl_side.alive and fl_side.hp < fl_side.max_hp, fl_far.hp == fl_far.max_hp, pl.hp == Player.MAX_HP, pr.list.is_empty()]
+	_wood_alone(en)
+	_wood_tick(gm, en, pl, g, pr, w, cam, 9.5); var fl_wait := gm.throw_flask(); _wood_tick(gm, en, pl, g, pr, w, cam, 0.6); var fl_ready := gm.flask_cd == 0.0 and gm.throw_flask()
+	var fl_chip := Hud.new()._items(false, gm); var fl_chip_t := Hud.new()._items(true, gm); gm.flask_cd = 0.0; var fl_chip_r := Hud.new()._items(false, gm)
+	gm.begin(1); var fl_s1 := [gm.has_flask(), gm.throw_flask(), Hud.new()._items(false, gm).size()]; gm.begin(10); W = w.wood
+	check("the alchemist's bomb (stage 6 only): thrown the way you look, it bursts on what it meets: 240 falling off over 5 m (the elf it hit is down, one 4 m off is hurt, one 12 m off is not, you are not); the next is ready 12 seconds after a throw, and your screen says so",
+		fl_first and fl_cd == Game.FLASK.cd and Game.FLASK.cd == 12.0 and not fl_again and fl_n == 1 and fl_got == [false, true, true, true, true] and not fl_wait and fl_ready
+		and fl_chip.any(func(c): return str(c[0]).begins_with("연금술 폭탄") and str(c[0]).ends_with("초")) and fl_chip_r.any(func(c): return c[0] == "연금술 폭탄 · G") and fl_chip_t.size() == fl_chip.size() and fl_s1 == [false, false, 0], [fl_first, fl_cd, fl_again, fl_got, fl_wait, fl_ready, fl_chip, fl_s1])
+	# a flask thrown onto the pavilion's roof does nothing to who stands under it
+	_wood_alone(en); pr.clear(); var roof_elf := _wood_elf(en, "elf_ranger", ElfWood.WELL.x + 4.5, 0.5, ElfWood.WELL.z); roof_elf.T = roof_elf.T.duplicate(); roof_elf.T.sight = 0.0
+	pl.reset(-60.0, 0.0, 0.0); pr.flask(Vector3(ElfWood.WELL.x + 4.5, 14.0, ElfWood.WELL.z), Vector3(0, -2.0, 0), Game.FLASK); _wood_tick(gm, en, pl, g, pr, w, cam, 2.0)
+	var roof_safe := roof_elf.hp == roof_elf.max_hp and pr.list.is_empty()
+	pr.flask(Vector3(ElfWood.WELL.x + 0.5, 2.6, ElfWood.WELL.z), Vector3(8.0, 0.0, 0), Game.FLASK); _wood_tick(gm, en, pl, g, pr, w, cam, 1.0)
+	check("the pavilion's roof stops what is lobbed at it: a bomb that bursts on the roof leaves whoever stands under it unhurt; one thrown in between the columns does not", roof_safe and roof_elf.hp < roof_elf.max_hp, [roof_safe, roof_elf.hp])
+	# the racks
+	_wood_alone(en); pr.clear(); var rk: Dictionary = W.racks[0]; rk.t = 0.0
+	pl.reset(float(rk.x) - 10.0, float(rk.z), 0.0); gm.flask_cd = 11.0; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0); var rk_far := gm.flask_cd
+	pl.pos = Vector3(float(rk.x) - 1.2, float(rk.y), float(rk.z) + 1.0); _wood_tick(gm, en, pl, g, pr, w, cam, 0.1); var rk_by := gm.flask_cd
+	_wood_tick(gm, en, pl, g, pr, w, cam, 2.0); var rk_stay := gm.flask_cd
+	_wood_tick(gm, en, pl, g, pr, w, cam, 3.1); var rk_again := gm.flask_cd
+	gm.flask_cd = 0.0; rk.t = 0.0; _wood_tick(gm, en, pl, g, pr, w, cam, 0.2); var rk_ready := float(rk.t) == 0.0
+	check("a rack of white jade (five of them, by the decks and the gates and in the library): pass within reach while the bomb is not ready and it is two seconds sooner; the same rack does it again after five seconds; with the bomb ready it does nothing",
+		W.racks.size() == 5 and absf(rk_far - 10.0) < 0.01 and absf(rk_by - (10.0 - 0.1 - 2.0)) < 0.01 and absf(rk_stay - (rk_by - 2.0)) < 0.01 and absf(rk_again - (rk_stay - 3.1 - 2.0)) < 0.05 and rk_again > 0.5 and rk_ready, [rk_far, rk_by, rk_stay, rk_again])
+	# ---- the elves ----
+	var KD: Dictionary = Folk.KINDS
+	var built_bad := []
+	_wood_alone(en)
+	for type: String in KD:
+		var e := _wood_elf(en, type, -60.0, 0.0, 0.0)
+		if not e.folk or e.far == null or e.parts.size() != 4 or not bool(e.parts[0].weak) or e.max_hp != float(KD[type].hp) or e.name != str(KD[type].name) or e.upper == null or e.arm_l == null or e.leg_r == null: built_bad.push_back(type)
+		en.vanish(e)
+	check("the elves: a crossbow (130), a blade dancer (150), a longbow (110), a mage (170) and the Archmage (6,500), each with a head to hit, a far-off shape and a name; the Archmage is the stage's boss and pays twenty times his kind, doubled (80,000)",
+		built_bad.is_empty() and KD.size() == 5 and int(KD.elf_ranger.hp) == 130 and int(KD.elf_blade.hp) == 150 and int(KD.elf_sniper.hp) == 110 and int(KD.elf_mage.hp) == 170 and int(KD.archmage.hp) == 6500
+		and Game.BOSS[10].type == "archmage" and int(Game.BOSS[10].hp) == int(KD.archmage.hp) and Game.boss_pay(Game.BOSS[10]) == 80000, built_bad)
+	# the crossbow: three bolts at a time when it sees you
+	_wood_alone(en); pl.reset(-68.0, 0.0, -PI / 2.0); pl.invuln = 0.0; Store.save.money = 0
+	var rg := _wood_elf(en, "elf_ranger", -60.0, 0.0, 0.0); rg.k.cd = 0.5; _wood_tick(gm, en, pl, g, pr, w, cam, 1.6)
+	var rg_sent := int(fk.sent.get("bolt", 0)); var rg_dealt := float(fk.dealt.get("bolt", 0.0)); var rg_alert := rg.alert
+	en.damage(rg, 500.0, rg.pos, Vector3(1, 0, 0), false); var rg_pay := int(Store.save.money)
+	check("a crossbow at its post: you in its sight and it looses three bolts, one after another (11 each: they hit you standing in the open 8 m off); it pays 1,200 doubled",
+		rg_alert and rg_sent == 3 and rg_dealt >= 11.0 and rg_dealt <= 33.0 and fmod(rg_dealt, 11.0) == 0.0 and rg_pay == 1200 * Store.PAY, [rg_alert, rg_sent, rg_dealt, rg_pay])
+	# ...and round a corner off a silverwood's mirror bark
+	_wood_alone(en); fk.clear(); pl.reset(-86.0, 5.0, PI / 2.0); pl.invuln = 0.0
+	var wall := Phys.add_collider(-93.3, 0.0, 2.0, -92.7, 6.0, 8.0, "concrete")   # (something tall between the two of you, for the check)
+	var gl_from := Vector3(-100.0, 1.4, 5.0); var gl_to := Vector3(-86.0, 1.0, 5.0); var gl = W.glance(gl_from, gl_to)
+	var gl_q: Vector3 = gl[0] if gl != null else Vector3.ZERO
+	var gl_law: bool = gl != null and (gl_q - gl_from).normalized().bounce(Vector3(0, 0, -1)).distance_to((gl_to - gl_q).normalized()) < 1e-4 and not Phys.line_of_sight(gl_from, gl_to)
+	var tr := _wood_elf(en, "elf_ranger", -100.0, 0.0, 5.0); tr.yaw = PI / 2.0; en.alarm(tr); tr.k.trick = 0.2; tr.k.cd = 99.0
+	var tr_lines := 0; var tr_t := 0.0
+	while tr_t < 4.0 and int(fk.sent.get("trick", 0)) == 0: _wood_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); tr_t += 1.0 / 30.0; tr_lines = maxi(tr_lines, fk.lines.size())
+	var tr_hp := pl.hp; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0)
+	Phys.remove_collider(wall)
+	check("a silverwood's mirror bark: a crossbow that cannot see you sends a bolt off a trunk and round the corner, the way in and the way out shown first (two lines of light), the angle out the angle in; it costs you 22",
+		gl_law and absf(gl_q.z - 9.54) < 0.01 and tr_lines == 2 and int(fk.sent.get("trick", 0)) == 1 and int(fk.sent.get("bolt", 0)) == 0 and tr_hp == Player.MAX_HP and float(fk.dealt.get("trick", 0.0)) == 22.0 and fk.lines.is_empty(), [gl, tr_lines, fk.sent, fk.dealt])
+	# the blade dancer
+	_wood_alone(en); fk.clear(); pl.reset(-66.0, -2.0, -PI / 2.0); pl.invuln = 0.0
+	var bl := _wood_elf(en, "elf_blade", -46.0, 0.0, -2.0, false); var bl_at := bl.pos
+	_wood_tick(gm, en, pl, g, pr, w, cam, 1.0); en.noise(pl.pos, 42.0); _wood_tick(gm, en, pl, g, pr, w, cam, 2.0)
+	var bl_waits := [bool(bl.k.wait), bl.pos.distance_to(bl_at) < 0.05, bl.alert, bl.g.scale.y < 0.85]
+	pl.pos = Vector3(-56.0, 0.0, -2.0); var bl_t := 0.0
+	while bl_t < 6.0 and float(fk.dealt.get("cut", 0.0)) == 0.0: _wood_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); bl_t += 1.0 / 30.0; pl.pos = Vector3(-56.0, 0.0, -2.0)
+	check("a blade dancer lies in wait, crouched: gunfire far off does not bring it out; you do, 10 m off in its sight, and then it comes in dashes and cuts for 40",
+		bl_waits == [true, true, true, true] and not bool(bl.k.wait) and float(fk.dealt.get("cut", 0.0)) == 40.0 and bl_t < 5.0, [bl_waits, bl_t, fk.dealt])
+	_wood_alone(en); fk.clear()
+	var lp := _wood_elf(en, "elf_blade", -94.0, 0.0, -16.5, false); lp.k.wait = false; en.alarm(lp); lp.k.leap = 9.0; pl.pos = Vector3(-94.0, 0.0, -9.0); var lp_t := 0.0; var lp_top := 0.0
+	while lp_t < 5.0 and lp.pos.z < -12.2: _wood_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); lp_t += 1.0 / 30.0; lp_top = maxf(lp_top, lp.pos.y); pl.pos = Vector3(-94.0, 0.0, -9.0)
+	en.vanish(lp); var ws := _wood_elf(en, "elf_blade", 22.0, 0.0, -8.0, false); ws.k.wait = false; en.alarm(ws); ws.k.leap = 0.0
+	var ws_at := Vector3(30.0 - 2.4, ElfWood.TOP, -13.0 + 2.4); pl.pos = ws_at; var ws_t := 0.0; var ws_on := false
+	while ws_t < 8.0 and not ws_on: _wood_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); ws_t += 1.0 / 30.0; pl.pos = ws_at; ws_on = absf(ws.pos.y - ElfWood.TOP) < 0.05 and ws.vy == 0.0
+	check("...over what stands in its way (a root a metre and a half high) and, on the wind step, up to where you stand in the boughs 8 m above it",
+		lp_t < 3.0 and lp_top > 1.5 and ws_on and ws_t < 6.0, [lp_t, lp_top, ws_on, ws_t])
+	# the longbow
+	_wood_alone(en); fk.clear(); pl.reset(-30.0, 10.0, -PI / 2.0); pl.invuln = 0.0
+	var sn := _wood_elf(en, "elf_sniper", 0.0, 0.0, 10.0); sn.k.cd = 0.0; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0)
+	var sn_aim := [sn.laser != null and sn.laser.visible, int(fk.sent.get("arrow", 0)), float(sn.k.aim) > 0.5]
+	_wood_tick(gm, en, pl, g, pr, w, cam, 1.3); var sn_shot := [int(fk.sent.get("arrow", 0)), float(fk.dealt.get("arrow", 0.0)), sn.laser != null and not sn.laser.visible]
+	_wood_tick(gm, en, pl, g, pr, w, cam, 3.6); var sn_draws := sn.laser.visible; en.damage(sn, 500.0, sn.pos, Vector3(1, 0, 0), false)
+	check("a longbow up in the boughs: a line of light lies on you while it draws (1.7 s), then one arrow for 70; the line is gone with the arrow, back as it draws again, and gone with the elf",
+		sn_aim == [true, 0, true] and sn_shot == [1, 70.0, true] and sn_draws and sn.laser == null and Folk.ARROW.draw == 1.7, [sn_aim, sn_shot, sn_draws])
+	# the mage
+	_wood_alone(en); fk.clear(); pl.reset(-58.0, -4.0, -PI / 2.0); pl.invuln = 0.0
+	var mg := _wood_elf(en, "elf_mage", -40.0, 0.0, -4.0, false); mg.k.cd = 0.3; mg.k.blink = 0.0; _wood_tick(gm, en, pl, g, pr, w, cam, 0.5)
+	var mg_orb: bool = fk.shots.size() == 1 and fk.shots[0].kind == "orb"; var mg_v0: Vector3 = (fk.shots[0].vel as Vector3) if mg_orb else Vector3.ZERO
+	pl.pos = Vector3(-52.0, 0.0, 6.0); _wood_tick(gm, en, pl, g, pr, w, cam, 0.4)
+	var mg_v1: Vector3 = (fk.shots[0].vel as Vector3) if not fk.shots.is_empty() else Vector3.ZERO; var mg_turn := mg_v0.normalized().angle_to(mg_v1.normalized())
+	_wood_tick(gm, en, pl, g, pr, w, cam, 2.5); var mg_dealt := float(fk.dealt.get("orb", 0.0))
+	var mg_was := mg.pos; pl.pos = Vector3(mg.pos.x - 5.0, 0.0, mg.pos.z); mg.k.blink = 0.0; _wood_tick(gm, en, pl, g, pr, w, cam, 0.2)
+	check("a mage: a slow ball of light that turns after you (no faster than 1.4 rad a second) and bursts (55, less at its edge); come within 8 m and it steps away through the air, 8 m and more from you",
+		mg_orb and absf(mg_v0.length() - Folk.ORB.speed) < 0.01 and mg_turn > 0.3 and mg_turn <= 1.4 * 0.4 + 0.01 and mg_dealt > 16.0 and mg_dealt <= 55.0 and mg.pos.distance_to(mg_was) > 2.0 and Vector2(mg.pos.x - pl.pos.x, mg.pos.z - pl.pos.z).length() >= 8.0,
+		[mg_orb, mg_turn, mg_dealt, mg.pos.distance_to(mg_was)])
+	# hidden from them: in a bed of ferns, far off
+	_wood_alone(en); fk.clear(); var hf: Dictionary = W.ferns[2]; pl.reset(float(hf.x), float(hf.z), 0.0); pl.invuln = 0.0
+	var hr := _wood_elf(en, "elf_ranger", float(hf.x) + 18.0, 0.0, float(hf.z)); hr.k.cd = 0.2; _wood_tick(gm, en, pl, g, pr, w, cam, 3.0); var hid_sent := int(fk.sent.get("bolt", 0)); var hid_alert := hr.alert
+	g.shots += 1; hr.k.cd = 0.2; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0)
+	check("in the ferns you are not seen: a crossbow 18 m off, a clear line between you, does not notice you; fire, and it does and shoots", hid_sent == 0 and not hid_alert and hr.alert and int(fk.sent.get("bolt", 0)) == 3, [hid_sent, hid_alert, fk.sent])
+	# ---- the Archmage ----
+	gm.begin(10); W = w.wood; fk.clear(); Store.save.money = 0
+	var am: Enemies.Foe = gm.boss; var n61: int = en.list.size()
+	for e in en.list.duplicate():
+		if e != am: en.vanish(e)
+	var top_at := Vector3(T.x + 5.0, ElfWood.T_F3, T.y + 3.0); pl.reset(top_at.x, top_at.z, PI / 2.0); pl.pos.y = top_at.y; pl.invuln = 0.0; am.lod = 0.0; am.los_t = 0.0
+	var am_t := 0.0; var am_kinds := {}; var am_moved := 0; var am_last := am.pos
+	while am_t < 14.0:
+		_wood_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); am_t += 1.0 / 30.0; pl.pos = top_at; pl.hp = Player.MAX_HP
+		if am.pos.distance_to(am_last) > 1.0: am_moved += 1; am_last = am.pos
+	for k9 in fk.sent: am_kinds[k9] = true
+	var am_p1 := [int(am.k.phase), am_kinds.has("fan"), am_kinds.has("rune"), int(fk.sent.get("fan", 0)) % 5 == 0, am_moved >= 2, fk.beam_on, en.list.size()]
+	en.damage(am, am.max_hp * 0.36, am.pos, Vector3(1, 0, 0), false); _wood_tick(gm, en, pl, g, pr, w, cam, 0.2)
+	var am_extra := en.list.filter(func(e): return e.extra and e.alive and e.type == "elf_blade")
+	var am_p2 := [int(am.k.phase), am_extra.size(), am_extra.all(func(e): return absf(e.pos.y - ElfWood.T_F3) < 0.1 and not bool(e.k.wait))]
+	var kills0 := gm.kills; var money0 := int(Store.save.money)
+	for e: Enemies.Foe in am_extra: en.damage(e, 999.0, e.pos, Vector3(1, 0, 0), false)
+	var am_free := gm.kills == kills0 and int(Store.save.money) == money0
+	en.damage(am, am.max_hp * 0.33, am.pos, Vector3(1, 0, 0), false); _wood_tick(gm, en, pl, g, pr, w, cam, 0.2); var am_p3 := int(am.k.phase)
+	check("the Archmage on the observatory: he steps from place to place round the great sphere and never comes to blows; fans of five bolts and runes on the floor; at two thirds of his health two blade dancers called to the top (they pay and count for nothing), at one third his last part",
+		n61 == 61 and am_p1 == [1, true, true, true, true, false, 1] and am_p2 == [2, 2, true] and am_free and am_p3 == 3 and am.alive, [am_p1, am_p2, am_free, am_p3, fk.sent])
+	# a rune: it bursts where you stood when it was drawn
+	fk.clear(); am.k.act = 99.0; am.k.port = 99.0; am.k.burst = 0; pl.pos = top_at; pl.hp = Player.MAX_HP
+	fk._rune(pl.pos, 3.0, 1.4, 90.0); var rune_n := fk.runes.size(); _wood_tick(gm, en, pl, g, pr, w, cam, 1.5); var rune_hit := float(fk.dealt.get("rune", 0.0)); var rune_gone := fk.runes.is_empty()
+	fk._rune(pl.pos, 3.0, 1.4, 90.0); _wood_tick(gm, en, pl, g, pr, w, cam, 0.5); pl.pos = top_at + Vector3(-1.0, 0, -4.0); var rune_out := pl.pos; _wood_tick(gm, en, pl, g, pr, w, cam, 1.0)
+	check("a rune drawn under you bursts a second and a half later for 90: stand there and it has you, step off its circle (3 m) and it does not", rune_n == 1 and rune_hit == 90.0 and rune_gone and float(fk.dealt.get("rune", 0.0)) == 90.0 and fk.runes.is_empty(), [rune_hit, fk.dealt])
+	# the sphere's beam: low over the floor, turning; jump it
+	fk.clear(); am.k.act = 99.0; am.k.port = 99.0; pl.pos = top_at; pl.hp = Player.MAX_HP; pl.vel = Vector3.ZERO
+	var beam_to := atan2(top_at.z - T.y, top_at.x - T.x)
+	fk.boss = am; fk.beam_on = true; fk.beam_t = 6.0; fk.beam_arms = 1; fk.beam_a = beam_to - 0.3
+	for i in 24: fk.tick(1.0 / 30.0)
+	var beam_hit := float(fk.dealt.get("beam", 0.0)); fk.dealt.clear()
+	fk.beam_a = beam_to - 0.3; pl.pos = top_at + Vector3(0, 1.0, 0)
+	for i in 24: fk.tick(1.0 / 30.0)
+	var beam_jump := float(fk.dealt.get("beam", 0.0)); fk.beam_a = beam_to + 1.5; pl.pos = top_at
+	for i in 24: fk.tick(1.0 / 30.0)
+	var beam_away := float(fk.dealt.get("beam", 0.0)); fk.beam_t = 0.05; fk.tick(0.1)
+	check("the great sphere's beam sweeps round the observatory half a metre over its floor: it burns you as it passes (60 a touch), not if you are in the air over it, not where it is not; it runs six and a half seconds",
+		beam_hit >= 60.0 and beam_hit <= 180.0 and beam_jump == 0.0 and beam_away == 0.0 and not fk.beam_on and Folk.BEAM["for"] == 6.5 and Folk.BEAM.dmg == 60.0, [beam_hit, beam_jump, beam_away])
+	# his fall: the chest, the sphere stopped, the stage won with the chest
+	fk.clear(); pl.pos = top_at + Vector3(0, 0, 3.0); pl.hp = Player.MAX_HP; var am_at := am.pos; Store.save.money = 0; var owned0: int = (Store.save.owned as Array).size()
+	en.damage(am, 99999.0, am.pos, Vector3(1, 0, 0), true)
+	var fall := [gm.boss == null, lt.pending() != null, W.spin == 0.0, int(Store.save.money), gm.ended, fk.beam_on]
+	pl.pos = Vector3(am_at.x + 0.8, ElfWood.T_F3, am_at.z); _wood_tick(gm, en, pl, g, pr, w, cam, 0.3, lt)
+	check("the Archmage down: 80,000 (a hit to the head half as much again), the great sphere runs down and stops, his chest stands where he fell on top of the tower, and the stage is won when you open it (6-1 cleared, a gun for good)",
+		fall == [true, true, true, 120000, false, false] and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(10) and (Store.save.owned as Array).size() == owned0 + 1 and Store.save.best.has("t10"), [fall, gm.ended, gm.result, Store.save.cleared])
+	# ---- its screens ----
+	check("the stage board: 6-1 hangs under stage 5 and can be played; 6-2, 6-3 and 6-4 are named on it (the dwarves, the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
+		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][0] == Ui.NODE_AT[9][0] and Ui.NODE_AT[10][1] > Ui.NODE_AT[9][1] and Ui.BUILT.has(10) and not Ui.BUILT.has(11)
+		and [[9, 10], [10, 11], [11, 12], [12, 13]].all(func(t6): return Ui.TRACKS.has(t6)) and Meta.spec(10) == {"all": ["sniper", "vest"], "any": [["rifle", "smg", "lmg"]]} and Game.STAGES[10].name == "은빛 경계림")
+	gm.begin(10); W = w.wood
+	var tm6 := TacMap.new(); tm6.game = gm; tm6.cam = cam; tm6.f_mono = SystemFont.new(); tm6.f_bold = SystemFont.new(); tm6.setup(10)
+	var rc6 := MapRec.new(); tm6.draw(rc6, Vector2(600, 600)); var k6 := 600.0 / (TacMap.STRIP_W + 2.0 * TacMap.PAD)
+	var west := TacMap.strip_at(Vector2.ZERO, k6, -100.0, 5.0); var west2 := TacMap.strip_at(Vector2.ZERO, k6, -20.0, 5.0); var east := TacMap.strip_at(Vector2.ZERO, k6, 100.0, 5.0); var edge_w := TacMap.strip_at(Vector2.ZERO, k6, ElfWood.X0, 0.0); var edge_e := TacMap.strip_at(Vector2.ZERO, k6, ElfWood.X1, 0.0)
+	var leg6: Array = tm6.legend(true).map(func(it): return str(it[1]))
+	check("its map: the strip folded once on the square, the west half the upper band and the east half the lower one, both the picture's full width; the four parts of the way named, the moonwell and the boss marked, a mark for each of the 61; the legend names the four kinds of elf, the boss, the moonwell, the portals, the puffballs and the planks in the boughs",
+		west.y < east.y and absf(west.y - west2.y) < 1e-6 and absf(west2.x - west.x - 80.0 * k6) < 1e-3 and absf(east.x - west.x - (100.0 - (-100.0 - ElfWood.X0)) * k6) < 1e-3 and edge_w.x >= 0.0 and edge_e.x <= 600.0 and east.y + (ElfWood.WZ - 5.0) * k6 < 600.0
+		and rc6.dots() == 61 and ["은빛 경계림", "달샘 회랑", "공명 수정 협곡", "대마법사의 탑", "달샘", "보스", "시작하는 곳", "N ↑", "20m"].all(func(t6): return rc6.texts.has(t6))
+		and ["석궁병", "바람검사", "저격수 · 나무 위", "비전술사", "보스 · 대마법사", "달샘 · 체력 회복", "포탈 · 점선 끝으로 이동", "포자 버섯 · 쏘면 상승 기류", "나무 위 발판과 다리"].all(func(t6): return leg6.has(t6)) and not leg6.has("나무 상자"), [west, east, rc6.dots(), leg6])
+	var snd_bad := []; var snd_used := {}; var snd_re := RegEx.new(); snd_re.compile("\"(elf_[a-z]+)\"")
+	for path: String in ["res://scripts/folk.gd", "res://scripts/elfwood.gd", "res://scripts/game.gd", "res://scripts/proj.gd"]:
+		for m9: RegExMatch in snd_re.search_all(FileAccess.get_file_as_string(path)):
+			if Folk.KINDS.has(m9.get_string(1)): continue
+			snd_used[m9.get_string(1)] = true
+			if not ResourceLoader.exists("res://sounds/%s.wav" % m9.get_string(1)): snd_bad.push_back(m9.get_string(1))
+	check("every sound the Silverwood and its elves play is there (made by tools/make_sounds.py): bolts, arrows, the mage's ball and its burst, blades, the wind step, runes, the beam, chimes, the puffball, the portal, the bomb", snd_bad.is_empty() and snd_used.size() >= 13, [snd_bad, snd_used.size()])
+	fk.clear(); pr.clear(); Store.save = save0; randomize()
