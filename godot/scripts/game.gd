@@ -71,6 +71,7 @@ var hint: Callable = Callable()
 var on_flash: Callable = Callable()   # (amount, from): the red flash and the direction of a bite
 var on_pay: Callable = Callable()     # (money): it pops out under the box at the top
 var tm: ToyMatch = null               # stage 5's team modes (battery rush, train escort, bedtime): the two sides and the rules
+var rm: Realm = null                  # stage 6's team battles (the sanctum, the siege): five a side, each one of the four peoples
 
 func _say(c: Callable, a: Array) -> void:
 	if c.is_valid(): c.callv(a)
@@ -90,20 +91,24 @@ func begin(stage_: int) -> void:
 	var fk := enemies.folk; fk.player = player; fk.game = self; fk.world = world; fk.fx = fx; fk.proj = proj
 	if tm != null: tm.clear()
 	tm = null
+	if rm != null: rm.clear()
+	rm = null; player.max_hp = Player.MAX_HP; player.eye = Player.EYE; player.air_max = 0; player.realm = false
 	enemies.clear(); proj.clear(); loot.clear(); fx.clear()
 	if stage == Store.ST_TOY and ToyMatch.picked() != "sweep":   # a team mode in the toy room: its things are built with the room
 		tm = ToyMatch.create(ToyMatch.picked()); tm.game = self; tm.world = world; tm.en = enemies; tm.toys = tf; tm.player = player; tm.guns = guns; tm.proj = proj; tm.fx = fx
 	world.toy_tm = tm; tf.tm = tm; proj.tm = tm; enemies.vis_r = 160.0 if tm != null else 0.0
+	if stage == Store.ST_ELF and Realm.picked() != "solo":   # a team battle on the Silverwood
+		rm = Realm.create(Realm.picked()); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	world.build_stage(stage); calm = 0; sp = null; mid = null
 	if tm != null: tm.room = world.toy
 	if world.toy != null: tf.brk.prepare()   # (the breakages' pictures and materials, made as the room is, not at the first hit)
 	fk.wood = world.wood
-	if world.wood != null: world.wood.player = player; world.wood.game = self; world.wood.enemies = enemies; world.wood.fx = fx; world.wood.proj = proj
+	if world.wood != null: world.wood.player = player; world.wood.game = self; world.wood.enemies = enemies; world.wood.fx = fx; world.wood.proj = proj; world.wood.rm = rm
 	if world.ship != null: world.ship.player = player; world.ship.game = self; world.ship.enemies = enemies; world.ship.fx = fx
 	player.toss_ceil = Lab.CEIL if world.lab != null else INF
 	if world.lab != null: world.lab.player = player; world.lab.game = self
 	if world.safari != null: world.safari.player = player; world.safari.game = self; world.safari.enemies = enemies; world.safari.fx = fx
-	bonus_guns = []; replay = Store.save.best.has(tm.mode.record_key()) if tm != null else Store.save.cleared.has(stage)   # (a team mode: once won, it pays no more)
+	bonus_guns = []; replay = Store.save.best.has(tm.mode.record_key()) if tm != null else (Store.save.best.has(rm.mode.record_key()) if rm != null else Store.save.cleared.has(stage))   # (a team mode: once won, it pays no more)
 	guns.reset(layout()); guns.stage = stage; enemies.stage = stage; enemies.down_hint = false; proj.stage = stage; guns.toy = stage == Store.ST_TOY
 	stats = {"shots": 0, "hits": 0, "kills": 0, "heads": 0, "earned": 0, "time": 0.0}
 	Store.money_lock = Store.save.money; Store.ivory_lock = Store.save.items.ivory; Store.own_lock = (Store.save.owned as Array).duplicate()
@@ -126,6 +131,7 @@ func begin(stage_: int) -> void:
 	var B: Dictionary = BOSS.get(stage, {})
 	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else (" 탑 꼭대기 천문대에 있습니다" if world.wood != null else " 어딘가에 있습니다")) + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
 	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
+	if rm != null: boss_msg = rm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
 
 ## what the stage's boss pays: twenty times one of its kind (a man, a zombie: 1,000), and then twice that, as all pay here
@@ -173,7 +179,8 @@ func populate() -> void:
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
 	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null:
-		if world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
+		if world.wood != null and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves)
+		elif world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
 		elif world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
 		elif world.toy != null and tm != null: tm.mode.populate()   # (a team mode: the two sides, not the hundred toys)
@@ -183,7 +190,7 @@ func populate() -> void:
 			for e in enemies.list:
 				e.wild = true
 				if e.type == "zebra": e.fury = true; enemies.animals.wake(e); e.bs = "graze"; e.bt = SR.rng(0.5, 4)   # zebras just live their quiet life, and never bolt here
-		goal = enemies.list.size() if tm == null else 0; boss = null; spawned = n[0]
+		goal = enemies.list.size() if (tm == null and rm == null) else 0; boss = null; spawned = n[0]
 		for e in enemies.list:
 			if e.boss: boss = e
 			if e.T.get("mid", false): mid = e
@@ -280,9 +287,10 @@ func update(dt: float) -> void:
 	result_tick(dt)
 	if not ended and player.hp <= 0.0:
 		if tm != null: tm.player_down()   # (a team mode: you are back at your base in a few seconds)
-		else: over("dead")
+		elif rm == null: over("dead")   # (a realm battle sees to your fall itself)
 	clock += dt
 	if tm != null and not ended: tm.update(dt)
+	if rm != null: rm.update(dt)
 	if world.lab != null: world.lab.update(dt)
 	if world.ship != null: world.ship.update(dt, clock)
 	if world.safari != null: world.safari.update(dt)
@@ -480,7 +488,7 @@ func take_loot(kind: String) -> bool:
 		Snd.play("pickup_hp"); _say(feed, ["회복 물약 · 체력 +%d (최대 체력의 10%%)" % int(heal) + (" · 출혈 멎음" if stopped else ""), 0]); return true
 	return false
 
-func has_flask() -> bool: return Store.realm(stage) != "" and tm == null
+func has_flask() -> bool: return Store.realm(stage) != "" and tm == null and rm == null
 ## throw it the way you look, a little upwards (your own speed goes with it); false when there is none to throw
 func throw_flask() -> bool:
 	if not has_flask() or ended or flask_cd > 0.0 or player.hp <= 0.0 or player.out or player.stun_t > 0.0: return false
@@ -528,19 +536,21 @@ func finish() -> void:
 func win_match() -> void:
 	if ended: return
 	ended = true; player.invuln = 1e9; Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
-	var key: String = tm.mode.record_key(); var first: bool = not Store.save.best.has(key); var t := int(stats.time)
-	var extra: int = tm.mode.bonus() if first else 0
+	var md = tm.mode if tm != null else rm.mode
+	var key: String = md.record_key(); var first: bool = not Store.save.best.has(key); var t := int(stats.time)
+	var extra: int = md.bonus() if first else 0
 	Store.save.money += extra; stats.earned += extra
 	if first or t < int(Store.save.best[key]): Store.save.best[key] = t
 	return_rentals(); Store.persist(); Snd.play("clear"); player.jet_end()
-	_say(banner, [tm.mode.win_title(), ("첫 승리 보너스 +" + Store.won(extra) if extra > 0 else "다시 하기라 보상 없음") + " · 가방 " + Store.won(Store.save.money), 2.6])
+	_say(banner, [md.win_title(), ("첫 승리 보너스 +" + Store.won(extra) if extra > 0 else "다시 하기라 보상 없음") + " · 가방 " + Store.won(Store.save.money), 2.6])
 	result = "clear"; _result_kind = "clear"; _result_t = 2.2
 
 ## a team mode lost: what you earned in it is gone, as when you fall anywhere else
 func lose_match() -> void:
 	if ended: return
 	ended = true; player.invuln = 1e9; forfeit(); _leave_animals(); return_rentals(); player.jet_end()
-	_say(banner, [tm.mode.lose_stamp, tm.mode.lose_title, 2.6]); Snd.play("hurt")
+	var md = tm.mode if tm != null else rm.mode
+	_say(banner, [md.lose_stamp, md.lose_title, 2.6]); Snd.play("hurt")
 	result = "lost"; _result_kind = "lost"; _result_t = 2.2
 
 func _leave_animals() -> void:

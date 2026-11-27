@@ -25,6 +25,7 @@ var ghost_wait := 0.0
 var wind_k := 0.0; var wind: Array = []
 var _tex := {}
 var toy := ToyHud.new()   # stage 5's own screen: the same things as a child's desk would show them (scripts/toyhud.gd)
+var realm := RealmHud.new()   # stage 6's team battles: their own screen (scripts/realmhud.gd)
 
 func _init() -> void:
 	toy.hud = self
@@ -68,7 +69,7 @@ func update(dt: float) -> void:
 	banner_a = move_toward(banner_a, 1.0 if banner_t > 0.35 else 0.0, dt / 0.35)
 	if hint_t > 0.0: hint_t -= dt
 	# the red behind health: it waits a quarter second, then slides down to the health in 0.6 s
-	var f: float = clampf(m.player.hp / Player.MAX_HP, 0.0, 1.0)
+	var f: float = clampf(m.player.hp / m.player.max_hp, 0.0, 1.0)
 	if ghost < f: ghost = f; ghost_wait = 0.0
 	elif ghost > f:
 		ghost_wait += dt
@@ -130,13 +131,13 @@ func draw(ci) -> void:
 	var s: Vector2 = ci.size; var c := s / 2.0; var g: Game = m.game; var pl: Player = m.player; var guns: Guns = m.guns; var touch: bool = m.look_mode == "touch"
 	var t: float = m.time; var W: Dictionary = guns.w(); var st: Dictionary = guns.st()
 	var f_title: Font = m.f_title; var f_body: Font = m.f_body; var f_bold: Font = m.f_bold; var f_mono: Font = m.f_mono
-	var pct := clampf(pl.hp / Player.MAX_HP, 0.0, 1.0) * 100.0
+	var pct := clampf(pl.hp / pl.max_hp, 0.0, 1.0) * 100.0
 	var toy_on := g.stage == Store.ST_TOY   # the toy room: the same things, drawn as ToyHud draws them
 	if toy_on: toy.m = m
 	# ---- over the view ----
 	_wind(ci, s, c)
 	_glow(ci, "hurt", hurt_t * 2.2)
-	if g.stage != 2 and pct < 35.0: _glow(ci, "low", (0.55 + sin(t * 6.0) * 0.25) * (1.0 - pct / 35.0) + 0.2)
+	if g.stage != 2 and pct < 35.0 and not (g.rm != null and pl.out): _glow(ci, "low", (0.55 + sin(t * 6.0) * 0.25) * (1.0 - pct / 35.0) + 0.2)
 	var inf := g.infected; var poi := g.poison_t > 0.0; var T := 0.0
 	if inf or poi:
 		T = minf(g.infect_t, g.poison_t) if (inf and poi) else (g.infect_t if inf else g.poison_t)
@@ -183,6 +184,7 @@ func draw(ci) -> void:
 	if toy_on:   # the toy room: the clock and the boards, the tape, the paper map, the battery, the tray are ToyHud's own controls
 		if toy.nodes.is_empty(): toy.draw_all(ci, s, touch)   # (...or, with no HUD to hold them, drawn here in one go)
 		return
+	if g.rm != null: realm.draw(self, ci, s, c, touch); return   # (a realm battle: its own screen from here)
 	# ---- the box at the top ----
 	_topbox(ci, s, c, g, f_mono, f_bold, f_title)
 	_feed(ci, s, touch, f_body, f_mono)
@@ -336,6 +338,7 @@ func _dmgdir(ci, c: Vector2, pl: Player) -> void:
 func aims(g: Game) -> Array:
 	var out := []
 	if g.tm != null: return [] if (g.ended or m.player.out) else g.tm.mode.aims()   # stage 5's team modes: batteries, home, the train, traps
+	if g.rm != null: return []   # (a realm battle marks its own things over the view)
 	var chest = m.loot.pending() if g._chest_wait else null
 	if chest != null: out.push_back([Vector2(chest.x, chest.z), 0.95])
 	else:

@@ -346,8 +346,18 @@ func _draw_strip(ci, r: Rect2) -> void:
 	ci.draw_arc(at.call(ElfWood.AMP.x, ElfWood.AMP.z), maxf(ElfWood.AMP_R * k, 4.0 * u), 0, TAU, 24, Color("ffd66b"), 1.6 * u)
 	# where you start
 	var s0: Dictionary = w.start; var sq := at.call(float(s0.x), float(s0.z)) as Vector2
-	ci.draw_circle(sq, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sq, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
-	_tag(ci, "시작하는 곳", sq.x + 15.0 * u, sq.y + 0.5 * u, u, SODIUM, "left")
+	if game.rm == null:
+		ci.draw_circle(sq, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sq, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
+		_tag(ci, "시작하는 곳", sq.x + 15.0 * u, sq.y + 0.5 * u, u, SODIUM, "left")
+	else:   # a realm battle: what the match is about, and everyone of both sides
+		for q: Dictionary in game.rm.mode.tac():
+			var mp := at.call(float(q.x), float(q.z)) as Vector2; var mc := Color(str(q.c)); var mr := maxf(float(q.r) * k, 5.0 * u)
+			ci.draw_circle(mp, mr, Color(mc, 0.16)); ci.draw_arc(mp, mr, 0, TAU, 28, mc, 1.8 * u); _tag(ci, str(q.label), mp.x, mp.y - mr - 7.0 * u, u, mc)
+		for f in game.rm.all:
+			if f.me or not f.alive: continue
+			var fp := at.call(f.pos.x, f.pos.z) as Vector2
+			ci.draw_circle(fp, 3.4 * u, Color("5f9cff") if f.team == "us" else Color("ff5260")); ci.draw_arc(fp, 3.4 * u, 0, TAU, 16, Color(0.05, 0.08, 0.15, 0.9), 1.0 * u)
+			if f.carrying: ci.draw_arc(fp, 6.0 * u, 0, TAU, 16, Color("ff9a3a"), 1.6 * u)
 	for e: Enemies.Foe in game.enemies.list:
 		if not e.alive: continue
 		var ep := at.call(e.pos.x, e.pos.z) as Vector2
@@ -373,6 +383,14 @@ func legend(live: bool) -> Array:
 	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
 	out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])
+	if stage == Store.ST_ELF and game != null and game.rm != null:   # a realm battle: the two sides and the match's marks
+		out.push_back(["en", "우리 편", Color("5f9cff"), ""]); out.push_back(["en", "적", Color("ff5260"), ""])
+		var seen := {}
+		for q: Dictionary in game.rm.mode.tac():
+			var nm := str(q.label).split(" ")[0]
+			if nm in ["우리", "적"] or seen.has(nm): continue
+			seen[nm] = true; out.push_back(["en", str(q.label) if nm != "결계" else "결계 제단", Color(str(q.c)), ""])
+		return out
 	if stage == Store.ST_TOY and game != null and game.tm != null:   # stage 5's team modes: their own marks
 		for it: Array in game.tm.mode.legend(): out.push_back(["en", it[2], Color(str(it[1])), ""])
 		out.push_back(["cr", "나무 상자", Color("a7804e"), ""])

@@ -38,6 +38,13 @@ var sens_mul := 1.0    # the mouse is slower while aiming
 var no_sprint := false # aiming, shooting or reloading: no running
 var hp := 1000.0
 const MAX_HP := 1000.0
+var max_hp := MAX_HP    # (a realm battle: your people's health)
+var eye := EYE          # (and its height)
+var realm := false      # in a realm battle: the fight there does its own sums; no jetpack, helmet or vest
+var air_max := 0        # jumps you may take in the air (an elf: one)
+var air_n := 0
+var dash_t := 0.0       # carried by a dash this long yet, at dash_v (no steering, no falling)
+var dash_v := Vector3.ZERO
 var invuln := 0.0
 var fear_t := 0.0; var fear_x := 0.0; var fear_z := 0.0   # a tiger's roar: your legs carry you away for a second
 var toss_on := false     # thrown by a rhino: straight up and straight down, no steering
@@ -69,6 +76,7 @@ var in_down := false
 ## dmg from a point; zone: 'head' (shots to the head, overhead blows), 'body' (everything else that hits you), 'fire' (flames)
 func hurt(dmg: float, from: Vector3, zone := "body") -> void:
 	if Store.settings.dev and Store.settings.god: return   # developer mode's invincibility
+	if realm: return   # (Realm.hurt does its own sums)
 	if invuln > 0.0 or hp <= 0.0: return
 	if no_hp:
 		shake = maxf(shake, 0.2)
@@ -96,7 +104,7 @@ func launch(v: Vector3) -> void:
 func jet_tap(now: float) -> void:
 	var dbl := now - jet_last_tap < 0.35; jet_last_tap = now
 	# not on an animal or thrown (as there), nor down or held in stage 5: it would burn its one go for nothing
-	if not dbl or jet_on or int(Store.save.items.jet) == 0 or stun_t > 0.0 or (rider != null and rider.m != null) or toss_on or out or held: return
+	if not dbl or jet_on or int(Store.save.items.jet) == 0 or stun_t > 0.0 or (rider != null and rider.m != null) or toss_on or out or held or realm: return
 	jet_on = true; jet_t = 10.0; Store.save.items.jet = 0; Store.persist(); Snd.jet(0.8)
 	vel.y = maxf(vel.y, 3.0); grounded = false; jet_last_tap = -9.0
 	if say.is_valid(): say.call("제트백팩 · 점프 위로 · 내려가기 아래로")
@@ -110,7 +118,7 @@ func reset(x: float, z: float, yaw_: float) -> void:
 	pos = Vector3(x, 0, z); vel = Vector3.ZERO; yaw = yaw_; pitch = 0.0; grounded = true
 	jump_buf = 0.0; sprint_lock = 0.0; shake = 0.0; land_dip = 0.0; recoil_pitch = 0.0; look_dx = 0.0; look_dy = 0.0
 	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
-	hp = MAX_HP; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0; Snd.jet(0.0)
+	hp = max_hp; air_n = 0; dash_t = 0.0; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0; Snd.jet(0.0)
 	out = false; carry_mul = 1.0; held = false
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
@@ -152,6 +160,9 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	var acc := 1.0 - exp(-dt * (11.0 if (grounded or fear_t > 0.0) else 2.2))
 	if not launched: vel.x += (tx - vel.x) * acc; vel.z += (tz - vel.z) * acc
 	if toss_on: vel.x = 0.0; vel.z = 0.0
+	var dash_k := -1.0   # a dash: its own speed for what is left of it (the last frame only a part)
+	if dash_t > 0.0:
+		dash_k = minf(1.0, dash_t / maxf(dt, 0.0001)); dash_t -= dt; vel.x = dash_v.x * dash_k; vel.z = dash_v.z * dash_k; jump_buf = 0.0
 	jump_buf -= dt
 	if jet_on:
 		# flying: no gravity; hold jump to rise, Ctrl or C to sink, nothing to hover. it sputters out after 10 seconds
@@ -163,7 +174,9 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 		if jet_t <= 0.0: jet_end("제트백팩 연료가 다 떨어졌습니다")
 	else:
 		if jump_buf > 0.0 and grounded: vel.y = 6.6 * jump_mul; grounded = false; jump_buf = 0.0
+		elif jump_buf > 0.0 and air_n < air_max and not launched and not toss_on and not stunned and not out: vel.y = 6.6 * jump_mul; air_n += 1; jump_buf = 0.0   # (an elf's second jump)
 		vel.y -= 19.0 * dt
+		if dash_k >= 0.0: vel.y = dash_v.y * dash_k
 		if chute and vel.y < -7.0: vel.y = -7.0   # the parachute holds the fall
 	pos = Phys.move_xz(pos, vel.x * dt, vel.z * dt, R, HEIGHT, 0.5 if grounded else 0.2)[0]
 	pos.x = clampf(pos.x, -Phys.HALF + R, Phys.HALF - R); pos.z = clampf(pos.z, -Phys.HALF + R, Phys.HALF - R)
@@ -179,7 +192,7 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 		if toss_on and vel.y <= 0.0 and on_toss_land.is_valid(): pos.y = gy; on_toss_land.call()
 		if not grounded and vel.y < -5.0: land_dip = clampf(-vel.y * 0.012, 0.0, 0.12)
 		if jet_on and jet_t < 9.6 and vel.y <= 0.05: jet_end("제트백팩 착지")   # sinking onto the ground ends the flight
-		pos.y = gy; vel.y = 0.0; grounded = true; launched = false; chute = false
+		pos.y = gy; vel.y = 0.0; grounded = true; launched = false; chute = false; air_n = 0
 	elif pos.y > gy + 0.05: grounded = false
 	speed_xz = sqrt(vel.x * vel.x + vel.z * vel.z)
 	if grounded and speed_xz > 0.5:
@@ -193,7 +206,7 @@ func update(dt: float, cam: Camera3D, time: float) -> void:
 	if cam == null: return
 	var bob := absf(sin(step_phase)) * 0.045 * clampf(speed_xz / 6.0, 0.0, 1.3) * (1.0 - ads * 0.7) if grounded else 0.0
 	var sh := shake; shake *= exp(-dt * 7)
-	cam.position = Vector3(pos.x, pos.y + (0.45 if out else EYE) - bob - land_dip, pos.z)   # (down: the view lies on the floor)
+	cam.position = Vector3(pos.x, pos.y + (0.45 if out else eye) - bob - land_dip, pos.z)   # (down: the view lies on the floor)
 	var sw := clampf(stun_t, 0.0, 1.0) if stunned else 0.0   # knocked out: the view sags and swims
 	cam.rotation = Vector3(pitch + recoil_pitch * 0.5 + randf_range(-1, 1) * sh * 0.05 + sin(time * 2.3) * 0.07 * sw - 0.12 * sw, yaw + randf_range(-1, 1) * sh * 0.05 + sin(time * 1.7) * 0.05 * sw,
 		sin(step_phase * 0.5) * 0.004 * clampf(speed_xz / 6.0, 0.0, 1.0) + sin(time * 3.1) * 0.09 * sw)

@@ -40,6 +40,7 @@ var decks: Array = []         # the tree decks: [x, z]
 var lanterns: Array = []      # {n, at, sway, v}
 var _mat_lit: StandardMaterial3D; var _mat_glow: StandardMaterial3D; var _mat_clear: StandardMaterial3D
 var player: Player; var game; var enemies: Enemies; var fx: Fx; var proj: Proj
+var rm = null                 # a realm battle on this map (Realm): the well, the portals and the amplifier are its to run, for everyone
 var t := 0.0
 var obelisks: Array = []      # {x, y, z, n, mat, hot, rang}
 var ferns: Array = []         # the veil-fern beds: {x, z, r, mat, a}
@@ -706,8 +707,8 @@ func update(dt: float, p: Player) -> void:
 	var in_well := Vector2(p.pos.x - WELL.x, p.pos.z - WELL.z).length() < WELL_R and p.pos.y < WELL.y + 1.2 and p.pos.y > -0.2
 	if in_well and live and p.hp > 0.0:
 		well_t += dt; _well_snd -= dt
-		if p.hp < Player.MAX_HP:
-			p.hp = minf(Player.MAX_HP, p.hp + 15.0 * dt)
+		if p.hp < p.max_hp and rm == null:
+			p.hp = minf(p.max_hp, p.hp + 15.0 * dt)
 			if _well_snd <= 0.0: _well_snd = 1.4; Snd.play("elf_well", 0.6)   # (drops falling, while it mends you)
 		_tell("well", "생명의 달샘 · 초당 체력 15 회복 · 5초 머물면 물안개")
 		if fx != null and randf() < dt * 8.0: fx.glow(Vector3(WELL.x + randf_range(-2.0, 2.0), WELL.y + 0.1, WELL.z + randf_range(-2.0, 2.0)), Vector3(0, randf_range(0.6, 1.4), 0), 0.9, 0.12, 0.02, Color(0.6, 1.0, 0.95, 0.7), 0.0, 0.5)
@@ -718,7 +719,7 @@ func update(dt: float, p: Player) -> void:
 		mist_n.visible = mist > 0.01
 		if mist_n.visible: Gfx.set_alpha(mist_n.get_meta("mat") as Material, mist); mist_n.rotation.y += dt * 0.1
 	# the portals
-	if port_cd <= 0.0 and live:
+	if port_cd <= 0.0 and live and rm == null:
 		for q: Dictionary in portals:
 			var a: Vector3 = q.a
 			if Vector2(p.pos.x - a.x, p.pos.z - a.z).length() < float(q.r) and absf(p.pos.y - a.y) < 0.9:
@@ -743,7 +744,7 @@ func update(dt: float, p: Player) -> void:
 			r.t = 5.0; game.flask_cd = maxf(0.0, game.flask_cd - float(Game.FLASK.rack)); Snd.play("elf_chime", 0.8, Vector3(r.x, float(r.y) + 1.2, r.z))
 			_tell("rack", "백옥 거치대 · 연금술 폭탄 대기 시간 −2초")
 	# the amplifying circle: whatever flies through it is faster and bursts wider
-	_amplify()
+	if rm == null: _amplify()
 	# the obelisks: an elf within eight metres of one, and its runes go from blue to red and it rings
 	_ob_t -= dt
 	if _ob_t <= 0.0 and enemies != null:
@@ -752,8 +753,11 @@ func update(dt: float, p: Player) -> void:
 			var hot := false
 			for e in enemies.list:
 				if e.alive and e.folk and absf(e.pos.y - float(o.y)) < 5.0 and Vector2(e.pos.x - float(o.x), e.pos.z - float(o.z)).length() < 8.0: hot = true; break
+			if rm != null:   # (a realm battle: the other side's fighters set it off)
+				for f in rm.all:
+					if f.alive and f.team == "them" and absf(f.pos.y - float(o.y)) < 5.0 and Vector2(f.pos.x - float(o.x), f.pos.z - float(o.z)).length() < 8.0: hot = true; break
 			if hot and not bool(o.hot) and t - float(o.rang) > 3.0 and Vector2(p.pos.x - float(o.x), p.pos.z - float(o.z)).length() < 40.0:
-				o.rang = t; Snd.play("elf_chime", 1.0, Vector3(o.x, float(o.y) + 1.5, o.z)); _tell("obelisk", "룬 오벨리스크가 붉게 깜박입니다 · 8 m 안에 엘프가 있습니다")
+				o.rang = t; Snd.play("elf_chime", 1.0, Vector3(o.x, float(o.y) + 1.5, o.z)); _tell("obelisk", "룬 오벨리스크가 붉게 깜박입니다 · 8 m 안에 " + ("적이" if rm != null else "엘프가") + " 있습니다")
 			o.hot = hot
 	for o: Dictionary in obelisks:
 		var col := Color("ff4a4a").lerp(Color("5a1010"), 0.5 + 0.5 * sin(t * 12.0)) if bool(o.hot) else Color("6fd6ff")

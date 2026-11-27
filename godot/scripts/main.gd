@@ -97,7 +97,7 @@ func _ready() -> void:
 		if game.sp != null and game.result != "clear" and stage == game.stage:   # back to the save point, as things were when you took it
 			game.from_save(); ui.show_screen(""); enter_play(); banner("세이브 포인트에서 다시", "처치 %d · 열쇠를 가진 채 운전실에서 시작합니다" % game.kills, 3.0); return
 		state = "brief"; ui.in_stage = false; ui.open_brief(stage)
-	ui.on_settings = apply_settings; ui.do_map = open_map; ui.do_map_close = close_map
+	ui.on_settings = apply_settings; ui.do_map = open_map; ui.do_map_close = close_map; ui.do_altar_close = close_altar
 	hud.get_parent().add_child(ui); ui.build(); ui.tac.cam = cam
 	Cloud.idle = func() -> bool: return state == "menu" and (ui.cur == "menu" or ui.cur == "account" or ui.cur == "settings")   # (the account's newer progress comes down only here)
 	get_viewport().size_changed.connect(_on_resize); _on_resize()
@@ -114,6 +114,11 @@ func _smoke() -> void:
 		Store.settings.toyMode = k; command("start 9"); command("sim 2")
 		print("smoke: stage 5 %s %s, %d enemies, %d allies" % [k, state, enemies.list.size(), game.tm.allies.size() if game.tm != null else -1])
 	Store.settings.toyMode = was
+	var was_r := Realm.picked()
+	for k in ["sanctum", "siege"]:   # stage 6's team battles
+		Store.settings.realmMode = k; command("start 10"); command("sim 2")
+		print("smoke: stage 6-1 %s %s, %d fighters" % [k, state, game.rm.all.size() if game.rm != null else -1])
+	Store.settings.realmMode = was_r
 	to_menu(); print("smoke: ok"); get_tree().quit(0)
 
 func apply_settings() -> void:
@@ -354,8 +359,14 @@ static func insets_of(safe: Rect2, win: Vector2, scale: float) -> Array:
 	return [maxf(0.0, safe.position.x * k), maxf(0.0, safe.position.y * k), maxf(0.0, (win.x - safe.end.x) * k), maxf(0.0, (win.y - safe.end.y) * k)]
 
 ## the round buttons on the right: [centre, radius, label] (a little smaller and closer on a very short screen)
-func _touch_buttons() -> Dictionary: return touch_buttons_for(hud.size, safe_in, player.jet_on)
-static func touch_buttons_for(s: Vector2, ins: Array, jet: bool) -> Dictionary:
+func _touch_buttons() -> Dictionary:
+	var b := touch_buttons_for(hud.size, safe_in, player.jet_on, game.rm != null)
+	if game.rm != null and game.rm.me != null:   # (a realm battle: what is not ready shows its seconds)
+		var q: Array = hud.realm.chips(game.rm, game.rm.me)
+		for it: Array in [["skill", 1, "이동기"], ["bomb", 2, "폭탄"], ["swap", 4, "튕기기"], ["ult", 5, "비기"]]:
+			if float(q[it[1]][2]) < 1.0 or it[0] == "ult": b[it[0]][2] = str(it[2]) + " " + str(q[it[1]][3])
+	return b
+static func touch_buttons_for(s: Vector2, ins: Array, jet: bool, realm := false) -> Dictionary:
 	var short := s.y <= 340.0
 	var at := func(right: float, bottom: float, d: float) -> Vector2: return Vector2(s.x - right - ins[2] - d / 2.0, s.y - bottom - ins[3] - d / 2.0)
 	var b := {}
@@ -366,6 +377,10 @@ static func touch_buttons_for(s: Vector2, ins: Array, jet: bool) -> Dictionary:
 		b = {"fire": [at.call(28, 120, 84), 42.0, "사격"], "ads": [at.call(128, 170, 54), 27.0, "조준"], "jump": [at.call(128, 100, 54), 27.0, "점프"], "melee": [at.call(128, 30, 54), 27.0, "근접"],
 			"reload": [at.call(52, 220, 54), 27.0, "장전"], "swap": [at.call(116, 240, 54), 27.0, "교체"]}
 	if jet: b["down"] = [at.call(200, 96, 60), 30.0, "내려가기"]
+	if realm:   # a realm battle: the same six, named for what they do there, and three more beside them
+		b.fire[2] = "공격"; b.ads[2] = "특수"; b.melee[2] = "단검"; b.swap[2] = "튕기기"
+		if short: b.merge({"skill": [at.call(180, 28, 50), 25.0, "이동기"], "bomb": [at.call(180, 90, 50), 25.0, "폭탄"], "ult": [at.call(180, 152, 50), 25.0, "비기"]})
+		else: b.merge({"skill": [at.call(198, 30, 54), 27.0, "이동기"], "bomb": [at.call(198, 100, 54), 27.0, "폭탄"], "ult": [at.call(198, 170, 54), 27.0, "비기"]})
 	return b
 
 ## the pill buttons low in the middle: the antidote (while infected or poisoned), getting on or the hall's key, getting off.
@@ -383,6 +398,7 @@ func _touch_pills(all := false) -> Dictionary:
 	if all or (enemies.animals.m != null and enemies.animals.target != null): p["off"] = [pill.call("내리기", 76, 40, 18, 13, row + 64.0), "내리기"]
 	if game.tm != null and game.tm.key == "freeze" and not all:   # bedtime: the soda cans left
 		var ct := "탄산 캔 %d" % game.tm.mode.cans; p["can"] = [pill.call(ct, 16, 46, 22, 15, row + 116.0), ct]
+	if game.rm != null and game.rm.mode.altar_ok() and not all: p["altar"] = [pill.call("룬 제단", 16, 46, 22, 15, row + 116.0), "룬 제단"]   # (a realm battle's preparation)
 	if game.has_flask() and not all:   # stage 6: the alchemist's bomb (the seconds left while it is not ready)
 		var ft := "연금술 폭탄" if game.flask_cd <= 0.0 else "연금술 폭탄 %d초" % ceili(game.flask_cd); p["flask"] = [pill.call(ft, 16, 46, 22, 15, row + 116.0), ft]
 	return p
@@ -426,7 +442,7 @@ func _set_state(s: String) -> void:
 	hud.visible = s == "playing" or s == "down"; touch_ui.visible = s == "playing" and look_mode == "touch"   # (fallen: the screen as it was, the touch controls gone, as there)
 	if s != "playing" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	joy = Vector2.ZERO; joy_id = -1; look_id = -1; fire_id = -1; pad_sprint = false
-	set_meta("jump_id", -1); set_meta("down_id", -1)   # (the jump and down buttons let go too: a finger lifted meanwhile never reaches them)
+	set_meta("jump_id", -1); set_meta("down_id", -1); set_meta("alt_id", -1)   # (the jump and down buttons let go too: a finger lifted meanwhile never reaches them)
 	if player: player.in_up = false; player.in_down = false
 	if guns: guns.trigger = false; guns.ads_held = false
 	if view: view.visible = s == "playing" or s == "paused" or s == "down"
@@ -496,6 +512,16 @@ func open_map(from: String) -> void:
 	if state == "playing": _set_state("paused")
 	ui.back_stack.clear(); ui.open_map(look_mode == "touch")
 
+## the rune altar, over the paused fight (a realm battle's preparation only)
+func open_altar() -> void:
+	if state != "playing" or game.rm == null: return
+	if not game.rm.mode.altar_ok(): hint("룬 제단은 준비 시간에만 열 수 있습니다", 1.6); return
+	guns.trigger = false; _set_state("paused"); ui.back_stack.clear(); ui.open_altar()
+
+func close_altar() -> void:
+	if ui.cur != "altar": return
+	resume_game()
+
 func close_map() -> void:
 	if ui.cur != "map": return
 	var from := map_from; map_from = ""
@@ -530,6 +556,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		if e.physical_keycode == KEY_F3 or e.physical_keycode == KEY_QUOTELEFT: Store.settings.fps = not Store.settings.fps; Store.persist_settings()  # some browsers keep F3 for themselves: the ` key does the same
 		elif state == "playing":
 			if e.physical_keycode == KEY_SPACE: player.jump_buf = 0.15; player.jet_tap(Time.get_ticks_msec() / 1000.0)
+			if game.rm != null and realm_key(e.physical_keycode): return   # (a realm battle has its own keys)
 			if e.physical_keycode == KEY_R: guns.start_reload()
 			if e.physical_keycode == KEY_V: guns.melee_start()
 			if e.physical_keycode == KEY_F: game.use_antidote()
@@ -542,6 +569,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
 			if e.physical_keycode == KEY_M: open_map("play")
 		elif state == "paused" and ui.cur == "map" and (e.physical_keycode == KEY_M or e.physical_keycode == KEY_ESCAPE): close_map()
+		elif state == "paused" and ui.cur == "altar" and (e.physical_keycode == KEY_B or e.physical_keycode == KEY_ESCAPE): close_altar()
 		elif state == "paused" and ui.cur == "pause" and e.physical_keycode == KEY_M: open_map("pause")
 		elif state == "paused" and ui.cur == "pause" and (e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P): resume_game()
 		elif e.physical_keycode == KEY_ESCAPE and not ui.back_stack.is_empty(): ui.back()   # (the weapon layout through its check)
@@ -578,14 +606,25 @@ func _unhandled_input(e: InputEvent) -> void:
 					if look_id < 0: look_id = e.index
 				"jump": player.jump_buf = 0.15; player.jet_tap(Time.get_ticks_msec() / 1000.0); player.in_up = true; set_meta("jump_id", e.index)
 				"down": player.in_down = true; set_meta("down_id", e.index)
-				"ads": guns.ads_held = not guns.ads_held
-				"reload": guns.start_reload()
-				"melee": guns.melee_start()
+				"ads":
+					if game.rm != null: guns.ads_held = true; set_meta("alt_id", e.index)   # (a realm battle: held, as the right button is)
+					else: guns.ads_held = not guns.ads_held
+				"reload":
+					if game.rm != null: game.rm.press["reload"] = true
+					else: guns.start_reload()
+				"melee":
+					if game.rm != null: game.rm.press["slash"] = true
+					else: guns.melee_start()
+				"skill", "bomb", "ult":
+					if game.rm != null: game.rm.press[hit] = true
+				"altar": open_altar()
 				"anti": game.use_antidote()
 				"car":
 					if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
 				"off": enemies.animals.ride_off(false)
-				"swap": guns.cycle(1)
+				"swap":
+					if game.rm != null: game.rm.press["parry"] = true
+					else: guns.cycle(1)
 				"can": if game.tm != null and game.tm.key == "freeze": game.tm.mode.throw_can()
 				"flask": game.throw_flask()
 			if hit != "": touch_ui.queue_redraw(); return
@@ -600,6 +639,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.index == look_id: look_id = -1
 			if e.index == fire_id: fire_id = -1; guns.trigger = false
 			if e.index == get_meta("jump_id", -1): player.in_up = false; set_meta("jump_id", -1)
+			if e.index == get_meta("alt_id", -1): guns.ads_held = false; set_meta("alt_id", -1)
 			if e.index == get_meta("down_id", -1): player.in_down = false; set_meta("down_id", -1)
 		touch_ui.queue_redraw()
 	if e is InputEventScreenDrag:
@@ -631,6 +671,7 @@ func tick(dt: float) -> void:
 
 func _tick(dt: float) -> void:
 	time += dt
+	if game.rm != null and game.rm.cam == null: game.rm.cam = cam
 	_read_keys(); player.update(dt, cam, time)
 	if world.toy: world.toy.update(dt, player)
 	if world.wood: world.wood.update(dt, player)   # (stage 6-1: the wind path, the moonwell, the portals and the rest)
@@ -644,6 +685,24 @@ func _tick(dt: float) -> void:
 			fx.glow(Vector3(player.pos.x + sin(player.yaw) * 0.3, player.pos.y + 0.7, player.pos.z + cos(player.yaw) * 0.3), Vector3(0, -4, 0), 0.25, 0.25, 0.05, Color(1, 0.6, 0.25, 0.8), 0.0, 1.0)
 	var an := enemies.animals; an.find_t -= dt   # what you could get on (E or the touch button), looked for a few times a second
 	if an.find_t <= 0.0: an.find_t = 0.15; an.target = an.ride_find() if world.style.get("ride", false) else null
+
+## a realm battle's keys: R load, V the dagger, F the parry, Shift your people's step, Q (or G) a bomb, X the ultimate,
+## B the rune altar while the round is being made ready. true: the key was the battle's
+func realm_key(k: int) -> bool:
+	var rm: Realm = game.rm
+	match k:
+		KEY_R: rm.press["reload"] = true
+		KEY_V: rm.press["slash"] = true
+		KEY_F: rm.press["parry"] = true
+		KEY_SHIFT: rm.press["skill"] = true
+		KEY_G: rm.press["bomb"] = true
+		KEY_Q:
+			if look_mode == "drag": return false   # (Q turns you there)
+			rm.press["bomb"] = true
+		KEY_X: rm.press["ult"] = true
+		KEY_B: open_altar()
+		_: return false
+	return true
 
 ## a cutscene's frame: the world moves (lamps, the lab's monkey and beacons, the ship's airlock), the fight does not
 func _cut_step(dt: float) -> void:
