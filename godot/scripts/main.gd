@@ -337,9 +337,10 @@ func _ride_act() -> String:
 	return "내리기" if an.m != null else ""
 
 ## the touch layout of the browser game: the D-pad at the left middle, the pause button top left, the map top right
-func _touch_rects() -> Dictionary: return touch_rects_for(hud.size, safe_in)
-static func touch_rects_for(s: Vector2, ins: Array) -> Dictionary:
-	return {"pad": Rect2(10 + ins[0], s.y / 2.0 - 78.0, 156, 156), "pause": Rect2(16 + ins[0], 14 + ins[1], 42, 42), "map": Rect2(s.x - 14.0 - 46.0 - ins[2], 14 + ins[1], 46, 46)}
+## (in the toy room the map button is the little paper map itself, a little bigger: ToyHud.touch_map)
+func _touch_rects() -> Dictionary: return touch_rects_for(hud.size, safe_in, game.stage == Store.ST_TOY)
+static func touch_rects_for(s: Vector2, ins: Array, toy := false) -> Dictionary:
+	return {"pad": Rect2(10 + ins[0], s.y / 2.0 - 78.0, 156, 156), "pause": Rect2(16 + ins[0], 14 + ins[1], 42, 42), "map": ToyHud.touch_map(s, ins) if toy else Rect2(s.x - 14.0 - 46.0 - ins[2], 14 + ins[1], 46, 46)}
 
 ## the phone app's safe area (a camera hole in the screen, which Android lets the game draw round): how far in from the left,
 ## top, right and bottom the touch controls keep, in the UI's units. Nothing anywhere else (a phone's browser keeps the page
@@ -410,6 +411,7 @@ func _draw_touch() -> void:
 		touch_ui.draw_string(f_bold, Vector2(pr.position.x, pr.get_center().y + 5), q[1], HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 13 if k == "off" else 15, NIGHT if k == "car" else INK)
 	var q2: Rect2 = r.pause; touch_ui.draw_style_box(_sbox(Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.45), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35), 4), q2)
 	touch_ui.draw_string(f_mono, Vector2(q2.position.x, q2.get_center().y + 5), "II", HORIZONTAL_ALIGNMENT_CENTER, q2.size.x, 13, INK)
+	if game.stage == Store.ST_TOY: return   # (the toy room's paper map is the map button: ToyHud draws it)
 	var mq: Rect2 = r.map; touch_ui.draw_style_box(_sbox(Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.45), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.35), 6), mq)
 	touch_ui.draw_string(f_bold, Vector2(mq.position.x, mq.get_center().y + 5), "지도", HORIZONTAL_ALIGNMENT_CENTER, mq.size.x, 12, INK)
 
@@ -660,7 +662,7 @@ static func music_for(st: String, toy: bool, tm, ended: bool, pos: Vector3, out:
 	var ot := false
 	if tm != null and not ended:
 		var tl: float = tm.mode.time_left
-		ot = (tl > 0.0 and tl <= Music.OT_AT) or bool(tm.mode.get("overtime"))
+		ot = (tl > 0.0 and tl <= Music.OT_AT) or tm.mode.get("overtime") == true   # (only the escort has an overtime: the others have no such word)
 	return {"what": "march", "paused": st == "paused", "spawn": out, "bed": ToyRoom.under_bed(pos), "near": near, "shots": shots, "hp": hp, "ot": ot, "teams": tm != null}
 
 var hold := false

@@ -42,6 +42,8 @@ def tone(kind, f0, f1, dur, gain, delay=0.0):
     return delay, out
 
 N, T = noise, tone
+BELL = (2090.0, 2480.0)                                  # the alarm clock's two bells
+RING = lambda i: 1.0 if i < 24 else (32 - i) / 8.0       # ...its last strokes fading
 SOUNDS = {
     # ---- stage 5, the toy room: plastic, springs, rubber bands, water. no real gunfire ----
     # foam-dart blaster: a puff of compressed air and the trigger spring; the dart bounces off with a soft 'tong'
@@ -84,6 +86,14 @@ SOUNDS = {
     'toy_shot_flame': lambda: [N(0.16, 'bandpass', 1800, 2600, 0.6, 0.45), N(0.16, 'lowpass', 600, 400, 0.6, 0.3)],
     'toy_ruler': lambda: [N(0.03, 'bandpass', 2200, 1300, 1.5, 0.9), T('square', 900, 420, 0.04, 0.25), T('sine', 260, 150, 0.06, 0.3)],
     'toy_click': lambda: [N(0.03, 'bandpass', 1900, 1200, 2, 0.5), T('square', 720, 480, 0.025, 0.12)],
+    # ---- the toy room's screens (new sounds go here, at the end: the ones above keep their noise) ----
+    # the twin-bell alarm clock of the last 30 seconds: its hammer between two bells, 23 strokes a second, dying away
+    'toy_alarm': lambda: [T('sine', BELL[i % 2], BELL[i % 2] * 0.996, 0.07, 0.85 * RING(i), i * 0.043) for i in range(32)]
+        + [T('sine', BELL[i % 2] * 2.76, BELL[i % 2] * 2.74, 0.04, 0.3 * RING(i), i * 0.043) for i in range(32)]
+        + [N(0.012, 'highpass', 5200, 3600, 1, 0.4 * RING(i), i * 0.043) for i in range(32)],
+    # a package torn open at the toy shop's shelf: the card ripping in a stutter that rises, then the bubble's pop
+    'toy_rip': lambda: [N(0.022, 'bandpass', 2200 + i * 90, 3000 + i * 90, 1.2, 0.85, i * 0.0125) for i in range(22)]
+        + [N(0.3, 'highpass', 3000, 5200, 0.7, 0.45), T('sine', 720, 300, 0.06, 0.7, 0.3), N(0.04, 'lowpass', 1500, 400, 0.8, 0.4, 0.3)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]

@@ -171,6 +171,27 @@ func _ready() -> void:
 	Store.save.loadout = lo_keep; await _esc()
 	check("in a fight the emptied weapon layout stays open by the phone's back button and by Esc (as by 완료); with a gun put back, Esc shuts it",
 		by_back == "loadout" and by_esc == "loadout" and ui.cur == "pause", [by_back, by_esc, ui.cur])
+	# the toy room on the phone: its modes are packages on a shelf (a tap tears one open), and in the fight the paper map is the map button
+	main.to_menu(); await _frames(); Store.settings.toyMode = "sweep"; ui.open_brief(9); await _frames(4)
+	var packs: Array = ui.br_modes.get_children().filter(func(c): return c.has_meta("mode")); var view := Rect2(Vector2.ZERO, ui.size); var shelf_rows := {}; var in_sight := true
+	for c in packs: shelf_rows[roundi((c as Control).global_position.y)] = true; in_sight = in_sight and view.encloses((c as Control).get_global_rect())
+	Snd.keep_log = true; Snd.played.clear(); var rush_pack: Control = packs.filter(func(c): return c.get_meta("mode") == "rush")[0]
+	await _tap(rush_pack.get_global_rect().get_center()); await _frames(4); Snd.keep_log = false
+	check("stage 5's briefing on the phone: the four modes are packages on one shelf, all in sight; a tap on one tears it open (the rip) and the room is built for that mode",
+		packs.size() == 4 and shelf_rows.size() == 1 and in_sight and Store.settings.toyMode == "rush" and main.game.tm != null and main.game.tm.key == "rush" and Snd.played.has("toy_rip") and ui.br_title.text.contains("배터리 쟁탈전"),
+		[packs.size(), shelf_rows.size(), in_sight, Store.settings.toyMode, ui.br_title.text])
+	main.command("start 9"); await get_tree().create_timer(0.8).timeout; await _tap(Vector2(450, 200)); await get_tree().create_timer(0.2).timeout
+	var paper: Rect2 = main._touch_rects().map; var lay: Dictionary = ToyHud.layout(main.hud.size, true, main.safe_in); var under: Array = []
+	var ctl: Dictionary = main.command("touchlayout")   # (every touch control with all its pills out, as rectangles)
+	for k in ctl:
+		if k == "size" or k == "map": continue
+		var ctl_r := Rect2(ctl[k][0], ctl[k][1], ctl[k][2], ctl[k][3])
+		for piece in ["battery", "tray", "map"]:
+			if (lay[piece] as Rect2).intersects(ctl_r): under.push_back([piece, k])
+	await _tap(paper.get_center()); await _frames(4); var map_open: bool = ui.cur == "map"
+	check("in the toy room's fight the paper map at the top right is the map button (a tap on it opens the tactical map), and the battery, the tray and the map lie under none of the touch controls",
+		paper == lay.map and paper.size.x > 46.0 and map_open and under.is_empty(), [paper, ui.cur, under])
+	if map_open: main.close_map(); await _frames()
 	main.to_menu(); Store.save = keep_save; Store.settings = keep_settings; Store.persist(); Store.persist_settings()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)

@@ -26,6 +26,52 @@ class MapRec:
 			var col: Color = c[2]
 			if (absf(r - 3.2) < 1e-3 or absf(r - 4.2) < 1e-3 or absf(r - 5.5) < 1e-3 or absf(r - 7.0) < 1e-3) and col.a > 0.4 and not col.is_equal_approx(Color(58 / 255.0, 74 / 255.0, 34 / 255.0, 0.85)): n += 1   # (not a tree)
 		return n
+## stands in for the control the fight's screen is drawn on: keeps what was drawn (the words and the font they were in,
+## the round marks, the boxes and the rounded pieces) and counts the rest
+class DrawRec:
+	var size := Vector2(1280, 720)
+	var texts: Array = []      # [words, font, size, colour]
+	var circles: Array = []    # [middle, radius, colour]
+	var rects: Array = []      # [rectangle, colour]
+	var boxes: Array = []      # [style box, rectangle]
+	var blits: Array = []      # rectangles cut from a picture: [rectangle, the part cut, colour, the picture]
+	var order := ""            # "b" for a rectangle off a picture, "t" for words, in the order drawn
+	var polys := 0; var lines := 0; var arcs := 0; var xforms := 0; var textures := 0
+	func draw_rect(r: Rect2, c: Color, _f := true, _w := -1.0, _aa := false) -> void: rects.push_back([r, c])
+	func draw_circle(p: Vector2, r: float, c: Color, _f := true, _w := -1.0, _aa := false) -> void: circles.push_back([p, r, c])
+	func draw_arc(_c: Vector2, _r: float, _a0: float, _a1: float, _n: int, _col: Color, _w := -1.0, _aa := false) -> void: arcs += 1
+	func draw_line(_a: Vector2, _b: Vector2, _c: Color, _w := -1.0, _aa := false) -> void: lines += 1
+	func draw_dashed_line(_a: Vector2, _b: Vector2, _c: Color, _w := -1.0, _d := 2.0, _al := true, _aa := false) -> void: lines += 1
+	func draw_polyline(_p: PackedVector2Array, _c: Color, _w := -1.0, _aa := false) -> void: lines += 1
+	func draw_polyline_colors(_p: PackedVector2Array, _c: PackedColorArray, _w := -1.0, _aa := false) -> void: lines += 1
+	func draw_polygon(_p: PackedVector2Array, _c: PackedColorArray, _uv := PackedVector2Array(), _t = null) -> void: polys += 1
+	func draw_colored_polygon(_p: PackedVector2Array, _c: Color, _uv := PackedVector2Array(), _t = null) -> void: polys += 1
+	func draw_string(f: Font, _p: Vector2, t: String, _a := 0, _w := -1.0, sz := 16, m := Color.WHITE) -> void: texts.push_back([t, f, sz, m]); order += "t"
+	func draw_string_outline(_f: Font, _p: Vector2, _t: String, _a := 0, _w := -1.0, _s := 16, _o := 1, _m := Color.WHITE) -> void: pass
+	func draw_style_box(sb: StyleBox, r: Rect2) -> void: boxes.push_back([sb, r])
+	func draw_texture_rect(t: Texture2D, r: Rect2, _tile: bool, m := Color.WHITE, _tr := false) -> void: textures += 1; blits.push_back([r, Rect2(), m, t]); order += "b"
+	func draw_texture_rect_region(t: Texture2D, r: Rect2, src: Rect2, m := Color.WHITE, _tr := false, _clip := true) -> void: textures += 1; blits.push_back([r, src, m, t]); order += "b"
+	func draw_set_transform(_p: Vector2, _r := 0.0, _s := Vector2.ONE) -> void: xforms += 1
+	func draw_set_transform_matrix(_x: Transform2D) -> void: xforms += 1
+	func has(t: String) -> bool: return texts.any(func(q): return q[0] == t)
+	## the sheet's pieces put down: a named shape (in a colour, if given), a picture
+	func spr_of(name: String, c = null) -> int: return blits.filter(func(q): return q[1] == ToyKit.SPR[name] and (c == null or (q[2] as Color).is_equal_approx(c))).size()
+	func tex_of(t: Texture2D) -> int: return blits.filter(func(q): return q[3] == t).size()
+	## how many times the drawing went from shapes to words or back (each is a call of its own to the renderer)
+	func switches() -> int:
+		var n := 0
+		for i in range(1, order.length()):
+			if order[i] != order[i - 1]: n += 1
+		return n
+
+## stands in for Main where the fight's screen asks it things: the game's parts, the fonts, the look mode, the phone's edges
+class HudMain:
+	var game: Game; var player: Player; var guns: Guns; var enemies: Enemies; var world: World; var loot; var proj; var cam: Camera3D; var hud = null
+	var state := "playing"; var time := 0.0; var look_mode := "mouse"; var safe_in := [0.0, 0.0, 0.0, 0.0]
+	var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
+	func key_hint() -> String: return ""
+	func get_process_delta_time() -> float: return 1.0 / 60.0
+
 func check(name: String, ok: bool, info = "") -> void:
 	print(("ok   " if ok else "FAIL ") + name + ((" " + str(info)) if str(info) != "" else ""))
 	if not ok: fails += 1
@@ -1028,6 +1074,7 @@ func _ready() -> void:
 	_aim_clear()
 	_corpse_shot(gm, en, pl, g, cam)
 	_lmg_sound()
+	_toy_screen(gm, en, pl, g, pr, w, cam, lt)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -2909,3 +2956,178 @@ func _lmg_sound() -> void:
 	var rifle := _pitch_of("res://sounds/shot_rifle.wav")
 	check("the machine gun's shot is lower, duller and quieter than before (the owner's wish): four takes, each sitting far below the rifle's (no bright crack, no clack of the belt), lower at its peak and short",
 		takes.size() == 4 and takes.all(func(t: Vector3) -> bool: return t.x < 600.0 and t.y < rifle.y * 0.7 and t.z < 0.35) and rifle.x > 1500.0, [takes, rifle])
+
+# ---------------- stage 5's own screen: the toy room's things on the glass (scripts/toyhud.gd, scripts/toykit.gd) ----------------
+func _toy_screen(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, lt) -> void:
+	var save0: Dictionary = (Store.save as Dictionary).duplicate(true); var set0: Dictionary = (Store.settings as Dictionary).duplicate(true); var feed0: Callable = gm.feed
+	var M := HudMain.new(); M.game = gm; M.player = pl; M.guns = g; M.enemies = en; M.world = w; M.loot = lt; M.proj = pr; M.cam = cam
+	M.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); M.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+	M.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); M.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
+	var H := Hud.new(); H.m = M; var T: ToyHud = H.toy; T.m = M; var hand := ToyKit.hand(); var mn = load("res://scripts/main.gd")
+	# ---- only the toy room's ----
+	Store.settings.toyMode = "sweep"; Store.save.items = Store.save0().items; gm.begin(1); pl.reset(0, 6, 0.0); H.reset(); H.update(0.016); var r1 := DrawRec.new(); H.draw(r1)
+	gm.begin(9); pl.chute = false; H.reset(); H.update(0.016); var r9 := DrawRec.new(); H.draw(r9)
+	check("the toy room's screen is its own: stage 1's is drawn as it was (its box, 체력, the bag in the game's fonts, no piece of the toy kit), stage 5's all in the hand, with the battery, the tray, the paper map",
+		r1.has("체력") and r1.has("스테이지") and r1.has("가방") and r1.boxes.is_empty() and r1.xforms == 0 and r1.textures == 0 and not r1.texts.any(func(q): return q[1] == hand)
+		and r9.has("체력") and r9.has("AA") and r9.has("다트 권총") and not r9.has("스테이지") and r9.tex_of(ToyHud.plan_tex()) == 1 and r9.tex_of(ToyKit.kraft_tex()) == 1 and r9.texts.all(func(q): return q[1] == hand),
+		[r1.boxes.size(), r1.xforms, r1.textures, r9.textures, r9.texts.filter(func(q): return q[1] != hand).map(func(q): return q[0])])
+	# what it costs to draw: rectangles off one sheet and words, nothing the renderer has to send off one by one
+	var sh := ToyKit.sheet_image(); var dsc: Rect2 = ToyKit.SPR.disc; var stp: Rect2 = ToyKit.SPR.star
+	var sheet_ok := sh.get_size() == ToyKit.SHEET and sh.has_mipmaps() and sh.get_pixel(int(dsc.position.x) + 32, int(dsc.position.y) + 32).a == 1.0 and sh.get_pixel(int(dsc.position.x) + 1, int(dsc.position.y) + 1).a == 0.0 \
+		and sh.get_pixel(int(stp.position.x) + 32, int(stp.position.y) + 30).a == 1.0 and sh.get_pixel(7, 7) == Color.WHITE and sh.get_pixel(100, 100).a == 0.0 and ToyKit.sheet() == ToyKit.sheet()
+	var rb_cost := DrawRec.new(); T.battery(rb_cost, rb_cost.size, false, []); var rt_cost := DrawRec.new(); T.tray(rt_cost, rt_cost.size, false)
+	check("the toy screen is put down as rectangles off one small sheet of white shapes (a disc, a ring, a star, round corners...) and words: in the sweep no polygon, circle, arc, line or stretching box at all, and each piece's words after its shapes (a piece of it: one change from shapes to words)",
+		sheet_ok and r9.polys == 0 and r9.circles.is_empty() and r9.arcs == 0 and r9.lines == 0 and r9.rects.is_empty() and r9.boxes.is_empty() and r9.spr_of("disc") > 20 and r9.spr_of("px") > 40
+		and rb_cost.switches() == 1 and rt_cost.switches() == 1 and rb_cost.order.begins_with("b") and rb_cost.order.ends_with("t"), [sheet_ok, r9.polys, r9.circles.size(), r9.arcs, r9.lines, r9.rects.size(), rb_cost.switches(), rt_cost.switches()])
+	# ---- health: the charge strip on an AA battery ----
+	var cell := Color("5fe07a")
+	pl.hp = Player.MAX_HP; H.ghost = 1.0; var rb := DrawRec.new(); T.battery(rb, rb.size, false, [])
+	pl.hp = Player.MAX_HP * 0.55; H.ghost = 0.55; var rb2 := DrawRec.new(); T.battery(rb2, rb2.size, false, [])
+	pl.hp = Player.MAX_HP * 0.18; H.ghost = 0.18; T.t = 0.0; var rb3 := DrawRec.new(); T.battery(rb3, rb3.size, false, [])
+	check("health is the charge strip on an AA battery: ten green cells full, six at 55 %; from 20 % down the cells left are red (blinking) and the LOW BATTERY sticker is on it",
+		rb.spr_of("px", cell) == 10 and rb2.spr_of("px", cell) == 6 and ToyHud.cells_lit(100.0) == 10 and ToyHud.cells_lit(20.0) == 2 and ToyHud.cells_lit(0.4) == 1 and ToyHud.cells_lit(0.0) == 0
+		and not rb.has("LOW BATTERY") and not rb2.has("방전 경고") and rb3.has("LOW BATTERY") and rb3.has("방전 경고") and rb3.spr_of("px", ToyKit.RED) == 2 and rb3.spr_of("px", cell) == 0 and rb3.has(str(ceili(pl.hp))),
+		[rb.spr_of("px", cell), rb2.spr_of("px", cell), rb3.spr_of("px", ToyKit.RED)])
+	Store.save.items.vest = 6; Store.save.items.jet = 1; Store.save.items.helmet = 1; pl.hp = Player.MAX_HP; H.ghost = 1.0
+	var ri := DrawRec.new(); T.battery(ri, ri.size, false, H._items(false)); var gone_blocks := ri.spr_of("px", Color(0, 0, 0, 0.22))
+	check("above it what you carry: the vest as spare building blocks (six left of ten), the jetpack as a wind-up dial with how to start it, the helmet a sticker",
+		gone_blocks == 4 and ri.has("조끼") and ri.has("헬멧") and ri.has("Space 두 번") and ri.spr_of("bar") >= 10, [gone_blocks, ri.spr_of("bar"), ri.texts.map(func(q): return q[0])])
+	Store.save.items = Store.save0().items
+	# ---- the rounds in their tray ----
+	var caps_ok := true
+	for id: String in Toys.ORDER:
+		var Wd: Dictionary = Weapons.LIST[id] if Weapons.LIST.has(id) else Weapons.EXTRA[id]; var Tr: Dictionary = ToyKit.TRAY[id]
+		caps_ok = caps_ok and int(Tr.cols) * int(Tr.rows) * int(Tr.per) == int(Wd.mag) and ToyHud.CROSS.has(id) and int(ToyHud.tray_state(id, float(Wd.mag), float(Wd.mag)).full) == int(Tr.cols) * int(Tr.rows)
+	var lm := ToyHud.tray_state("lmg", 100.0, 240.0); var big := ToyHud.tray_state("rifle", 45.0, 60.0)
+	check("the rounds lie in a tray, each toy its own (darts, drops, caps, tacks, balls, bands, a rocket, puffs): the pockets hold the magazine exactly, the gatling's 240 bands eight to a pocket, a longer magazine more to each",
+		caps_ok and ToyKit.TRAY.size() == 9 and int(lm.full) == 12 and is_equal_approx(float(lm.part), 0.5) and int(lm.per) == 8 and int(big.per) == 2 and int(big.full) == 22 and is_equal_approx(float(big.part), 0.5), [caps_ok, lm, big])
+	gm.begin(9); pl.chute = false; H.reset(); g.cur = "rifle"; g.pending = null; g.reload_t = 0.0; g.st().mag = 30; T.update(0.016); var l0 := T.flown.size()
+	g.st().mag = 29; T.update(0.016); var fl := T.flown.size(); var f0: Dictionary = (T.flown[0] as Dictionary).duplicate() if fl > 0 else {}; var ro := DrawRec.new(); T.over(ro, ro.size, false)
+	var tray_at: Rect2 = ToyHud.layout(Vector2(1280, 720), false).tray; var from_tray := tray_at.grow(4.0).has_point(f0.get("p", Vector2.ZERO))
+	for i in 30: T.update(0.02)
+	var fl_end := T.flown.size()
+	g.st().mag = 10; T.update(0.016); T.flown.clear(); g.reload_t = float(g.w().reload) * 0.5; g.st().mag = 12; T.update(0.016); var l3 := T.flown.size()   # (a reload on its way)
+	var rl := DrawRec.new(); T.tray(rl, Vector2(914, 411), true); var darts := rl.spr_of("disc", ToyKit.ORANGE); g.reload_t = 0.0
+	check("a shot takes a round out of the tray's last pocket and it flies off; a reload fills the pockets back one after another (half way through, with 12 in it: 21 of the blaster's 30 darts)",
+		l0 == 0 and fl == 1 and f0.get("icon") == "dart2" and f0.get("pocket") == 29 and from_tray and ro.spr_of("disc", ToyKit.ORANGE) == 1 and fl_end == 0 and l3 == 0 and darts == 21, [l0, fl, f0, fl_end, l3, darts])
+	# ---- the clock and the boards ----
+	var tops := {}
+	for k: String in ["rush", "escort", "freeze"]: Store.settings.toyMode = k; gm.begin(9); tops[k] = ToyHud.top_model(gm.tm.mode.hud_cells())
+	Store.settings.toyMode = "escort"; gm.begin(9); gm.tm.mode.overtime = true; var ot: Dictionary = ToyHud.top_model(gm.tm.mode.hud_cells())
+	var sw: Dictionary = ToyHud.top_model([["스테이지", "5", Color.WHITE], ["처치", "12 / 100", ToyKit.INK], ["가방", "0원", ToyKit.INK]])
+	check("the box at the top is sorted into the toy screen's pieces: the clock, our flip board and theirs, small tags, the bag (the sweep's kills take our board; the escort's overtime is on the clock's tag)",
+		tops.rush.time.label == "전원" and tops.rush.us.label == "아군 로봇" and str(tops.rush.us.tail).begins_with("/") and tops.rush.them.label == "상대 로봇" and tops.rush.tags.is_empty() and str(tops.rush.money).ends_with("원")
+		and tops.escort.us.tail == "%" and tops.escort.them == null and tops.escort.tags[0][0] == "체크포인트" and tops.freeze.us.label == "아군" and tops.freeze.them.label == "상대" and tops.freeze.tags[0][0] == "목표"
+		and ot.time.text == "연장전" and sw.time == null and int(sw.us.n) == 12 and sw.us.tail == "/100" and sw.us.col == ToyKit.YELLOW and sw.them == null, [tops.rush, tops.escort, sw])
+	Store.settings.toyMode = "rush"; gm.begin(9); H.reset(); Snd.keep_log = true; Snd.played.clear()
+	gm.tm.mode.time_left = 200.0; T.update(0.016); var full := T.dial_full; gm.tm.mode.time_left = 31.0; T.update(0.016); var r31 := T.ringing
+	gm.tm.mode.time_left = 30.0; T.update(0.016); var r30 := T.ringing; gm.tm.mode.time_left = 12.0; T.update(0.016); T.update(0.016)
+	var rings := Snd.played.filter(func(n): return n == "toy_alarm").size(); gm.ended = true; T.update(0.016); var r_end := T.ringing; gm.ended = false
+	Store.settings.toyMode = "sweep"; gm.begin(9); H.reset(); T.update(0.016); var r_sweep := T.ringing; var no_clock := T.time_left(); Snd.keep_log = false
+	check("the alarm clock: its dial's full turn is the longest time it has shown; it rings through the last 30 seconds (the bell once), not after the end, never in the sweep (which has no time to run down)",
+		is_equal_approx(full, 200.0) and not r31 and r30 and rings == 1 and not r_end and not r_sweep and no_clock == -1.0 and ResourceLoader.exists("res://sounds/toy_alarm.wav") and ResourceLoader.exists("res://sounds/toy_rip.wav"),
+		[full, r31, r30, rings, r_end, r_sweep, no_clock])
+	Store.settings.toyMode = "freeze"; gm.begin(9); pl.chute = false; H.reset(); T.update(0.016); var rf := DrawRec.new(); T.top(rf, rf.size, false)
+	var b0: Dictionary = (T.boards.us as Dictionary).duplicate(); gm.tm.score.us = 3; var rf2 := DrawRec.new(); T.top(rf2, rf2.size, false); var b1: Dictionary = (T.boards.us as Dictionary).duplicate()
+	T.update(0.16); var mid := float(T.boards.us.f); var rf3 := DrawRec.new(); T.top(rf3, rf3.size, false); T.update(0.2); var b2: Dictionary = T.boards.us
+	check("the scores are on flip boards: a new number turns the cards over (the old one until half way, then the new) in a third of a second",
+		int(b0.n) == 0 and float(b0.f) == 1.0 and int(b1.n) == 3 and int(b1.old) == 0 and float(b1.f) == 0.0 and mid > 0.5 and mid < 0.6 and float(b2.f) == 1.0 and rf.has("0") and not rf2.has("3") and rf3.has("3"), [b0, b1, mid, b2])
+	# ---- the kill lines ----
+	var lines: Array = []; gm.feed = func(tx: String, _p := 0, _r := false) -> void: lines.push_back(tx)
+	Store.settings.toyMode = "rush"; gm.begin(9); var e9: Enemies.Foe = en.list[0]; var nm9 := str(e9.T.name); gm.tm.on_kill(e9, false)
+	var e10: Enemies.Foe = en.list[1]; e10.k["by_ally"] = true; gm.tm.on_kill(e10, false); gm.tm.on_kill(en.list[2], true); gm.tm.ally_down(gm.tm.allies[0], "them")
+	var parts: Array = lines.map(func(tx): return ToyHud.kill_parts(tx)); gm.feed = feed0
+	check("the kill lines are told apart for the tape: who, whom and whether it was the head (your kill, one of ours', a head shot, one of ours down); any other line is left as it is",
+		parts.size() == 4 and parts[0] == ["나", nm9, false] and parts[1][0] == "아군" and parts[2][2] == true and parts[3] == ["상대", "아군 병정", false] and ToyHud.kill_parts("건전지를 떨어뜨렸습니다").is_empty(), [lines, parts])
+	H.reset(); H.say_feed("플라스틱 군인 · 머리 명중", 3000, true); H.say_feed("건전지를 떨어뜨렸습니다"); var rfd := DrawRec.new(); T.feed(rfd, rfd.size, false)
+	check("they go on strips of masking tape: the killer, a picture of the toy that did it, the one who fell, a star for the head and the pay on a sticker; any other line as it is",
+		rfd.has("나") and rfd.has("플라스틱 군인") and rfd.has("+" + Store.won(3000)) and rfd.has("건전지를 떨어뜨렸습니다") and not rfd.has("플라스틱 군인 · 머리 명중") and rfd.spr_of("zig") == 8 and rfd.spr_of("star") == 1
+		and rfd.switches() == 1, [rfd.texts.map(func(q): return q[0]), rfd.spr_of("zig"), rfd.spr_of("star"), rfd.switches()])
+	# ---- the little map ----
+	var img := ToyHud.plan_image(); var half := ToyRoom.HALF + 2.0
+	var at := func(x: float, z: float) -> Color:   # (the colour about a place: the crayon's strokes let the paper through)
+		var sum := Color(0, 0, 0, 0); var px := int((x + half) * ToyHud.PLAN_PX / (2.0 * half)); var pz := int((z + half) * ToyHud.PLAN_PX / (2.0 * half))
+		for dy in 9:
+			for dx in 9: sum += img.get_pixel(px - 4 + dx, pz - 4 + dy)
+		return sum / 81.0
+	var bed: Color = at.call(30.0, 0.0); var desk: Color = at.call(-42.0, -4.0); var bare: Color = at.call(0.0, 20.0)
+	Store.settings.toyMode = "rush"; gm.begin(9); pl.chute = false; H.reset(); T.update(0.016); var rm := DrawRec.new(); T.minimap(rm, rm.size, false)
+	var reds := rm.spr_of("disc", ToyKit.RED) + rm.spr_of("disc", Color(ToyKit.RED, 0.45)); var blues := rm.spr_of("disc", ToyKit.US)
+	check("the little map is the room in crayon on squared paper (the bed blue, the desk brown), made once; the toys are pushpins on it, theirs red and ours blue, with the mode's own marks",
+		img.get_width() == ToyHud.PLAN_PX and bed.b > bed.r + 0.15 and desk.r > desk.b + 0.15 and bare.r > 0.9 and bare.b > 0.85 and bare.r - bare.b < 0.1 and ToyHud.plan_tex() == ToyHud.plan_tex()
+		and reds == en.list.filter(func(e): return e.alive).size() and reds > 0 and blues == gm.tm.allies.size() and blues > 0 and rm.tex_of(ToyHud.plan_tex()) == 1 and rm.arcs >= 2, [bed, desk, bare, reds, blues, rm.arcs])
+	# ---- a phone: nothing of it under a finger's controls, and the paper map is the map button ----
+	var clash: Array = []; var none := [0.0, 0.0, 0.0, 0.0]
+	for sz: Vector2 in [Vector2(914, 411), Vector2(800, 360), Vector2(740, 340), Vector2(1024, 600)]:
+		var L := ToyHud.layout(sz, true, none); var tr: Dictionary = mn.touch_rects_for(sz, none, true); var tb: Dictionary = mn.touch_buttons_for(sz, none, true)
+		var mine := {"battery": L.battery, "tray": L.tray, "map": L.map}; var theirs := {"pad": tr.pad, "pause": (tr.pause as Rect2).grow(4)}
+		for k in tb: theirs[k] = Rect2((tb[k][0] as Vector2) - Vector2(tb[k][1], tb[k][1]), Vector2(tb[k][1], tb[k][1]) * 2.0)
+		for a in mine:
+			if not Rect2(Vector2.ZERO, sz).encloses(mine[a]): clash.push_back([sz, a, "off the screen"])
+			for b in theirs:
+				if (mine[a] as Rect2).intersects(theirs[b]): clash.push_back([sz, a, b])
+		if tr.map != L.map: clash.push_back([sz, "the map", "is not the button"])
+	var plain: Dictionary = mn.touch_rects_for(Vector2(914, 411), none); var desk_l := ToyHud.layout(Vector2(1280, 720), false)
+	check("on a phone the battery, the tray and the paper map lie clear of the arrows, the pause and every round button at four screen sizes, the paper map is the map button (bigger than the plain one, which other stages keep); on a computer they keep to the corners",
+		clash.is_empty() and plain.map == Rect2(914.0 - 60.0, 14.0, 46, 46) and ToyHud.touch_map(Vector2(914, 411), none).size.x == 74.0
+		and (desk_l.battery as Rect2).end.y == 702.0 and (desk_l.tray as Rect2).end == Vector2(1262, 702) and (desk_l.map as Rect2).position == Vector2(18, 16), [clash, desk_l])
+	# ---- the middle ----
+	var ink := Color("ece6d8"); var c0 := Vector2(640, 360)
+	var rc := DrawRec.new(); T.cross(rc, c0, 12.0, ink, "sniper"); var laser := rc.blits.any(func(q): return q[1] == ToyKit.SPR.disc and (q[2] as Color).r > 0.95 and (q[2] as Color).g < 0.3 and (q[2] as Color).a > 0.9)
+	var rw := DrawRec.new(); T.cross(rw, c0, 12.0, ink, "shotgun"); var rk := DrawRec.new(); T.cross(rk, c0, 12.0, ink, "rocket")
+	T.stickers.clear(); T.hit(false, false); var s1 := T.stickers.size(); T.stickers.clear(); T.hit(false, true); var s2 := T.stickers.size()
+	T.stickers.clear(); T.hit(true, true); var s3 := T.stickers.size(); var dd := T.stickers.filter(func(q): return q.kind == "ddakji").size(); var rs := DrawRec.new(); T.stickers_draw(rs, c0)
+	for i in 30: T.update(0.02)
+	var s_end := T.stickers.size(); gm.begin(1); H.hitmark(true, false); var none1 := T.stickers.size(); gm.begin(9); H.hitmark(false, false); var one9 := T.stickers.size()
+	check("each toy its own crosshair (the water gun a ring of eight drops, the laser pointer a red dot whatever colour is chosen, the bottle rocket a target's three rings); a hit pops a star sticker by it, the head two, a kill a ddakji and three stars, gone in half a second; only in the toy room",
+		ToyHud.CROSS.shotgun == "drops" and ToyHud.CROSS.sniper == "laser" and ToyHud.CROSS.rocket == "target" and laser and rw.spr_of("drop", ink) == 8 and rk.spr_of("ring") + rk.spr_of("ring2") == 3
+		and s1 == 1 and s2 == 2 and s3 == 4 and dd == 1 and rs.spr_of("star") == 3 and s_end == 0 and none1 == 0 and one9 == 1, [laser, rw.spr_of("drop", ink), rk.spr_of("ring"), s1, s2, s3, dd, rs.spr_of("star"), s_end, none1, one9])
+	# ---- the hand ----
+	var ff := FontFile.new(); ff.data = FileAccess.get_file_as_bytes("res://fonts/jua_Jua-Regular.ttf"); var missing := {}   # (the file by itself: no other font behind it)
+	for f in DirAccess.get_files_at("res://scripts"):
+		if not f.ends_with(".gd"): continue
+		var txt := FileAccess.get_file_as_string("res://scripts/" + f)
+		for i in txt.length():
+			var ch := txt.unicode_at(i)
+			if ch >= 0xAC00 and ch <= 0xD7A3 and not ff.has_char(ch): missing[String.chr(ch)] = true
+	check("the hand (Jua, cut down to the game's own letters by tools/make_toy_font.py) has every Korean letter the scripts use; what it has not (the middle dot) the body font draws",
+		missing.is_empty() and ff.has_char("가".unicode_at(0)) and not ff.has_char("·".unicode_at(0)) and (hand as FontFile).fallbacks.size() == 1, "".join(missing.keys()))
+	# ---- the toy shop's shelf: the modes on the briefing, the nine toys in the layout ----
+	var bu := Ui.new(); bu.game = gm; bu.guns = g; bu.f_title = M.f_title; bu.f_body = M.f_body; bu.f_bold = M.f_bold; bu.f_mono = M.f_mono; add_child(bu); bu._build_brief(); bu.size = Vector2(1280, 720)
+	Store.settings.toyMode = "sweep"; Store.save.best["t9e"] = 100; gm.begin(9); bu._mode_buttons(9)
+	var packs: Array = bu.br_modes.get_children().filter(func(c): return c.has_meta("mode")); var order: Array = packs.map(func(c): return c.get_meta("mode"))
+	var ps_pc: Vector2 = bu._pack_size(); bu.size = Vector2(914, 411); var ps_ph: Vector2 = bu._pack_size(); bu.size = Vector2(400, 800); var ps_tall: Vector2 = bu._pack_size(); bu.size = Vector2(1280, 720)
+	var rp := DrawRec.new(); rp.size = ps_pc; ToyKit.pack(rp, rp.size, ToyMatch.NAMES.escort, Color.WHITE, "다시 하기", true, false, true, func(r: Rect2) -> void: ToyKit.scene(rp, "escort", r))
+	var shapes_ok: bool = (Toys.ORDER + ["ruler"]).all(func(id): var Sh: Dictionary = ToyKit.gun_shape(id); return (Sh.parts as Array).size() >= 3 and (Sh.box as Rect2).size.x > (Sh.box as Rect2).size.y)
+	check("stage 5's modes stand as packages on a toy shop's shelf, in their order, four to a row on a computer and on a phone (two on a narrow upright screen): the card, what the mode is about under a bubble, its name, a price tag, a star once won, 선택 on the one picked",
+		order == ToyMatch.MODES and packs.all(func(c): return (c as Control).custom_minimum_size == ps_pc) and ps_pc.x == 160.0 and 4.0 * ps_ph.x + 30.0 <= 914.0 - 48.0 - 24.0 - 285.0 and ps_ph.x >= 120.0 and ps_tall.x >= 150.0
+		and rp.has(ToyMatch.NAMES.escort) and rp.has("다시 하기") and rp.has("선택") and rp.spr_of("star") == 1 and rp.spr_of("tag") == 2 and rp.tex_of(ToyKit.kraft_tex()) == 1 and ToyKit.two_lines("취침 시간 술래잡기", 15, 60.0) == ["취침 시간", "술래잡기"] and shapes_ok,
+		[order, ps_pc, ps_ph, ps_tall, rp.texts.map(func(q): return q[0]), shapes_ok])
+	var vb := VBoxContainer.new(); bu.add_child(vb); Store.save.toy_order = Toys.ORDER.duplicate(); var again := [0]; bu._toy_shelf(vb, func() -> void: again[0] += 1)
+	var cells: Array = vb.get_child(1).get_children(); var toys_in: Array = cells.map(func(c): return (c as Node).get_child(0).get_meta("toy"))
+	var first_arrows: Array = (cells[0] as Node).get_child(1).get_children(); var last_arrows: Array = (cells[8] as Node).get_child(1).get_children()
+	(first_arrows[1] as Button).pressed.emit()
+	check("the nine toys are on the shelf too, each in its package in key order, with arrows to move it a place (the first cannot go forward, the last cannot go back)",
+		cells.size() == 9 and toys_in == Toys.ORDER and (first_arrows[0] as Button).disabled and not (first_arrows[1] as Button).disabled and (last_arrows[1] as Button).disabled
+		and Store.save.toy_order[0] == "shotgun" and Store.save.toy_order[1] == "pistol" and again[0] == 1, [toys_in, Store.save.toy_order, again])
+	bu.free()
+	# ---- under Main's HUD each piece is a control of its own, drawn again only when what it shows has changed ----
+	var holder := Control.new(); add_child(holder); holder.size = Vector2(1280, 720); M.hud = holder
+	Store.settings.toyMode = "rush"; gm.begin(9); pl.chute = false; pl.hp = Player.MAX_HP; H.reset(); H.update(0.016); var made: Array = T.nodes.keys(); var sig0: Dictionary = T.sigs.duplicate(true)
+	H.update(0.016); var same: bool = ["battery", "tray", "top", "feed", "over"].all(func(k): return T.sigs[k] == sig0[k])   # (nothing has changed: nothing to draw again but the map's pins and the clock's hand in their own time)
+	pl.hp = Player.MAX_HP * 0.15; H.update(0.016); var bat_new: bool = T.sigs.battery != sig0.battery and T.sigs.tray == sig0.tray and T.sigs.top == sig0.top; var low_on: bool = (T.nodes.low as Control).visible
+	g.st().mag = int(g.st().mag) - 1; H.update(0.016); var tray_new: bool = T.sigs.tray != sig0.tray; var kicked: bool = (T.nodes.tray as Control).position.y > ToyHud.layout(Vector2(1280, 720), false).tray.position.y
+	pl.hp = Player.MAX_HP; H.update(0.016); var low_off: bool = not (T.nodes.low as Control).visible
+	var shown_9: bool = (T.nodes.battery as Control).visible and (T.nodes.map as Control).get_parent() == holder and (T.nodes.clock as Control).get_parent() == T.nodes.top
+	gm.begin(1); H.update(0.016); var hidden_1: bool = not (T.nodes.battery as Control).visible and not (T.nodes.map as Control).visible and not (T.nodes.over as Control).visible
+	var r1b := DrawRec.new(); gm.begin(9); H.update(0.016); H.draw(r1b)   # (the HUD's own drawing there: the crosshair and such, none of the pieces)
+	check("under the HUD each piece of the toy screen is a control of its own (the paper map, the top group with the clock in it, the kill lines, the battery with its sticker, the tray, one over them all): drawn again only when what it shows changes (the battery when you are hit, the tray when you shoot), shaken and kicked by its own place and turn, and put away out of the toy room",
+		made.size() == 8 and same and bat_new and low_on and tray_new and kicked and low_off and shown_9 and hidden_1 and not r1b.has("체력") and not r1b.has("AA"), [made, same, bat_new, low_on, tray_new, kicked, low_off, shown_9, hidden_1])
+	M.hud = null; T.nodes.clear(); holder.free()
+	# ---- the march's word from every team mode (found while the clock was made: 1.6.2 stumbled here every frame) ----
+	var ots := []
+	for k: String in ["rush", "freeze", "escort"]:
+		Store.settings.toyMode = k; gm.begin(9); gm.tm.mode.time_left = 100.0; var ctx = mn.music_for("playing", true, gm.tm, false, Vector3.ZERO, false, 0, 0, 1000.0); ots.push_back(ctx.get("ot") if ctx is Dictionary else null)
+	gm.tm.mode.overtime = true; ots.push_back(mn.music_for("playing", true, gm.tm, false, Vector3.ZERO, false, 0, 0, 1000.0).ot)
+	check("the march has its word from every team mode: the battery rush and bedtime have no overtime of their own (asking them for one stopped the word every frame), the escort's overtime is one", ots == [false, false, false, true], ots)
+	Store.save = save0; Store.settings = set0; gm.feed = feed0; gm.begin(1)

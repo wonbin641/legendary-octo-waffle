@@ -442,9 +442,10 @@ func _relayout() -> void:
 func _move_gun(id: String, step: int, toys: bool, again: Callable) -> void:
 	if Meta.move_gun(id, step, toys): Snd.play("reload0")
 	_relayout(); again.call()
-func _arrows(row: HBoxContainer, up: Callable, down: Callable, can_up: bool, can_down: bool) -> void:
-	var u := btn("▲", "small", up); u.disabled = not can_up; u.tooltip_text = "앞 번호로"; row.add_child(u)
-	var d := btn("▼", "small", down); d.disabled = not can_down; d.tooltip_text = "뒤 번호로"; row.add_child(d)
+## (across: left and right arrows, for things laid out in a row as the toy shelf's)
+func _arrows(row: HBoxContainer, up: Callable, down: Callable, can_up: bool, can_down: bool, across := false) -> void:
+	var u := btn("◀" if across else "▲", "small", up); u.disabled = not can_up; u.tooltip_text = "앞 번호로"; row.add_child(u)
+	var d := btn("▶" if across else "▼", "small", down); d.disabled = not can_down; d.tooltip_text = "뒤 번호로"; row.add_child(d)
 ## the guns in your hands in key order, each with arrows to move it (the pause; the toy room's nine toy guns there)
 func _gun_order(into: VBoxContainer, again: Callable) -> void:
 	var toys: bool = game.stage == Store.ST_TOY; var lay: Array = guns.loadout; var held := lay.filter(func(x): return x != null)
@@ -457,10 +458,27 @@ func _gun_order(into: VBoxContainer, again: Callable) -> void:
 		var nm := lbl(Toys.NAMES[id] if toys else Weapons.LIST[id].name + " " + Weapons.LIST[id].model, f_body, 14, INK); nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL; row.add_child(nm)
 		_arrows(row, func() -> void: _move_gun(id, -1, toys, again), func() -> void: _move_gun(id, 1, toys, again), at > 0, at < held.size() - 1)
 
+## the toy room's nine toys on the shop's shelf, each in its package in key order (its picture from the side under the
+## bubble, its name, its key on the tag); the arrows under one move it a place
+func _toy_shelf(into: VBoxContainer, again: Callable) -> void:
+	var lay: Array = game.layout(); var held := lay.filter(func(x): return x != null)
+	into.add_child(_head("장난감 진열대 · 숫자 키 1-%d번 차례" % lay.size()))
+	var flow := HFlowContainer.new(); flow.add_theme_constant_override("h_separation", 8); flow.add_theme_constant_override("v_separation", 10); flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL; into.add_child(flow)
+	for i in lay.size():
+		var id = lay[i]
+		if id == null: continue
+		var cell := VBoxContainer.new(); cell.add_theme_constant_override("separation", 2); flow.add_child(cell); var at := held.find(id)
+		var pk := Control.new(); pk.custom_minimum_size = Vector2(136, 116); pk.mouse_filter = Control.MOUSE_FILTER_IGNORE; pk.set_meta("toy", id); cell.add_child(pk)
+		pk.draw.connect(func() -> void:
+			ToyKit.pack(pk, pk.size, Toys.NAMES[id], Color(str(ToyKit.BRICKS[i % 5])).lightened(0.4), "", false, false, false, func(r: Rect2) -> void: ToyKit.gun(pk, str(id), r.grow(-2.0)), 0.0, str(i + 1)))
+		var row := hbox(6); row.alignment = BoxContainer.ALIGNMENT_CENTER; cell.add_child(row)
+		_arrows(row, func() -> void: _move_gun(id, -1, true, again), func() -> void: _move_gun(id, 1, true, again), at > 0, at < held.size() - 1, true)
+
 func render_loadout() -> void:
 	_hold_scroll(lo_list); clear(lo_list); (screens.loadout.get_meta("cu") as Button).visible = not in_stage
-	if in_stage and game.stage == Store.ST_TOY:   # the toy room hands you all nine toy guns: only their order (keys 1-9) changes
-		_gun_order(lo_list, render_loadout)
+	(screens.loadout.get_meta("title") as Label).text = "무기 편성 · 장난감 가게 진열대" if toy_shop() else "무기 편성 · 1-7번 키에 놓을 총"
+	if toy_shop():   # the toy room hands you all nine toy guns: only their order (keys 1-9) changes
+		_toy_shelf(lo_list, render_loadout)
 		lo_list.add_child(lbl("장난감 방에서는 장난감 총 아홉 자루를 모두 듭니다 · 화살표로 숫자 키 차례를 바꿉니다", f_body, 13, INK, true))
 		return
 	for i in 7:
@@ -954,7 +972,12 @@ func _build_brief() -> void:
 	br_map = Control.new(); br_map.custom_minimum_size = Vector2(260, 260); br_map.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; br_box.add_child(br_map)
 	br_map.draw.connect(func() -> void: tac.draw(br_map, br_map.size))
 	br_side = vbox(10); br_box.add_child(br_side)
-	br_modes = _flow(); br_modes.alignment = FlowContainer.ALIGNMENT_BEGIN; br_side.add_child(br_modes)
+	br_modes = _flow(); br_modes.alignment = FlowContainer.ALIGNMENT_BEGIN; br_modes.add_theme_constant_override("h_separation", 10); br_modes.add_theme_constant_override("v_separation", 14); br_side.add_child(br_modes)
+	br_modes.draw.connect(func() -> void:   # the shelf's plank under each row of packages
+		var rows := {}
+		for c in br_modes.get_children():
+			if c is Control and (c as Control).visible: rows[roundi((c as Control).position.y + (c as Control).size.y)] = true
+		for y in rows: ToyKit.plank(br_modes, Rect2(-4.0, float(y) - 6.0, br_modes.size.x + 8.0, 9.0)))
 	br_leg_h = _flow(); br_side.add_child(br_leg_h); br_leg_v = vbox(6); br_side.add_child(br_leg_v)
 	br_gear = lbl("", f_body, 13, SODIUM, true); br_side.add_child(br_gear); br_note = lbl("", f_body, 13, INK, true); br_side.add_child(br_note)
 	br_go = btn("출동", "primary", func() -> void: _deploy()); br_go.set_meta("first", true)
@@ -968,19 +991,45 @@ func open_brief(stage: int) -> void:
 	if game.tm != null: br_note.text = game.tm.mode.brief() + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.tm.mode.bonus()))
 	_mode_buttons(stage); br_map.queue_redraw()
 
-## stage 5's modes, as a row of buttons on its briefing: the one picked lit, a press builds the room for another
+## a button that is a picture: `paint` draws it (it is handed the button), a press calls `cb`
+func _pack(min_size: Vector2, paint: Callable, cb: Callable = Callable()) -> Button:
+	var b := Button.new(); b.focus_mode = Control.FOCUS_ALL; b.custom_minimum_size = min_size
+	for st in ["normal", "hover", "pressed", "focus", "disabled"]: b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	b.draw.connect(func() -> void: paint.call(b))
+	for sg in [b.mouse_entered, b.mouse_exited, b.focus_entered, b.focus_exited]: (sg as Signal).connect(b.queue_redraw)
+	if cb.is_valid(): b.pressed.connect(cb)
+	return b
+
+## how big a mode's package is on this screen: four to the row beside (or under) the map, two when there is no room for four
+func _pack_size() -> Vector2:
+	var short := size.x > size.y and size.y <= 600.0; var inner := minf(980.0 if short else 760.0, size.x - 16.0) - 32.0
+	var room := inner - 24.0 - ((maxf(minf(size.y - 140.0, size.x * 0.56), 140.0) + 14.0) if short else 0.0)   # (less the sheet's scroll bar; on a short screen the map takes its square first)
+	var per := 4 if room >= 430.0 else 2; var w := clampf(floorf((room - (per - 1) * 10.0) / per), 96.0, 160.0)
+	return Vector2(w, roundf(w * (0.98 if short else 1.08)))
+
+## stage 5's modes, as packages on a toy shop's shelf: each a card with what the mode is about under a clear bubble, its
+## name and a price tag (the first win's bonus); the one picked edged in yellow. A press tears another open (a rip, and
+## what is inside springs out) and builds the room for it
+var _torn := ""
 func _mode_buttons(stage: int) -> void:
 	clear(br_modes); br_modes.visible = stage == Store.ST_TOY
 	if stage != Store.ST_TOY: return
-	var cur_mode := ToyMatch.picked()
-	br_modes.add_child(lbl("모드", f_mono, 12, STEEL))
+	var cur_mode := ToyMatch.picked(); var ps := _pack_size()
 	for k: String in ToyMatch.MODES:
-		var b := btn(ToyMatch.NAMES[k], "primary" if k == cur_mode else "small", func() -> void: _pick_mode(k))
-		b.custom_minimum_size = Vector2(0, 38); b.add_theme_font_size_override("font_size", 15 if k == cur_mode else 13); b.set_meta("mode", k); br_modes.add_child(b)
+		var won: bool = Store.save.cleared.has(Store.ST_TOY) if k == "sweep" else Store.save.best.has("t9" + k.substr(0, 1))
+		var tag: String = ("장난감 %d개" % int(Game.STAGES[Store.ST_TOY].goal)) if k == "sweep" else ("다시 하기" if won else "첫 승리 +" + Store.won(ToyMode.new().bonus()))
+		var b := _pack(ps, func(c: Button) -> void:
+			ToyKit.pack(c, c.size, ToyMatch.NAMES[k], Color(str(ToyKit.MODE_CARD[k])), tag, k == cur_mode, c.is_hovered() or c.has_focus(), won, func(r: Rect2) -> void: ToyKit.scene(c, k, r), float(c.get_meta("pop", 0.0))),
+			func() -> void: _pick_mode(k))
+		b.set_meta("mode", k); b.tooltip_text = ToyMatch.NAMES[k]; br_modes.add_child(b)
+		if k == cur_mode and _torn == k and is_inside_tree():
+			create_tween().tween_method(func(v: float) -> void:
+				if is_instance_valid(b): b.set_meta("pop", v); b.queue_redraw(), 0.0, 1.0, 0.5)
+	_torn = ""
 
 func _pick_mode(k: String) -> void:
 	if ToyMatch.picked() == k: return
-	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("press"); open_brief(9)
+	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("toy_rip"); _torn = k; open_brief(9)
 
 func _brief_gear() -> void:
 	if sel == Store.ST_TOY:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
@@ -1043,6 +1092,11 @@ func _layout_maps() -> void:
 		(q[3] as Control).visible = not short; (q[4] as Control).visible = short; m.queue_redraw()
 	var want: Node = br_side if short else br_body
 	if br_title.get_parent() != want: br_title.reparent(want); want.move_child(br_title, 0)
+	if br_modes.get_parent() != want: br_modes.reparent(want)   # (stage 5's shelf: under the title, over the map)
+	want.move_child(br_modes, br_title.get_index() + 1)
+	var ps := _pack_size()   # (its packages keep to the room there is)
+	for c in br_modes.get_children():
+		if c.has_meta("mode"): (c as Control).custom_minimum_size = ps
 
 # ================= pause =================
 func _build_pause() -> void:
