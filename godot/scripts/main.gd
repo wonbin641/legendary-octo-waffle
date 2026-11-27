@@ -362,7 +362,7 @@ static func insets_of(safe: Rect2, win: Vector2, scale: float) -> Array:
 func _touch_buttons() -> Dictionary:
 	var b := touch_buttons_for(hud.size, safe_in, player.jet_on, game.rm != null)
 	if game.rm != null and game.rm.me != null:   # (a realm battle: what is not ready shows its seconds)
-		var q: Array = hud.realm.chips(game.rm, game.rm.me)
+		var q: Array = hudd.realm.chips(game.rm, game.rm.me)
 		for it: Array in [["skill", 1, "이동기"], ["bomb", 2, "폭탄"], ["swap", 4, "튕기기"], ["ult", 5, "비기"]]:
 			if float(q[it[1]][2]) < 1.0 or it[0] == "ult": b[it[0]][2] = str(it[2]) + " " + str(q[it[1]][3])
 	return b
@@ -585,7 +585,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			guns.trigger = e.pressed
 			if e.pressed: guns.trigger_edge = true
 		elif e.button_index == MOUSE_BUTTON_RIGHT: guns.ads_held = e.pressed
-		elif e.pressed and e.button_index == MOUSE_BUTTON_XBUTTON1: guns.melee_start()   # the mouse's back button
+		elif e.pressed and e.button_index == MOUSE_BUTTON_XBUTTON1:   # the mouse's back button: the blade (a realm battle's: the rune dagger)
+			if game.rm != null: game.rm.press["slash"] = true
+			else: guns.melee_start()
 		elif e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_DOWN: guns.cycle(1)
 		elif e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_UP: guns.cycle(-1)
 	if e is InputEventScreenTouch:

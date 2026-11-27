@@ -1045,7 +1045,7 @@ func _pick_mode(k: String) -> void:
 func _brief_gear() -> void:
 	if sel == Store.ST_ELF and Realm.picked() != "solo":   # (a realm battle: your people's own arms, not the layout)
 		var R: Dictionary = Races.R[Realm.picked_race()]
-		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(준비 시간)" % [str(R.name), str(R.weapon)]
+		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q(또는 G) 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(준비 시간)" % [str(R.name), str(R.weapon)]
 		br_gear.add_theme_color_override("font_color", SODIUM); br_go.disabled = false; return
 	if sel == Store.ST_TOY:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
 		var k := ToyMatch.picked()

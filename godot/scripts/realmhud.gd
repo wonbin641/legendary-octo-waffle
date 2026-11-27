@@ -217,8 +217,8 @@ func _weapon(ci, s: Vector2, touch: bool, rm: Realm, f: Realm.Fighter) -> void:
 			ci.draw_rect(Rect2(bx, ay - 30, bw * clampf(f.heat / 100.0, 0.0, 1.0), 12), Color(1.0, 0.25, 0.1) if f.heat >= crit else Color(1.0, 0.65, 0.2)); ci.draw_rect(Rect2(bx, ay - 30, bw, 12), Hud.LINE, false, 1.0)
 			h._t(ci, fm, ("봉인 %.1f초" % f.seal_t) if f.seal_t > 0.0 else ("열기 %d%%" % int(f.heat) + (" · 임계" if f.heat >= crit else "")), ax, ay - 14, 11, Hud.ALARM if f.seal_t > 0.0 else Hud.STEEL, "right")
 
-## what you can do, and how soon: [key, name, how ready (0..1), what is written on it]
-func chips(rm: Realm, f: Realm.Fighter) -> Array:
+## what you can do, and how soon: [key, name, how ready (0..1), what is written on it] (drag: no pointer lock, Q turns you, G throws)
+func chips(rm: Realm, f: Realm.Fighter, drag := false) -> Array:
 	var out: Array = []; var kit := rm.kit
 	match f.race:
 		"elf": out.push_back(["우클릭", ALT.elf, minf(1.0, f.charge / float(Races.XBOW.charge)) if f.charge > 0.0 else 1.0, ("%d%%" % int(minf(1.0, f.charge / float(Races.XBOW.charge)) * 100.0)) if f.charge > 0.0 else "꾹"])
@@ -228,7 +228,7 @@ func chips(rm: Realm, f: Realm.Fighter) -> Array:
 	var S: Dictionary = Races.SKILL[f.race]; var cd := kit.skill_cd(f)
 	out.push_back(["Shift", str(Races.R[f.race].skill), 1.0 if f.skill_n > 0 else 1.0 - f.skill_t / cd, ("×%d" % f.skill_n if int(S.charges) > 1 and f.skill_n > 0 else ("준비" if f.skill_n > 0 else "%d초" % ceili(f.skill_t)))])
 	var bk: String = BOMB_SHORT[f.bomb_kinds[f.bomb_i % f.bomb_kinds.size()]] if not f.bomb_kinds.is_empty() else ""
-	out.push_back(["Q", bk + " 폭탄", 1.0 if f.bombs > 0 else 1.0 - f.bomb_t / Races.BOMB_CD, ("×%d" % f.bombs) if f.bombs > 0 else "%d초" % ceili(f.bomb_t)])
+	out.push_back(["G" if drag else "Q", bk + " 폭탄", 1.0 if f.bombs > 0 else 1.0 - f.bomb_t / Races.BOMB_CD, ("×%d" % f.bombs) if f.bombs > 0 else "%d초" % ceili(f.bomb_t)])
 	out.push_back(["V", "룬 단검", 1.0 - f.dag_t / float(Races.DAGGER.cd), "처형 40"])
 	out.push_back(["F", "튕겨내기", 1.0 - f.parry_cd / float(Races.DAGGER.parry_cd), ("%d초" % ceili(f.parry_cd)) if f.parry_cd > 0.0 else "준비"])
 	var g := f.gauge / float(Races.GAUGE.max)
@@ -236,7 +236,7 @@ func chips(rm: Realm, f: Realm.Fighter) -> Array:
 	return out
 
 func _chips(ci, s: Vector2, c: Vector2, rm: Realm, f: Realm.Fighter) -> void:
-	var list := chips(rm, f); var fm: Font = h.m.f_mono; var fb: Font = h.m.f_bold
+	var list := chips(rm, f, h.m.look_mode == "drag"); var fm: Font = h.m.f_mono; var fb: Font = h.m.f_bold
 	var w := clampf((s.x * 0.5) / list.size(), 74.0, 104.0); var x := c.x - w * list.size() / 2.0; var y := s.y - 62.0
 	for i in list.size():
 		var q: Array = list[i]; var r := Rect2(x + i * w + 2.0, y, w - 4.0, 44.0); var ready := float(q[2]) >= 1.0; var ult := i == list.size() - 1

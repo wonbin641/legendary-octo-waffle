@@ -36,6 +36,9 @@ func _ready() -> void:
 	Store.save.items.helmet = 1; Store.save.items.vest = 10; Store.fix_save()
 	Store.settings.dev = false; Store.settings.god = false
 	for st in STAGES: _fight(st)
+	_realm("sanctum", "elf", 150.0)
+	_realm("siege", "orc", 200.0)
+	_realm_keys()
 	_toy_flame()
 	_death_stops()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
@@ -120,6 +123,58 @@ func _fight(st: int) -> void:
 		{"seconds": snappedf(ticks * DT, 0.1), "walked": snappedf(walked, 0.1), "shots": shots, "hits": hits, "kills": kills, "hurt": hurt, "hp": snappedf(pl.hp, 1.0),
 			"aim_error": snappedf(aim_err / maxi(aim_n, 1), 0.001), "ended": g.result if g.ended else "", "moments": moments.keys()})
 	main.command("menu")
+
+## stage 6-1's team battles. A match plays itself for a while, your fighter too (by the minds the others have): both sides
+## fight, fall and come back at their bases, Shift, the bombs and the ultimates are used, and what the match is about moves
+## (the sanctum's gauges; the siege's bomb taken up and set, a ward blown)
+func _realm(mode: String, race: String, secs: float) -> void:
+	seed(7300 + Realm.MODES.find(mode))
+	Store.settings.realmMode = mode; Store.settings.realmRace = race
+	main.command("start 10"); var rm = main.game.rm; rm.auto = true; rm.log_on = true
+	var ticks := 0
+	for i in int(secs / DT):
+		if main.game.ended: break
+		main.tick(DT); ticks += 1
+	var n := {}; var falls := {"us": 0, "them": 0}
+	for q: Array in rm.log:
+		n[q[0]] = int(n.get(q[0], 0)) + 1
+		if q[0] == "down": falls[rm.by_id(int(q[1])).team] += 1
+	var back: int = rm.all.filter(func(f): return f.deaths > 0 and f.alive).size()
+	var md = rm.mode; var moved := false; var what := ""
+	if mode == "sanctum": moved = float(md.gauge.us) + float(md.gauge.them) > 10.0 or md.round_n > 1; what = "the sanctum's gauges fill"
+	else: moved = int(n.get("take", 0)) > 0 and int(n.get("set", 0)) > 0 and int(n.get("ward", 0)) > 0; what = "the bomb is taken up and set, and a ward goes"
+	check("stage 6-1, %s: a match plays itself (your fighter too, as a %s): both sides fight, fall and come back at their bases; Shift, the bombs and the ultimates are used; %s" % [Realm.NAMES[mode], Races.R[race].name, what],
+		falls.us >= 3 and falls.them >= 3 and back >= 2 and int(n.get("skill", 0)) >= 5 and int(n.get("bomb", 0)) >= 3 and int(n.get("ult", 0)) >= 1 and moved,
+		{"seconds": snappedf(ticks * DT, 0.1), "falls": falls, "back": back, "skill": n.get("skill", 0), "bomb": n.get("bomb", 0), "ult": n.get("ult", 0), "state": md.state()})
+	Store.settings.realmMode = "solo"; main.command("menu")
+
+## the battle's own keys through the game's input: B opens the rune altar in the preparation (and closes it); then the
+## left button fires, the right one throws the dwarf's grenade, R loads, Shift dashes, Q or G throws a bomb, V and the mouse's
+## back button cut with the dagger, F holds it up, X calls the ultimate once the gauge is full
+func _realm_keys() -> void:
+	Store.settings.realmMode = "sanctum"; Store.settings.realmRace = "dwarf"
+	main.command("start 10"); var rm = main.game.rm; var me = rm.me; rm.ai_off = true; rm.log_on = true
+	main.tick(DT)
+	_tap(KEY_B); var opened: bool = main.state == "paused" and main.ui.cur == "altar"; _tap(KEY_B); var shut: bool = main.state == "playing" and main.ui.cur == ""
+	rm.mode.set_phase("fight"); rm.look.base_shield(false); rm.log.clear()
+	var foe = rm.team_of("them")[1]; foe.pos = me.pos + Vector3(-sin(main.player.yaw), 0, -cos(main.player.yaw)) * 4.0; foe.max_hp = 9000.0; foe.hp = 9000.0
+	var noted := func(what: String) -> int: return rm.log.filter(func(q): return q[0] == what).size()
+	_fire(true); for i in 6: main.tick(DT)
+	_fire(false); var blasted: bool = noted.call("blast") >= 1 and me.ammo < 5
+	_tap(KEY_R); main.tick(DT); var loading: bool = me.reload_t > 0.0
+	var e := InputEventMouseButton.new(); e.button_index = MOUSE_BUTTON_RIGHT; e.pressed = true; main._unhandled_input(e); main.tick(DT); e = e.duplicate(); e.pressed = false; main._unhandled_input(e)
+	var grenade: bool = me.alt_cd > 0.0
+	_tap(KEY_SHIFT); main.tick(DT); var dashed: bool = noted.call("skill") == 1
+	var lm: String = main.look_mode; main.look_mode = "lock"; _tap(KEY_Q); main.tick(DT); main.look_mode = "drag"; me.bombs = 1; _tap(KEY_G); main.tick(DT); main.look_mode = lm
+	var threw: bool = noted.call("bomb") == 2   # (Q with the pointer locked; G anywhere: with no lock Q turns you)
+	_tap(KEY_V); main.tick(DT); var cut: bool = me.dag_t > 0.0
+	for i in 30: main.tick(DT)
+	var b := InputEventMouseButton.new(); b.button_index = MOUSE_BUTTON_XBUTTON1; b.pressed = true; main._unhandled_input(b); main.tick(DT); var cut2: bool = me.dag_t > 0.6
+	_tap(KEY_F); main.tick(DT); var parried: bool = me.parry_t > 0.0
+	me.gauge = 1000.0; _tap(KEY_X); main.tick(DT); var ult: bool = noted.call("ult") == 1 and me.gauge == 0.0
+	check("stage 6-1's battle keys through the game's own input: B opens the rune altar in the preparation and B shuts it; the left button fires (the dwarf's cannon), R loads, the right button throws the grenade, Shift dashes, Q (or G) throws a bomb, V and the mouse's back button cut with the dagger, F holds it up, X calls the ultimate",
+		opened and shut and blasted and loading and grenade and dashed and threw and cut and cut2 and parried and ult, [opened, shut, blasted, loading, grenade, dashed, threw, cut, cut2, parried, ult])
+	_let_go(); Store.settings.realmMode = "solo"; main.command("menu")
 
 ## the moments each stage is built round, as they come (kept once seen): a cage opening, the siege, a door of the ship
 ## sliding open, an antidote going in, the toy room's match under way

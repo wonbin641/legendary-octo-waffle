@@ -203,6 +203,38 @@ func _ready() -> void:
 	await _tap(f_rect.get_center()); await _frames(4)
 	check("on stage 6-1 the alchemist's bomb is a button low in the middle of the phone's screen, under none of the other controls: a tap throws one, then it counts the seconds to the next and a tap does nothing",
 		f_has and f_word == "연금술 폭탄" and f_clear and f_rect.size.y >= 44.0 and f_thrown == 1 and f_cd > 11.0 and f_after == "연금술 폭탄 12초" and main.game.flasks == 1, [f_rect, f_word, f_clear, f_thrown, f_cd, f_after])
+	# stage 6-1's team battles on the phone: the altar is a button while the round is made ready; the round buttons are the
+	# people's own (attack, special, Shift, bomb, ultimate, dagger, parry) and lie clear of one another and of the arrows
+	Store.settings.realmMode = "sanctum"; Store.settings.realmRace = "orc"
+	main.command("start 10"); await get_tree().create_timer(0.8).timeout; await _tap(Vector2(450, 200)); await get_tree().create_timer(0.2).timeout
+	var rmt = main.game.rm; var rme = rmt.me; rmt.log_on = true
+	var ap: Dictionary = main._touch_pills(); var a_has := ap.has("altar")
+	if a_has: await _tap((ap.altar[0] as Rect2).get_center()); await _frames(4)
+	var alt_open: bool = ui.cur == "altar"
+	if alt_open: main.close_altar(); await _frames()
+	rmt.mode.set_phase("fight"); rmt.ai_off = true; rmt.look.base_shield(false); await _frames(2)
+	var rb: Dictionary = main._touch_buttons(); var scr := Rect2(Vector2.ZERO, main.hud.size); var clash := []
+	var names: Array = rb.keys()
+	for i in names.size():
+		var bp1: Vector2 = rb[names[i]][0]; var br1: float = rb[names[i]][1]
+		if not scr.grow(-2.0).encloses(Rect2(bp1 - Vector2.ONE * br1, Vector2.ONE * br1 * 2.0)): clash.push_back([names[i], "off"])
+		if (main._touch_rects().pad as Rect2).grow(br1).has_point(bp1): clash.push_back([names[i], "pad"])
+		for j in range(i + 1, names.size()):
+			if bp1.distance_to(rb[names[j]][0]) < br1 + float(rb[names[j]][1]) + 2.0: clash.push_back([names[i], names[j]])
+	var labels := [str(rb.fire[2]), str(rb.ads[2]), str(rb.melee[2]), str(rb.swap[2])]
+	var noted := func(w: String) -> int: return rmt.log.filter(func(q): return q[0] == w).size()
+	rmt.log.clear()
+	await _tap(rb.skill[0]); await _frames(4); var t_skill: int = noted.call("skill")
+	await _tap(rb.bomb[0]); await _frames(2); var t_bomb: int = noted.call("bomb")
+	await _tap(rb.melee[0]); await _frames(2); var t_cut: bool = rme.dag_t > 0.0
+	await _tap(rb.swap[0]); await _frames(2); var t_parry: bool = rme.parry_t > 0.0 or rme.parry_cd > 9.0
+	await _press(rb.ads[0]); await _frames(3); var t_alt: bool = rme.alt_cd > 0.0; await _lift(rb.ads[0])
+	await _press(rb.fire[0]); await get_tree().create_timer(0.5).timeout; var t_swing: int = noted.call("swing"); await _lift(rb.fire[0])
+	rme.gauge = 1000.0; await _frames(2); var ult_word := str(main._touch_buttons().ult[2]); await _tap(rb.ult[0]); await _frames(2); var t_ult: int = noted.call("ult")
+	check("stage 6-1's team battle on the phone: while the round is made ready a button opens the rune altar; then the round buttons are the people's own (attack, special, Shift, bomb, ultimate, dagger, parry, jump, load), all on the screen and clear of one another and of the arrows, and each does what it says",
+		a_has and alt_open and names.size() == 9 and clash.is_empty() and labels == ["공격", "특수", "단검", "튕기기"] and t_skill == 1 and t_bomb == 1 and t_cut and t_parry and t_alt and t_swing >= 1 and ult_word.begins_with("비기") and t_ult == 1,
+		[a_has, alt_open, names, clash, labels, t_skill, t_bomb, t_cut, t_parry, t_alt, t_swing, ult_word, t_ult])
+	Store.settings.realmMode = "solo"
 	main.to_menu(); Store.save = keep_save; Store.settings = keep_settings; Store.persist(); Store.persist_settings()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)
