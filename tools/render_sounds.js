@@ -6,7 +6,10 @@
      그래서 같은 소리를 네 번 따로 만들어 둡니다(name.wav, name__1.wav, name__2.wav, name__3.wav). 늘 같은 소리는 하나만 둡니다.
    - 마스터의 압축기(DynamicsCompressor)와 좌우 패닝은 게임이 소리를 섞을 때 하므로 여기서는 빼고, 소리 하나만 모노로 만듭니다.
    - 16비트에 담으려고 SCALE배로 줄여 적고, 게임이 그만큼 되돌립니다(godot/scripts/snd.gd의 SCALE).
-   쓰는 법: node tools/render_sounds.js   (Playwright와 그 크로미엄이 필요합니다) */
+   - 브라우저판에 없는 Godot판만의 소리는 GODOT_OWN에 브라우저판과 같은 재료(noise, tone)로 적어 두고 같은 방법으로 만듭니다.
+     기관총(shot_lmg)은 1.6.1부터 Godot판만의 소리입니다(주인의 요청: 브라우저판의 것이 크고 시끄러워서, 더 낮고 둔탁하게).
+   쓰는 법: node tools/render_sounds.js            모두 다시 (Playwright와 그 크로미엄이 필요합니다)
+           node tools/render_sounds.js shot_lmg   이름을 준 것만 */
 const { chromium } = require('playwright');
 const fs = require('fs'); const path = require('path');
 const ROOT = path.join(__dirname, '..'); const OUT = path.join(ROOT, 'godot', 'sounds');
@@ -14,11 +17,19 @@ const SR = 44100, SCALE = 0.5, VARIANTS = 4;
 const src = fs.readFileSync(path.join(ROOT, 'src', '03_core.js'), 'utf8');
 const a = src.indexOf('const Sound = (() => {'); const b = src.indexOf('\n})();', a);
 if (a < 0 || b < 0) throw new Error('Sound module not found in src/03_core.js');
-const MODULE = src.slice(a, b + 6);
+/* Godot's own sounds, made of the browser game's own parts: put into the module's api (src/ itself is not changed) */
+const GODOT_OWN = `
+    // the machine gun as the Godot version has it (1.6.1): lower and duller than the browser game's. No bright crack, no
+    // clack of the belt: a muffled body with a dull knock in it, a deep thump with a low growl, and a short low rumble after
+    godotLmg() { if (!ctx) return; const d = out();
+      noise(0.12, 'lowpass', 1400, 220, 0.7, 1.1, d); noise(0.09, 'bandpass', 520, 300, 1, 0.6, d); tone('sine', 62, 28, 0.22, 1.0, d);
+      tone('triangle', 110, 45, 0.08, 0.3, d); noise(0.28, 'lowpass', 450, 70, 0.5, 0.28, d, 0.015); },`;
+const MODULE = src.slice(a, b + 6).replace('const api = {', 'const api = {' + GODOT_OWN);
+if (!MODULE.includes('godotLmg()')) throw new Error("the browser game's Sound api has changed: Godot's own sounds have nowhere to go");
 
 /* the game's sound names and the browser game's call that makes each (world sounds called without a place: no pan, full level) */
 const SOUNDS = {
-  shot_pistol: "shot('pistol')", shot_smg: "shot('smg')", shot_rifle: "shot('rifle')", shot_lmg: "shot('lmg')", shot_sniper: "shot('sniper')",
+  shot_pistol: "shot('pistol')", shot_smg: "shot('smg')", shot_rifle: "shot('rifle')", shot_lmg: 'godotLmg()', shot_sniper: "shot('sniper')",
   shot_gl: "shot('gl')", shot_rocket: "shot('rocket')", shot_shotgun: "shot('shotgun')",
   empty: 'empty()', reload0: 'reload(0)', reload1: 'reload(1)', pump: 'pump()',
   hit: 'hit(false)', headshot: 'headshot(false)', headshot_kill: 'headshot(true)', swing: 'swing()',
@@ -81,7 +92,10 @@ function wav(int16, file) {
     const q = Int16Array.from(r.out, (v) => Math.max(-32767, Math.min(32767, Math.round(v * SCALE * 32767))));
     wav(q, path.join(OUT, name + '.wav')); made.push(name);
   };
+  const only = process.argv.slice(2);   // (names given: only those)
+  for (const n of only) if (!(n in SOUNDS) && !(n in LOOPS)) throw new Error('no such sound: ' + n);
   for (const [name, call] of Object.entries(SOUNDS)) {
+    if (only.length && !only.includes(name)) continue;
     const takes = [];
     for (let k = 0; k < VARIANTS; k++) {
       const r = await page.evaluate(([c]) => window.__render(c, 4.0), [call]);
@@ -91,8 +105,8 @@ function wav(int16, file) {
     takes.forEach((r, k) => save(k === 0 ? name : `${name}__${k}`, r));
     for (let k = takes.length; k < VARIANTS; k++) { const f = path.join(OUT, `${name}__${k}.wav`); if (fs.existsSync(f)) fs.unlinkSync(f); }
   }
-  for (const [name, [call, settle, len]] of Object.entries(LOOPS)) save(name, await page.evaluate(([c, s, l]) => window.__render(c, s + l + 0.5, s, l), [call, settle, len]));
+  for (const [name, [call, settle, len]] of Object.entries(LOOPS)) if (!only.length || only.includes(name)) save(name, await page.evaluate(([c, s, l]) => window.__render(c, s + l + 0.5, s, l), [call, settle, len]));
   await browser.close();
   if (worst * SCALE > 1) throw new Error('a sound is too loud for SCALE: peak ' + worst);
-  console.log(made.length, 'files from', Object.keys(SOUNDS).length + Object.keys(LOOPS).length, 'sounds; loudest peak', worst.toFixed(3), '(stored at', (worst * SCALE).toFixed(3) + ')');
+  console.log(made.length, 'files from', only.length || Object.keys(SOUNDS).length + Object.keys(LOOPS).length, 'sounds; loudest peak', worst.toFixed(3), '(stored at', (worst * SCALE).toFixed(3) + ')');
 })();

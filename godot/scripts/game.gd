@@ -98,14 +98,14 @@ func begin(stage_: int) -> void:
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false
 	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
-	# down in the corner at the bottom left of the map (the west and south ends), facing in
+	# down in the corner at the bottom right of the map (the east and south ends), facing in
 	if stage == 5:
 		var d = open_spot(0.0, 58.0)
 		if d != null: world.start = d; player.reset(d.x, d.z, d.yaw); player.invuln = 1.5
 	populate()
 	if world.village != null: world.village.drop_ghosts()   # (stage 2: the crates out in the village only kept the zombies where the browser game puts them)
 	if stage == 5:
-		var c = open_spot(-(Phys.HALF - 6.0), Phys.HALF - 6.0)
+		var c = open_spot(Phys.HALF - 6.0, Phys.HALF - 6.0)
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
 	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else " 어딘가에 있습니다") + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""

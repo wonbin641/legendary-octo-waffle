@@ -5,7 +5,7 @@ extends Control
 
 const NIGHT := Color("0d1220"); const INK := Color("ece6d8"); const STEEL := Color("8f9bb0"); const SODIUM := Color("f2a33a")
 const ALARM := Color("ff5260"); const VITAL := Color("5ed6b0"); const LINE := Color(0.56, 0.61, 0.69, 0.35)
-const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 왼쪽 아래 구석에서 시작",
+const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 오른쪽 아래 구석에서 시작",
 	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만 · 해독약 상자는 오두막 안에만", 7: "넓은 사파리 · 5분 뒤 동물 93마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
 	9: "아이 방 전체가 싸움터 · 장난감 100개 · 플라스틱 군인, 액션 피규어, 태엽·RC 유닛, 조립 블록 피규어",
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 (잡으면 끝) · 숨은 스파이더 마인"}
@@ -974,7 +974,7 @@ func _brief_gear() -> void:
 	for i in 7:
 		if lo[i] != null: ready.push_back("%d %s" % [i + 1, Weapons.LIST[lo[i]].short])
 	var fit := Meta.fits(sel)
-	br_gear.text = ("지도 왼쪽 아래 구석(서남쪽 끝)에 내립니다\n" if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
+	br_gear.text = ("지도 오른쪽 아래 구석(동남쪽 끝)에 내립니다\n" if sel == 5 else "") + ("출동하면 쓸 무기 · " + " · ".join(ready) if not ready.is_empty() else "넣은 무기가 없습니다 · 무기를 하나 이상 넣어야 출동할 수 있습니다") + "\n권장 스펙 · " + ("적합" if fit else "부적합")
 	br_gear.add_theme_color_override("font_color", SODIUM if fit else ALARM); br_go.disabled = ready.is_empty()
 
 func _deploy() -> void:

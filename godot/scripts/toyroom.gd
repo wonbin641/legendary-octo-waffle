@@ -7,6 +7,9 @@ extends RefCounted
 
 const HALF := 70.0
 const BED_Y := 6.0
+## the furniture's names on the tactical map, as the owner drew them: [name, x, z] at the middle of each piece seen from above
+## (the bookshelf and the wardrobe along the north wall, the desk to the west, the bunk bed to the east)
+const NAMES := [["책장", -34.0, -63.0], ["옷장", 28.0, -62.0], ["책상", -42.0, -4.0], ["2층침대", 36.0, 0.0]]
 const BED := [10.0, -30.0, 62.0, 30.0, 4.0]   # under the bed: [minx, minz, maxx, maxz] and below this height (the frame is at 4.4)
 static func under_bed(p: Vector3) -> bool: return p.x > BED[0] and p.x < BED[2] and p.z > BED[1] and p.z < BED[3] and p.y < BED[4]
 const DESK_Y := 9.0

@@ -165,9 +165,22 @@ static func sign_tex(text: String, dir: String, col: Color) -> ImageTexture:
 		Gfx.text(img, text, load("res://fonts/yardsign_hahmlet_subset.woff2"), 176, tx, cy + 10, "center", "middle", col, 5, Color("0e1219"))
 		_tx[key_] = Gfx.tex(img)
 	return _tx[key_]
-## the ship's doors, drawn by the owner of this port: a dark panel in a black frame, a blue seam of light down the middle, and in
-## the middle a black ring that the seam crosses in an S. The bridge's and the hall's two leaves part along that seam, S and all;
-## the airlock's door rises in one piece and the sealed doors along the corridor stay shut, with the same face
+## the airlock's inner door, the one you start at (it rises in one piece): striped at its foot, its name in red. It kept this
+## face when the other doors took the drawn one (the owner's wish: 1.6.1 put it back)
+static func airlock_tex() -> ImageTexture:
+	if not _tx.has("airlock"):
+		var w := 256; var img := Image.create(w, w, false, Image.FORMAT_RGBA8); img.fill(Color("4a5162")); Gfx.frect(img, 16, 16, w - 32, w - 32, Color("3a4050"))
+		for i in range(-w, w, 40): _band(img, i, w, 20, 30, Color("e8b040"))
+		Gfx.text(img, "에어록", load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"), 40, w / 2.0, w * 0.42, "center", "alphabetic", Color("ff3a2a"))
+		Gfx.text(img, "AIRLOCK B-07", load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"), 18, w / 2.0, w * 0.58, "center", "alphabetic", Color("cfd6e2"))
+		_tx.airlock = Gfx.tex(img)
+	return _tx.airlock
+static func _band(img: Image, i: float, h: float, bw: float, rise: float, col: Color) -> void:   # one slanted stripe at the foot
+	var a := Vector2(i, h); var b := Vector2(i + bw, h); var c := Vector2(i + bw + rise, h - rise); var d := Vector2(i + rise, h - rise)
+	Gfx.ftri(img, a, b, c, col); Gfx.ftri(img, a, c, d, col)
+## the ship's other doors, drawn by the owner of this port: a dark panel in a black frame, a blue seam of light down the middle,
+## and in the middle a black ring that the seam crosses in an S. The bridge's and the hall's two leaves part along that seam, S and
+## all; the sealed doors along the corridor stay shut, with the same face
 const RING_R := 0.215      # the ring's radius, as a share of the door's height
 const RING_W := 0.055      # its line, as a share of the height
 const SEAM_S := 0.28       # how far the seam swings out each way inside the ring, as a share of its radius
@@ -532,7 +545,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	MoonShadow.no_receive(hatches[0].a)
 	# light and draw: the solid kit (vertex colours), the airlock door, the pipes, everything that glows
 	var sm := MeshInstance3D.new(); sm.name = "Solid"; sm.mesh = Gfx.merge_boxes(solid); sm.material_override = kit_mat; G.add_child(sm); MoonShadow.caster(sm)
-	air_door = MeshInstance3D.new(); (air_door as MeshInstance3D).mesh = Gfx.box(Vector3(4.5, 4.5, 0.3)); (air_door as MeshInstance3D).material_override = door_mat(4.5, 4.5)
+	air_door = MeshInstance3D.new(); (air_door as MeshInstance3D).mesh = Gfx.box(Vector3(4.5, 4.5, 0.3)); (air_door as MeshInstance3D).material_override = Gfx.std(Color.WHITE, 0.5, 0.5, airlock_tex())
 	air_door.position = Vector3(-41.75, 2.25, DOOR_Z); G.add_child(air_door); MoonShadow.no_receive(air_door)
 	var pm := MeshInstance3D.new(); pm.name = "Pipes"; pm.mesh = pipes.commit(); pm.material_override = Gfx.std(World.lin("59627a"), 0.45, 0.6); G.add_child(pm); MoonShadow.no_receive(pm)
 	var gmesh := MeshInstance3D.new(); gmesh.name = "Glow"; gmesh.mesh = Gfx.merge_boxes(glow); gmesh.material_override = glow_mat; G.add_child(gmesh); MoonShadow.no_receive(gmesh)

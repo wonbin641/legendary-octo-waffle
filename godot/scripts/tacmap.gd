@@ -129,6 +129,8 @@ func draw(ci, size: Vector2) -> void:
 		if toy: col = T.wall if b.maxy > 12.0 else col
 		elif b.maxy >= 10.0 and (bw > 40.0 or bd > 40.0): col = T.wall   # the perimeter
 		ci.draw_rect(Rect2(X.call(b.minx), Z.call(b.minz), maxf(1.5 * kb, bw * k), maxf(1.5 * kb, bd * k)), Color(col))
+	if toy:   # the furniture's names (ToyRoom.NAMES), under everything that moves
+		for nm: Array in ToyRoom.NAMES: _text(ci, f_bold, str(nm[0]), X.call(float(nm[1])), Z.call(float(nm[2])), roundi(19.0 * u), INKC, "center", 4.5 * u, Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.9))
 	if stage == 2 and w.village != null:
 		for q: Array in w.village.pines: ci.draw_circle(Vector2(X.call(q[0]), Z.call(q[1])), float(q[3]) * k, Color(58 / 255.0, 74 / 255.0, 34 / 255.0, 0.85))
 		for q: Array in w.village.fires:
@@ -143,9 +145,11 @@ func draw(ci, size: Vector2) -> void:
 	ci.draw_rect(Rect2(o.x + edge, o.y + edge, 40.0 * u, 22.0 * u), CHIP)
 	_text(ci, f_mono, "N ↑", o.x + edge + 20.0 * u, o.y + edge + 11.5 * u, roundi(13.0 * u), INKC)
 	var bw2 := bar * k + 16.0 * u
-	ci.draw_rect(Rect2(o.x + S - edge - bw2, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP)
-	ci.draw_rect(Rect2(o.x + S - edge - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
-	_text(ci, f_mono, "%dm" % int(bar), o.x + S - edge - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
+	# the scale in the bottom right corner, or the bottom left when the drop point is down there (1-2's), so it shows
+	var sc_x := o.x + S - edge - bw2 if not (X.call(w.start.x) > o.x + S * 0.6 and Z.call(w.start.z) > o.y + S * 0.6) else o.x + edge
+	ci.draw_rect(Rect2(sc_x, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP)
+	ci.draw_rect(Rect2(sc_x + bw2 - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
+	_text(ci, f_mono, "%dm" % int(bar), sc_x + bw2 - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
 	# the lab's cages: shut ones as bars with the number and the seconds left, open ones as the walls lying flat
 	if w.lab != null:
 		var L: Lab = w.lab
@@ -176,7 +180,8 @@ func draw(ci, size: Vector2) -> void:
 	var s0: Dictionary = w.start; var lab := stage == 3 or stage == 8; var sp := Vector2(X.call(s0.x), Z.call(s0.z))
 	ci.draw_circle(sp, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sp, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
 	if not toy: _text(ci, f_bold if lab else f_mono, "문" if lab else ("A" if stage == 4 else "H"), sp.x, sp.y + 0.5 * u, roundi((11.0 if lab else 12.0) * u), SODIUM)
-	_tag(ci, "출입문" if lab else ("에어록" if stage == 4 else "내리는 곳"), sp.x + 15.0 * u, sp.y + 0.5 * u, u, SODIUM, "left")
+	var lz_left := sp.x > o.x + S * 0.6   # (a drop point at the right edge, as 1-2's: its name on its left, inside the map)
+	_tag(ci, "출입문" if lab else ("에어록" if stage == 4 else "내리는 곳"), sp.x + (-15.0 if lz_left else 15.0) * u, sp.y + 0.5 * u, u, SODIUM, "right" if lz_left else "left")
 	for e: Enemies.Foe in game.enemies.list:
 		if not e.alive or e.ridden: continue   # the one you ride is under your arrow
 		if e.type == "mine" and (e.bs == "hidden" or e.bs == ""): continue   # buried mines stay hidden, even here
@@ -237,7 +242,7 @@ static func _radial(ci, c: Vector2, r: float, stops: Array) -> void:
 func legend(live: bool) -> Array:
 	var lab := stage == 3 or stage == 8; var out := []
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
-	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("내리는 곳 · 지도를 눌러 바꾸기" if (stage == 5 and not live) else ("내리는 곳" if stage == 9 else "헬기에서 내리는 곳")))
+	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == 5 else ("내리는 곳" if stage == 9 else "헬기에서 내리는 곳")))
 	out.push_back(["lz", lz, SODIUM, "" if stage == 9 else ("문" if lab else ("A" if stage == 4 else "H"))])
 	if stage == 9 and game != null and game.tm != null:   # stage 5's team modes: their own marks
 		for it: Array in game.tm.mode.legend(): out.push_back(["en", it[2], Color(str(it[1])), ""])

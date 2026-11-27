@@ -387,8 +387,8 @@ func _ready() -> void:
 			var gq9: Array = R9.crates[w.crates.size() + j]
 			if absf(gh9[j].x - gq9[0]) > 1e-4 or absf(gh9[j].y - gq9[1]) > 1e-4: cb9 += 1
 		check("stage %s: every crate is where the browser game has it" % Store.STAGE_TAG[stn], cb9 == 0, cb9)
-		if stn == 5:   # 1-2 puts you down in the bottom left corner of the map (the owner's choice); the enemies are as there
-			check("stage 1-2: you start in the corner at the bottom left of the map, not at the browser game's south edge", w.start.x < -54.0 and w.start.z > 54.0 and Vector2(R9.start[0], R9.start[1]).distance_to(Vector2(w.start.x, w.start.z)) > 40.0, w.start)
+		if stn == 5:   # 1-2 puts you down in the bottom right corner of the map (the owner's choice); the enemies are as there
+			check("stage 1-2: you start in the corner at the bottom right of the map, not at the browser game's south edge", w.start.x > 54.0 and w.start.z > 54.0 and Vector2(R9.start[0], R9.start[1]).distance_to(Vector2(w.start.x, w.start.z)) > 40.0, w.start)
 		else: check("stage %s: you start where the browser game starts you" % Store.STAGE_TAG[stn], absf(w.start.x - R9.start[0]) < 1e-4 and absf(w.start.z - R9.start[1]) < 1e-4 and absf(w.start.yaw - R9.start[2]) < 1e-4, w.start)
 	# ---------------- stage 2: the burning village ----------------
 	gm.begin(2); var s2_V2: Dictionary = ref.stages["2"]
@@ -903,6 +903,7 @@ func _ready() -> void:
 	_fixes_154(gm, en, pl, w)
 	_aim_clear()
 	_corpse_shot(gm, en, pl, g, cam)
+	_lmg_sound()
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -976,12 +977,12 @@ func _ready() -> void:
 	pr.clear(); pl.reset(0.0, 0.0, 0.0); pl.hp = 1000.0; pl.invuln = 0.0; pr.egrenade(Vector3(8, 1.5, 0), Vector3(0, 0.3, 0), "nade")
 	for i in 100: pr.update(1.0 / 30.0)
 	check("1-2: a thrown grenade goes off beside you (up to 100)", pr.list.is_empty() and pl.hp < 1000.0 and pl.hp >= 900.0, pl.hp)
-	# 1-2: always put down in the corner at the bottom left of the map
+	# 1-2: always put down in the corner at the bottom right of the map (it was the bottom left up to 1.6.0: the owner's choice)
 	gm.begin(5); var c9 := Vector2(pl.pos.x, pl.pos.z); var near9 := INF
 	for e9 in en.list: near9 = minf(near9, Vector2(e9.pos.x, e9.pos.z).distance_to(c9))
 	var in9 := Vector2(-sin(pl.yaw), -cos(pl.yaw)).dot(-c9.normalized())
-	check("1-2: you always come down in the corner at the bottom left of the map (the west and south ends) on open ground, facing in, with nobody close",
-		c9.x < -54.0 and c9.y > 54.0 and Phys.collide_at(pl.pos.x, 0.05, pl.pos.z, 0.36, 1.7) == null and Vector2(w.start.x, w.start.z).distance_to(c9) < 0.01 and in9 > 0.9 and near9 > 12.0, [c9, in9, near9])
+	check("1-2: you always come down in the corner at the bottom right of the map (the east and south ends) on open ground, facing in, with nobody close",
+		c9.x > 54.0 and c9.y > 54.0 and Phys.collide_at(pl.pos.x, 0.05, pl.pos.z, 0.36, 1.7) == null and Vector2(w.start.x, w.start.z).distance_to(c9) < 0.01 and in9 > 0.9 and near9 > 12.0, [c9, in9, near9])
 	gm.begin(5); check("1-2: and there again on the next go", Vector2(pl.pos.x, pl.pos.z).distance_to(c9) < 0.01)
 	# ---------------- stage 5: the toy room ----------------
 	Store.save = Store.save0(); gm.begin(9); var toy: ToyRoom = w.toy
@@ -1124,6 +1125,16 @@ func _ready() -> void:
 		var where9: String = {3: "출입문", 8: "출입문", 4: "에어록"}.get(st9, "내리는 곳")
 		if rc9.dots() != shown_of.call() or not rc9.texts.has("N ↑") or not rc9.texts.has(where9): map_bad.push_back("%d: %d dots / %d, %s" % [st9, rc9.dots(), shown_of.call(), str(rc9.texts.slice(0, 4))])
 	check("the tactical map opens on all nine stages: a mark for every enemy, north, the scale and the drop point", map_bad.is_empty(), map_bad)
+	gm.begin(9); var nm_rc: MapRec = map_of.call(9); var nm_bad := []
+	var nm_h := {"책장": ToyRoom.SHELF_Y, "옷장": ToyRoom.WARD_Y, "책상": ToyRoom.DESK_Y, "2층침대": ToyRoom.BUNK_Y}
+	for nm: Array in ToyRoom.NAMES:
+		var nm_on := Phys.colliders.any(func(b: Phys.Box) -> bool: return float(nm[1]) > b.minx and float(nm[1]) < b.maxx and float(nm[2]) > b.minz and float(nm[2]) < b.maxz and b.maxy >= float(nm_h.get(nm[0], 99.0)) - 0.01)
+		if not nm_rc.texts.has(nm[0]) or not nm_on: nm_bad.push_back(nm)
+	var nm_p := {}
+	for nm: Array in ToyRoom.NAMES: nm_p[nm[0]] = Vector2(nm[1], nm[2])
+	check("5: the map names the furniture as the owner drew it: 책장 and 옷장 along the top (north), 책상 on the left, 2층침대 on the right, each over its piece; no other stage has them",
+		nm_bad.is_empty() and nm_p.size() == 4 and nm_p["책장"].x < nm_p["옷장"].x and nm_p["책상"].x < nm_p["2층침대"].x and maxf(nm_p["책장"].y, nm_p["옷장"].y) < minf(nm_p["책상"].y, nm_p["2층침대"].y)
+		and not (map_of.call(1) as MapRec).texts.has("책장"), nm_bad)
 	gm.begin(1); var m_before: int = (map_of.call(1) as MapRec).dots(); var m_one = en.list.filter(func(e): return e.alive and not e.boss)[0]
 	en.damage(m_one, 5000, m_one.pos, Vector3(0, 0, -1), false)
 	check("an enemy shot dead is gone from the map", (map_of.call(1) as MapRec).dots() == m_before - 1, [m_before, (map_of.call(1) as MapRec).dots()])
@@ -1139,8 +1150,8 @@ func _ready() -> void:
 	gm.begin(4); var m_s0: MapRec = map_of.call(4); w.ship.break_floor(); var m_s1: MapRec = map_of.call(4)
 	check("the ship's map: once the hall's floor falls in, the pit's landings and floor are marked with their depths", not m_s0.texts.has("-9m") and m_s1.texts.has("-3m") and m_s1.texts.has("-6m") and m_s1.texts.has("-9m"), m_s1.texts.filter(func(t: String): return t.ends_with("m")))
 	tm.setup(4); var m_l4: Array = tm.legend(true).map(func(it): return it[1]); tm.setup(5); var m_l5: Array = tm.legend(false).map(func(it): return it[1]); tm.setup(9); var m_l9: Array = tm.legend(true).map(func(it): return it[1])
-	check("the legend: each stage's kinds, the drop point to pick on 1-2's briefing, who is after you while you play; the toy room has no boss",
-		m_l4.has("스파이더 마인 (움직일 때만)") and m_l4.has("흰 테두리 · 나를 쫓는 중") and m_l4.has("에어록 · 시작하는 곳") and m_l5.has("내리는 곳 · 지도를 눌러 바꾸기") and not m_l5.has("흰 테두리 · 나를 쫓는 중")
+	check("the legend: each stage's kinds, 1-2's drop point in its fixed corner (the bottom right: no longer one to pick), who is after you while you play; the toy room has no boss",
+		m_l4.has("스파이더 마인 (움직일 때만)") and m_l4.has("흰 테두리 · 나를 쫓는 중") and m_l4.has("에어록 · 시작하는 곳") and m_l5.has("헬기에서 내리는 곳 · 오른쪽 아래 구석") and not m_l5.any(func(t): return str(t).contains("눌러")) and not m_l5.has("흰 테두리 · 나를 쫓는 중")
 		and m_l9.has("플라스틱 군인") and m_l9.has("조립 블록 피규어") and not m_l9.has("보스"), [m_l4.size(), m_l5.size(), m_l9])
 	# ---------------- the cutscenes: played through or skipped, they end the same ----------------
 	var ct := Cut.new(); add_child(ct); ct.cam = cam; ct.player = pl; ct.game = gm; ct.world = w; ct.enemies = en; ct.fx = fxn
@@ -1491,6 +1502,13 @@ func _ready() -> void:
 	var dr_top := dr_img.get_pixel(dr_pw / 2, int(dr_ph * 0.15)); var dr_ring := dr_img.get_pixel(dr_pw / 2 + roundi(dr_ph * Ship.RING_R), dr_ph / 2); var dr_panel := dr_img.get_pixel(int(dr_pw * 0.25), int(dr_ph * 0.3))
 	var dr_D: Dictionary = w.ship.doors[0]; var dr_o0: float = dr_D.open; dr_D.open = 1.0; w.ship._slide(dr_D); var dr_gap: float = (dr_D.b as Node3D).position.z - (dr_D.a as Node3D).position.z
 	dr_D.open = dr_o0; w.ship._slide(dr_D)
+	var al_img: Image = Ship.airlock_tex().get_image(); var al_mat = (w.ship.air_door as MeshInstance3D).material_override
+	var al_foot := al_img.get_pixel(5, 250); var al_red := 0
+	for al_y in range(95, 112):
+		for al_x in range(70, 186): var al_c := al_img.get_pixel(al_x, al_y); al_red += 1 if al_c.r > 0.8 and al_c.g < 0.4 and al_c.b < 0.35 else 0
+	check("4: the door you start at (the airlock's inner door) wears its own face again, as before 1.2.0 (the owner's wish): striped yellow at its foot, 에어록 in red; the others keep the drawn face",
+		al_mat is StandardMaterial3D and (al_mat as StandardMaterial3D).albedo_texture == Ship.airlock_tex() and al_img.get_width() == 256 and al_foot.r > 0.8 and al_foot.g > 0.6 and al_foot.b < 0.4 and al_red > 150
+		and (dr_D.a as MeshInstance3D).material_override != al_mat, [al_foot, al_red])
 	check("4: the doors as drawn: a blue seam down the middle, crossing the black ring in the middle in an S; the bridge's and the hall's two leaves part along it, all the way",
 		dr_s[0] > 0.2 and dr_s[1] < -0.2 and absf(dr_s[2]) < 1e-6 and dr_pw == 640 and dr_top.b > dr_top.r + 0.3 and dr_ring.r < 0.1 and dr_ring.b < 0.1 and absf(dr_panel.r - Color("434a5a").r) < 0.02
 		and absf(dr_gap - dr_w) < 0.01 and (dr_D.a as MeshInstance3D).mesh.get_faces().size() > 100, [dr_s, dr_top, dr_ring, dr_panel, dr_gap])
@@ -2679,3 +2697,23 @@ func _accounts() -> void:
 	for f in ["account_check", "account_check_before"]: DirAccess.remove_absolute(ProjectSettings.globalize_path("user://%s.json" % f))
 	C.store_key = "account"; C.rounds = K.ROUNDS; C.idle = Callable(); C.mute()   # (and nothing goes to a server for the rest of the checks either)
 	Store.save = keep_save; Store.fix_save(); Store.money_lock = keep_locks[0]; Store.ivory_lock = keep_locks[1]; Store.own_lock = keep_locks[2]; Store.persist()
+
+# ---------------- the machine gun's shot: the Godot version's own since 1.6.1 (tools/render_sounds.js, godotLmg) ----------------
+## a WAV file as tools/render_sounds.js writes it (16-bit mono): [samples, rate]
+func _wav(path: String) -> Array:
+	var b := FileAccess.get_file_as_bytes(path); var n := b.decode_u32(40) / 2; var x := PackedFloat32Array(); x.resize(n)
+	for i in n: x[i] = b.decode_s16(44 + i * 2) / 32767.0
+	return [x, b.decode_u32(24)]
+## how high a sound sits (its RMS frequency: how fast it changes against how big it is), its peak and its length in seconds
+func _pitch_of(path: String) -> Vector3:
+	var w := _wav(path); var x: PackedFloat32Array = w[0]; var e := 0.0; var d := 0.0; var pk := 0.0
+	for i in x.size():
+		e += x[i] * x[i]; pk = maxf(pk, absf(x[i]))
+		if i > 0: d += (x[i] - x[i - 1]) * (x[i] - x[i - 1])
+	return Vector3(float(w[1]) / TAU * sqrt(d / maxf(e, 1e-12)), pk, x.size() / float(w[1]))
+
+func _lmg_sound() -> void:
+	var takes: Array = ["shot_lmg", "shot_lmg__1", "shot_lmg__2", "shot_lmg__3"].map(func(n): return _pitch_of("res://sounds/%s.wav" % n))
+	var rifle := _pitch_of("res://sounds/shot_rifle.wav")
+	check("the machine gun's shot is lower, duller and quieter than before (the owner's wish): four takes, each sitting far below the rifle's (no bright crack, no clack of the belt), lower at its peak and short",
+		takes.size() == 4 and takes.all(func(t: Vector3) -> bool: return t.x < 600.0 and t.y < rifle.y * 0.7 and t.z < 0.35) and rifle.x > 1500.0, [takes, rifle])
