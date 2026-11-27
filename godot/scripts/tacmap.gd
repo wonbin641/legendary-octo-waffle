@@ -382,7 +382,7 @@ func legend(live: bool) -> Array:
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
-	out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])
+	if not (stage == Store.ST_ELF and game != null and game.rm != null): out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])   # (a realm battle has no one place to start)
 	if stage == Store.ST_ELF and game != null and game.rm != null:   # a realm battle: the two sides and the match's marks
 		out.push_back(["en", "우리 편", Color("5f9cff"), ""]); out.push_back(["en", "적", Color("ff5260"), ""])
 		var seen := {}

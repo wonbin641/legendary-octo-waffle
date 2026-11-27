@@ -115,7 +115,9 @@ func _half() -> void:
 func _new_bomb(wait: float) -> void:
 	if bomb.by != null: (bomb.by as Realm.Fighter).carrying = false
 	var b0 := base_of(attackers); var fwd := Vector3(TC.x - b0.x, 0, TC.y - b0.z).normalized()   # (five metres out of the base's circle, toward the tower: taken by whoever means to, not by whoever comes back there)
-	bomb = {"state": "none" if wait > 0.0 else "home", "pos": b0 + fwd * 5.0, "by": null, "site": "", "t": 0.0, "fuse": 0.0, "cut": 0.0, "saved": false, "wait": wait, "plan": "a" if randf() < 0.5 else "b"}
+	var at := b0 + fwd * 5.0
+	if stage == 2: var a := deg_to_rad(40.0); at = Vector3(TC.x + cos(a) * 11.2, ElfWood.T_F2, TC.y + sin(a) * 11.2)   # (in the tower: along the gallery, past the stormers' circle)
+	bomb = {"state": "none" if wait > 0.0 else "home", "pos": at, "by": null, "site": "", "t": 0.0, "fuse": 0.0, "cut": 0.0, "saved": false, "wait": wait, "plan": "a" if randf() < 0.5 else "b"}
 	if not wards[bomb.plan]: bomb.plan = "b" if bomb.plan == "a" else "a"
 
 func _seal_up() -> void:

@@ -227,6 +227,7 @@ func _pose_gun(dt: float) -> void:
 	if inspect: pos = Vector3(0.02, -0.03, -0.62 - d[0] * 0.25); rot = Vector3(0.18, 1.15, 0.0)   # held out to look at
 	var GM: Dictionary = gm_models.models.get(guns.cur, {})   # (none for the toy room's spray can: it is a toy only)
 	if GM.get("tip") != null: (GM.tip as Node3D).visible = guns.st().mag > 0   # the rocket's nose shows while one is loaded
+	if game.rm != null: pos = Vector3.ZERO; rot = Vector3.ZERO; game.rm.look.hip = hip_scale   # (a realm battle: your people's weapon is posed by RealmLook)
 	view.position = pos; view.rotation = rot
 	flash.visible = guns.flash_t > 0.0 and guns.ads < 0.5 and (not toy or guns.cur == "smg"); flash.position = Vector3(0, 0, -d[0] - 0.05) if toy else Vector3(0, GunModels.MUZZLE[guns.cur][1], GM.flash_z)
 	flash_light.light_energy = (3.0 if not toy else (1.2 if guns.cur == "smg" else 0.0)) if guns.flash_t > 0.0 else flash_light.light_energy * exp(-dt * 30)

@@ -15,6 +15,9 @@ var view: Node3D = null    # your weapon
 var models := {}           # race -> its node in your hands
 var dagger: Node3D = null
 var kick := 0.0; var swing_t := 0.0; var swing_len := 0.0; var swing_kind := ""; var swing_i := 0
+var hip := 1.0               # (a narrow screen: the weapon comes in from the side less far; Main sets it)
+const VIEW_SCALE := {"elf": 1.0, "dwarf": 0.66, "orc": 0.75, "demon": 0.8}
+const TIP := {"elf": Vector3(0, 0.03, -0.38), "dwarf": Vector3(0, 0, -0.46), "orc": Vector3(0, 0, -1.1), "demon": Vector3(0, 0, -0.72)}   # the weapon's mouth in its own frame
 var shield_nodes: Array = []
 var _mats := {}
 var _meshes := {}
@@ -170,13 +173,15 @@ func _hands(dt: float) -> void:
 	if swing_t > 0.0 and rm.stop_t <= 0.0: swing_t = maxf(0.0, swing_t - dt)
 	if not on: dagger.visible = false; return
 	var n: Node3D = models[f.race]; var t := rm.clock
-	var bob := sin(rm.player.step_phase) * 0.008 * clampf(rm.player.speed_xz / 5.0, 0.0, 1.0)
-	var at := Vector3(0.23, -0.22 + bob, -0.46 + kick * 0.09); var rot := Vector3(kick * 0.12, 0.0, 0.0)
+	var mv := clampf(rm.player.speed_xz / 5.0, 0.0, 1.3) * (1.0 if rm.player.grounded else 0.2)
+	var bob := -absf(cos(rm.player.step_phase)) * 0.012 * mv
+	var at := Vector3(0.21 * hip + sin(rm.player.step_phase) * 0.01 * mv, -0.2 + bob + rm.player.land_dip * 0.4, -0.5 + kick * 0.07); var rot := Vector3(kick * 0.12, 0.0, 0.0)
 	match f.race:
 		"elf":
 			if f.charge > 0.0: var c := minf(1.0, f.charge / float(Races.XBOW.charge)); at += Vector3(-0.07 * c, 0.03 * c, 0.05 * c) + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * 0.0015 * c
 			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.XBOW.reload); at.y -= 0.12 * sin(u * PI); rot.z = 0.7 * sin(u * PI); rot.x += 0.3 * sin(u * PI)   # (tipped over while its core draws mana in)
 		"dwarf":
+			at += Vector3(0.05, -0.05, 0.0); rot.y = -0.06
 			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.CANNON.reload); at.y -= 0.14 * sin(u * PI); rot.x += 0.5 * sin(u * PI)
 		"orc":   # the great sword, held up before you; its three blows: across, back across, down from overhead
 			at = Vector3(0.3, -0.36, -0.42); rot = Vector3(1.05, 0.25, -0.2)
@@ -186,15 +191,21 @@ func _hands(dt: float) -> void:
 				else: rot = Vector3(0.25, lerpf(-1.3, 1.3, u) * dirn, 0.9 * dirn); at = Vector3(lerpf(0.34, -0.2, u) * dirn, -0.26, -0.5)
 			if f.cast_t > 0.0: rot = Vector3(1.7, 0, 0); at = Vector3(0.1, -0.2, -0.45)
 		"demon":
-			at += Vector3(0.0, -0.05, 0.0); rot.x += 0.25
+			at += Vector3(0.08, -0.08, 0.04); rot.x += 0.16; rot.y = -0.1
 			if f.seal_t > 0.0: at.y -= 0.1; rot.z = 0.5
 			if f.beam_on: at += Vector3(-0.06, 0.03, 0.0)
-	n.position = at; n.rotation = rot
+	n.position = at; n.rotation = rot; n.scale = Vector3.ONE * float(VIEW_SCALE[f.race])
 	# the dagger in the left hand: a cut, or held up to turn a missile
 	var cut := f.dag_t > float(Races.DAGGER.cd) - 0.25
 	dagger.visible = cut or f.parry_t > 0.0
 	if cut: var u := (f.dag_t - (float(Races.DAGGER.cd) - 0.25)) / 0.25; dagger.position = Vector3(-0.22 + 0.4 * (1.0 - u), -0.2, -0.45); dagger.rotation = Vector3(0, 0.6, 1.2)
 	elif f.parry_t > 0.0: dagger.position = Vector3(-0.1, -0.12, -0.4); dagger.rotation = Vector3(0, 1.3, 1.57)
+
+## where your weapon's mouth is seen (what you fire is drawn coming out of it); anyone else's: where his shots start
+func view_muzzle(f: Realm.Fighter) -> Vector3:
+	if f.me and models.has(f.race) and is_instance_valid(models[f.race]) and (models[f.race] as Node3D).is_visible_in_tree():
+		return (models[f.race] as Node3D).global_transform * (TIP[f.race] as Vector3)
+	return rm.kit.muzzle(f) + f.aim * 0.6
 
 # ---------------- what flies ----------------
 func shot(s: Dictionary) -> Dictionary:
@@ -209,7 +220,9 @@ func shot(s: Dictionary) -> Dictionary:
 		"bolt": size = Vector3(0.09, 0.09, 0.5); col = Color(0.75, 0.9, 1.0, 1.0)
 	if rm.en == null: return s
 	var m := _mi(_box("shot_" + str(s.kind), size), _unlit("shot_" + key, col, s.kind != "axe" and s.kind != "flask" and s.kind != "gren"))
-	m.position = s.pos; s.node = m
+	m.position = s.pos; s.node = m; s.age = 0.0
+	var by: Realm.Fighter = s.by
+	if by != null and by.me and s.kind != "wave": s.vis = view_muzzle(by) - (s.pos as Vector3)   # (yours: drawn from your weapon's mouth, closing on the line you aim along)
 	return s
 
 func shot_gone(s: Dictionary) -> void:
@@ -222,7 +235,8 @@ func _shots(_dt: float) -> void:
 	for s: Dictionary in rm.kit.shots:
 		if not s.has("node") or not is_instance_valid(s.node): continue
 		var n: Node3D = s.node; var p: Vector3 = s.pos; var v: Vector3 = s.vel
-		n.position = p
+		s.age = float(s.get("age", 0.0)) + _dt
+		n.position = p + (s.vis as Vector3) * maxf(0.0, 1.0 - float(s.age) / 0.14) if s.has("vis") else p
 		if v.length() > 0.1 and absf(v.normalized().y) < 0.99: n.look_at(p + v, Vector3.UP)
 		if s.kind == "axe": n.rotate_object_local(Vector3.RIGHT, rm.clock * 18.0)
 		if rm.fx != null and randf() < 0.5:
@@ -262,7 +276,7 @@ func _dress(fd: Dictionary) -> void:
 		"gravity": m = _ball(1.0, "f_grav", Color(0.12, 0.04, 0.25, 0.9)); m.position.y = 1.0
 		"dome": m = _ball(r, "f_dome", Color(0.72, 0.9, 1.0, 0.2), true)
 		"star": m = _flat(r, "f_star", Color(0.7, 0.6, 1.0, 0.22))
-		"furnace": m = _flat(r, "f_furnace", Color(0.5, 0.06, 0.02, 0.45))
+		"furnace": m = _flat(r, "f_furnace", Color(0.45, 0.05, 0.02, 0.26))
 		"trail": m = _flat(1.0, "f_trail", Color(1.0, 0.4, 0.1, 0.6))
 	if m == null: return
 	m.get_parent().remove_child(m); g.add_child(m)
@@ -398,16 +412,16 @@ func reload(_f: Realm.Fighter) -> void: pass
 func fired(f: Realm.Fighter, kind: String) -> void:
 	if f.me: kick = 1.0 if kind == "big" or kind == "gren" else 0.45
 	if rm.fx == null: return
-	var at := rm.kit.muzzle(f) + f.aim * 0.6
-	if kind == "arrow" or kind == "big": rm.fx.glow(at, f.aim * 2.0, 0.12, 0.14, 0.02, Color(0.6, 1.0, 0.95, 0.8))
-	elif kind == "ember": rm.fx.glow(at, f.aim * 3.0 + Vector3(0, 0.5, 0), 0.14, 0.16, 0.03, Color(1.0, 0.5, 0.12, 0.8))
+	var at := view_muzzle(f); var sz := 0.5 if f.me else 1.0
+	if kind == "arrow" or kind == "big": rm.fx.glow(at, f.aim * 2.0, 0.12, 0.14 * sz, 0.02, Color(0.6, 1.0, 0.95, 0.8))
+	elif kind == "ember": rm.fx.glow(at, f.aim * 3.0 + Vector3(0, 0.5, 0), 0.14, 0.16 * sz, 0.03, Color(1.0, 0.5, 0.12, 0.8))
 
 ## the cannon goes off: a ring of steam from its mouth, the shards' ways, sparks where they end
 func cannon(f: Realm.Fighter, ends: Array, all_close: bool) -> void:
 	if f.me: kick = 1.6 if all_close else 1.1
 	if rm.fx == null: return
-	var o := rm.kit.muzzle(f) + f.aim * 0.7; var up := Vector3.UP if absf(f.aim.y) < 0.95 else Vector3.RIGHT; var x := f.aim.cross(up).normalized(); var y := x.cross(f.aim)
-	for i in 10: var a := i * TAU / 10.0; rm.fx.glow(o, f.aim * 5.0 + (x * cos(a) + y * sin(a)) * 2.2, 0.35, 0.16, 0.5, Color(0.95, 0.98, 1.0, 0.5), 0.0, 3.0)   # (the vortex ring)
+	var o := view_muzzle(f); var up := Vector3.UP if absf(f.aim.y) < 0.95 else Vector3.RIGHT; var x := f.aim.cross(up).normalized(); var y := x.cross(f.aim); var sz := 0.35 if f.me else 1.0
+	for i in 10: var a := i * TAU / 10.0; rm.fx.glow(o + f.aim * 0.15, f.aim * 5.0 + (x * cos(a) + y * sin(a)) * 2.2, 0.35, 0.16 * sz, 0.5 * sz, Color(0.95, 0.98, 1.0, 0.45), 0.0, 3.0)   # (the vortex ring)
 	for i in ends.size():
 		var e: Vector3 = ends[i]
 		if i % 2 == 0: rm.fx.streak(o, e, Color(1.0, 0.85, 0.6, 0.5), 0.02, 0.06)
@@ -562,4 +576,4 @@ func update(dt: float) -> void:
 		if float(q.t) <= 0.0: (q.n as Node).queue_free(); _ghosts.remove_at(i)
 	# the demon's beam
 	for f: Realm.Fighter in rm.all:
-		if f.alive and f.beam_on and rm.fx != null: rm.fx.streak(rm.kit.muzzle(f) + f.aim * 0.5 - Vector3(0, 0.12 if f.me else 0.0, 0), f.beam_end, Color(0.75, 0.1, 0.45, 0.7), 0.06, 0.05)
+		if f.alive and f.beam_on and rm.fx != null: rm.fx.streak(view_muzzle(f), f.beam_end, Color(0.75, 0.1, 0.45, 0.6), 0.035 if f.me else 0.06, 0.05)
