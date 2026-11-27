@@ -196,7 +196,7 @@ func _melee_strike() -> void:
 	if best.has("crate"): world.damage_crate(best.crate, 60, hit); Snd.play("toy_ruler" if toy else "melee", 1.0, hit); Snd.buzz(20); return
 	var e = best.e; var killed := false
 	if best.bomb and e.alive: enemies.blow_vest(e, best.d); killed = true
-	else: killed = enemies.damage(e, Weapons.MELEE_DMG * (2.0 if best.weak else float(best.mult)), hit, best.d, best.weak)
+	else: enemies.cause = "ruler" if toy else ""; killed = enemies.damage(e, Weapons.MELEE_DMG * (2.0 if best.weak else float(best.mult)), hit, best.d, best.weak); enemies.cause = ""
 	if e.alive and not e.boss: e.vel.x += best.d.x * 4.0; e.vel.z += best.d.z * 4.0   # and a shove
 	_say(hitmark, [killed, best.weak]); Snd.play("melee_metal" if e.robot else "melee", 1.0, hit); player.shake = maxf(player.shake, 0.12); Snd.buzz(30)
 
@@ -256,7 +256,10 @@ func fire(exact = null) -> void:   # exact: a direction to send the shot along a
 				var dmg: float = W.dmg * ((eh.enemy.head_x if eh.enemy.head_x > 0.0 else float(W.head)) if eh.weak else float(eh.mult))
 				if W.has("falloff"): dmg *= lerpf(1.0, 0.35, clampf((eh.t - W.falloff[0]) / (W.falloff[1] - W.falloff[0]), 0.0, 1.0))
 				if eh.get("bomb", false) and eh.enemy.alive: enemies.blow_vest(eh.enemy, d); killed = true
-				elif enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
+				else:
+					enemies.cause = cur if toy else ""   # (stage 5: what the toy in hand leaves on what it hits)
+					if enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
+					enemies.cause = ""
 				if W.get("flame", false) and eh.enemy.alive: enemies.ignite(eh.enemy)   # and sets it alight: it burns on for a while
 				hit_any = true
 				if eh.weak: head = true

@@ -12,6 +12,12 @@ const BED_Y := 6.0
 const NAMES := [["책장", -34.0, -63.0], ["옷장", 28.0, -62.0], ["책상", -42.0, -4.0], ["2층침대", 36.0, 0.0]]
 const BED := [10.0, -30.0, 62.0, 30.0, 4.0]   # under the bed: [minx, minz, maxx, maxz] and below this height (the frame is at 4.4)
 static func under_bed(p: Vector3) -> bool: return p.x > BED[0] and p.x < BED[2] and p.z > BED[1] and p.z < BED[3] and p.y < BED[4]
+## how high the rug's top lies over the floor at a place (it is drawn, not stood on: feet sink into its pile; what is left
+## lying about lies on top of it)
+const RUG := [-46.0, 34.0, 46.0, 66.0]   # its edge [minx, minz, maxx, maxz]: 0.08 thick; three metres in (two at the ends), 0.1
+static func rug(x: float, z: float) -> float:
+	if x <= RUG[0] or x >= RUG[2] or z <= RUG[1] or z >= RUG[3]: return 0.0
+	return 0.1 if (x > RUG[0] + 3.0 and x < RUG[2] - 3.0 and z > RUG[1] + 2.0 and z < RUG[3] - 2.0) else 0.08
 const DESK_Y := 9.0
 const BUNK_Y := 15.0
 const SHELF_Y := 20.0
@@ -185,7 +191,7 @@ func _bridge() -> void:
 
 ## south: the carpet, the toy bins, the train. open ground and the long way round
 func _south() -> void:
-	box(-46.0, 0.0, 34.0, 46.0, 0.08, 66.0, "d8a7b1", "bed", false); box(-43.0, 0.08, 36.0, 43.0, 0.1, 64.0, "e9c7ce", "bed", false)   # the rug
+	box(RUG[0], 0.0, RUG[1], RUG[2], 0.08, RUG[3], "d8a7b1", "bed", false); box(RUG[0] + 3.0, 0.08, RUG[1] + 2.0, RUG[2] - 3.0, 0.1, RUG[3] - 2.0, "e9c7ce", "bed", false)   # the rug
 	for b in [[-52.0, "3d7dca"], [42.0, "e63946"]]:   # two toy bins, one by each side's start
 		box(b[0], 0, 46.0, b[0] + 10.0, 7.0, 47.0, b[1]); box(b[0], 0, 57.0, b[0] + 10.0, 7.0, 58.0, b[1]); box(b[0], 0, 47.0, b[0] + 1.0, 7.0, 57.0, b[1]); box(b[0] + 9.0, 0, 47.0, b[0] + 10.0, 7.0, 57.0, b[1])
 		box(b[0] + 1.0, 0, 47.0, b[0] + 9.0, 4.4, 57.0, "f4d35e", "bed")

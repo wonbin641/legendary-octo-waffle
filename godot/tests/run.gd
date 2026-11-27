@@ -1075,6 +1075,7 @@ func _ready() -> void:
 	_corpse_shot(gm, en, pl, g, cam)
 	_lmg_sound()
 	_toy_screen(gm, en, pl, g, pr, w, cam, lt)
+	_toy_breaks(gm, en, pl, g, pr, w, cam, fxn)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -3121,8 +3122,8 @@ func _toy_screen(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	var shown_9: bool = (T.nodes.battery as Control).visible and (T.nodes.map as Control).get_parent() == holder and (T.nodes.clock as Control).get_parent() == T.nodes.top
 	gm.begin(1); H.update(0.016); var hidden_1: bool = not (T.nodes.battery as Control).visible and not (T.nodes.map as Control).visible and not (T.nodes.over as Control).visible
 	var r1b := DrawRec.new(); gm.begin(9); H.update(0.016); H.draw(r1b)   # (the HUD's own drawing there: the crosshair and such, none of the pieces)
-	check("under the HUD each piece of the toy screen is a control of its own (the paper map, the top group with the clock in it, the kill lines, the battery with its sticker, the tray, one over them all): drawn again only when what it shows changes (the battery when you are hit, the tray when you shoot), shaken and kicked by its own place and turn, and put away out of the toy room",
-		made.size() == 8 and same and bat_new and low_on and tray_new and kicked and low_off and shown_9 and hidden_1 and not r1b.has("체력") and not r1b.has("AA"), [made, same, bat_new, low_on, tray_new, kicked, low_off, shown_9, hidden_1])
+	check("under the HUD each piece of the toy screen is a control of its own (the glass itself, for water running down it; on it the paper map, the top group with the clock in it, the kill lines, the battery with its sticker, the tray; one over them all): drawn again only when what it shows changes (the battery when you are hit, the tray when you shoot), shaken and kicked by its own place and turn, and put away out of the toy room",
+		made.size() == 9 and made[0] == "glass" and same and bat_new and low_on and tray_new and kicked and low_off and shown_9 and hidden_1 and not r1b.has("체력") and not r1b.has("AA"), [made, same, bat_new, low_on, tray_new, kicked, low_off, shown_9, hidden_1])
 	M.hud = null; T.nodes.clear(); holder.free()
 	# ---- the march's word from every team mode (found while the clock was made: 1.6.2 stumbled here every frame) ----
 	var ots := []
@@ -3131,3 +3132,321 @@ func _toy_screen(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 	gm.tm.mode.overtime = true; ots.push_back(mn.music_for("playing", true, gm.tm, false, Vector3.ZERO, false, 0, 0, 1000.0).ot)
 	check("the march has its word from every team mode: the battery rush and bedtime have no overtime of their own (asking them for one stopped the word every frame), the escort's overtime is one", ots == [false, false, false, true], ots)
 	Store.save = save0; Store.settings = set0; gm.feed = feed0; gm.begin(1)
+
+## stage 5: toys break (scripts/toybreak.gd). What a hit leaves on each kind, what the water gun, a soda can and the spray
+## can leave, how each kind falls, the pieces lying about and who treads on them, the claw and the broom's shadow, the
+## package a toy comes back out of, water on the glass; and that none of it takes from the game's own random numbers
+func _toy_breaks(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, fxn: Fx) -> void:
+	var save0: Dictionary = (Store.save as Dictionary).duplicate(true); var set0: Dictionary = (Store.settings as Dictionary).duplicate(true); var log0: bool = Snd.keep_log
+	var fx0 = en.fx; var pfx0 = pr.fx; var wet0: Callable = pr.on_wet; en.fx = fxn; pr.fx = fxn
+	Store.settings.toyMode = "sweep"; gm.begin(9); pl.chute = false; pl.reset(52.0, 62.0, 0.0); pl.invuln = 1e9
+	var tf: ToyFoes = en.toys; var B: ToyBreak = tf.brk; B.rng.seed = 11; Snd.keep_log = true; Snd.played.clear(); Snd.listener = Vector3(0, 1, 52)
+	var front := Vector3(0, 0, -1)   # (the toys below face +z: a shot from in front goes into them along -z)
+	# a clear place on the floor near a point
+	var spot := func(x: float, z: float) -> Vector3:
+		for r: float in [0.0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6]:
+			for a in 8:
+				var q := Vector3(x + cos(a * TAU / 8.0) * r, 0.0, z + sin(a * TAU / 8.0) * r)
+				if Phys.collide_at(q.x, 0.05, q.z, 0.9, 1.9) == null and Phys.ground_at(q.x, 1.0, q.z, 0.9) == 0.0: return q
+		return Vector3(x, 0.0, z)
+	# a toy of a kind not used yet, stood there facing +z (a car's rider steps down first)
+	var pick := func(type: String, x: float, z: float) -> Enemies.Foe:
+		for e in en.list:
+			if e.type != type or not e.alive or e.carried or e.k.has("used"): continue
+			var at: Vector3 = spot.call(x, z)
+			if e.type == "rc" and e.k.get("rider") != null: tf.dismount(e.k.rider); e.k.rider = null
+			e.k.used = true; e.pos = at; e.yaw = 0.0; e.g.position = at; e.g.rotation = Vector3.ZERO; e.g.visible = true; e.vel = Vector3.ZERO; return e
+		return null
+	var run := func(sec: float) -> void:
+		for i in roundi(sec * 30.0): en.update_dying(1.0 / 30.0); B.tick(1.0 / 30.0)
+	var heard := func(name: String) -> int: return Snd.played.count(name)
+	var live := func() -> int: return B.pieces.filter(func(p): return p.state != ToyBreak.GOING and p.state != ToyBreak.HELD).size()
+	# the mesh a lying piece is drawn with (what is being freed left out), and how many it is drawn with
+	var meshes := func(p: ToyBreak.Piece) -> Array:
+		return p.n.find_children("*", "MeshInstance3D", true, false).filter(func(c):
+			var a: Node = c
+			while a != p.n:
+				if a.is_queued_for_deletion(): return false
+				a = a.get_parent()
+			return true)
+	var box_of := func(p: ToyBreak.Piece) -> AABB:
+		var out := AABB(); var any := false
+		for mi: MeshInstance3D in meshes.call(p):
+			var bb: AABB = mi.global_transform * mi.mesh.get_aabb(); out = out.merge(bb) if any else bb; any = true
+		return out
+	var new_sounds := ["toy_clatter", "toy_pop", "toy_unwind", "toy_puff", "toy_crumble", "toy_rattle", "toy_squeak", "toy_fizz", "toy_zap", "toy_stud", "toy_crane", "toy_sweep"]
+	check("the breakages have their sounds (twelve new ones, one take each, made by tools/make_sounds.py)", new_sounds.all(func(n): return Snd.takes(n).size() == 1), new_sounds.filter(func(n): return Snd.takes(n).size() != 1))
+
+	# ---- a plastic soldier: stress marks where it is struck, the helmet off to a shot at the head, the pack to a hard one ----
+	var so: Enemies.Foe = pick.call("soldier", -12.0, 50.0); var chest: Vector3 = so.pos + Vector3(0.05, 1.3, 0.3); var up_mi := so.upper.get_child(0) as MeshInstance3D
+	var whole: bool = up_mi.mesh == en._box_mesh("ts_uphp", []) and bool(so.k.helmet) and bool(so.k.pack)
+	en.damage(so, 4.0, chest, front, false)
+	var mk: Dictionary = so.k.get("marks", {}); var ul: Array = mk.up.list if mk.has("up") else []; var m0: Array = ul[0] if ul.size() > 0 else [Vector3.ZERO, Vector3.ZERO]
+	var on_front: bool = ul.size() == 1 and (m0[1] as Vector3) == Vector3(0, 0, 1) and (m0[0] as Vector3).distance_to(Vector3(0.05, 0.38, 0.136)) < 0.002
+	var mark_mi: MeshInstance3D = mk.up.mi if mk.has("up") else null
+	var drawn_1: bool = mark_mi != null and mark_mi.get_parent() == so.upper and mark_mi.mesh.get_surface_count() == 1 and (mark_mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == 4
+	for i in 6: en.damage(so, 4.0, chest + Vector3(0.02 * i - 0.05, -0.04 * i, 0), front, false)
+	en.damage(so, 4.0, so.pos + Vector3(-0.11, 0.45, 0.2), front, false)
+	var kept: bool = ul.size() == ToyBreak.MARKS and (mark_mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == 4 * ToyBreak.MARKS and mk.has("ll") and (mk.ll.mi as MeshInstance3D).get_parent() == so.leg_l
+	B.fade(so, 0.25); var fades: bool = is_equal_approx(mark_mi.transparency, 0.75); B.fade(so, 1.0)
+	check("a plastic soldier's skin whitens where it is struck: a pale mark on the face of the part nearest the shot (the chest's front; a leg's, on the leg), five kept to a part, fading with him when he goes see-through",
+		whole and on_front and drawn_1 and kept and fades, [whole, on_front, drawn_1, ul.size(), mk.keys(), fades])
+	var n0: int = B.pieces.size(); en.damage(so, 4.0, so.pos + Vector3(0, 1.72, 0.1), front, true)
+	var hel: ToyBreak.Piece = B.pieces[B.pieces.size() - 1] if B.pieces.size() > n0 else null
+	var helmet_off: bool = not bool(so.k.helmet) and bool(so.k.pack) and up_mi.mesh == en._box_mesh("ts_upp", []) and B.pieces.size() == n0 + 1 and hel.v.y > 4.0 and hel.state == ToyBreak.FLY
+	en.damage(so, 4.0, so.pos + Vector3(0, 1.72, 0.1), front, true); var once: bool = B.pieces.size() == n0 + 1
+	en.damage(so, 34.0, chest, front, false); var pack_off: bool = not bool(so.k.pack) and up_mi.mesh == en._box_mesh("ts_up", []) and B.pieces.size() == n0 + 2 and so.alive
+	check("a shot at its head knocks the helmet off (once), a hard one (a third of its health at a blow, or the one that takes it under half) the pack: each flies off as a piece, and the soldier is drawn without it",
+		helmet_off and once and pack_off, [helmet_off, once, pack_off, so.hp])
+
+	# ---- a brick figure: studs at every hit, the hat at two thirds, the cape at one third, back on when mended ----
+	var bk: Enemies.Foe = pick.call("brick", -6.0, 50.0); var bup := bk.upper.get_child(0) as MeshInstance3D; var cb: String = bk.k.tint; var bchest: Vector3 = bk.pos + Vector3(0, 1.15, 0.3)
+	var s0: int = fxn._smoke.p.size(); B.tick(0.2); n0 = B.pieces.size(); Snd.played.clear()
+	en.damage(bk, 10.0, bchest, front, false); var studs: bool = fxn._smoke.p.size() >= s0 + 3 and heard.call("toy_stud") == 1 and bool(bk.k.hat) and bool(bk.k.cape) and bup.mesh == en._box_mesh("tb_uphc" + cb, [])
+	en.damage(bk, 50.0, bchest, front, false); var hat_off: bool = not bool(bk.k.hat) and bool(bk.k.cape) and bup.mesh == en._box_mesh("tb_upc" + cb, []) and B.pieces.size() == n0 + 1
+	en.damage(bk, 50.0, bchest, front, false); var cape_off: bool = not bool(bk.k.cape) and bup.mesh == en._box_mesh("tb_up" + cb, []) and B.pieces.size() == n0 + 2
+	bk.hp = bk.max_hp; B.dress(bk); var mended: bool = bool(bk.k.hat) and bool(bk.k.cape) and bup.mesh == en._box_mesh("tb_uphc" + cb, []) and B.pieces.size() == n0 + 2
+	en.damage(bk, 1.0, bk.pos + Vector3(0, 1.6, 0.1), front, true); var hat_shot: bool = not bool(bk.k.hat) and bool(bk.k.cape) and bk.hp > bk.max_hp * 0.9
+	check("a brick figure sheds studs of its own colour at every hit (a tick each), its hat at two thirds of its health (or to a shot at the head), its cape at one third; mended, it wears them again",
+		studs and hat_off and cape_off and mended and hat_shot, [studs, hat_off, cape_off, mended, hat_shot])
+
+	# ---- a wind-up car: the cabin jumps on its hinge over the gears and wires, and gapes the wider the worse off it is ----
+	var car: Enemies.Foe = pick.call("rc", 0.0, 50.0); var cc: String = car.k.tint; var body_mi := car.body.get_child(0) as MeshInstance3D; Snd.played.clear()
+	var shut: bool = not car.k.has("panel") and body_mi.mesh == en._box_mesh("tr_body" + cc, [])
+	en.damage(car, 10.0, car.pos + Vector3(0, 0.5, 0.6), front, false)
+	var opened: bool = car.k.has("panel") and car.k.has("guts") and body_mi.mesh == en._box_mesh("tr_body_o" + cc, []) and B.active.has(car) and heard.call("toy_zap") == 1
+	run.call(0.1); var jumped: bool = opened and (car.k.panel as Node3D).rotation.x < -0.15
+	run.call(2.5); var settled: bool = opened and absf((car.k.panel as Node3D).rotation.x) < 0.01 and not B.active.has(car)
+	en.damage(car, 40.0, car.pos + Vector3(0, 0.5, 0.6), front, false); Snd.played.clear(); run.call(4.0)
+	var gapes: bool = opened and absf((car.k.panel as Node3D).rotation.x + 0.16) < 0.02 and B.active.has(car) and heard.call("toy_zap") >= 1
+	check("a wind-up car's cabin jumps on its hinge when it is hit, over two gears, a battery and two wires, with sparks; it settles shut while the car is sound, a little open under two thirds of its health (and under half it goes on sparking)",
+		shut and opened and jumped and settled and gapes and ToyBreak.rc_gape(0.2) > ToyBreak.rc_gape(0.5), [shut, opened, jumped, settled, gapes])
+
+	# ---- the pump water gun: wet and shining, squeaking as it walks, dry again in seven seconds ----
+	var bw: Enemies.Foe = pick.call("brick", 6.0, 50.0); var leg_mi := bw.leg_l.get_child(0) as MeshInstance3D
+	en.cause = "rifle"; en.damage(bw, 3.0, bw.pos + Vector3(0, 1.1, 0.3), front, false); en.cause = ""; var dry0: bool = not bw.k.has("wet") and leg_mi.material_override == en._mat
+	en.cause = "shotgun"; en.damage(bw, 3.0, bw.pos + Vector3(0, 1.1, 0.3), front, false); en.cause = ""
+	var wet_on: bool = float(bw.k.get("wet", 0.0)) == ToyBreak.WET_T and leg_mi.material_override != en._mat and (leg_mi.material_override as StandardMaterial3D).roughness < 0.1 and B.active.has(bw)
+	Snd.played.clear(); Snd.listener = bw.pos
+	for i in 24: bw.walk += 0.6; B.tick(0.05)
+	var squeaks: int = heard.call("toy_squeak")
+	for i in 130: B.tick(0.05)
+	var dried: bool = float(bw.k.wet) <= 0.0 and leg_mi.material_override == en._mat and not B.active.has(bw)
+	var sm: StandardMaterial3D = so.k.mat; var rough0 := sm.roughness; var col0 := sm.albedo_color; B.wet(so); var sol_wet: bool = sm.roughness < 0.1 and sm.albedo_color.g < col0.g
+	for i in 150: B.tick(0.05)
+	var sol_dry: bool = is_equal_approx(sm.roughness, rough0) and sm.albedo_color.is_equal_approx(col0)
+	check("the pump water gun (and no other toy) leaves what it hits wet: a darker, shining skin, drips, a squeak at every step; dry again after seven seconds (a soldier's own plastic, the others' shared skin)",
+		dry0 and wet_on and squeaks >= 3 and dried and sol_wet and sol_dry, [dry0, wet_on, squeaks, dried, sol_wet, sol_dry])
+
+	# ---- a soda can: syrup on everyone in its puddle, strings from the lifted foot, bubbles ----
+	var bs: Enemies.Foe = pick.call("brick", 12.0, 50.0); var ss: Enemies.Foe = pick.call("soldier", 13.5, 50.0); var far: Enemies.Foe = pick.call("brick", 12.0, 60.0)
+	var can_at: Vector3 = (bs.pos + ss.pos) * 0.5; var fl := ToyBreak.flavour(can_at); Snd.played.clear(); Snd.listener = can_at; var ssm: StandardMaterial3D = ss.k.mat; var scol0 := ssm.albedo_color
+	B.soda(can_at, 4.0, [bs, ss, far]); var bs_mi := bs.leg_l.get_child(0) as MeshInstance3D
+	var sticky: bool = float(bs.k.goo_t) == ToyBreak.GOO_T and str(bs.k.goo) == fl and float(ss.k.goo_t) == ToyBreak.GOO_T and not far.k.has("goo_t") and heard.call("toy_fizz") >= 1
+	var stained: bool = (bs_mi.material_override as StandardMaterial3D).albedo_color.is_equal_approx(ToyBreak.skin_col(Color.WHITE, false, fl, 0)) and not ssm.albedo_color.is_equal_approx(scol0)
+	bs.leg_l.rotation.x = 0.7; bs.leg_r.rotation.x = 0.0; s0 = fxn._smoke.p.size(); B.tick(0.05)
+	var strands: Array = bs.k.get("strands", []); var hip := bs.leg_l.position.y
+	var strung: bool = strands.size() == 2 and (strands[0] as Node3D).visible and absf((strands[0] as Node3D).scale.y - (hip - (hip - 0.02) * cos(0.7) - 0.1)) < 0.001 and absf((strands[1] as Node3D).scale.y - 0.02) < 0.001 and is_equal_approx((strands[0] as Node3D).position.y, 0.1)   # (on the rug's top)
+	for i in 20: B.tick(0.05)
+	var bubbles: bool = fxn._smoke.p.size() > s0 + 4
+	for i in 130: B.tick(0.05)
+	var clean: bool = float(bs.k.goo_t) <= 0.0 and not bs.k.has("strands") and bs_mi.material_override == en._mat and ssm.albedo_color.is_equal_approx(scol0)
+	check("a soda can's syrup (cola brown or grape purple, by where it bursts) is on everyone in its puddle: a sticky skin of its colour, a blob on the floor under each foot and a string up to the foot that is lifted, bubbles and a fizz; gone after seven seconds",
+		sticky and stained and strung and bubbles and clean and ToyBreak.GOO_COL.has(fl), [fl, sticky, stained, strung, bubbles, clean])
+
+	# ---- the spray can: scorched darker the longer it burns, smoke over it ----
+	var bf: Enemies.Foe = pick.call("brick", 18.0, 50.0); var bf_mi := bf.leg_l.get_child(0) as MeshInstance3D; en.ignite(bf); s0 = fxn._smoke.p.size(); var hp_f := bf.hp
+	for i in 20: en._burns(0.1); B.tick(0.1)
+	var scorch_1: bool = str(bf.k.skin) == "s01" and (bf_mi.material_override as StandardMaterial3D).albedo_color.r < 0.7
+	for i in 12: en._burns(0.1); B.tick(0.1)
+	var scorch_2: bool = str(bf.k.skin) == "s02" and (bf_mi.material_override as StandardMaterial3D).albedo_color.r < 0.4 and (bf_mi.material_override as StandardMaterial3D).roughness > 0.9 and bf.burn_t <= 0.0
+	var smoked: bool = fxn._smoke.p.size() > s0 + 20 and B.active.has(bf)
+	for i in 40: B.tick(0.1)
+	var stays: bool = str(bf.k.skin) == "s02" and not B.active.has(bf) and bf.hp == hp_f - 72.0
+	B.burning(ss, ToyBreak.CHAR_T); var sol_black: bool = str(ss.k.skin) == "s03" and ssm.albedo_color.r < scol0.r * 0.2 + 0.04 and ssm.albedo_color.g < scol0.g * 0.2 + 0.04
+	check("the spray can's fire scorches a toy's plastic: darker the longer it burns (one burn of three seconds: two steps of three; held in the fire, black), smoke standing over it while it burns and a while after; the scorch stays, the burn hurts as it did",
+		scorch_1 and scorch_2 and smoked and stays and sol_black, [bf.k.skin, scorch_1, scorch_2, smoked, stays, sol_black])
+
+	# ---- a plastic soldier falls stiff on its base; a blast throws it up, turning ----
+	var st: Enemies.Foe = pick.call("soldier", -12.0, 56.0); st.leg_l.rotation.x = 0.3; st.arm_r.rotation.x = -1.2; Snd.played.clear(); Snd.listener = st.pos; n0 = B.pieces.size()
+	en.damage(st, 1e6, st.pos + Vector3(0, 1.3, 0), Vector3(1, 0, 0), false)
+	var toppling: bool = str(st.k.dead) == "topple" and en.dying.has(st) and not en.list.has(st) and B.pieces.size() == n0 + 1 and not bool(st.k.pack)   # (the blow that fells him knocks his pack off)
+	n0 = B.pieces.size(); run.call(0.25); var up_mid: Vector3 = st.g.global_transform.basis.y.normalized()
+	var mid_way: bool = up_mid.x > 0.2 and up_mid.y > 0.5 and is_equal_approx(st.leg_l.rotation.x, 0.3) and is_equal_approx(st.arm_r.rotation.x, -1.2) and absf(st.g.global_transform.origin.y - st.pos.y) < 0.3
+	run.call(0.7); var body: ToyBreak.Piece = B.pieces[B.pieces.size() - 1] if B.pieces.size() > n0 else null
+	var lying: bool = body != null and not en.dying.has(st) and body.heavy and body.state == ToyBreak.REST and body.filed
+	var bb7: AABB = box_of.call(body) if body != null else AABB()
+	var rug7 := ToyRoom.rug(st.pos.x, st.pos.z)
+	var along_x: bool = bb7.size.x > 1.5 and bb7.size.y < 1.1 and bb7.position.x > st.pos.x - 0.1 and absf(bb7.position.y - st.pos.y - rug7) < 0.03 and float(st.k.lie) > 1.2 and rug7 == 0.1   # (nothing of him under the rug's top)
+	var s_back: Enemies.Foe = pick.call("soldier", -12.0, 62.0); var lie_back: float = B.lie_angle(s_back, Vector3(0, 0, -1)); var lie_face: float = B.lie_angle(s_back, Vector3(0, 0, 1))
+	s_back.arm_r.rotation = Vector3(-PI / 2 + 0.05, 0, 0); var lie_aim: float = B.lie_angle(s_back, Vector3(0, 0, 1)); s_back.arm_r.rotation = Vector3.ZERO
+	# (on its back its pack meets the floor first; on its face its head does, or its gun if it was aiming)
+	var lies_right: bool = lie_back < PI / 2.0 and lie_back > PI / 2.0 - 0.2 and lie_face > PI / 2.0 and lie_face < PI / 2.0 + 0.3 and lie_aim < PI / 2.0 - 0.2 and lie_aim >= 0.9
+	var fused: bool = body != null and meshes.call(body).size() == 2   # (his body's six meshes one, and his marks)
+	check("a plastic soldier that falls topples as it stood, legs and arms unbent, over the edge of its base away from the shot, with a hollow clatter; then it lies there on the edge of its base and whatever of it met the floor first, as one piece, drawn as one mesh (and its marks)",
+		toppling and mid_way and lying and along_x and lies_right and fused and heard.call("toy_clatter") >= 1, [toppling, mid_way, up_mid, lying, bb7, st.k.lie, lie_back, lie_face, lie_aim, fused, heard.call("toy_clatter")])
+	var sb: Enemies.Foe = pick.call("soldier", -18.0, 56.0); n0 = B.pieces.size(); en.splash(sb.pos + Vector3(-1.2, 0.6, 0), 3.0, 1e6)
+	var thrown: Array = B.pieces.slice(n0).filter(func(p): return p.heavy); var tb: ToyBreak.Piece = thrown[0] if thrown.size() > 0 else null
+	var up_it_goes: bool = tb != null and str(sb.k.dead) == "thrown" and tb.state == ToyBreak.FLY and tb.v.y > 9.0 and tb.w.length() > 8.0 and tb.v.x > 2.5 and not en.blast
+	run.call(0.45); var high: bool = tb != null and tb.n.position.y > sb.pos.y + 3.5
+	run.call(6.0); var down_again: bool = tb != null and tb.state == ToyBreak.REST and meshes.call(tb).size() == 2 and (box_of.call(tb) as AABB).size.y < 1.1   # (his body one mesh, and the blast's mark on it)
+	check("a blast (anything that hurts by its splash) throws a plastic soldier up and away, turning over and over; it comes down, bounces and lies flat",
+		up_it_goes and high and down_again, [sb.k.get("dead"), up_it_goes, high, down_again, meshes.call(tb).size() if tb != null else -1, box_of.call(tb) if tb != null else null])
+
+	# ---- an action figure pops apart at its joints; its head rolls off ----
+	var fg: Enemies.Foe = pick.call("figure", -24.0, 50.0); n0 = B.pieces.size(); Snd.played.clear(); Snd.listener = fg.pos; var fg_at := fg.pos
+	en.damage(fg, 1e6, fg.pos + Vector3(0, 1.3, 0), Vector3(1, 0, 0), false)
+	var parts8: Array = B.pieces.slice(n0); var heads: Array = parts8.filter(func(p): return p.roll > 0.0); var head: ToyBreak.Piece = heads[0] if heads.size() > 0 else null
+	var apart: bool = parts8.size() == 7 and heads.size() == 1 and str(fg.k.dead) == "apart" and heard.call("toy_pop") == 1 and parts8.all(func(p): return p.state == ToyBreak.FLY and p.v.y > 1.9) and fg.g.get_child_count() == 0
+	run.call(0.1); var foe_gone: bool = not en.dying.has(fg)
+	run.call(8.0); var all_down: bool = parts8.all(func(p): return p.state == ToyBreak.REST)
+	var rolled: bool = head != null and head.n.position.x - fg_at.x > 1.5 and absf(head.n.position.y - head.half.y - ToyBreak.floor_at(head.n.position.x, head.n.position.y, head.n.position.z)) < 0.06
+	check("an action figure's joints pop and it is seven pieces flying apart (head, body, two arms, two legs, cape); they fall and lie flat, and the head rolls on the way the shot went",
+		apart and foe_gone and all_down and rolled, [parts8.size(), heads.size(), apart, foe_gone, all_down, head.n.position - fg_at if head != null else null])
+	var wall_x := Phys.HALF - 0.15; var ball := B.make("tf_headd62828", [[0.22, 0.25, 0.24, 0, 0, 0, "e0b895"]], Transform3D(Basis.IDENTITY, Vector3(wall_x - 2.0, 0.14, 62.0)), Vector3(6.0, 0.0, 0.0), Vector3.ZERO)
+	ball.roll = 0.13; run.call(0.5); var struck_wall: bool = ball.n.position.x > wall_x - 0.6 and ball.v.x <= 0.0 and absf(ball.v.x) < 1.0
+	run.call(4.0); var stops: bool = ball.state == ToyBreak.REST and ball.n.position.x > wall_x - 1.2
+	check("a rolling head that reaches a wall stops against it", struck_wall and stops, [ball.n.position, ball.v, ball.state])
+
+	# ---- a wind-up car: the key runs wild, three whirls, a black puff, over on its side, a wheel rolling away ----
+	var cw: Enemies.Foe = pick.call("rc", 0.0, 58.0); cw.yaw = 0.5; cw.g.rotation.y = 0.5; n0 = B.pieces.size(); Snd.played.clear(); Snd.listener = cw.pos; var key_z := cw.head.rotation.z; var hp_pl := pl.hp
+	en.damage(cw, 1e6, cw.pos + Vector3(0, 0.5, 0), Vector3(0, 0, 1), false)
+	var wild: bool = str(cw.k.dead) == "haywire" and heard.call("toy_unwind") == 1 and heard.call("toy_boom") == 1 and en.dying.has(cw)
+	var turned := 0.0; var last_yaw := 0.5
+	for i in 34:
+		run.call(1.0 / 30.0); var yy: float = cw.g.global_transform.basis.get_euler().y; turned += wrapf(yy - last_yaw, -PI, PI); last_yaw = yy
+	var whirled: bool = absf(turned - TAU * 3.0) < 0.4 and cw.head.rotation.z < key_z - 20.0 and heard.call("toy_puff") == 0 and en.dying.has(cw)
+	run.call(1.0); var after9: Array = B.pieces.slice(n0); var wheels: Array = after9.filter(func(p): return p.roll > 0.0); var wrecks: Array = after9.filter(func(p): return p.heavy)
+	var wreck: ToyBreak.Piece = wrecks[0] if wrecks.size() > 0 else null; var wheel: ToyBreak.Piece = wheels[0] if wheels.size() > 0 else null
+	var over: bool = not en.dying.has(cw) and heard.call("toy_puff") == 1 and wreck != null and wreck.state == ToyBreak.REST and meshes.call(wreck).size() == 1 and (box_of.call(wreck) as AABB).size.y > 1.0 and int(cw.k.step) == 2
+	run.call(7.0); var wheel_off: bool = wheel != null and wheel.kind == "metal" and wheel.state == ToyBreak.REST and Vector2(wheel.n.position.x - cw.pos.x, wheel.n.position.z - cw.pos.z).length() > 1.5 and wheel.n.position.y < ToyBreak.floor_at(wheel.n.position.x, wheel.n.position.y, wheel.n.position.z) + 0.09
+	check("a broken wind-up car's battery bursts as before; then its key runs wild, it whirls three times round where it stands, puffs black smoke, tips over onto its side and lies there as one mesh, and a wheel rolls away and falls flat",
+		wild and whirled and over and wheel_off and pl.hp == hp_pl, [wild, turned / TAU, whirled, over, wheel_off])
+
+	# ---- a brick figure comes apart into its bricks; they lie about and rattle underfoot ----
+	var bx: Enemies.Foe = pick.call("brick", -24.0, 58.0); n0 = B.pieces.size(); Snd.played.clear(); Snd.listener = bx.pos
+	en.damage(bx, 1e6, bx.pos + Vector3(0, 1.1, 0), Vector3(0, 0, 1), false)
+	var bricks: Array = B.pieces.slice(n0)
+	var shattered: bool = bricks.size() == 14 and heard.call("toy_crumble") == 1 and not bx.g.visible and bricks.all(func(p): return p.kind == "brick" and p.state == ToyBreak.FLY)
+	run.call(7.0); var lie: bool = bricks.all(func(p): return p.state == ToyBreak.REST and p.filed and p.n.position.y - ToyBreak.floor_at(p.n.position.x, p.n.position.y, p.n.position.z) < 0.2) and not en.dying.has(bx)
+	var q10: ToyBreak.Piece = bricks[1]; var q_at := q10.n.position
+	pl.pos = Vector3(q_at.x - 0.1, 0.0, q_at.z); pl.grounded = true; pl.out = false; pl.vel = Vector3.ZERO; Snd.played.clear(); B.tick(1.0 / 30.0); var still_quiet: bool = q10.state == ToyBreak.REST and heard.call("toy_rattle") == 0
+	pl.vel = Vector3(3.0, 0.0, 0.0); B.tick(1.0 / 30.0); var kicked: bool = q10.state == ToyBreak.FLY and q10.v.x > 0.5 and heard.call("toy_rattle") == 1 and not q10.filed
+	pl.pos = Vector3(52.0, 0.0, 62.0); pl.vel = Vector3.ZERO; run.call(3.0)
+	var q11: ToyBreak.Piece = bricks[2]; var walker: Enemies.Foe = pick.call("soldier", q11.n.position.x - 1.5, q11.n.position.z); walker.pos = Vector3(q11.n.position.x - 1.2, 0.0, q11.n.position.z)
+	B._tread_t = 0.0; B.tick(0.02); walker.pos = Vector3(q11.n.position.x - 0.1, 0.0, q11.n.position.z); B._tread_t = 0.0; B.tick(0.02); var toy_kicks: bool = q11.state == ToyBreak.FLY
+	check("a brick figure that falls is all its bricks at once (head, two of the body, arms, hands, the legs in two each, its gun, the hat and cape it still wore: fourteen), scattering with a clatter; they lie where they stop, and rattle and skip away when you or a toy walk over them (not while you stand)",
+		shattered and lie and still_quiet and kicked and toy_kicks, [bricks.size(), shattered, lie, still_quiet, kicked, toy_kicks])
+
+	# ---- no more lying about than the limit; gone after their time ----
+	B.clear(); en.phone = true; var spare := [[0.2, 0.37, 0.24, 0, 0, 0, "24272c"]]
+	for i in 60: B.make("tbp_leg", spare, Transform3D(Basis.IDENTITY, Vector3(-30.0 + i * 0.2, 3.0, 44.0)), Vector3.ZERO, Vector3.ZERO, "brick")
+	var capped_phone: bool = live.call() == ToyBreak.CAP_PHONE and B.cap() == ToyBreak.CAP_PHONE
+	en.phone = false; B.clear()
+	for i in 100: B.make("tbp_leg", spare, Transform3D(Basis.IDENTITY, Vector3(-30.0 + i * 0.2, 3.0, 44.0)), Vector3.ZERO, Vector3.ZERO, "brick")
+	var capped: bool = live.call() == ToyBreak.CAP; run.call(0.3); var freed: bool = B.pieces.size() == ToyBreak.CAP
+	run.call(3.0); var old: ToyBreak.Piece = B.pieces[0]; old.age = ToyBreak.LIFE + 0.1; B.sweep_t = 99.0; B.tick(0.02); var going: bool = old.state == ToyBreak.GOING and not old.filed
+	run.call(0.4); var gone: bool = not B.pieces.has(old)
+	# many falling in the same moment: the first few break apart, the rest go in a burst of specks
+	B.clear(); B.tick(0.02); var fallen := 0; var bursts0: int = B.stats.bursts; var before_many: int = en.list.size()
+	for e in en.list.duplicate():
+		if e.type == "brick" and e.alive: e.g.visible = true; en.damage(e, 1e6, e.pos + Vector3(0, 1.1, 0), Vector3(0, 0, 1), false); fallen += 1
+	var burst: bool = fallen >= 10 and B.pieces.size() >= ToyBreak.BURST and B.pieces.size() < ToyBreak.BURST + 14 and int(B.stats.bursts) - bursts0 == fallen - 3 and en.list.size() == before_many - fallen
+	run.call(0.2); var none_left: bool = en.dying.is_empty()
+	check("no more than 84 pieces lie about at once (44 on a phone): the oldest makes room for a new one; a piece nobody clears away shrinks and is gone after 36 seconds; and when many fall in the same moment only the first few break apart (forty pieces' worth), the rest go in a burst of specks",
+		capped_phone and capped and freed and going and gone and burst and none_left, [capped_phone, live.call(), freed, going, gone, fallen, B.pieces.size(), burst, none_left])
+
+	# ---- clearing up: the claw in the open, the broom's shadow under the bed ----
+	B.clear(); var open_at: Vector3 = spot.call(-8.0, 46.0); var sweeps0: int = B.stats.sweeps
+	for i in 5: B.make("tbp_leg", spare, Transform3D(Basis.IDENTITY, open_at + Vector3((i % 3) * 0.5 - 0.5, 0.4, floorf(i / 3.0) * 0.5)), Vector3.ZERO, Vector3.ZERO, "brick")
+	run.call(2.0); B.sweep_t = 0.5; run.call(2.0); var waits: bool = B.lying() == 5 and B.sweep_t == 0.5 and B.claw.is_empty() and B.broom.is_empty()
+	B.sweep_t = 99.0
+	for i in 4: B.make("tbp_leg", spare, Transform3D(Basis.IDENTITY, open_at + Vector3(i * 0.5 - 0.7, 0.4, 1.2)), Vector3.ZERO, Vector3.ZERO, "brick")
+	run.call(2.0); var nine: bool = B.lying() == 9; var heap = B.pile()
+	B.sweep_t = 0.02; Snd.played.clear(); Snd.listener = open_at; B.tick(0.05)
+	var comes: bool = not B.claw.is_empty() and B.broom.is_empty() and heard.call("toy_crane") == 1 and heap != null and (heap as Vector3).distance_to(open_at) < 1.5 and B.sweep_t == ToyBreak.SWEEP_EVERY and int(B.stats.sweeps) == sweeps0 + 1
+	run.call(ToyBreak.CLAW_DOWN + ToyBreak.CLAW_GRAB * 0.6); var held: int = B.pieces.filter(func(p): return p.state == ToyBreak.HELD).size()
+	run.call(ToyBreak.CLAW_GRAB + ToyBreak.CLAW_UP + 0.2); var taken: bool = B.pieces.is_empty() and B.claw.is_empty() and B.cells.is_empty()
+	check("with eight or more pieces lying about the fullest corner is cleared every quarter of a minute (with fewer nothing comes): in the open a toy claw comes down its cable, closes on everything within five metres and carries it off",
+		waits and nine and comes and held == 9 and taken, [waits, nine, comes, held, taken])
+	var bed_at := Vector3(30.0, 0.0, 2.0)
+	for i in 9: B.make("tbp_leg", spare, Transform3D(Basis.IDENTITY, bed_at + Vector3((i % 3) * 0.5, 2.5, floorf(i / 3.0) * 0.5)), Vector3.ZERO, Vector3.ZERO, "brick")   # (dropped onto whatever lies there)
+	B.sweep_t = 99.0; run.call(3.0); var under: bool = B.lying() == 9 and Phys.ceil_at(bed_at.x, 2.0, bed_at.z, 0.8, 1.0) < 9.0
+	B.sweep_t = 0.02; Snd.played.clear(); Snd.listener = bed_at; B.tick(0.05); var sweeps: bool = not B.broom.is_empty() and B.claw.is_empty() and heard.call("toy_sweep") == 1
+	run.call(ToyBreak.BROOM_T + 0.6); var swept: bool = B.pieces.is_empty() and B.broom.is_empty()
+	check("under something low (the bed) it is the shadow of a broom that sweeps through, and what it passes over goes with it",
+		under and sweeps and swept, [under, sweeps, swept, B.pieces.size()])
+
+	# ---- nothing here takes from the game's own random numbers ----
+	Store.settings.toyMode = "sweep"; gm.begin(9); pl.chute = false; pl.reset(52.0, 62.0, 0.0); B.rng.seed = 5
+	seed(4242); var want := [randf(), randf(), randf()]; seed(4242)
+	var fall := func(e: Enemies.Foe, d: Vector3) -> void: e.alive = false; en.list.erase(e); en.dying.push_back(e); B.fell(e, false, d, true)   # (as Enemies.kill, without its own sounds)
+	var r_so: Enemies.Foe = pick.call("soldier", -12.0, 50.0); var r_s2: Enemies.Foe = pick.call("soldier", -15.0, 50.0); var r_fg: Enemies.Foe = pick.call("figure", -6.0, 50.0); var r_rc: Enemies.Foe = pick.call("rc", 0.0, 50.0); var r_bk: Enemies.Foe = pick.call("brick", 6.0, 50.0)
+	for e: Enemies.Foe in [r_so, r_s2, r_fg, r_rc, r_bk]:
+		B.struck(e, e.pos + Vector3(0, 0.5 if e.type == "rc" else 1.2, 0.3), front, false, 50.0); B.struck(e, e.pos + Vector3(0, 0.5 if e.type == "rc" else 1.7, 0.1), front, true, 5.0)
+		B.wet(e); B.goo(e, "cola"); B.burning(e, 1.5)
+	run.call(1.0); B.soda(r_bk.pos, 4.0, [r_bk, r_fg]); B.goo_feet(pl.pos, "grape", 0.5); B.pack(Vector3(10, 0, 50), Vector3(0, 0, 1), "us", true)
+	fall.call(r_so, Vector3(1, 0, 0)); en.blast = true; fall.call(r_s2, Vector3(1, 0, 0)); en.blast = false; fall.call(r_fg, Vector3(1, 0, 0)); fall.call(r_rc, Vector3(1, 0, 0)); fall.call(r_bk, Vector3(1, 0, 0))
+	run.call(4.0); pl.pos = Vector3(6.0, 0.0, 50.0); pl.grounded = true; pl.vel = Vector3(3, 0, 0); run.call(1.0); B.sweep_t = 0.0; run.call(3.0)
+	var got := [randf(), randf(), randf()]
+	check("the breakages take nothing from the game's own random numbers (hits, soakings, falls of every kind, treading, the package, the claw: the next numbers are the ones that would have come), so a fight goes as it went without them",
+		got == want and int(B.stats.sweeps) > sweeps0 + 1 and int(B.stats.pieces) > 30, [got, want, B.stats])
+
+	# ---- a team mode: toys and you come back out of a package; ours break as theirs do; a toy's water gun wets you ----
+	Store.settings.toyMode = "rush"; gm.begin(9); pl.chute = false; pl.invuln = 1e9; var tm: ToyMatch = gm.tm; B.rng.seed = 3; Snd.played.clear()
+	var foe: Enemies.Foe = tm.units("them")[0]; en.damage(foe, 1e6, foe.pos + Vector3(0, 1.2, 0), Vector3(0, 0, 1), false)
+	var qn: int = tm.queue.size(); tm.queue[qn - 1].t = 0.01; var packs0: int = B.stats.packs; var n_them: int = en.list.size(); Snd.listener = tm.mode.spawn_at("them", "")
+	tm.update(0.02); var back: Enemies.Foe = en.list[en.list.size() - 1]
+	var packed: bool = en.list.size() == n_them + 1 and B.packs.size() == 1 and int(B.stats.packs) == packs0 + 1 and (B.packs[0].n as Node3D).position == back.pos and not bool(B.packs[0].mine) and heard.call("toy_rip") == 1
+	var back_at := back.pos; B.tick(0.5); var hv: Array = B.packs[0].halves if B.packs.size() == 1 else [null, null]
+	var opens: bool = B.packs.size() == 1 and (hv[0] as Node3D).rotation.y < -1.0 and (hv[1] as Node3D).rotation.y > 1.0 and back.pos == back_at
+	for i in 12: B.tick(0.1)
+	var pack_gone: bool = B.packs.is_empty()
+	tm.player_down("dead", 0.05); Snd.played.clear(); Snd.listener = tm.mode.spawn_at("us", "player") + Vector3(0, 1.6, 0); tm.update(0.1); var p_back := pl.pos
+	var mine: bool = not pl.out and B.packs.size() == 1 and bool(B.packs[0].mine) and (B.packs[0].n as Node3D).position == pl.pos and heard.call("toy_rip") == 1 and pl.shake >= 0.25
+	for i in 16: B.tick(0.1)
+	check("in a team mode whoever comes back to his base (a toy of either side, or you) comes out of a package: a card behind and clear plastic round him that tears down the middle and swings away in two halves; nobody is held or moved by it",
+		packed and opens and pack_gone and mine and pl.pos == p_back and B.packs.is_empty(), [packed, opens, pack_gone, mine])
+	var al: Enemies.Foe = tm.allies[0]; al.g.visible = true; tm.hurt_ally(al, 5.0, al.pos + Vector3(0, 1.0, 4.0), al.pos + Vector3(0, 1.3, 0.3), false); var ally_marked: bool = al.k.has("marks")
+	tm.hurt_ally(al, 1e6, al.pos + Vector3(0, 1.0, 4.0), al.pos + Vector3(0, 1.3, 0.3), false); var ally_topples: bool = str(al.k.get("dead", "")) == "topple" and en.dying.has(al)
+	var al2: Enemies.Foe = tm.allies[0]; al2.g.visible = true; pr.clear()
+	pr.bullet(al2.pos + Vector3(0, 1.0, 3.0), al2.pos + Vector3(0, 1.0, 0), 60.0, 2.0, 0.0, "them", "smg")
+	for i in 12: pr.update(1.0 / 60.0)
+	var no_wet: bool = not al2.k.has("wet") and al2.hp < al2.max_hp
+	pr.bullet(al2.pos + Vector3(0, 1.0, 3.0), al2.pos + Vector3(0, 1.0, 0), 60.0, 2.0, 0.0, "them", "shotgun")
+	for i in 12: pr.update(1.0 / 60.0)
+	var ally_wet: bool = float(al2.k.get("wet", 0.0)) > 0.0 and en.cause == ""
+	check("our own soldiers break as theirs do: marked where they are hit, toppling when they fall, and soaked by an action figure's water gun (not by its other guns)", ally_marked and ally_topples and no_wet and ally_wet, [ally_marked, ally_topples, no_wet, ally_wet])
+	var soaked := [0]; pr.on_wet = func() -> void: soaked[0] += 1
+	pr.clear(); pl.out = false; pr.bullet(pl.pos + Vector3(0, 1.2, -3.0), pl.pos + Vector3(0, 1.2, 0), 60.0, 1.0, 0.0, "them", "smg")
+	for i in 12: pr.update(1.0 / 60.0)
+	var dry_hit: bool = soaked[0] == 0
+	pr.bullet(pl.pos + Vector3(0, 1.2, -3.0), pl.pos + Vector3(0, 1.2, 0), 60.0, 1.0, 0.0, "them", "shotgun")
+	for i in 12: pr.update(1.0 / 60.0)
+	var M := HudMain.new(); M.game = gm; M.player = pl; M.guns = g; M.enemies = en; M.world = w; M.proj = pr; M.cam = cam
+	var H := Hud.new(); H.m = M; var T: ToyHud = H.toy; T.m = M; T.reset(); T.splash()
+	var four: bool = T.drops.size() == 4 and T.wet_t == ToyHud.WET and T.drops.all(func(d): return minf(minf(d.p.x, 1.0 - d.p.x), minf(d.p.y, 1.0 - d.p.y)) < 0.131)
+	T.update(0.2); var rg := DrawRec.new(); T.glass(rg, rg.size, false); var y_was: float = T.drops[0].p.y; T.update(0.2)
+	var drawn: bool = rg.spr_of("drop") == 8 and rg.spr_of("disc") == 4 and rg.texts.is_empty() and rg.polys == 0 and T.drops[0].p.y > y_was
+	for i in 7: T.splash()
+	var capped_d: bool = T.drops.size() == ToyHud.DROPS
+	for i in 60: T.update(0.1)
+	var dried_d: bool = T.drops.is_empty() and T.wet_t > 0.0
+	for i in 20: T.update(0.1)
+	check("a toy's water gun that hits you (and no other gun) puts water on the glass: four drops a hit at the screen's edges, each two shapes and a glint off the sheet, running down and gone in a few seconds, 26 at most; your shoes squeak for seven seconds",
+		dry_hit and soaked[0] == 1 and four and drawn and capped_d and dried_d and T.wet_t == 0.0, [dry_hit, soaked[0], four, drawn, capped_d, dried_d])
+
+	# ---- the bedtime mode's can: its puddle is the soda's colour, and whoever stands in it is sticky ----
+	Store.settings.toyMode = "freeze"; gm.begin(9); pl.chute = false; pl.invuln = 1e9; tm = gm.tm; var fm = tm.mode
+	var u9: Enemies.Foe = tm.units("them")[0]; u9.g.visible = true; var burst_at := Vector3(u9.pos.x + 0.5, u9.pos.y, u9.pos.z); fm._burst(burst_at)
+	var pud: Dictionary = fm.puddles[fm.puddles.size() - 1]; var flav := ToyBreak.flavour(burst_at)
+	var puddle: bool = str(pud.fl) == flav and float(u9.k.get("goo_t", 0.0)) == ToyBreak.GOO_T and str(u9.k.goo) == flav
+	var u10: Enemies.Foe = tm.units("them")[1]; u10.pos = burst_at + Vector3(1.0, 0, 1.0); fm._puddles(0.02); var walks_in: bool = float(u10.k.get("goo_t", 0.0)) == ToyBreak.GOO_T and float(u10.k.slip_t) > 0.0
+	check("bedtime's soda can: the puddle is the soda's colour, everyone in it when it bursts is sticky with it, and so is whoever walks into it after (and slides, as before)", puddle and walks_in, [flav, puddle, walks_in])
+
+	# ---- other stages: nothing of this ----
+	gm.begin(1); var th = en.list[0]; th.g.visible = true; en.damage(th, 1e6, th.pos + Vector3(0, 1.2, 0), Vector3(0, 0, 1), false)
+	for i in 20: en.update_dying(1.0 / 30.0); en.toys.tick(1.0 / 30.0)
+	check("in the other stages nothing breaks: someone who falls tips over as ever, no piece is made, and the toy room's leavings are cleared when a stage begins",
+		not th.k.has("dead") and absf(absf(th.g.rotation.x) - 1.45) < 0.01 and B.pieces.is_empty() and B.root == null and not B.on(), [th.k.has("dead"), th.g.rotation.x, B.pieces.size()])
+	Store.save = save0; Store.settings = set0; Snd.keep_log = log0; Snd.played.clear(); en.fx = fx0; pr.fx = pfx0; pr.on_wet = wet0; pl.invuln = 0.0; gm.begin(1)

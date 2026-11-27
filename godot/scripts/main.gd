@@ -81,7 +81,10 @@ func _ready() -> void:
 	game.on_pay = func(n: int) -> void: if look_mode != "touch": hudd.money_pop(n)
 	enemies.on_kill = game.on_kill; world.on_crate = game.on_crate; loot.take = game.take_loot; loot.open_chest = game.open_chest
 	player.on_hurt = func(dmg: float, from: Vector3) -> void: hudd.hurt(dmg, from); Snd.play("hurt")
-	player.on_step = func() -> void: Snd.play("step")
+	player.on_step = func() -> void:
+		Snd.play("step")
+		if hudd.toy.wet_t > 0.0 and game.stage == Store.ST_TOY: Snd.toy("toy_squeak", 0.5, null, 0.9 + fmod(time * 7.3, 0.25))   # (soaked by a toy's water gun: your steps squeak)
+	proj.on_wet = func() -> void: hudd.toy.splash()
 	player.say = func(t: String) -> void: feed(t, 0)
 	world.build_stage(1)
 	_build_guns(); _build_hud()

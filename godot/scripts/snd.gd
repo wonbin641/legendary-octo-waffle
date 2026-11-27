@@ -169,6 +169,16 @@ func play(name: String, gain := 1.0, at = null) -> void:
 	_panners[i].pan = pn; p.bus = "Voice%d" % i
 	p.volume_db = linear_to_db(maxf(0.0001, level)); p.pitch_scale = 1.0; p.play()
 
+## one of stage 5's sounds at a pitch the caller picks, its first take: nothing is drawn from the game's random numbers
+## (the breakages' sounds: ToyBreak, which keeps the fights as they were)
+func toy(name: String, gain := 1.0, at = null, pitch := 1.0) -> void:
+	if keep_log: played.push_back(name)
+	var t := takes(name)
+	if t.is_empty() or volume <= 0.0: return
+	var p := _players[_free_voice()]; p.stream = t[0]
+	if at != null: gain *= clampf(1.6 / (1.0 + (at as Vector3).distance_to(listener) * 0.09), 0.04, 1.0)
+	p.bus = "Master"; p.volume_db = linear_to_db(maxf(0.0001, gain * volume / SCALE)); p.pitch_scale = pitch; p.play()
+
 ## a sound that keeps going (the helicopter's rotor, the jetpack): started at a level, held there while it is called again, stopped at 0
 var _loops := {}
 func loop(name: String, gain: float) -> void:

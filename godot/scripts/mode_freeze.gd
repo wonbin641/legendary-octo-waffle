@@ -351,9 +351,11 @@ func _burst(at: Vector3) -> void:
 	Snd.play("toy_glug", 1.0, at); Snd.play("hiss", 1.0, at); Music.blast(at)   # (a can bursting by you: the music's tape stretches)
 	if m.fx: m.fx.puff(at + Vector3(0, 0.4, 0), 10, 0.95, 0.9); m.fx.sparks(at + Vector3(0, 0.3, 0), 12, [0.85, 0.6, 0.3], 3.0)
 	var n := MeshInstance3D.new(); var c := CylinderMesh.new(); c.top_radius = PUDDLE_R; c.bottom_radius = PUDDLE_R; c.height = 0.04; n.mesh = c
-	var mat := StandardMaterial3D.new(); mat.albedo_color = Color(0.55, 0.3, 0.12, 0.6); mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.roughness = 0.05; mat.metallic = 0.2
+	var fl := ToyBreak.flavour(at)   # cola or grape: the syrup's colour, on the floor and on whoever is in it
+	var mat := StandardMaterial3D.new(); mat.albedo_color = Color(0.55, 0.3, 0.12, 0.6) if fl == "cola" else Color(0.46, 0.22, 0.6, 0.6); mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; mat.roughness = 0.05; mat.metallic = 0.2
 	n.material_override = Gfx.see_through(mat); n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; n.position = at + Vector3(0, 0.05, 0); room.G.add_child(n)
-	puddles.push_back({"pos": at, "t": PUDDLE_T, "node": n})
+	puddles.push_back({"pos": at, "t": PUDDLE_T, "node": n, "fl": fl})
+	m.toys.brk.soda(at, PUDDLE_R, m.units("us") + m.units("them"))
 
 ## the sticky, slippery floor: whoever is in it slides about, whether or not it means to
 func _puddles(dt: float) -> void:
@@ -366,9 +368,10 @@ func _puddles(dt: float) -> void:
 		for u in m.units("us") + m.units("them"):
 			if Vector2(u.pos.x - c.x, u.pos.z - c.z).length() < PUDDLE_R and absf(u.pos.y - c.y) < 1.2:
 				if float(u.k.slip_t) <= 0.0: var a := randf() * TAU; u.k.slip = Vector2(cos(a), sin(a)) * 3.2
-				u.k.slip_t = 0.7
+				u.k.slip_t = 0.7; m.toys.brk.goo(u, str(q.fl))   # (and the syrup is on it)
 		if m.player_in() and Vector2(m.player.pos.x - c.x, m.player.pos.z - c.z).length() < PUDDLE_R and absf(m.player.pos.y - c.y) < 1.2:
 			var a2 := fposmod(m.clock * 1.3 + c.x, TAU); m.player.vel.x += cos(a2) * 22.0 * dt; m.player.vel.z += sin(a2) * 22.0 * dt
+			m.toys.brk.goo_feet(m.player.pos, str(q.fl), dt)
 		if float(q.t) <= 0.0: (q.node as Node3D).queue_free(); puddles.remove_at(i)
 
 func player_carrying() -> bool: return false
@@ -407,7 +410,7 @@ func tac(ci, X: Callable, Z: Callable, k: float, u: float) -> void:
 	var H := ToyRoom.HALF
 	ci.draw_rect(Rect2(X.call(-12.0), Z.call(H) - 3.0 * u, 24.0 * k, 6.0 * u), Color("c98b5a") if phase == "calm" else Color("ffd23a"))
 	for b: Vector3 in BINS: ci.draw_rect(Rect2(X.call(b.x - 5.0), Z.call(b.z - 6.0), 10.0 * k, 12.0 * k), Color(0.95, 0.85, 0.3, 0.35), false, 1.6 * u)
-	for p in puddles: ci.draw_circle(Vector2(X.call(p.pos.x), Z.call(p.pos.z)), PUDDLE_R * k, Color(0.6, 0.35, 0.15, 0.45))
+	for p in puddles: ci.draw_circle(Vector2(X.call(p.pos.x), Z.call(p.pos.z)), PUDDLE_R * k, Color(0.6, 0.35, 0.15, 0.45) if str(p.get("fl", "cola")) == "cola" else Color(0.5, 0.25, 0.65, 0.45))
 
 func legend() -> Array:
 	return [["ally", "5f9cff", "아군 병정"], ["soldier", "7fc96b", "플라스틱 군인"], ["figure", "ff7a3a", "액션 피규어"], ["brick", "ffd23a", "조립 블록 피규어"], ["door", "c98b5a", "방문 · 장난감 상자"]]

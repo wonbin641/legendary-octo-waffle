@@ -318,7 +318,7 @@ func _burst(u: Enemies.Foe, t, dt: float) -> void:
 func _shot(u: Enemies.Foe, t, G: Array) -> void:
 	var mz := en.muzzle_of(u); var tp := feet(t); var d := mz.distance_to(tp); var lead: Vector3 = vel_of(t) * d / (float(G[5]) * 1.3)
 	var aim := Vector3(tp.x + lead.x, tp.y + (1.25 if t is Player else 1.0 * t.scale), tp.z + lead.z)
-	for i in int(G[9]): proj.bullet(mz, aim, G[5], float(G[6]) * u.dmg_mul, float(G[7]) + d * float(G[8]), u.k.team)
+	for i in int(G[9]): proj.bullet(mz, aim, G[5], float(G[6]) * u.dmg_mul, float(G[7]) + d * float(G[8]), u.k.team, str(u.k.gun))
 	Snd.play(G[11], 1.0, mz); u.k.reveal = 1.5; mode.on_shot(u)
 
 func _shot_at(u: Enemies.Foe, at: Vector3, G: Array) -> void:
@@ -357,21 +357,25 @@ func bullet_hit(u: Enemies.Foe, p: Vector3, dmg: float, vel: Vector3, src: Vecto
 	var weak := p.y > u.pos.y + u.H - 0.34
 	if u.k.team == "them":
 		u.k.by_ally = true; en.damage(u, dmg * (1.5 if weak else 1.0), p, vel.normalized(), weak); u.k.by_ally = false
-	else: hurt_ally(u, dmg * (1.5 if weak else 1.0), src)
+	else: hurt_ally(u, dmg * (1.5 if weak else 1.0), src, p, weak)
 
-func hurt_ally(a: Enemies.Foe, dmg: float, from: Vector3) -> void:
+func hurt_ally(a: Enemies.Foe, dmg: float, from: Vector3, at = null, weak := false) -> void:
 	if not a.alive or bool(a.k.get("gone", false)): return
 	a.hp -= dmg; a.flinch = 1.0
 	if fx: fx.sparks(a.pos + Vector3(0, 1.1, 0), 3, [0.6, 0.75, 1.0], 2.5)
+	var away := Vector3(a.pos.x - from.x, 0.0, a.pos.z - from.z)
+	toys.brk.struck(a, at if at != null else a.pos + Vector3(0, 1.1, 0), away.normalized() if away.length() > 0.01 else Vector3(0, 0, 1), weak, dmg)   # (what the hit leaves on him)
 	if a.hp <= 0.0: ally_down(a, "them", from)
 
 ## one of ours falls: he tips over where he stood, drops what he carried, and is back at the base later
 func ally_down(a: Enemies.Foe, by: String, from := Vector3.ZERO) -> void:
 	if not a.alive: return
+	var seen: bool = a.g.visible
 	a.alive = false; a.dead_t = 0.0; a.bar.visible = false; a.g.visible = true
 	var dir := (a.pos - from).normalized() if from != Vector3.ZERO else Vector3(0, 0, 1)
 	a.fall_dir = 1.0 if sin(a.yaw) * dir.x + cos(a.yaw) * dir.z > 0.0 else -1.0
 	allies.erase(a); en.dying.push_back(a); Snd.play("thud", 1.0, a.pos)
+	toys.brk.fell(a, false, dir, seen)   # (a plastic soldier: he topples stiff on his base)
 	mode.on_ally_down(a, by)
 	if by != "box": queue.push_back({"team": "us", "type": "soldier", "opts": a.k.spawn_opts, "t": BACK.us})
 	if by == "them": score.them = int(score.them) + 1
@@ -406,6 +410,7 @@ func _player_back() -> void:
 	player.reset(p.x, p.z, face_in(p)); player.pos.y = p.y; player.out = false; player.invuln = 2.0; down_t = 0.0
 	guns.reset(game.layout()); guns.lock_to = ""
 	mode.on_respawn(player, "us"); Snd.play("spawn")
+	toys.brk.pack(player.pos, Vector3(-sin(player.yaw), 0.0, -cos(player.yaw)), "us", true); player.shake = maxf(player.shake, 0.25)   # (out of a new package)
 	game.say_banner("다시 출동", "아군 기지", 1.4)
 
 # ---------------- the match's turn ----------------
@@ -419,8 +424,9 @@ func update(dt: float) -> void:
 		if float(q.t) > 0.0 or bool(game.ended): continue
 		queue.remove_at(i)
 		var at := mode.spawn_at(q.team, str(q.opts.get("job", q.type)))
-		add_unit(q.team, q.type, at, q.opts)
+		var back := add_unit(q.team, q.type, at, q.opts)
 		if fx: fx.spark(at + Vector3(0, 1.0, 0))
+		toys.brk.pack(back.pos, Vector3(sin(back.yaw), 0.0, cos(back.yaw)), q.team)   # (out of a new package)
 	for a in allies.duplicate():
 		if not a.alive: continue
 		unit(a, dt); place(a)

@@ -9,6 +9,7 @@ var fx: Fx
 var stage := 1
 var hitmark: Callable = Callable()
 var tm = null   # stage 5's team modes: the ToyMatch (whose toys the enemies' rounds and ours can hit)
+var on_wet: Callable = Callable()   # (stage 5: a toy's water gun has hit you: water on the glass)
 var list: Array = []
 
 func _mesh(scale_: Vector3, color: String) -> MeshInstance3D:
@@ -29,12 +30,13 @@ func rocket(from: Vector3, dir: Vector3, W: Dictionary, target) -> void:
 ## an enemy's round. team: "them" (the enemies': it hits you, and in stage 5's team modes our blue soldiers too) or "us"
 ## (one of our soldiers': it hits the room's toys, and a trap on the train's track)
 var _bullet_box: BoxMesh = null
-func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: float, team := "them") -> void:
+## gun: what fired it, where that shows on whom it hits ("shotgun": stage 5's pump water gun soaks them)
+func bullet(from: Vector3, target: Vector3, speed: float, dmg: float, spread_r: float, team := "them", gun := "") -> void:
 	var v := Vector3(target.x + randf_range(-1, 1) * spread_r - from.x, target.y + randf_range(-0.7, 0.7) * spread_r - from.y, target.z + randf_range(-1, 1) * spread_r - from.z).normalized() * speed
 	if _bullet_box == null: _bullet_box = BoxMesh.new(); _bullet_box.size = Vector3(0.03, 0.03, 0.55)   # (one mesh for every bullet)
 	var m := MeshInstance3D.new(); m.mesh = _bullet_box; m.material_override = _ally_mat() if team == "us" else _bullet_mat(); m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(m)
 	m.look_at_from_position(from, from + v, Vector3.UP if absf(v.normalized().y) < 0.99 else Vector3.RIGHT)
-	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m, "team": team})
+	list.push_back({"kind": "bullet", "pos": from, "src": from, "vel": v, "dmg": dmg, "life": 2.0, "whiz": false, "m": m, "team": team, "gun": gun})
 	if fx and stage != Store.ST_TOY: fx.glow(from, Vector3.ZERO, 0.08, 0.45, 0.1, Color(1, 0.8, 0.5, 0.9))   # the flash at his muzzle
 
 var _amat: Material
@@ -91,7 +93,9 @@ func _rocket_hit(p: Dictionary, e) -> void:
 		Snd.play("boom", 1.0, c)
 	enemies.noise(c, 70)
 	player.shake = maxf(player.shake, clampf(0.7 - c.distance_to(player.pos) * 0.02, 0.0, 0.7))
-	if e != null and e.alive and hitmark.is_valid(): hitmark.call(enemies.damage(e, p.dmg, c, (p.vel as Vector3).normalized(), false), false)
+	if e != null and e.alive and hitmark.is_valid():
+		enemies.blast = true; var fell: bool = enemies.damage(e, p.dmg, c, (p.vel as Vector3).normalized(), false); enemies.blast = false   # (the rocket's own hit is a blast's too)
+		hitmark.call(fell, false)
 	enemies.splash(c, p.radius, p.splash_dmg, e)
 	_crates_near(c, p.radius)
 	# the blast does not spare you either: 35-100% of 500 inside 6 m, nothing through a wall
@@ -169,10 +173,13 @@ func update(dt: float) -> void:
 				p.pos += p.vel * (dt / steps)
 				if not mine:
 					var py := clampf(p.pos.y, hy0, hy1); var dd := Vector3(p.pos.x - player.pos.x, p.pos.y - py, p.pos.z - player.pos.z).length()
-					if dd < 0.4 and not player.out: player.hurt(p.dmg, p.src, "head" if py - player.pos.y > 1.42 else "body"); dead = true; break
+					if dd < 0.4 and not player.out:
+						player.hurt(p.dmg, p.src, "head" if py - player.pos.y > 1.42 else "body"); dead = true
+						if p.gun == "shotgun" and on_wet.is_valid(): on_wet.call()
+						break
 					if not p.whiz and dd < 1.5: p.whiz = true; Snd.play("whiz", 1.0, p.pos)
 				for u in near:
-					if tm.bullet_hits(u, p.pos): tm.bullet_hit(u, p.pos, p.dmg, p.vel, p.src); dead = true; break
+					if tm.bullet_hits(u, p.pos): enemies.cause = p.gun; tm.bullet_hit(u, p.pos, p.dmg, p.vel, p.src); enemies.cause = ""; dead = true; break
 				if dead: break
 				var wall: Phys.Box = Phys.collide_at(p.pos.x, p.pos.y - 0.05, p.pos.z, 0.05, 0.1)
 				if p.pos.y <= Phys.floor_y(p.pos.x, p.pos.z) + 0.02 or wall != null:

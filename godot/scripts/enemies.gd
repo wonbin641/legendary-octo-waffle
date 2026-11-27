@@ -101,6 +101,8 @@ var banner: Callable = Callable()
 var animals: Animals
 var robots: Robots
 var toys: ToyFoes
+var cause := ""        # what the hit being dealt right now comes from: a gun's name ("shotgun": stage 5's water gun), or nothing
+var blast := false     # ...and whether it is a blast's (splash damage)
 var _bar_green: StandardMaterial3D
 var _bar_amber: StandardMaterial3D
 var _meshes := {}
@@ -309,6 +311,7 @@ func damage(e: Foe, dmg: float, _at: Vector3, dir: Vector3, weak: bool, quiet :=
 		fx.puff(_at, 1, 0.25 if e.type == "zombie" else 0.4, 0.25)
 	var shove := 0.18 if e.type == "soldier" else 0.9   # one piece of plastic: blasts barely move it
 	if not e.boss and not e.ridden: e.vel.x += dir.x * shove; e.vel.z += dir.z * shove
+	if e.toy: toys.brk.struck(e, _at, dir, weak, dmg)   # (stage 5: what the hit leaves on the toy)
 	if e.toy and e.hp > 0.0: toys.on_hurt(e)
 	if e.animal: animals.provoke(e)
 	elif e.type == "zombie": alarm(e)
@@ -417,6 +420,7 @@ func _zombie(e: Foe, dt: float, dist: float, to: Vector2, face_yaw: float) -> vo
 		if dist < 28.0: Snd.play("moan", 1.0, e.pos)
 
 func kill(e: Foe, weak: bool, dir) -> void:
+	var seen: bool = e.g.visible
 	e.alive = false; e.dead_t = 0.0; e.bar.visible = false; e.g.visible = true
 	_drop_laser(e)
 	if e.K.get("vest", false):   # the vest goes off (at once if the bomb itself was hit, or he set it off)
@@ -424,6 +428,7 @@ func kill(e: Foe, weak: bool, dir) -> void:
 		if now: e.vanish = true
 	e.fall_dir = 1.0 if e.type == "zombie" else -1.0; e.downed = false
 	if e.type == "rc": toys.rc_burst(e)   # its battery bursts (and its rider, if any, comes down onto the floor)
+	if e.toy: toys.brk.fell(e, weak, dir, seen)   # (stage 5: each kind of toy falls its own way)
 	if e.type == "mine": robots.mine_blast(e.pos, 0.0 if e.self_det else 0.06)   # a spider mine goes off
 	if e.robot:
 		e.vanish = true
@@ -561,6 +566,10 @@ func cast_shadow(e: Foe, on: bool) -> void:
 	e.casts = 1 if on else 0; e.g.set_meta("shadow", on); MoonShadow.caster(e.g, on)
 
 func splash(c: Vector3, radius: float, dmg: float, skip = null) -> void:
+	var was := blast; blast = true
+	_splash(c, radius, dmg, skip)
+	blast = was
+func _splash(c: Vector3, radius: float, dmg: float, skip) -> void:
 	for e in list.duplicate():
 		if e == skip: continue
 		var d := Vector3(e.pos.x - c.x, e.pos.y + 1.0 - c.y, e.pos.z - c.z).length()
@@ -825,6 +834,7 @@ func _burns(dt: float) -> void:
 		if e.burn_t <= 0.0: continue
 		if not e.alive: e.burn_t = 0.0; continue
 		e.burn_t = maxf(0.0, e.burn_t - dt); e.burn_tick -= dt
+		if e.toy: toys.brk.burning(e, dt)   # (stage 5: the plastic scorches, and smokes)
 		if fx and e.g.visible and randf() < 0.7:
 			fx.glow(Vector3(e.pos.x + randf_range(-e.R, e.R), e.pos.y + randf() * e.H, e.pos.z + randf_range(-e.R, e.R)), Vector3(randf_range(-0.2, 0.2), randf_range(0.9, 1.7), randf_range(-0.2, 0.2)),
 				randf_range(0.25, 0.45), 0.2, 0.05, BURN_COLS[randi() % 2], -1.0, 1.5)
@@ -968,6 +978,12 @@ func update_dying(dt: float) -> void:
 		if f[2] > 4.0: n.queue_free(); flying.remove_at(i)
 	for i in range(dying.size() - 1, -1, -1):
 		var e := dying[i]; e.dead_t += dt
+		if e.toy and e.k.has("dead"):   # stage 5: a toy falls its own way (ToyBreak), and what is left of it is a piece lying about
+			if toys.brk.dying(e, dt):
+				if not bool(e.k.get("g_taken", false)): e.g.queue_free()
+				e.bar.queue_free(); dying.remove_at(i)
+				if e.laser: e.laser.queue_free()
+			continue
 		var t := minf(1.0, e.dead_t / 0.5); var ease := t * t * (3.0 - 2.0 * t)
 		if e.vanish: e.g.scale = Vector3.ONE * maxf(0.001, 1.0 - e.dead_t / 0.45) * e.scale; e.dead_t = 99.0 if e.dead_t > 0.45 else e.dead_t
 		else: e.g.rotation = Vector3(e.fall_dir * ease * 1.45, e.yaw, 0)

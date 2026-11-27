@@ -44,6 +44,9 @@ def tone(kind, f0, f1, dur, gain, delay=0.0):
 N, T = noise, tone
 BELL = (2090.0, 2480.0)                                  # the alarm clock's two bells
 RING = lambda i: 1.0 if i < 24 else (32 - i) / 8.0       # ...its last strokes fading
+# a brick figure falling apart: each brick's pitch, loudness and moment (thick at first, the last few rolling on)
+CRUMBLE = [(2300, 0.8, 0.0), (1700, 0.7, 0.018), (2700, 0.6, 0.04), (1500, 0.75, 0.062), (2100, 0.65, 0.09), (3000, 0.5, 0.11), (1800, 0.7, 0.14), (2400, 0.55, 0.17),
+           (1600, 0.6, 0.21), (2600, 0.45, 0.25), (1900, 0.5, 0.3), (2200, 0.4, 0.37), (1650, 0.4, 0.45), (2500, 0.3, 0.55)]
 SOUNDS = {
     # ---- stage 5, the toy room: plastic, springs, rubber bands, water. no real gunfire ----
     # foam-dart blaster: a puff of compressed air and the trigger spring; the dart bounces off with a soft 'tong'
@@ -94,6 +97,33 @@ SOUNDS = {
     # a package torn open at the toy shop's shelf: the card ripping in a stutter that rises, then the bubble's pop
     'toy_rip': lambda: [N(0.022, 'bandpass', 2200 + i * 90, 3000 + i * 90, 1.2, 0.85, i * 0.0125) for i in range(22)]
         + [N(0.3, 'highpass', 3000, 5200, 0.7, 0.45), T('sine', 720, 300, 0.06, 0.7, 0.3), N(0.04, 'lowpass', 1500, 400, 0.8, 0.4, 0.3)],
+    # ---- toys break (scripts/toybreak.gd) ----
+    # a plastic soldier toppling on its base: two hollow knocks and a duller one as it lies
+    'toy_clatter': lambda: [N(0.03, 'bandpass', 1300, 800, 3, 0.95), T('sine', 520, 300, 0.05, 0.45), N(0.025, 'bandpass', 1500, 1000, 3, 0.6, 0.09), T('sine', 610, 380, 0.035, 0.28, 0.09),
+                    N(0.05, 'lowpass', 700, 220, 0.8, 0.7, 0.19), T('sine', 210, 120, 0.07, 0.45, 0.19)],
+    # an action figure's ball joints coming out: three quick pops
+    'toy_pop': lambda: [T('sine', 420, 1500, 0.04, 0.8), N(0.02, 'bandpass', 2000, 1200, 2, 0.4), T('sine', 520, 1700, 0.03, 0.5, 0.055), T('sine', 380, 1300, 0.035, 0.45, 0.1), N(0.015, 'bandpass', 2400, 1500, 2, 0.3, 0.1)],
+    # a wind-up key running wild: a ratchet rattling down as the spring lets go
+    'toy_unwind': lambda: [N(0.012, 'bandpass', 2700 - i * 34, 1900 - i * 26, 2.5, 0.75 - i * 0.008, 0.016 * i + 0.00042 * i * i) for i in range(38)]
+        + [T('square', 950 - i * 12, 640 - i * 8, 0.011, 0.11, 0.016 * i + 0.00042 * i * i) for i in range(38)] + [T('sawtooth', 230, 90, 1.1, 0.12)],
+    # ...and the puff as it gives out
+    'toy_puff': lambda: [N(0.3, 'lowpass', 1900, 280, 0.7, 0.85), N(0.2, 'highpass', 3600, 1800, 0.7, 0.25), T('sine', 170, 70, 0.13, 0.45)],
+    # a brick figure coming apart: its bricks scattering over the floor
+    'toy_crumble': lambda: [N(0.02, 'bandpass', f, f * 0.7, 2.5, g, d) for f, g, d in CRUMBLE] + [T('square', f * 0.4, f * 0.3, 0.014, g * 0.16, d) for f, g, d in CRUMBLE],
+    # a brick underfoot
+    'toy_rattle': lambda: [N(0.018, 'bandpass', 2200, 1500, 2.5, 0.65), T('square', 820, 560, 0.02, 0.11), N(0.016, 'bandpass', 1700, 1150, 2.5, 0.45, 0.062), T('square', 640, 450, 0.018, 0.08, 0.062)],
+    # a wet shoe on the floor
+    'toy_squeak': lambda: [T('sine', 1500, 2500, 0.05, 0.36), T('sine', 2500, 1850, 0.045, 0.3, 0.045), N(0.06, 'bandpass', 3000, 2200, 3, 0.12)],
+    # soda: the hiss of it, and bubbles coming up through the syrup
+    'toy_fizz': lambda: [N(0.9, 'highpass', 5200, 7000, 0.6, 0.34)] + [T('sine', 480 + i * 70, 900 + i * 90, 0.03, 0.2, 0.05 + i * 0.1) for i in range(8)],
+    # a spark across the works of a wind-up car
+    'toy_zap': lambda: [N(0.03, 'highpass', 6000, 3000, 0.8, 0.6), T('sawtooth', 112, 92, 0.05, 0.25), N(0.02, 'highpass', 7000, 4000, 0.8, 0.4, 0.04)],
+    # a stud popping off a brick
+    'toy_stud': lambda: [T('square', 1900, 1400, 0.012, 0.13), N(0.012, 'bandpass', 3000, 2200, 3, 0.38)],
+    # the claw's motor running it down its cable, and the clack as it stops
+    'toy_crane': lambda: [T('sawtooth', 140, 196, 0.5, 0.2), N(0.5, 'bandpass', 900, 1300, 3, 0.16), N(0.03, 'bandpass', 1500, 900, 2, 0.6, 0.5), T('square', 430, 300, 0.03, 0.14, 0.5)],
+    # a broom across the floor: two strokes
+    'toy_sweep': lambda: [N(0.5, 'bandpass', 1200, 2800, 0.8, 0.55), N(0.6, 'bandpass', 1000, 2400, 0.8, 0.5, 0.62), N(0.4, 'highpass', 4200, 5600, 0.7, 0.16, 0.1)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]

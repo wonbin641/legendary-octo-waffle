@@ -13,6 +13,8 @@ extends RefCounted
 ##     bursts in sparks and its rider steps down and fights on foot.
 ##   brick figures: block people round the block bridge. they climb straight up walls, shed bricks as they are hurt (a shed brick
 ##     picked up again heals them, and so does a quiet moment), and put up little brick walls to shoot from behind.
+## What a hit and a fall do to each of them to look at (a soldier's helmet and pack knocked off, a brick figure's hat and
+## cape, a car's cabin lifting on its works; each kind's own way of falling) is ToyBreak's (scripts/toybreak.gd).
 
 const TOYS := {
 	"soldier": {"name": "플라스틱 군인", "hp": 110, "speed": 3.4, "r": 0.35, "h": 1.8, "money": 1000, "sight": 32.0},   # a sniper watches out to 60 m
@@ -43,6 +45,10 @@ var proj: Proj
 var tm = null            # the team modes' ToyMatch (null in the sweep: the toys play as above)
 var bricks: Array = []   # shed brick parts lying about: {n, pos, t}
 var walls: Array = []    # the little brick walls: crate-like records in world.crates
+var brk: ToyBreak        # what a hit and a fall do to a toy, and the pieces left lying about (scripts/toybreak.gd)
+
+func _init() -> void:
+	brk = ToyBreak.new(); brk.tf = self
 
 func rnd(a: float, b: float) -> float: return randf_range(a, b)
 
@@ -51,7 +57,36 @@ func clear() -> void:
 		if is_instance_valid(b.n): (b.n as Node3D).queue_free()
 	for c in walls:
 		if is_instance_valid(c.node): (c.node as Node3D).queue_free()
-	bricks.clear(); walls.clear()
+	bricks.clear(); walls.clear(); brk.clear()
+
+# ---- the parts a hit can knock off: each body is made with or without them (a mesh for each, made once) ----
+## a plastic soldier's upper half: the torso, the head, a helmet and a pack on its back
+static func soldier_up(helmet: bool, pack: bool) -> Array:
+	var W := "ffffff"; var a := [[0.44, 0.62, 0.26, 0, 0.36, 0, W], [0.22, 0.25, 0.24, 0, 0.8, 0.01, W]]
+	if helmet: a.push_back([0.3, 0.1, 0.32, 0, 0.95, 0, W])
+	if pack: a.push_back([0.3, 0.34, 0.14, 0, 0.42, -0.2, W])
+	return a
+## a brick figure's: the square body, the round yellow head and its mouth, a hat on its stud (or the bare stud) and a cape
+const BRICK_ACC := ["1d4ed8", "f4b400", "7b2cbf", "2a9d8f"]   # the colour of the hat and cape that go with each body colour
+static func brick_up(cb: String, acc: String, hat: bool, cape: bool) -> Array:
+	var a := [[0.5, 0.62, 0.3, 0, 0.33, 0, cb], [0.3, 0.3, 0.3, 0, 0.82, 0, "f4d35e"], [0.16, 0.04, 0.02, 0, 0.78, 0.16, "1c1c1c"]]
+	if hat: a.append_array([[0.36, 0.1, 0.36, 0, 1.02, 0, acc], [0.16, 0.07, 0.16, 0, 1.105, 0, acc]])
+	else: a.push_back([0.16, 0.08, 0.16, 0, 1.01, 0, "f4d35e"])
+	if cape: a.push_back([0.48, 0.52, 0.03, 0, 0.36, -0.17, acc])
+	return a
+## a wind-up car's: the chassis, the cabin (or none: lifted off its works), the wheels (but for one lost), the lamp bar
+const RC_WHEELS := [Vector2(-0.5, 0.5), Vector2(0.5, 0.5), Vector2(-0.5, -0.5), Vector2(0.5, -0.5)]
+static func rc_body(cc: String, cabin: bool, lost := -1) -> Array:
+	var a := [[0.9, 0.3, 1.6, 0, 0.35, 0, cc]]
+	if cabin: a.push_back([0.7, 0.26, 0.8, 0, 0.62, -0.1, "dfe8ee"])
+	for i in 4:
+		if i != lost: a.push_back([0.22, 0.42, 0.14, RC_WHEELS[i].x, 0.21, RC_WHEELS[i].y, "1c1c1c"])
+	a.push_back([0.5, 0.08, 0.06, 0, 0.36, 0.82, "ffe066"])
+	return a
+## ...and what is under the cabin: two gears on a spindle, the battery, two wires
+static func rc_guts() -> Array:
+	return [[0.34, 0.05, 0.34, -0.1, 0.525, -0.05, "c9a227", [0, 0.5, 0]], [0.22, 0.05, 0.22, 0.17, 0.535, -0.3, "8d99ae", [0, 0.3, 0]], [0.08, 0.12, 0.08, -0.1, 0.56, -0.05, "8d5a34"],
+		[0.18, 0.14, 0.3, 0.16, 0.57, 0.1, "3d7dca"], [0.03, 0.03, 0.5, -0.24, 0.55, -0.08, "e63946", [0, 0.25, 0]], [0.03, 0.03, 0.42, 0.02, 0.6, -0.26, "f4d35e", [0, -0.9, 0]]]
 
 func _node(parent: Node3D, at: Vector3, parts: Array, key: String, mat: Material = null) -> Node3D:
 	var n := Node3D.new(); n.position = at; parent.add_child(n)
@@ -70,7 +105,7 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 			var W := "ffffff"; var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, W], [0.16, 0.09, 0.27, 0, -0.88, 0.05, W]]
 			_node(e.g, Vector3.ZERO, [[0.7, 0.05, 0.5, 0, 0.025, 0.05, W]], "ts_base", mat)
 			e.leg_l = _node(e.g, Vector3(-0.11, 0.92, 0), leg, "ts_leg", mat); e.leg_r = _node(e.g, Vector3(0.11, 0.92, 0), leg, "ts_leg", mat)
-			e.upper = _node(e.g, Vector3(0, 0.92, 0), [[0.44, 0.62, 0.26, 0, 0.36, 0, W], [0.22, 0.25, 0.24, 0, 0.8, 0.01, W], [0.3, 0.1, 0.32, 0, 0.95, 0, W]], "ts_up", mat)
+			e.upper = _node(e.g, Vector3(0, 0.92, 0), soldier_up(true, true), "ts_uphp", mat); e.k.helmet = true; e.k.pack = true
 			e.arm_l = _node(e.upper, Vector3(-0.29, 0.6, 0), [[0.12, 0.62, 0.13, 0, -0.29, 0, W]], "ts_arm", mat)
 			e.arm_r = _node(e.upper, Vector3(0.29, 0.6, 0), [[0.12, 0.62, 0.13, 0, -0.29, 0, W], [0.05, 1.05 if role == "sniper" else 0.75, 0.08, 0, -0.95, 0.03, W]], "ts_gun_" + role, mat)
 			e.parts = human; e.muzzle = Vector3(0.2, 1.42, 1.3 if role == "sniper" else 1.0); e.k.base_y = [1.72, 1.3, 0.95, 0.48]
@@ -84,18 +119,17 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 			e.arm_l = _node(e.upper, Vector3(-0.3, 0.6, 0), [[0.12, 0.62, 0.13, 0, -0.29, 0, c1], [0.12, 0.14, 0.14, 0, -0.6, 0, c2]], "tf_arm" + c1)
 			e.arm_r = _node(e.upper, Vector3(0.3, 0.6, 0), [[0.12, 0.62, 0.13, 0, -0.29, 0, c1], [0.12, 0.14, 0.14, 0, -0.6, 0, c2], [0.07, 0.5 if role == "smg" else 0.7, 0.1, 0, -0.9, 0.03, "24272c"]], "tf_gun" + c1 + role)
 			e.head = _node(e.upper, Vector3(0, 0.62, -0.14), [[0.5, 0.85, 0.03, 0, -0.42, 0, c2]], "tf_cape" + c2)   # the cape, hanging down the back
-			e.parts = human; e.muzzle = Vector3(0.2, 1.42, 0.9)
+			e.parts = human; e.muzzle = Vector3(0.2, 1.42, 0.9); e.k.tint = c1; e.k.acc = c2
 		"rc":   # a little car with a wind-up key
 			var cc: String = ["e63946", "3d7dca", "f77f00", "5fbf8f"][int(opts.get("tint", 0)) % 4]
-			e.body = _node(e.g, Vector3.ZERO, [[0.9, 0.3, 1.6, 0, 0.35, 0, cc], [0.7, 0.26, 0.8, 0, 0.62, -0.1, "dfe8ee"], [0.22, 0.42, 0.14, -0.5, 0.21, 0.5, "1c1c1c"], [0.22, 0.42, 0.14, 0.5, 0.21, 0.5, "1c1c1c"],
-				[0.22, 0.42, 0.14, -0.5, 0.21, -0.5, "1c1c1c"], [0.22, 0.42, 0.14, 0.5, 0.21, -0.5, "1c1c1c"], [0.5, 0.08, 0.06, 0, 0.36, 0.82, "ffe066"]], "tr_body" + cc)
+			e.body = _node(e.g, Vector3.ZERO, rc_body(cc, true), "tr_body" + cc); e.k.tint = cc
 			e.head = _node(e.g, Vector3(0, 0.6, -0.86), [[0.06, 0.06, 0.2, 0, 0, -0.08, "c9ced6"], [0.34, 0.2, 0.05, 0, 0, -0.2, "c9a227"]], "tr_key")   # the key, turning on its back
 			e.parts = [_hpart(Vector3(0, 0.42, 0), 0.55), _hpart(Vector3(0, 0.6, -0.95), 0.2, 1.0, true)]; e.eye_h = 0.6; e.muzzle = Vector3(0, 0.5, 0.9)
 		_:   # a block person: square legs, a square body, a round yellow head with a stud on top
-			var cb: String = ["d62828", "1d4ed8", "2a9d8f", "f77f00"][int(opts.get("tint", 0)) % 4]
+			var cb: String = ["d62828", "1d4ed8", "2a9d8f", "f77f00"][int(opts.get("tint", 0)) % 4]; var acc: String = BRICK_ACC[int(opts.get("tint", 0)) % 4]
 			var leg3 := [[0.2, 0.75, 0.24, 0, -0.38, 0, "24272c"]]
 			e.leg_l = _node(e.g, Vector3(-0.12, 0.78, 0), leg3, "tb_leg"); e.leg_r = _node(e.g, Vector3(0.12, 0.78, 0), leg3, "tb_leg")
-			e.upper = _node(e.g, Vector3(0, 0.78, 0), [[0.5, 0.62, 0.3, 0, 0.33, 0, cb], [0.3, 0.3, 0.3, 0, 0.82, 0, "f4d35e"], [0.16, 0.08, 0.16, 0, 1.01, 0, "f4d35e"], [0.16, 0.04, 0.02, 0, 0.78, 0.16, "1c1c1c"]], "tb_up" + cb)
+			e.upper = _node(e.g, Vector3(0, 0.78, 0), brick_up(cb, acc, true, true), "tb_uphc" + cb); e.k.hat = true; e.k.cape = true; e.k.acc = acc
 			e.arm_l = _node(e.upper, Vector3(-0.32, 0.56, 0), [[0.13, 0.5, 0.14, 0, -0.24, 0, cb], [0.14, 0.14, 0.16, 0, -0.52, 0.02, "f4d35e"]], "tb_arm" + cb)
 			e.arm_r = _node(e.upper, Vector3(0.32, 0.56, 0), [[0.13, 0.5, 0.14, 0, -0.24, 0, cb], [0.14, 0.14, 0.16, 0, -0.52, 0.02, "f4d35e"], [0.07, 0.34, 0.1, 0, -0.72, 0.03, "8d99ae"]], "tb_gun" + cb)
 			e.parts = [_hpart(Vector3(0, 1.6, 0), 0.17, 1.0, true), _hpart(Vector3(0, 1.15, 0), 0.32), _hpart(Vector3(0, 0.75, 0), 0.24, 0.9), _hpart(Vector3(0, 0.38, 0), 0.24, 0.7)]; e.muzzle = Vector3(0.22, 1.3, 0.8); e.k.tint = cb
@@ -248,7 +282,7 @@ func _fade(e: Enemies.Foe, want: float, dt: float) -> void:
 	if absf(float(k.alpha) - want) < 0.01: k.alpha = want
 	var m: StandardMaterial3D = k.mat
 	m.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED if float(k.alpha) > 0.98 else BaseMaterial3D.TRANSPARENCY_ALPHA; m.albedo_color.a = float(k.alpha)
-	k.gone = float(k.alpha) < 0.03
+	k.gone = float(k.alpha) < 0.03; brk.fade(e, float(k.alpha))
 	for c in e.g.get_children(): (c as Node3D).visible = not bool(k.gone)
 ## out of sight right now (blinked out): its health bar stays hidden too
 func gone(e: Enemies.Foe) -> bool: return e.type == "soldier" and bool(e.k.get("gone", false))
@@ -320,7 +354,7 @@ func _figure(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: floa
 			e.fire_t -= dt * share(e)
 			if e.fire_t <= 0.0:
 				e.fire_t = rnd(1.6, 2.2); var mz := en.muzzle_of(e)
-				for i in 6: proj.bullet(mz, Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z), 70.0, 6.0 * e.dmg_mul, 0.9 + dist * 0.05)
+				for i in 6: proj.bullet(mz, Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z), 70.0, 6.0 * e.dmg_mul, 0.9 + dist * 0.05, "them", "shotgun")   # (its pump water gun)
 				Snd.play("toy_shot_shotgun", 1.0, mz); k.reveal = 1.5
 
 # ---------------- wind-up and RC units ----------------
@@ -365,11 +399,11 @@ func rc_burst(e: Enemies.Foe) -> void:
 func _brick(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float) -> void:
 	var k := e.k; var T := e.T
 	# a quiet moment (nobody has hit it for 4 s and it cannot see you) snaps its bricks back on
-	if float(k.quiet) > 5.0 and not e.los and e.hp < e.max_hp: e.hp = e.max_hp; k.shed = 0; e.bar.visible = false; Snd.play("toy_click", 1.0, e.pos)
+	if float(k.quiet) > 5.0 and not e.los and e.hp < e.max_hp: e.hp = e.max_hp; k.shed = 0; e.bar.visible = false; Snd.play("toy_click", 1.0, e.pos); brk.dress(e)
 	# a shed brick underfoot goes back on at once
 	if e.hp < e.max_hp:
 		for i in range(bricks.size() - 1, -1, -1):
-			if (bricks[i].pos as Vector3).distance_to(e.pos) < 1.1: e.hp = minf(e.max_hp, e.hp + e.max_hp / 4.0); k.shed = int((1.0 - e.hp / e.max_hp) * 4.0); (bricks[i].n as Node3D).queue_free(); bricks.remove_at(i); Snd.play("toy_click", 1.0, e.pos); break
+			if (bricks[i].pos as Vector3).distance_to(e.pos) < 1.1: e.hp = minf(e.max_hp, e.hp + e.max_hp / 4.0); k.shed = int((1.0 - e.hp / e.max_hp) * 4.0); (bricks[i].n as Node3D).queue_free(); bricks.remove_at(i); Snd.play("toy_click", 1.0, e.pos); brk.dress(e); break
 	if not e.alert: _walk(e, 0.0, dt, false); en._ground_move(e, 0.0, 0.0, dt); return
 	var f := to / dist; var fwd := 1.0 if dist > 20.0 else (-0.6 if dist < 8.0 else 0.0); var above := player.pos.y - e.pos.y
 	if not e.los and dist > 6.0: fwd = 1.0
@@ -441,6 +475,7 @@ func on_hurt(e: Enemies.Foe) -> void:
 
 ## things lying about: you tread on a shed brick and it is gone (nobody snaps it back on)
 func tick(dt: float) -> void:
+	brk.tick(dt)
 	for i in range(bricks.size() - 1, -1, -1):
 		var b: Dictionary = bricks[i]; b.t += dt
 		if (b.pos as Vector3).distance_to(player.pos) < 0.9 or b.t > 40.0: (b.n as Node3D).queue_free(); bricks.remove_at(i)

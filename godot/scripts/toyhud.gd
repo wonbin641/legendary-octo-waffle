@@ -30,15 +30,19 @@ var nodes := {}            # the pieces as controls (when Main's HUD is there to
 var sigs := {}             # what each last showed
 var _size := Vector2(1280, 720); var _touch := false; var _pop_at := Vector2(200, 52)
 var _rng := RandomNumberGenerator.new()   # (its own: the stickers' scatter takes nothing from the game's numbers)
+var drops: Array = []      # water on the glass (a toy's water gun has hit you): {p: where, as a part of the screen, r, age, life, v}
+var wet_t := 0.0           # ...and how long your shoes squeak for it
 
 const CELLS := 10
 const LOW := 20.0          # per cent: from here down the cells are red and blink, and the sticker is on
 const RING_AT := 30.0      # seconds left: from here the clock rings
 const FLY := 0.4           # seconds a round is in the air after a shot takes it from the tray
 const NONE := [0.0, 0.0, 0.0, 0.0]
+const WET := 7.0           # seconds a soaking lasts
+const DROPS := 26          # drops on the glass at once
 
 func reset() -> void:
-	boards.clear(); flown.clear(); stickers.clear(); sigs.clear(); tray_gun = ""; tray_mag = -1; tray_kick = 0.0; dial_full = 0.0; ringing = false; _rang = false
+	boards.clear(); flown.clear(); stickers.clear(); sigs.clear(); tray_gun = ""; tray_mag = -1; tray_kick = 0.0; dial_full = 0.0; ringing = false; _rang = false; drops.clear(); wet_t = 0.0
 	if hud != null and hud.is_toy(): K.sheet(); plan_tex()   # (the toy room is starting: its pictures made now, not in the fight)
 
 # ---------------- what there is to show ----------------
@@ -151,8 +155,20 @@ func hit(kill: bool, head: bool) -> void:
 	else: stickers.push_back({"kind": "star", "ang": a0, "dist": 22.0, "age": 0.0, "life": 0.2, "rot": _rng.randf() * TAU, "col": K.YELLOW, "r": 6.5})
 	if stickers.size() > 14: stickers = stickers.slice(stickers.size() - 14)
 
+## a toy's water gun has hit you: drops gather at the edges of the glass and run down it, and your shoes squeak for a while
+func splash() -> void:
+	wet_t = WET
+	for i in 4:
+		var side := _rng.randi() % 4; var along := _rng.randf(); var deep := _rng.randf_range(0.02, 0.13)
+		var p := Vector2(along, deep) if side == 0 else (Vector2(along, 1.0 - deep) if side == 1 else (Vector2(deep, along) if side == 2 else Vector2(1.0 - deep, along)))
+		drops.push_back({"p": p, "r": _rng.randf_range(9.0, 21.0), "age": 0.0, "life": _rng.randf_range(2.6, 4.6), "v": _rng.randf_range(0.004, 0.02)})
+	if drops.size() > DROPS: drops = drops.slice(drops.size() - DROPS)
+
 func update(dt: float) -> void:
-	t += dt
+	t += dt; wet_t = maxf(0.0, wet_t - dt)
+	for i in range(drops.size() - 1, -1, -1):
+		var d: Dictionary = drops[i]; d.age += dt; d.p.y += float(d.v) * dt * (1.0 + float(d.age))
+		if d.age > d.life: drops.remove_at(i)
 	if nodes.is_empty() and m.get("hud") is Control: attach(m.hud)
 	if not nodes.is_empty(): _size = (m.hud as Control).size; _touch = m.look_mode == "touch"
 	for k in boards:
@@ -186,6 +202,7 @@ func _node(name: String, parent: Control, paint: Callable) -> void:
 	n.draw.connect(func() -> void: K.at(n, Transform2D.IDENTITY); K.hold = true; paint.call(n); K.flush(n))
 
 func attach(parent: Control) -> void:
+	_node("glass", parent, func(n: Control) -> void: draw_glass(n))   # (under the pieces: they are stuck on the glass, the water runs down it)
 	_node("map", parent, func(n: Control) -> void: draw_map(n, (_layout().map as Rect2).size.x, _touch))
 	_node("top", parent, func(n: Control) -> void: draw_top(n))
 	_node("clock", nodes.top, func(n: Control) -> void: draw_clock(n))
@@ -197,7 +214,7 @@ func attach(parent: Control) -> void:
 
 ## shown only in the toy room
 func show(on: bool) -> void:
-	for k in ["map", "top", "feed", "battery", "tray", "over"]:
+	for k in ["glass", "map", "top", "feed", "battery", "tray", "over"]:
 		if nodes.has(k) and (nodes[k] as Control).visible != on: (nodes[k] as Control).visible = on
 
 ## a piece is drawn again when what it shows is no longer what it showed
@@ -236,6 +253,7 @@ func _sync() -> void:
 		var age := float(q[2]); fsig.push_back([q[0], q[1], q[3], int(age * 60.0) if age < 0.16 else (int(age * 30.0) if age > 2.4 else 0)])
 	_mark("feed", [fsig, _touch, _size])
 	_mark("over", int(t * 120.0) if not (flown.is_empty() and hud.pops.is_empty()) else 0)
+	_mark("glass", int(t * 120.0) if not drops.is_empty() else 0)
 
 # ---------------- drawing ----------------
 ## the sway of a piece stuck on the glass: a fraction of a degree, each piece in its own time
@@ -624,6 +642,17 @@ func draw_feed(ci) -> void:
 func feed(ci, s: Vector2, touch: bool) -> void:
 	_size = s; _touch = touch; K.hold = true; draw_feed(ci); K.flush(ci)
 
+# ---- on the glass itself: drops of water at its edges, each with the light caught in it ----
+func draw_glass(ci) -> void:
+	for d: Dictionary in drops:
+		var u: float = float(d.age) / float(d.life); var a := clampf(float(d.age) / 0.12, 0.0, 1.0) * clampf((1.0 - u) / 0.35, 0.0, 1.0)
+		var c := Vector2(float(d.p.x) * _size.x, float(d.p.y) * _size.y); var r: float = d.r
+		K.drop(ci, c + Vector2(0.8, 1.6), r * 2.3, Color(0.05, 0.12, 0.2, 0.16 * a)); K.drop(ci, c, r * 2.2, Color(0.72, 0.88, 1.0, 0.3 * a))
+		K.disc(ci, c + Vector2(-r * 0.22, r * 0.2), r * 0.2, Color(1, 1, 1, 0.75 * a))
+
+func glass(ci, s: Vector2, touch: bool) -> void:
+	_size = s; _touch = touch; K.hold = true; draw_glass(ci); K.flush(ci)
+
 # ---- over everything: the rounds a shot has sent flying, the money a kill pays dropping out of the bag's tag ----
 func draw_over(ci) -> void:
 	var L := _layout(); var o: Vector2 = L.top; var tk := float(L.top_k)
@@ -638,4 +667,4 @@ func over(ci, s: Vector2, touch: bool) -> void:
 
 ## the whole screen in one go, where no controls hold the pieces (the checks)
 func draw_all(ci, s: Vector2, touch: bool) -> void:
-	top(ci, s, touch); feed(ci, s, touch); minimap(ci, s, touch); battery(ci, s, touch, hud._items(touch)); tray(ci, s, touch); over(ci, s, touch)
+	glass(ci, s, touch); top(ci, s, touch); feed(ci, s, touch); minimap(ci, s, touch); battery(ci, s, touch, hud._items(touch)); tray(ci, s, touch); over(ci, s, touch)
