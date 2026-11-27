@@ -71,6 +71,8 @@ var fight_t := 99.0                # seconds since there was a fight about you (
 var _fight_look := 0.0
 var auto := false                  # your fighter plays itself, as the others do (the checks' matches, a match left to run)
 var ai_off := false                # the others stand where they are and press nothing (the checks set a fight up by hand)
+var prof := {}                     # (with prof_on: microseconds spent in each part of the frame, for the speed checks)
+var prof_on := false
 var _id := 0
 var _was_grounded := true
 var log_on := false; var log: Array = []   # the checks read what happened: [what, ...]
@@ -360,6 +362,7 @@ func update(dt: float) -> void:
 	for i in range(marks.size() - 1, -1, -1):
 		marks[i].t = float(marks[i].t) + dt
 		if float(marks[i].t) > 0.6: marks.remove_at(i)
+	var t0 := Time.get_ticks_usec() if prof_on else 0
 	_you_in()
 	mode.update(dt)
 	for f: Fighter in all:
@@ -373,11 +376,18 @@ func update(dt: float) -> void:
 		elif ai_off: kit.act(f, {}, dt)
 		else: ai.turn(f, dt)
 	press.clear()
+	var t1 := Time.get_ticks_usec() if prof_on else 0
 	kit.step(dt)
+	var t2 := Time.get_ticks_usec() if prof_on else 0
 	_circles(dt)
 	_you_out(dt)
 	_heat(dt)
+	var t3 := Time.get_ticks_usec() if prof_on else 0
 	look.update(dt)
+	if prof_on:
+		var t4 := Time.get_ticks_usec()
+		for q: Array in [["minds", t1 - t0], ["flying", t2 - t1], ["circles", t3 - t2], ["look", t4 - t3]]: prof[q[0]] = int(prof.get(q[0], 0)) + int(q[1])
+		prof.frames = int(prof.get("frames", 0)) + 1
 
 ## a fight about you, for the music: you shooting, you hurt, or a foe in sight within 35 m (looked for three times a second)
 func _heat(dt: float) -> void:

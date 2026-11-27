@@ -875,6 +875,14 @@ func command(line: String) -> Dictionary:
 		"resume": resume_game()
 		"money": Store.save.money = int(a[1]); Store.persist(); ui.refresh_menu()
 		"toymode": Store.settings.toyMode = a[1] if a.size() > 1 else "sweep"   # stage 5's mode: sweep, rush, escort, freeze
+		"realmmode":   # stage 6-1's battle (solo, sanctum, siege) and, after it, your people
+			Store.settings.realmMode = a[1] if a.size() > 1 else "solo"
+			if a.size() > 2: Store.settings.realmRace = a[2]
+		"realm":   # stage 6-1's battle: how it stands; "realm auto": your fighter plays itself too (the pictures, the speed checks)
+			if game.rm == null: return {"rm": false}
+			if a.size() > 1 and a[1] == "auto": game.rm.auto = true
+			var rs: Dictionary = game.rm.mode.state(); rs.fighters = game.rm.all.size(); rs.shots = game.rm.kit.shots.size(); rs.fields = game.rm.kit.fields.size()
+			return rs
 		"tmc":   # stage 5's team mode: one of the mode's own commands for the tests and pictures
 			if game.tm == null: return {"tm": false}
 			return game.tm.mode.cmd(Array(a.slice(1)))
