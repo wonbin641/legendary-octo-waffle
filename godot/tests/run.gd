@@ -142,7 +142,6 @@ func _ready() -> void:
 	# and the random number its sound takes, came sooner or later after how far you had walked there
 	var sp_p := Player.new(); sp_p.step_phase = 37.0; sp_p.step_dist = 1.7; sp_p.sprint_blend = 0.8; sp_p.reset(0, 0, 0)
 	check("a start puts the stride back to its beginning: no step phase, step distance or sprint lean carried over", sp_p.step_phase == 0.0 and sp_p.step_dist == 0.0 and sp_p.sprint_blend == 0.0, [sp_p.step_phase, sp_p.step_dist, sp_p.sprint_blend])
-	sp_p.free()
 	# ---------------- weapons ----------------
 	var nbad := 0; var which := ""
 	# [price, rental] the owner of this port set apart from the browser game's: tests/balance_overrides.json (with the browser game's own beside them)
