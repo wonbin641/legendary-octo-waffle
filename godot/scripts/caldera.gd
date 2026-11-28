@@ -483,6 +483,10 @@ func _spires() -> void:
 			for j in path.size(): var u := float(j) / (path.size() - 1); rr.push_back(lerpf(0.45, 0.04, u))
 			k.paint(C_OBS2, 0.2, 0.55, ArtKit.OBSIDIAN, 3, 0.0); k.tube(path, rr, 6)
 		glow.cyl(c.x, LOOK_Y, c.z, 0.5, 0.3, 0.5, C_LAVA2, 8, true); lamps_at.push_back(Vector3(c.x, LOOK_Y + 1.5, c.z)); lamps_at.push_back(Vector3(c.x - sx * 2.85, GAL_Y + 1.5, c.z + sz * 2.85))
+		for n4: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD]:   # arrow slits lit from inside, two rows up each wall
+			var fc := c + n4 * (h + 0.02); var tn := n4.cross(Vector3.UP)
+			for hy: float in [10.8, 18.6]:
+				for off: float in [-1.7, 1.7]: glow.ribbon(fc + tn * off + Vector3(0, hy - 0.7, 0), fc + tn * off + Vector3(0, hy + 0.7, 0), 0.2, C_LAVA.darkened(0.15), n4)
 		# the causeway from the ring out to the lower door: straight along x, its far end on the ring
 		var zc := (float(lower.z0) + float(lower.z1)) * 0.5; var xr := sx * sqrt(maxf(0.0, RING_R1 * RING_R1 - zc * zc)); var xd := c.x - sx * h
 		var cw := {"x0": minf(xr - sx * 1.2, xd), "z0": zc - 1.25, "x1": maxf(xr - sx * 1.2, xd), "z1": zc + 1.25}
@@ -700,8 +704,8 @@ func _posts() -> void:
 		var a0: float = GALLERY[side][0]; var a1: float = GALLERY[side][1]
 		for k in 3: var p := at_deg(lerpf(a0 + 14.0, a1 - 14.0, k / 2.0) + (6.0 if k == 1 else 0.0), 49.5, GAL_Y); post("dm_sniper", p, yaw_in(p), {"perch": true})
 	for deg: float in SPIRES: var c := at_deg(deg, SPIRE_R, LOOK_Y); post("dm_sniper", c, yaw_in(c), {"perch": true})
-	# the inquisitor: on the north gallery, over the middle
-	var b := at_deg(90.0, 50.5, GAL_Y); post("inquisitor", b, yaw_in(b), {"boss": true, "perch": true})
+	# the inquisitor: on the north gallery (north is the map's top: -z), over the middle
+	var b := at_deg(270.0, 50.5, GAL_Y); post("inquisitor", b, yaw_in(b), {"boss": true, "perch": true})
 
 func populate(put: Callable) -> void:
 	for i in posts.size():

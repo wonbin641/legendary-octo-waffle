@@ -480,7 +480,7 @@ func _ready() -> void:
 	for hg_k: String in Hud.GLOW_STOPS:
 		var hg_t := hg_hud._radial_tex(hg_k); var hg_st: Array = Hud.GLOW_STOPS[hg_k]
 		hg_ok = hg_ok and hg_t == hg_hud._radial_tex(hg_k) and hg_t.gradient.colors.size() == hg_st.size() and hg_t.gradient.colors[hg_st.size() - 1] == hg_st[hg_st.size() - 1][1] and is_equal_approx(hg_t.gradient.offsets[1], hg_st[1][0])
-	check("the view's glows (hurt, low health, poison, stun, down, watched, wind): each key has its one picture, made once from the one table", hg_ok and Hud.GLOW_STOPS.size() == 7)
+	check("the view's glows (hurt, low health, poison, stun, down, watched, wind, burning): each key has its one picture, made once from the one table", hg_ok and Hud.GLOW_STOPS.size() == 8 and Hud.GLOW_STOPS.has("burn"))
 	check("developer mode's invincibility is shown on the screen while it is on", dv_chips.size() > 0 and dv_chips[0][0] == "무적 · 개발자 모드" and not dv_off.any(func(c): return c[0] == "무적 · 개발자 모드"), [dv_chips, dv_off])
 	Store.save.cleared = dv_cl
 	Store.settings.dev = false
@@ -3850,7 +3850,9 @@ func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, c
 	check("a rack of white jade (five of them, by the decks and the gates and in the library): pass within reach while the bomb is not ready and it is two seconds sooner; the same rack does it again after five seconds; with the bomb ready it does nothing",
 		W.racks.size() == 5 and absf(rk_far - 10.0) < 0.01 and absf(rk_by - (10.0 - 0.1 - 2.0)) < 0.01 and absf(rk_stay - (rk_by - 2.0)) < 0.01 and absf(rk_again - (rk_stay - 3.1 - 2.0)) < 0.05 and rk_again > 0.5 and rk_ready, [rk_far, rk_by, rk_stay, rk_again])
 	# ---- the elves ----
-	var KD: Dictionary = Folk.KINDS
+	var KD: Dictionary = {}   # (the elves' kinds of Folk's: the table holds 6-B's demons too, checked with their stage)
+	for kd_t: String in Folk.KINDS:
+		if str(Folk.KINDS[kd_t].race) == "elf": KD[kd_t] = Folk.KINDS[kd_t]
 	var built_bad := []
 	_wood_alone(en)
 	for type: String in KD:
@@ -4527,7 +4529,7 @@ func _caldera(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, ca
 		World.stage_kind(16) == "altar" and A != null and Phys.HALF == Caldera.HALF and Phys.floor_y(0.0, 26.0) == Caldera.PIT_Y and absf(pl.pos.y - Caldera.MID_Y) < 0.01 and absf(-sin(pl.yaw) - 1.0) < 1e-6
 		and absf(Phys.ground_at(0.0, 15.0, 50.0, 0.3) - Caldera.GAL_Y) < 0.01 and absf(Phys.ground_at(0.0, 8.0, 36.0, 0.3) - Caldera.MID_Y) < 0.01 and absf(Phys.ground_at(1.0, 8.0, 1.0, 0.3) - Caldera.MID_Y) < 0.01
 		and kinds == {"dm_imp": 8, "dm_guard": 11, "dm_adept": 6, "dm_sniper": 10, "dm_warden": 2, "inquisitor": 1} and gm.goal == 38 and gm.boss != null and gm.boss.type == "inquisitor"
-		and absf(gm.boss.pos.y - Caldera.GAL_Y) < 0.01 and gm.boss.pos.z > 45.0 and w.crates.is_empty() and lt.list.is_empty(), [kinds, pl.pos, gm.goal])
+		and absf(gm.boss.pos.y - Caldera.GAL_Y) < 0.01 and gm.boss.pos.z < -45.0 and w.crates.is_empty() and lt.list.is_empty(), [kinds, pl.pos, gm.goal])
 	var routes := [["the west foundry's narrow way and the west bridge to the sanctum", Vector3(-39, 7, 0), [[-31, 0], [-12.5, 0], [-2, 0.5]], 7.0]]
 	for side: String in ["e", "n", "s"]:
 		var d := Caldera.at_deg(float(Caldera.ARCS[side]), 1.0, 0.0); routes.push_back(["the %s bridge out to its arc" % side, Vector3(d.x * 3.0, 7, d.z * 3.0), [[d.x * 35.0, d.z * 35.0]], 7.0])
@@ -4613,6 +4615,15 @@ func _caldera(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, ca
 	pl.reset(tq.x, tq.z, 0.0); pl.pos.y = tq.y; _altar_tick(gm, en, pl, g, pr, w, cam, 0.1)
 	check("a quench trough at each foundry's inner door: through it, and what burns on you is out", absf(lit - 5.0) < 0.01 and gm.burn_t == 0.0 and A.troughs.size() == 2, [lit, gm.burn_t])
 	# ---- the demons ----
+	all_off.call(); var dm_bad := []; var dm_n := 0
+	for type: String in Folk.KINDS:
+		if str(Folk.KINDS[type].race) != "demon": continue
+		dm_n += 1; var e := _altar_demon(en, type, Vector3(0.0, Caldera.MID_Y + (3.0 if type == "dm_imp" else 0.0), 8.0))
+		if not e.folk or e.far == null or not bool(e.parts[0].weak) or e.max_hp != float(Folk.KINDS[type].hp) or e.name != str(Folk.KINDS[type].name) or absf(e.scale - Hellfolk.size_of(type)) > 1e-6 or e.upper == null or e.arm_r == null or e.leg_l == null: dm_bad.push_back(type)
+		en.vanish(e)
+	check("the six kinds of demon, each the art paper's demon body at its own size (an imp 0.58, a warden 1.38, the inquisitor 1.34) with its own gear, a head to hit, a far-off shape and its name: imp 100, guard 300, adept 200, sniper 160, warden 1,100, the inquisitor 8,000",
+		dm_bad.is_empty() and dm_n == 6 and int(Folk.KINDS.dm_imp.hp) == 100 and int(Folk.KINDS.dm_guard.hp) == 300 and int(Folk.KINDS.dm_adept.hp) == 200 and int(Folk.KINDS.dm_sniper.hp) == 160 and int(Folk.KINDS.dm_warden.hp) == 1100 and int(Folk.KINDS.inquisitor.hp) == 8000
+		and Game.BOSS[16].type == "inquisitor" and int(Game.BOSS[16].hp) == 8000 and Game.boss_pay(Game.BOSS[16]) == 80000, dm_bad)
 	all_off.call(); pl.reset(0.0, -6.0, PI); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP; pl.invuln = 0.0
 	var imp := _altar_demon(en, "dm_imp", Vector3(0.0, Caldera.MID_Y + 3.0, 6.0)); en.alarm(imp)
 	_altar_tick(gm, en, pl, g, pr, w, cam, 6.0); var imp_got := [float(fk.dealt.get("fire", 0.0)) > 0.0, imp.pos.y > A.lava_y + 1.0, imp.fly]
@@ -4645,8 +4656,8 @@ func _caldera(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, ca
 	# ---- the inquisitor, the tide, the clear ----
 	all_off.call(); gm.begin(16); A = w.altar
 	var inq: Enemies.Foe = gm.boss; Store.save.money = 0; var owned0: int = (Store.save.owned as Array).size()
-	pl.reset(0.0, -30.0, 0.0); pl.pos.y = Caldera.MID_Y; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var calm := not bool(inq.k.get("roused", false))
-	pl.pos = Vector3(0.0, Caldera.GAL_Y, 32.0); pl.pos = Vector3(0.0, Caldera.GAL_Y, 49.5) + Vector3(-12.0, 0, -0.5); Store.settings.dev = true; Store.settings.god = true
+	pl.reset(0.0, 30.0, 0.0); pl.pos.y = Caldera.MID_Y; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var calm := not bool(inq.k.get("roused", false))
+	pl.pos = Vector3(-12.0, Caldera.GAL_Y, -49.0); Store.settings.dev = true; Store.settings.god = true
 	_altar_tick(gm, en, pl, g, pr, w, cam, 1.5); var roused := bool(inq.k.get("roused", false))
 	var sent1 := int(fk.sent.get("fan", 0)) + int(fk.sent.get("judge", 0)) + int(fk.sent.get("rune", 0)); var perch1 := inq.pos
 	en.damage(inq, inq.max_hp * 0.45, inq.pos + Vector3(0, 1.5, 0), Vector3.FORWARD, false); _altar_tick(gm, en, pl, g, pr, w, cam, 9.0)
