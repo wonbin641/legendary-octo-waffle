@@ -107,7 +107,7 @@ func _ready() -> void:
 
 ## a check of a built copy of the game (... --headless -- --smoke): every stage started and played two seconds, then out
 func _smoke() -> void:
-	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "14", "15", "9", "10"]:
+	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "14", "15", "9", "10", "16"]:   # (16: 6-B, the caldera alone with your guns)
 		command("start " + st); command("sim 2")
 		print("smoke: stage %s %s, %d enemies" % [Store.STAGE_TAG.get(int(st), st), state, enemies.list.size()])
 	var was := ToyMatch.picked()
