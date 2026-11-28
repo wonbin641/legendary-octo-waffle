@@ -63,6 +63,12 @@ func music_set() -> String: return "rf"    # the music (Music): the set, how far
 func music_stage() -> int: return 1
 func music_semis() -> int: return 0
 func state() -> Dictionary: return {"phase": phase, "round": round_n, "wins": wins}
+## the result sheet's score for a side: the foes its fighters felled, unless the mode counts something else (the sanctum: rounds)
+func score(team: String) -> int:
+	var n := 0
+	for f: Realm.Fighter in rm.all:
+		if f.team == team: n += f.kills
+	return n
 
 # ---------------- the rounds' parts, shared ----------------
 func set_phase(p: String, t := 0.0) -> void:

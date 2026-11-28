@@ -3956,6 +3956,16 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 	var noted := func(what: String) -> Array: return rm.log.filter(func(q): return q[0] == what)
 	var near := func(a: float, b: float, tol := 0.01) -> bool: return absf(a - b) <= tol
 	var tough_me := func() -> void: me.max_hp = 9000.0; me.hp = 9000.0
+	# the result sheet as it is shown once a match is over: [the screen, its stamp, its title, its kills line] (a sheet of its own, freed at once)
+	var sheet := func() -> Array:
+		var fu := Ui.new(); fu.game = gm
+		fu.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); fu.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+		fu.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); fu.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
+		add_child(fu); fu._build_brief(); fu._build_loadout(); fu._build_shop(); fu._build_over(); fu._build_dialog()
+		fu.show_result(gm.result)
+		var out := [fu.cur, (fu.ov.stamp as Label).text, (fu.ov.title as Label).text, (fu.ov.kills as Label).text]
+		fu.queue_free()
+		return out
 
 	# ---- the peoples ----
 	var per := {"us": {}, "them": {}}
@@ -4272,6 +4282,9 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 		p0 and safe0 and waits and p1 and shut and p2 and r1 and sh_me == 300 + 550 + 100 and sh_ally >= 550 and sh_foe >= 650 and p3 and ended_soon and gm.ended and gm.result == "clear" and Races.SHARDS.sanctum == [300, 0, 700],
 		[p0, safe0, waits, p1, shut, p2, r1, sh_me, sh_ally, sh_foe, p3, ended_soon, gm.ended, gm.result])
 	check("the match won, its record is kept under its own name and its first win pays a bonus", Store.save.best.has("t10sa") and md.record_key() == "t10sa" and md.bonus() == 30000 * Store.PAY, [Store.save.best, md.bonus()])
+	var sh_sa: Array = sheet.call()
+	check("the sanctum won, its result sheet comes up (1.9.0 stopped there): the stamp, the match's title, and the rounds as its score",
+		sh_sa == ["over", "임무 완료", "성소 각인 완료", "%d · 2 대 0" % gm.stats.kills] and rm.score("us") == 2 and rm.score("them") == 0, sh_sa)
 	# falling and coming back
 	Store.settings.realmMode = "sanctum"; gm.begin(10); rm = gm.rm; kit = rm.kit; md = rm.mode; me = rm.me; rm.ai_off = true; rm.log_on = true; md.set_phase("fight")
 	var o2: Realm.Fighter = rm.team_of("them")[2]; o2.pos = Vector3(-60, 0, -4); rm.slay(o2, me, {}); var wait7 := o2.back_t; var gone := not o2.alive
@@ -4345,6 +4358,13 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 		and ModeSiege.decide(D.call(true, 300.0, 3500.0, 1, "us"), D.call(false, 240.0, 0.0, 0, "them")) == "us" and ModeSiege.decide(D.call(true, 300.0, 3500.0, 1, "us"), D.call(true, 250.0, 3500.0, 2, "them")) == "them"
 		and ModeSiege.decide(D.call(false, 450.0, 900.0, 1, "us"), D.call(false, 450.0, 1200.0, 1, "them")) == "them" and ModeSiege.decide(D.call(false, 240.0, 0.0, 1, "us"), D.call(false, 240.0, 0.0, 0, "them")) == "us" and ModeSiege.decide(D.call(false, 240.0, 0.0, 0, "us"), D.call(false, 240.0, 0.0, 0, "them")) == "",
 		[timed_out, sg.won, gm.ended, gm.result])
+	var us_k := 0; var them_k := 0
+	for f: Realm.Fighter in rm.all:
+		if f.team == "us": us_k += f.kills
+		else: them_k += f.kills
+	var sh_si: Array = sheet.call()
+	check("the siege won, its result sheet comes up too: its title, and the falls each side dealt as its score",
+		sh_si == ["over", "임무 완료", "비전 핵 공성전 승리", "%d · %d 대 %d" % [gm.stats.kills, us_k, them_k]] and rm.score("us") == us_k, sh_si)
 
 	# ---- the battles' sounds ----
 	var rs_bad := []; var rs_used := {}; var rs_re := RegEx.new(); rs_re.compile("\"(rm_[a-z0-9_]*[a-z0-9])\"")

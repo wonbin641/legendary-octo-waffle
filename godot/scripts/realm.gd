@@ -159,6 +159,8 @@ func refit(f: Fighter) -> void:
 	f.bombs = f.bomb_kinds.size(); f.bomb_t = 0.0; f.bomb_i = 0
 
 func team_of(team: String) -> Array: return all.filter(func(f): return f.team == team)
+## the match's score for the result sheet (its "N 대 M"): what the mode counts
+func score(team: String) -> int: return mode.score(team)
 func foes_of(f: Fighter) -> Array: return all.filter(func(o): return o.team != f.team and o.alive)
 func other(team: String) -> String: return "them" if team == "us" else "us"
 func in_play(f: Fighter) -> bool: return f != null and f.alive

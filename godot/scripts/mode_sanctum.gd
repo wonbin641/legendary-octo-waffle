@@ -32,6 +32,7 @@ func brief() -> Array:
 	return ["성소(달샘 정자) 안에 우리 편만 서 있으면 각인 게이지가 초당 1.25% 오릅니다", "먼저 100%를 채운 편이 라운드를 가져갑니다 · 3판 2선승",
 		"쓰러지면 7초 뒤 본진 마법진에서 다시 일어납니다", "50%에서 마력 공명: 뒤처진 편의 포탈 대기가 줄고 달샘 회복이 늘어납니다", "라운드 사이 15초: B 키로 룬 제단 · 종족과 폭탄 교체"]
 func win_title() -> String: return "성소 각인 완료"
+func score(team: String) -> int: return int(wins[team])
 func bonus() -> int: return 30000 * Store.PAY
 func works(team: String) -> Array: return [BASE[team]]
 
