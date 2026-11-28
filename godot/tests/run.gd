@@ -1127,6 +1127,7 @@ func _ready() -> void:
 	_plain_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_raid_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_raid_spoils(gm, pl, w, cam)
+	_realm_art(gm, pl, w, cam)
 	_reward_card(gm, en, pl)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
@@ -4695,6 +4696,111 @@ func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: W
 ## them, the shared comebacks, the camp, the lava, Karnok's and Baal's tricks, the rank, the end, and the screens
 ## 6-A's spoils (the boss raid paper's second part): what a won raid gives by rank and difficulty, the difficulties
 ## themselves, the four legendary relics at work in the raid (and nowhere else), the mythic looks, the workshop, the screens
+## a mesh painted somewhere in this screen colour
+func _has_col(mesh: Mesh, hex: String) -> bool:
+	if mesh == null: return false
+	var want := Color(hex)
+	for si in mesh.get_surface_count():
+		var cols: PackedColorArray = mesh.surface_get_arrays(si)[Mesh.ARRAY_COLOR]
+		for c in cols:
+			if absf(c.r - want.r) + absf(c.g - want.g) + absf(c.b - want.b) < 0.02: return true
+	return false
+
+## the art paper's looks: each people's weapon in your hands with its moving parts and the gauges on it, the rune
+## dagger's parry, the bombs, the bodies at their own sizes
+func _realm_art(gm: Game, pl: Player, w: World, cam: Camera3D) -> void:
+	reset_test_state(); seed(1414)
+	var mk := func(race: String) -> Realm:
+		Store.settings.realmMode = "sanctum"; Store.settings.realmRace = race; gm.begin(10)
+		var r: Realm = gm.rm; r.cam = cam; r.ai_off = true; r.mode.set_phase("fight"); r.look.base_shield(false); return r
+	var step := func(secs: float, dt := 1.0 / 60.0) -> void:
+		var t := 0.0
+		while t < secs - 1e-9: pl.update(dt, cam, 0.0); gm.rm.update(dt); t += dt
+	var rm: Realm = mk.call("elf"); step.call(0.1)
+	var lk := rm.look; var me := rm.me
+	# the arcane repeater: four crescents round the sight, closing on its middle as it charges; the string drawn back;
+	# the core turning with the magazine's fill and rising to be filled on the reload, the lever thrown
+	var X: Dictionary = lk.rigs.elf
+	var parts_ok: bool = (X.crescents as Array).size() == 4 and X.has("core") and (X.string as Array).size() == 2 and X.has("lever") and X.has("lhand") and X.has("bolt") and (X.root as Node3D).visible
+	var ring0 := ((X.crescents as Array)[0] as Node3D).position.length(); var str0 := ((X.string as Array)[0] as Node3D).transform.basis.z.length()
+	rm.guns.ads_held = true; step.call(float(Races.XBOW.charge) * 0.95)
+	var closed: bool = ((X.crescents as Array)[0] as Node3D).position.length() > ring0 + 0.01 and ((X.crescents as Array)[1] as Node3D).position.length() > 0.01
+	var gc: PackedVector3Array = (X.mat as ShaderMaterial).get_shader_parameter("glow_col"); var purple := Color(RaceArt.PAL.elf.charge).srgb_to_linear()
+	var violet: bool = absf(gc[3].x - purple.r) + absf(gc[3].z - purple.b) < 0.08
+	var drawn: bool = ((X.string as Array)[0] as Node3D).transform.basis.z.length() < str0 - 0.02 or ((X.string as Array)[0] as Node3D).transform.basis.z.length() > str0 + 0.02
+	rm.guns.ads_held = false; step.call(0.4)
+	var spin := func(ammo: int) -> float:
+		me.ammo = ammo; var a0 := (X.core as Node3D).rotation.y; step.call(0.1); return wrapf((X.core as Node3D).rotation.y - a0, -PI, PI)
+	var fast: float = spin.call(12); var slow: float = spin.call(1)
+	me.ammo = 0; me.reload_t = float(Races.XBOW.reload) * 0.55; step.call(1.0 / 60.0)
+	var rose: bool = (X.core as Node3D).position.y > RaceArt.XB_CORE.y + 0.03 and (X.lever as Node3D).rotation.x < -0.8
+	check("the art paper's arcane repeater in your hands (white marble and gold, the violet core in its open chamber): four gold crescents round its sight close on the middle as it charges and turn violet, the teal string is drawn back; the core turns faster the fuller the magazine; on the reload the gold lever is thrown and the spent core rises to be filled",
+		parts_ok and closed and violet and drawn and fast > slow * 1.5 and rose, [parts_ok, ring0, closed, violet, drawn, fast, slow, rose])
+	# the rune blunderbuss: its gauge's needle reads the pressure (the shells left), the mortar's glass fills as the grenade
+	# comes back, the runes glow after a shot and cool; on the reload the barrel breaks open and five brass shells go in
+	rm = mk.call("dwarf"); step.call(0.1); lk = rm.look; me = rm.me
+	var D: Dictionary = lk.rigs.dwarf
+	me.ammo = 5; step.call(0.05); var n5: float = (D.needle as Node3D).rotation.z
+	me.ammo = 1; step.call(0.05); var n1: float = (D.needle as Node3D).rotation.z
+	me.alt_cd = float(Races.CANNON.gren_cd) * 0.75; step.call(1.0 / 60.0); var low: float = (D.liquid as Node3D).scale.z
+	me.alt_cd = 0.0; step.call(1.0 / 60.0); var full: float = (D.liquid as Node3D).scale.z
+	lk.cannon(me, [], true); step.call(0.05); var hot: float = (D.mat as ShaderMaterial).get_shader_parameter("glow")[1]
+	step.call(2.5); var cool: float = (D.mat as ShaderMaterial).get_shader_parameter("glow")[1]
+	me.reload_t = float(Races.CANNON.reload) * 0.4; step.call(1.0 / 60.0)
+	var opened: bool = (D.barrel as Node3D).rotation.x < -0.4 and (D.shells as Node3D).visible
+	check("the art paper's rune blunderbuss: the needle on its boiler's gauge stands lower as the shells run out (and shivers), the glass under the barrel fills as the grenade comes back, its runes and bore glow amber after a shot and cool; the reload breaks it open on its hinge and five brass shells go in",
+		n5 < n1 - 0.5 and low < 0.4 and full > 0.99 and hot > 2.0 and cool < 0.6 and opened, [n5, n1, low, full, hot, cool, opened])
+	# the blood-rune greatsword: the fuller fills with crimson to the bloodlust's step; the chain hangs from the pommel to
+	# the axe in your left hand; thrown, the axe leaves the hand
+	rm = mk.call("orc"); step.call(0.1); lk = rm.look; me = rm.me
+	var O: Dictionary = lk.rigs.orc
+	me.stacks = 0; me.stack_t = 9.0; step.call(1.0); var f0: float = (O.mat as ShaderMaterial).get_shader_parameter("fill")
+	me.stacks = 3; me.stack_t = 9.0; step.call(1.0); var f3: float = (O.mat as ShaderMaterial).get_shader_parameter("fill")
+	var mm: MultiMesh = (O.chain as MultiMeshInstance3D).multimesh; var ends: Array = O.get("chain_ends", [Vector3.INF, Vector3.INF])
+	var a0 := (O.sword as Node3D).transform * RaceArt.OR_POMMEL; var a1 := (O.axe as Node3D).transform * RaceArt.OR_AXE_TOP
+	var hangs: bool = mm.instance_count >= 12 and (ends[0] as Vector3).distance_to(a0) < 0.1 and (ends[1] as Vector3).distance_to(a1) < 0.1 and (ends[2] as Vector3).y < (a0.y + a1.y) * 0.5 - 0.02
+	rm.guns.ads_held = true; step.call(2.0 / 60.0); rm.guns.ads_held = false
+	var thrown: bool = not (O.axe_mesh as Node3D).visible and rm.kit.shots.any(func(q): return q.kind == "axe")
+	step.call(float(Races.SWORD.axe_range) / float(Races.SWORD.axe_speed) + 0.2)
+	check("the art paper's blood-rune greatsword and chain axe: crimson fills the blade's fuller as far as the bloodlust has stacked (none at none, all of it at three); a heavy chain hangs from its pommel to the axe reversed in your left hand; thrown, the axe goes out of your hand",
+		f0 < 0.05 and f3 > 0.95 and hangs and thrown and (O.axe_mesh as Node3D).visible, [f0, f3, hangs, thrown])
+	# the hellfire staff: its core bigger and its horns wider as it heats; sealed, the horns shut and the rune lock shows
+	rm = mk.call("demon"); step.call(0.1); lk = rm.look; me = rm.me
+	var S: Dictionary = lk.rigs.demon
+	me.heat = 10.0; step.call(0.5); var c10: float = (S.core as Node3D).scale.x; var o10: float = ((S.horns as Array)[0] as Node3D).rotation.x
+	me.heat = 90.0; step.call(0.5); var c90: float = (S.core as Node3D).scale.x; var o90: float = ((S.horns as Array)[0] as Node3D).rotation.x
+	me.heat = 100.0; me.seal_t = float(Races.STAFF.seal); step.call(0.5); var shut: float = ((S.horns as Array)[0] as Node3D).rotation.x
+	check("the art paper's hellfire staff: the ember core in its obsidian crown grows and its three horns open wider as the heat rises (white-hot past 80%); at 100% the horns close on the core and the red rune lock hangs about it",
+		c90 > c10 + 0.3 and o90 > o10 + 0.15 and shut < 0.0 and (S.lock as Node3D).visible, [c10, c90, o10, o90, shut])
+	# the rune dagger's parry: the rune hexagon before you
+	me.seal_t = 0.0; me.heat = 0.0; step.call(0.1); me.parry_cd = 0.0; rm.press["parry"] = true; step.call(0.05)
+	var dg: Dictionary = lk.daggers.demon
+	check("the rune dagger's parry: the dagger turned in your left hand, its flat before you, a hexagon of runes flashing out",
+		(dg.root as Node3D).visible and (dg.shield as Node3D).visible, [me.parry_t])
+	# the bombs, flying as what they are
+	me.bomb_kinds = ["oil", "gravity", "smoke"]; me.bombs = 3; var kinds := {}
+	for i in 3: rm.press["bomb"] = true; step.call(1.0 / 60.0)
+	for s: Dictionary in rm.kit.shots:
+		if s.kind == "flask" and s.has("bomb_rig"): kinds[str(s.bomb)] = (s.bomb_rig as Dictionary)
+	var flask_ok: bool = kinds.has("oil") and (kinds.oil as Dictionary).has("oil") and kinds.has("gravity") and ((kinds.gravity as Dictionary).spin as Array).size() == 3 and kinds.has("smoke")
+	check("the three alchemy bombs fly as the paper draws them: the oil flask with its black oil and lit wick, the gravity sphere's three bronze rings round its black hole, the crystal smoke capsule",
+		flask_ok, [kinds.keys()])
+	# the bodies: each people at its own size and silhouette, its side's colour on it, the demon's wings and tail
+	var sized := true; var teams := true
+	for f: Realm.Fighter in rm.all:
+		if f.me or f.body.is_empty(): continue
+		var g: Node3D = f.body.g; sized = sized and absf(g.scale.y - f.H / float(Races.R[f.race].h)) < 0.001 and absf(g.scale.x - g.scale.y) < 0.001
+	for race: String in Races.ORDER:
+		var bu: Dictionary = RaceArt.body(race, "us"); var bt: Dictionary = RaceArt.body(race, "them")
+		teams = teams and _has_col(bu.up, RaceArt.BODY_TEAM.us) and not _has_col(bu.up, RaceArt.BODY_TEAM.them) and _has_col(bt.up, RaceArt.BODY_TEAM.them)
+	var dm_f: Realm.Fighter = null
+	for f: Realm.Fighter in rm.all:
+		if not f.me and f.race == "demon" and not f.body.is_empty(): dm_f = f; break
+	var wings: bool = dm_f != null and dm_f.body.has("wing_l") and dm_f.body.has("wing_r") and dm_f.body.has("tail")
+	check("the bodies, as the paper's three views: each people at its own size (no longer one figure stretched), its side's colour on a cloak, sash or loincloth, the demon's bat wings and tail",
+		sized and teams and wings, [sized, teams, wings])
+	rm.look.clear(); Store.settings.realmMode = "solo"; Store.settings.realmRace = "elf"; gm.begin(1)
+
 func _raid_spoils(gm: Game, pl: Player, w: World, cam: Camera3D) -> void:
 	reset_test_state(); seed(729)
 	var fresh := func() -> void: Store.save.raid = RaidLoot.blank()
@@ -4825,8 +4931,9 @@ func _raid_spoils(gm: Game, pl: Player, w: World, cam: Camera3D) -> void:
 	fresh.call(); var dd2 := RaidLoot.data(); dd2.looks = ["skin_orc", "skin_demon", "skin_elf", "skin_dwarf", "vfx_eclipse", "frame_obsidian", "charm_mace"]; dd2.wear = dd2.looks.duplicate()
 	Store.settings.realmRace = "orc"; gm.begin(13); rm = gm.rm; md = rm.mode; rm.cam = cam; step.call(1.0 / 60.0)   # (the weapon in your hands hangs from the camera)
 	var lk := rm.look; var held_keys: Array = lk.models.keys()
-	var parts_sk: Dictionary = RealmLook.parts("elf", "us"); var sk_right := RealmLook.skinned("elf", parts_sk.right)
-	var recolored: bool = sk_right.any(func(b): return str(b[6]) == "8e4fd0") and not parts_sk.right.any(func(b): return str(b[6]) == "8e4fd0")
+	var skin_m: String = RaceArt.SKIN_PAL.elf.marble   # (the corrupted starlight crossbow: black-violet stone for white marble)
+	var recolored: bool = _has_col((RaceArt.body("elf", "us", true).ar as Mesh), skin_m) and not _has_col((RaceArt.body("elf", "us", false).ar as Mesh), skin_m) \
+		and _has_col(((lk.rigs.elf.root as Node3D).get_child(0) as MeshInstance3D).mesh, skin_m)
 	var ally: Realm.Fighter = md.party()[0]; lk.build(ally); var ally_sk: bool = rm.kit.mine(ally)
 	var gauge_ok: bool = lk.gauge != null and lk.orbit != null and lk.charm != null
 	var victim: Realm.Fighter = md.demons()[0]; victim.inv = 0.0; var g0: int = lk._ghosts.size(); rm.slay(victim, rm.me)

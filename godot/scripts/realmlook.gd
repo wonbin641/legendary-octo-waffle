@@ -4,38 +4,23 @@ extends RefCounted
 ## what flies, what lies about, the made things, your own weapon in your hands, and the moments that give a blow its
 ## weight (each element's own mark where it strikes, each people's own way of going when it falls).
 
-const TEAM_COL := {"us": "4f86e0", "them": "d8454f"}
 const ELEM_COL := {"arcane": Color(0.62, 0.5, 1.0), "fire": Color(1.0, 0.5, 0.15), "physical": Color(0.85, 0.9, 1.0), "alchemy": Color(0.3, 0.95, 0.8)}
-const MODEL_H := 1.86      # the height the bodies are drawn at before each people's own scale
-const HIP := 0.92
+const MODEL_H := 1.86      # a decoy's height before its maker's own scale
 
 var rm: Realm
 var root: Node3D = null
 var view: Node3D = null    # your weapon
 var models := {}           # race -> its node in your hands
+var rigs := {}             # race -> its moving parts (RaceArt's: the crescents, the core, the string...)
+var _rt := {}              # the moving parts' own clocks (a shot's pulse, the arrow laid again)
 var dagger: Node3D = null
-var gauge: MeshInstance3D = null; var gauge_mat: StandardMaterial3D = null   # the furnace cannon's pressure gauge (its skin's)
+var daggers := {}          # race -> the rune dagger in its people's hand (RaceArt.dagger)
+var bombs_held := {}       # kind -> the bomb your left hand throws (RaceArt.bomb), made when first thrown
+var gauge: MeshInstance3D = null   # the furnace cannon's pressure gauge (its skin's: lava-lit while it loads)
 var orbit: Node3D = null      # the obsidian staff's shards, round its top above 80% heat (its skin's)
 var charm: Node3D = null      # Karnok's miniature mace, hung from the weapon in your hands
-## the mythic skins' colours for each people's weapon, held (in your hands) and carried (on a body): the paper's looks
-const SKIN := {
-	"elf": {"5a3d22": "1a1420", "c9d3dc": "8e4fd0", "8ff7ea": "c98bff", "dcfff9": "e8d0ff"},
-	"dwarf": {"b07a2e": "3a2a2a", "d6a43a": "ff6a1a", "6a7280": "4a3a3a", "8a8f98": "5a4a4a"},
-	"orc": {"c9d3dc": "2a2228", "b03030": "ff5a1a", "6b4a2c": "1a1216"},
-	"demon": {"2a1c22": "0e0a0e", "ff7a2a": "120a0a", "d0a040": "ff6a1a"},
-}
-## a list of boxes in a mythic skin's colours
-static func skinned(race: String, boxes: Array) -> Array:
-	var map: Dictionary = SKIN.get(race, {}); var out: Array = []
-	for b: Array in boxes:
-		var c := b.duplicate()
-		if c.size() > 6 and map.has(str(c[6])): c[6] = map[str(c[6])]
-		out.push_back(c)
-	return out
 var kick := 0.0; var swing_t := 0.0; var swing_len := 0.0; var swing_kind := ""; var swing_i := 0
 var hip := 1.0               # (a narrow screen: the weapon comes in from the side less far; Main sets it)
-const VIEW_SCALE := {"elf": 1.0, "dwarf": 0.66, "orc": 0.75, "demon": 0.8}
-const TIP := {"elf": Vector3(0, 0.03, -0.38), "dwarf": Vector3(0, 0, -0.46), "orc": Vector3(0, 0, -1.1), "demon": Vector3(0, 0, -0.72)}   # the weapon's mouth in its own frame
 var shield_nodes: Array = []
 var _mats := {}
 var _meshes := {}
@@ -71,48 +56,24 @@ func _mi(mesh: Mesh, mat: Material, parent: Node3D = null) -> MeshInstance3D:
 	return m
 
 # ---------------- the bodies ----------------
-static func parts(race: String, team: String) -> Dictionary:
-	var tc: String = TEAM_COL[team]; var skin := "e6c8a8"; var coat := "3f6b55"; var legc := "3b3226"; var boot := "241c14"; var trim := "6b4a2c"
-	match race:
-		"dwarf": skin = "d9a98a"; coat = "6b5a4a"; legc = "4a3a2c"; trim = "c08a3a"
-		"orc": skin = "6f9a4a"; coat = "4a3a30"; legc = "3a2c24"; trim = "8a8f98"
-		"demon": skin = "a8382e"; coat = "2a1c22"; legc = "22161c"; trim = "d0a040"
-	var leg := [[0.15, 0.9, 0.17, 0, -0.45, 0, legc], [0.16, 0.1, 0.27, 0, -0.87, 0.05, boot]]
-	if race == "demon": leg = [[0.19, 0.9, 0.26, 0, -0.45, 0, coat], [0.2, 0.06, 0.28, 0, -0.9, 0, trim]]
-	var up := [[0.42, 0.62, 0.25, 0, 0.36, 0, coat], [0.44, 0.07, 0.27, 0, 0.1, 0, trim], [0.22, 0.25, 0.23, 0, 0.8, 0.01, skin],
-		[0.46, 0.13, 0.28, 0, 0.52, 0, tc], [0.4, 0.5, 0.04, 0, 0.32, -0.15, tc]]   # (the band across the chest and the cloak: his side's colour)
-	var arm := [[0.12, 0.62, 0.13, 0, -0.29, 0, coat], [0.1, 0.1, 0.11, 0, -0.62, 0, skin]]
-	var right := arm.duplicate(); var left := arm.duplicate()
-	match race:
-		"elf":
-			up.append_array([[0.24, 0.1, 0.25, 0, 0.93, -0.01, "e9e2c0"], [0.24, 0.4, 0.06, 0, 0.7, -0.13, "e9e2c0"], [0.035, 0.2, 0.07, -0.125, 0.88, -0.03, skin, [0.55, 0, 0.42]], [0.035, 0.2, 0.07, 0.125, 0.88, -0.03, skin, [0.55, 0, -0.42]]])
-			right.append_array([[0.07, 0.6, 0.08, 0, -0.72, 0.06, "5a3d22"], [0.6, 0.05, 0.05, 0, -0.98, 0.06, "c9d3dc"], [0.1, 0.1, 0.1, 0, -0.6, 0.13, "8ff7ea"]])
-		"dwarf":
-			up.append_array([[0.27, 0.13, 0.28, 0, 0.93, 0, "8a8f98"], [0.05, 0.12, 0.05, 0, 1.03, 0, "c08a3a"], [0.2, 0.32, 0.1, 0, 0.6, 0.13, "c46a2a"], [0.32, 0.42, 0.16, 0, 0.4, -0.22, "b07a2e"], [0.1, 0.36, 0.1, -0.1, 0.42, -0.33, "d6a43a"], [0.1, 0.36, 0.1, 0.1, 0.42, -0.33, "d6a43a"]])
-			right.append_array([[0.17, 0.62, 0.17, 0, -0.8, 0.05, "b07a2e"], [0.26, 0.12, 0.26, 0, -1.14, 0.05, "d6a43a"], [0.12, 0.3, 0.12, 0, -0.55, -0.1, "6a7280"]])
-		"orc":
-			up.append_array([[0.04, 0.09, 0.04, -0.07, 0.72, 0.13, "f0ead8"], [0.04, 0.09, 0.04, 0.07, 0.72, 0.13, "f0ead8"], [0.22, 0.13, 0.32, -0.31, 0.66, 0, "8a8f98"], [0.22, 0.13, 0.32, 0.31, 0.66, 0, "8a8f98"], [0.1, 0.16, 0.1, 0, 0.98, -0.04, "241c14"]])
-			right.append_array([[0.13, 0.05, 1.6, 0, -0.62, 0.92, "c9d3dc"], [0.06, 0.03, 1.5, 0, -0.62, 0.92, "b03030"], [0.42, 0.07, 0.07, 0, -0.62, 0.12, "6b4a2c"]])
-			arm[0][6] = skin; left[0] = [0.12, 0.62, 0.13, 0, -0.29, 0, skin]; right[0] = [0.12, 0.62, 0.13, 0, -0.29, 0, skin]
-		"demon":
-			up.append_array([[0.05, 0.22, 0.05, -0.09, 1.0, 0, "1a1216", [0, 0, 0.3]], [0.05, 0.22, 0.05, 0.09, 1.0, 0, "1a1216", [0, 0, -0.3]], [0.1, 0.5, 0.26, 0, 0.36, 0.01, trim]])
-			right.append_array([[0.05, 0.05, 1.7, 0, -0.6, 0.32, "2a1c22"], [0.17, 0.17, 0.17, 0, -0.6, 1.2, "ff7a2a"], [0.26, 0.04, 0.26, 0, -0.6, 1.08, trim]])
-	return {"leg": leg, "up": up, "left": left, "right": right}
-
 func build(f: Realm.Fighter) -> void:
 	var en := rm.en
 	if en == null: return
 	if f.body.has("g") and is_instance_valid(f.body.g): (f.body.g as Node).queue_free()
 	if f.body.has("bar") and is_instance_valid(f.body.bar): (f.body.bar as Node).queue_free()
-	var P := parts(f.race, f.team); var key := "rm_%s_%s_" % [f.race, f.team]
-	if rm.kit.mine(f) and RaidLoot.skin_of(f.race) != "": P.right = skinned(f.race, P.right); key += "sk_"   # (yours: its mythic skin)
+	var sk := rm.kit.mine(f) and RaidLoot.skin_of(f.race) != ""   # (yours: its weapon in its mythic skin)
+	var B: Dictionary = RaceArt.body(f.race, f.team, sk); var m := RaceArt.body_mat()
 	var g := Node3D.new(); g.rotation_order = EULER_ORDER_YXZ; _root().add_child(g)
-	var wide := f.R / 0.36
-	g.scale = Vector3(wide, f.H / MODEL_H, wide)
+	g.scale = Vector3.ONE * (f.H / float(Races.R[f.race].h))   # (each people drawn at its own size: the paper's proportions)
 	var b := {"g": g, "ph": randf() * TAU}
-	b.leg_l = en._part(g, Vector3(-0.11, HIP, 0), key + "leg", P.leg); b.leg_r = en._part(g, Vector3(0.11, HIP, 0), key + "leg", P.leg)
-	b.upper = en._part(g, Vector3(0, HIP, 0), key + "up", P.up)
-	b.arm_l = en._part(b.upper, Vector3(-0.28, 0.6, 0), key + "al", P.left); b.arm_r = en._part(b.upper, Vector3(0.28, 0.6, 0), key + "ar", P.right)
+	var hip: float = B.hip; var lx: float = B.leg_x; var sho: Vector2 = B.sho
+	b.leg_l = _bpart(g, Vector3(-lx, hip, 0), B.leg, m); b.leg_r = _bpart(g, Vector3(lx, hip, 0), B.leg, m)
+	b.upper = _bpart(g, Vector3(0, hip, 0), B.up, m)
+	b.arm_l = _bpart(b.upper, Vector3(-sho.x, sho.y, 0), B.al, m); b.arm_r = _bpart(b.upper, Vector3(sho.x, sho.y, 0), B.ar, m)
+	if B.has("wing"):   # (the demon's wings, half spread, and its tail)
+		var wa: Vector3 = B.wing_at
+		b.wing_r = _bpart(b.upper, Vector3(wa.x, wa.y, wa.z), B.wing, m); b.wing_l = _bpart(b.upper, Vector3(-wa.x, wa.y, wa.z), B.wing, m); (b.wing_l as Node3D).scale = Vector3(-1, 1, 1)
+		b.tail = _bpart(b.upper, B.tail_at, B.tail, m)
 	var bar := Node3D.new(); bar.visible = false; _root().add_child(bar)
 	var bg := MeshInstance3D.new(); bg.mesh = en._bar_mesh; bg.material_override = en._bar_bg; bg.scale = Vector3(0.84, 0.08, 1); bar.add_child(bg)
 	if _blue_bar == null:
@@ -122,6 +83,12 @@ func build(f: Realm.Fighter) -> void:
 	var sh := MeshInstance3D.new(); sh.mesh = en._bar_mesh; sh.material_override = _white_bar; sh.scale = Vector3(0.0, 0.03, 1); sh.position = Vector3(0, 0.07, 0); bar.add_child(sh)
 	b.bar = bar; b.fill = fill; b.sh = sh
 	f.body = b
+
+## a part of a body: a pivot, and its mesh on it
+func _bpart(parent: Node3D, at: Vector3, mesh: Mesh, m: Material) -> Node3D:
+	var n := Node3D.new(); n.position = at; parent.add_child(n)
+	var mi := MeshInstance3D.new(); mi.mesh = mesh; mi.material_override = m; n.add_child(mi)
+	return n
 
 func _place(f: Realm.Fighter, dt: float) -> void:
 	var b := f.body
@@ -158,6 +125,10 @@ func _place(f: Realm.Fighter, dt: float) -> void:
 	if f.stun_t > 0.05: ar = -0.3; al = -0.3
 	(b.arm_r as Node3D).rotation.x = ar; (b.arm_l as Node3D).rotation.x = al
 	if f.leaping: (b.leg_l as Node3D).rotation.x = -0.9; (b.leg_r as Node3D).rotation.x = 0.6
+	if b.has("wing_r"):   # the wings breathe, and spread as it leaps or dashes; the tail sways
+		var fl := sin(rm.clock * 2.2 + float(b.ph)) * 0.08 + (0.5 if f.leaping or f.dash_t > 0.0 else 0.0) * 0.6 + amt * 0.12
+		(b.wing_r as Node3D).rotation = Vector3(0.0, 0.5 - fl, 0.15 + fl * 0.4); (b.wing_l as Node3D).rotation = Vector3(0.0, -0.5 + fl, -0.15 - fl * 0.4)
+		(b.tail as Node3D).rotation = Vector3(0.1 * sin(rm.clock * 1.3 + float(b.ph)), 0.3 * sin(rm.clock * 1.7 + float(b.ph)), 0.0)
 	# the bar over his head: when he is hurt, shielded or marked
 	var bar: Node3D = b.bar
 	bar.visible = f.hp < f.max_hp - 0.5 or f.shield > 0.5 or f.over > 0.5 or f.mark_t > 0.0 or f.carrying
@@ -173,28 +144,17 @@ func _view() -> void:
 	if parent == null or rm.en == null: return
 	view = Node3D.new(); view.name = "RealmHands"; parent.add_child(view)
 	var en := rm.en
-	var held := {
-		"elf": [[0.05, 0.05, 0.5, 0, 0, -0.1, "5a3d22"], [0.46, 0.035, 0.035, 0, 0.01, -0.33, "c9d3dc"], [0.07, 0.07, 0.07, 0, 0.04, -0.16, "8ff7ea"], [0.02, 0.02, 0.4, 0, 0.035, -0.12, "dcfff9"]],
-		"dwarf": [[0.13, 0.13, 0.46, 0, 0, -0.14, "b07a2e"], [0.2, 0.2, 0.1, 0, 0, -0.4, "d6a43a"], [0.09, 0.2, 0.09, 0, -0.1, 0.05, "6a7280"], [0.05, 0.05, 0.3, 0.09, 0.03, -0.1, "8a8f98"]],
-		"orc": [[0.09, 0.035, 1.15, 0, 0, -0.62, "c9d3dc"], [0.04, 0.02, 1.05, 0, 0.012, -0.62, "b03030"], [0.34, 0.05, 0.05, 0, 0, -0.03, "6b4a2c"], [0.045, 0.045, 0.24, 0, 0, 0.1, "3a2c24"]],
-		"demon": [[0.035, 0.035, 0.95, 0, 0, -0.2, "2a1c22"], [0.12, 0.12, 0.12, 0, 0, -0.7, "ff7a2a"], [0.19, 0.03, 0.19, 0, 0, -0.62, "d0a040"]],
-	}
-	for r: String in held:
-		var sk := RaidLoot.skin_of(r) != ""; var boxes: Array = held[r]
-		if sk:
-			boxes = skinned(r, boxes)
-			if r == "orc": boxes.push_back([0.02, 0.012, 0.95, 0, 0.022, -0.6, "ff8a2a"])   # (the magma greatsword: a vein of lava down the blade)
-		var n: Node3D = en._part(view, Vector3.ZERO, "rm_hand_" + r + ("_sk" if sk else ""), boxes); n.visible = false; models[r] = n
-		if sk and r == "demon":   # the eclipse: a black planet in a ring of fire at the staff's top, and its shards
-			var ring := _ball(0.085, "skin_corona", Color(1.0, 0.42, 0.08, 0.55)); ring.position = Vector3(0, 0, -0.7); ring.scale = Vector3(0.085, 0.02, 0.085); n.add_child(ring)
-			orbit = Node3D.new(); orbit.position = Vector3(0, 0, -0.7); n.add_child(orbit)
-			for k in 4:
-				var sh := _mi(_box("skin_shard", Vector3(0.025, 0.05, 0.025)), _unlit("skin_shard", Color(0.08, 0.05, 0.09))); sh.position = Vector3(cos(k * TAU / 4.0) * 0.12, 0, sin(k * TAU / 4.0) * 0.12); orbit.add_child(sh)
-		if sk and r == "dwarf":   # the pressure gauge on the boiler's side, lava-lit while it loads
-			gauge_mat = StandardMaterial3D.new(); gauge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; gauge_mat.albedo_color = Color(0.35, 0.12, 0.05)
-			gauge = MeshInstance3D.new(); gauge.mesh = _box("skin_gauge", Vector3(0.07, 0.07, 0.02)); gauge.material_override = gauge_mat; gauge.position = Vector3(0.075, 0.05, -0.05); gauge.rotation.y = PI / 2.0; n.add_child(gauge)
+	for r: String in Races.ORDER:
+		var sk := RaidLoot.skin_of(r) != ""
+		# (the art paper's weapons: RaceArt's, with their hands and moving parts)
+		var rig: Dictionary = {"elf": RaceArt.xbow, "dwarf": RaceArt.cannon, "orc": RaceArt.greatsword, "demon": RaceArt.staff}[r].call(sk)
+		view.add_child(rig.root); (rig.root as Node3D).visible = false; models[r] = rig.root; rigs[r] = rig
+		if sk and r == "dwarf": gauge = (rig.needle as Node3D).get_child(0)   # (the abyss furnace's gauge: its face lava-lit while it loads)
+		if sk and r == "demon": orbit = rig.orbit   # (the eclipse staff's shards, round its core above 80% heat)
 	charm = en._part(view, Vector3.ZERO, "rm_charm_mace", [[0.008, 0.07, 0.008, 0, -0.035, 0, "3a2c24"], [0.03, 0.03, 0.03, 0, -0.08, 0, "4c4a50"], [0.012, 0.012, 0.045, 0, -0.08, 0, "8a8f98"], [0.045, 0.012, 0.012, 0, -0.08, 0, "8a8f98"]]); charm.visible = false
-	dagger = en._part(view, Vector3.ZERO, "rm_hand_dagger", [[0.035, 0.012, 0.3, 0, 0, -0.17, "dfe8f0"], [0.1, 0.03, 0.03, 0, 0, -0.01, "8a6a2a"], [0.03, 0.03, 0.1, 0, 0, 0.05, "3a2c24"]]); dagger.visible = false
+	for r: String in Races.ORDER:   # the rune dagger, in each people's own left hand
+		var dg: Dictionary = RaceArt.dagger(r); view.add_child(dg.root); (dg.root as Node3D).visible = false; daggers[r] = dg
+	dagger = (daggers.elf as Dictionary).root
 
 func _hands(dt: float) -> void:
 	_view()
@@ -210,40 +170,249 @@ func _hands(dt: float) -> void:
 	var at := Vector3(0.21 * hip + sin(rm.player.step_phase) * 0.01 * mv, -0.2 + bob + rm.player.land_dip * 0.4, -0.5 + kick * 0.07); var rot := Vector3(kick * 0.12, 0.0, 0.0)
 	match f.race:
 		"elf":
-			if f.charge > 0.0: var c := minf(1.0, f.charge / float(Races.XBOW.charge)); at += Vector3(-0.07 * c, 0.03 * c, 0.05 * c) + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * 0.0015 * c
-			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.XBOW.reload); at.y -= 0.12 * sin(u * PI); rot.z = 0.7 * sin(u * PI); rot.x += 0.3 * sin(u * PI)   # (tipped over while its core draws mana in)
+			var pose := _elf(rigs.elf, f, dt, t, mv, bob); at = pose[0]; rot = pose[1]
 		"dwarf":
-			at += Vector3(0.05, -0.05, 0.0); rot.y = -0.06
-			if f.reload_t > 0.0: var u := 1.0 - f.reload_t / float(Races.CANNON.reload); at.y -= 0.14 * sin(u * PI); rot.x += 0.5 * sin(u * PI)
-		"orc":   # the great sword, held up before you; its three blows: across, back across, down from overhead
-			at = Vector3(0.3, -0.36, -0.42); rot = Vector3(1.05, 0.25, -0.2)
-			if f.swing_t > 0.0 and f.swing_len > 0.0:
-				var u := clampf((1.0 - f.swing_t / f.swing_len) / 0.5, 0.0, 1.0); var dirn := -1.0 if f.combo == 1 else 1.0
-				if f.combo == 2: rot = Vector3(lerpf(1.9, -0.5, u), 0.0, 0.0); at = Vector3(0.1, -0.26, -0.5)
-				else: rot = Vector3(0.25, lerpf(-1.3, 1.3, u) * dirn, 0.9 * dirn); at = Vector3(lerpf(0.34, -0.2, u) * dirn, -0.26, -0.5)
-			if f.cast_t > 0.0: rot = Vector3(1.7, 0, 0); at = Vector3(0.1, -0.2, -0.45)
+			var pose := _dwarf(rigs.dwarf, f, dt, t, mv, bob); at = pose[0]; rot = pose[1]
+		"orc":
+			_orc(rigs.orc, f, dt, t, mv, bob); at = Vector3.ZERO; rot = Vector3.ZERO
 		"demon":
-			at += Vector3(0.08, -0.08, 0.04); rot.x += 0.16; rot.y = -0.1
-			if f.seal_t > 0.0: at.y -= 0.1; rot.z = 0.5
-			if f.beam_on: at += Vector3(-0.06, 0.03, 0.0)
-	n.position = at; n.rotation = rot; n.scale = Vector3.ONE * float(VIEW_SCALE[f.race])
+			var pose := _demon(rigs.demon, f, dt, t, mv, bob); at = pose[0]; rot = pose[1]
+	n.position = at; n.rotation = rot
 	# the skins' moving parts: the gauge while the cannon loads, the shards above 80% heat; the charm swinging under the weapon
-	if gauge != null and f.race == "dwarf": var lit := f.reload_t > 0.0 and fmod(t, 0.3) < 0.18; gauge_mat.albedo_color = Color(1.0, 0.45, 0.08) if lit else Color(0.35, 0.12, 0.05)
-	if orbit != null and f.race == "demon": orbit.visible = f.heat >= float(Races.STAFF.crit); orbit.rotation.y = t * 4.0; orbit.rotation.x = 0.3 * sin(t * 2.0)
+	if gauge != null and f.race == "dwarf": var lit := f.reload_t > 0.0 and fmod(t, 0.3) < 0.18; RaceArt.set_glow(rigs.dwarf.mat, 3, Color(1.0, 0.45, 0.08) if lit else Color("ffd27a"), 4.0 if lit else 1.4)
+	if orbit != null and f.race == "demon": orbit.visible = f.heat >= float(Races.STAFF.crit); orbit.rotation.z = t * 4.0; orbit.rotation.x = 0.3 * sin(t * 2.0)
 	charm.visible = RaidLoot.wearing("charm_mace")
 	if charm.visible:
 		var sway := sin(t * 3.1) * 0.25 + clampf(rm.player.vel.x * 0.04, -0.4, 0.4) + kick * 0.3
 		charm.position = at + Vector3(-0.05, -0.07, 0.08); charm.rotation = Vector3(rot.x * 0.2 + 0.2 * sin(t * 2.3), 0, sway)
-	# the dagger in the left hand: a cut, or held up to turn a missile
+	# the dagger in your left hand: a cut across, reversed; or the parry, its flat set before you and the rune hexagon out
+	for r: String in daggers: if r != f.race: ((daggers[r] as Dictionary).root as Node3D).visible = false
+	var dg: Dictionary = daggers[f.race]; dagger = dg.root
 	var cut := f.dag_t > float(Races.DAGGER.cd) - 0.25
 	dagger.visible = cut or f.parry_t > 0.0
-	if cut: var u := (f.dag_t - (float(Races.DAGGER.cd) - 0.25)) / 0.25; dagger.position = Vector3(-0.22 + 0.4 * (1.0 - u), -0.2, -0.45); dagger.rotation = Vector3(0, 0.6, 1.2)
-	elif f.parry_t > 0.0: dagger.position = Vector3(-0.1, -0.12, -0.4); dagger.rotation = Vector3(0, 1.3, 1.57)
+	var shield: Node3D = dg.shield; shield.visible = false
+	if cut:
+		var u := 1.0 - (f.dag_t - (float(Races.DAGGER.cd) - 0.25)) / 0.25; var e := smoothstep(0.0, 1.0, u)
+		dagger.position = Vector3(0.14, -0.1, -0.33).lerp(Vector3(-0.3, -0.26, -0.38), e); dagger.rotation = Vector3(0.5, 1.1, 1.35).lerp(Vector3(0.1, -0.5, 0.9), e)
+	elif f.parry_t > 0.0:
+		var pl := rm.kit.parry_len(f); var u := 1.0 - f.parry_t / maxf(pl, 0.01); var tw := smoothstep(0.0, 0.2, u)
+		dagger.position = Vector3(-0.14, -0.2, -0.36).lerp(Vector3(-0.05, -0.06, -0.3), tw); dagger.rotation = Vector3(0.3, 1.2, 0.6).lerp(Vector3(0.0, 0.0, 0.05), tw)
+		shield.visible = true; var fl := 1.0 - smoothstep(0.0, 0.25, u) * 0.6; shield.scale = Vector3.ONE * lerpf(0.55, 1.0, smoothstep(0.0, 0.15, u))
+		Gfx.set_alpha(dg.shield_mat, 0.55 * fl * (1.0 - smoothstep(0.8, 1.0, u)) + 0.08)
+	# a bomb thrown: it leaves your left hand in an arc
+	var thrown := swing_kind == "throw" and swing_t > 0.0
+	for k: String in bombs_held: ((bombs_held[k] as Dictionary).root as Node3D).visible = false
+	if thrown and not f.bomb_kinds.is_empty():
+		var kind: String = f.bomb_kinds[(f.bomb_i - 1 + f.bomb_kinds.size()) % f.bomb_kinds.size()]
+		if not bombs_held.has(kind): var b: Dictionary = RaceArt.bomb(kind); view.add_child(b.root); bombs_held[kind] = b
+		var bn: Node3D = (bombs_held[kind] as Dictionary).root; var u := 1.0 - swing_t / maxf(swing_len, 0.01)
+		bn.visible = u < 0.7; bn.position = Vector3(-0.2, -0.26, -0.3).lerp(Vector3(-0.06, -0.02, -0.62), u) + Vector3(0, sin(u * PI) * 0.08, 0); bn.rotation = Vector3(u * 6.0, u * 3.0, 0)
+	_bombs_turn(dt)
+	# your left hand off the weapon while it holds the dagger or throws
+	var rig: Dictionary = rigs.get(f.race, {}); var busy := dagger.visible or thrown
+	if rig.has("lhand") and f.race != "demon": (rig.lhand as Node3D).visible = not busy
+	if f.race == "orc": (rig.axe as Node3D).visible = not busy; (rig.chain as Node3D).visible = not busy
+
+## the bombs' own motion, in your hand or flying: the oil sloshing, the rings turning, the wick's flame
+func _bombs_turn(dt: float) -> void:
+	var t := rm.clock
+	var all: Array = bombs_held.values()
+	for s: Dictionary in rm.kit.shots:
+		if s.has("bomb_rig"): all.push_back(s.bomb_rig)
+	for b: Dictionary in all:
+		if b.has("oil"): (b.oil as Node3D).scale = Vector3(1.0 + 0.06 * sin(t * 9.0), 1.0 - 0.08 * sin(t * 9.0 + 1.0), 1.0 + 0.05 * cos(t * 7.0))
+		if b.has("flame"): (b.flame as Node3D).scale = Vector3.ONE * (0.8 + 0.3 * sin(t * 31.0) + 0.15 * sin(t * 17.0))
+		for i in (b.spin as Array).size(): var r: Node3D = b.spin[i]; r.rotate_object_local(Vector3.UP, dt * (5.0 + i * 3.0))
+		if b.has("halo"): (b.halo as Node3D).scale = Vector3.ONE * (0.9 + 0.2 * sin(t * 14.0))
+
+## the arcane repeater in your hands: held low on the right; drawn up to your eye as it charges, the four crescents
+## closing on the middle of your sight and the string drawn back, the core turning faster; on the reload your left hand
+## throws the gold lever, the spent core rises and is filled with mana from your palm. Returns [where, turn]
+func _elf(rig: Dictionary, f: Realm.Fighter, dt: float, t: float, mv: float, bob: float) -> Array:
+	var W := Races.XBOW; var c := clampf(f.charge / float(W.charge), 0.0, 1.0) if f.charge > 0.0 else 0.0
+	var up := smoothstep(0.0, 0.4, c)
+	var hipp := Vector3(0.1 * hip + sin(rm.player.step_phase) * 0.008 * mv, -0.21 + bob + rm.player.land_dip * 0.4, -0.31 + kick * 0.012)
+	var aim := Vector3(0.0, -RaceArt.XB_SIGHT.y, -0.235 - RaceArt.XB_SIGHT.z)
+	var at := hipp.lerp(aim, up); var rot := Vector3(0.17 + kick * 0.02, 0.14, -0.1).lerp(Vector3(0.0, 0.0, 0.0), up)
+	if c > 0.0: at += Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * 0.0006 * c   # (held taut)
+	var rl := 0.0
+	if f.reload_t > 0.0: rl = 1.0 - f.reload_t / float(W.reload); at.y -= 0.05 * sin(rl * PI); rot.z += 0.35 * sin(rl * PI); rot.x += 0.12 * sin(rl * PI)
+	# the crescents: their ring closes as it charges and they turn faster; locked at full charge
+	var spin := float(_rt.get("xb_spin", 0.0)) + dt * (0.5 + 5.0 * c); _rt["xb_spin"] = spin
+	var lock := 1.0 if f.charged else 0.0
+	var cres: Array = rig.crescents
+	for i in 4:
+		var cn: Node3D = cres[i]; var a := i * PI / 2.0 + spin * (1.0 - lock) + lock * PI / 4.0
+		var close := 0.0135 * c + 0.0015 * lock; var bob2 := sin(t * 2.2 + i * 1.7) * 0.0012 * (1.0 - c)
+		cn.rotation = Vector3(0, 0, a); cn.position = Vector3(cos(a), sin(a), 0) * (-close + bob2)
+	(rig.sight as Node3D).rotation.z = 0.0
+	var gc: Color = Color(RaceArt.PAL.elf.glow).lerp(Color(RaceArt.PAL.elf.charge), c)
+	RaceArt.set_glow(rig.mat, 3, gc, 1.2 + 3.0 * c + 2.0 * lock); RaceArt.set_glow(rig.mat, 1, gc, 2.2 + 2.0 * c)
+	# the core: it turns as fast as the magazine is full, pulses with each shot, rises to be filled on the reload
+	var core: Node3D = rig.core; var pulse := maxf(0.0, 1.0 - f.fired_t / 0.16)
+	var cs := float(_rt.get("xb_core", 0.0)) + dt * (0.6 + 3.2 * float(f.ammo) / float(W.mag) + 6.0 * c); _rt["xb_core"] = cs
+	var rise := 0.0
+	if rl > 0.0: rise = smoothstep(0.15, 0.4, rl) * (1.0 - smoothstep(0.75, 0.95, rl)); cs += dt * 14.0 * rise; _rt["xb_core"] = cs
+	core.rotation = Vector3(0, cs, 0); core.position = RaceArt.XB_CORE + Vector3(0, 0.062 * rise, 0); core.scale = Vector3.ONE * (1.0 + 0.32 * pulse + 0.1 * c + 0.06 * sin(t * 9.0) * c)
+	(rig.halo as Node3D).scale = Vector3.ONE * (0.8 + 0.8 * pulse + 0.6 * c + 0.4 * rise)
+	RaceArt.set_glow(rig.mat, 2, Color(RaceArt.PAL.elf.core).lerp(Color(1, 0.85, 1), pulse * 0.6), 2.4 + 3.0 * pulse + 2.0 * c)
+	if rise > 0.3 and rm.fx != null and randf() < dt * 40.0:   # (mana from your palm drawn into it)
+		var cw := (rig.root as Node3D).global_transform * (RaceArt.XB_CORE + Vector3(0, 0.062 * rise, 0)); var from := (rig.root as Node3D).global_transform * Vector3(-0.07, 0.0, -0.07)
+		rm.fx.glow(from, (cw - from) * 4.0, 0.25, 0.012, 0.004, Color(0.45, 0.85, 1.0, 0.9))
+	# the lever, thrown by your left hand at the start of the reload and back at its end
+	var lv := smoothstep(0.0, 0.18, rl) * (1.0 - smoothstep(0.82, 1.0, rl)) if rl > 0.0 else 0.0
+	(rig.lever as Node3D).rotation = Vector3(-1.25 * lv, 0, 0)
+	var lh: Node3D = rig.lhand
+	lh.position = Vector3(-0.045, 0.012, 0.29) * lv; lh.rotation = Vector3(0.0, 0.4 * lv, -0.5 * lv)
+	# the string, drawn back as it charges; the arrow of light laid on the rail again after each shot
+	var sz := lerpf(RaceArt.XB_STRING_Z, RaceArt.XB_DRAWN, smoothstep(0.0, 1.0, c)); var mid := Vector3(0, 0.0655, sz)
+	var bend := 0.018 * c   # (the limbs give as the string is drawn)
+	var nl := RaceArt.XB_NOCK_L + Vector3(bend, 0, bend * 0.6); var nr := RaceArt.XB_NOCK_R + Vector3(-bend, 0, bend * 0.6)
+	RaceArt.stretch(rig.string[0], nl, mid); RaceArt.stretch(rig.string[1], nr, mid)
+	(rig.nub as Node3D).position = mid; (rig.nub as Node3D).scale = Vector3.ONE * (0.7 + 1.2 * c)
+	var laid := clampf((f.fired_t - 0.05) / 0.22, 0.0, 1.0) if f.reload_t <= 0.0 and f.ammo > 0 else 0.0
+	var bolt: Node3D = rig.bolt; bolt.visible = laid > 0.02; bolt.scale = Vector3(laid, laid, 1.0); bolt.position = Vector3(0, 0.0675, mid.z + 0.002)
+	return [at, rot]
+
+## the rune blunderbuss in your hands: heavy and low on the right; it kicks up hard, its runes and bore glow amber and
+## cool; the gauge's needle shivers with the pressure left in it (the shells in it), the mortar's glass fills as its
+## grenade comes back. The reload: the red valve twisted, steam hissing out of both vents, the barrel broken open on its
+## hinge, five brass shells pushed in at once by your left hand, shut. Returns [where, turn]
+func _dwarf(rig: Dictionary, f: Realm.Fighter, dt: float, t: float, mv: float, bob: float) -> Array:
+	var W := Races.CANNON
+	var at := Vector3(0.12 * hip + sin(rm.player.step_phase) * 0.01 * mv, -0.2 + bob + rm.player.land_dip * 0.4, -0.3 + kick * 0.045); var rot := Vector3(0.12 + kick * 0.34, 0.12, -0.06)
+	var heat := maxf(0.0, float(_rt.get("dw_heat", 0.0)) - dt * 0.45); _rt["dw_heat"] = heat
+	RaceArt.set_glow(rig.mat, 1, Color(RaceArt.PAL.dwarf.glow if RaidLoot.skin_of("dwarf") == "" else RaceArt.SKIN_PAL.dwarf.glow), 0.25 + 4.5 * heat * heat)
+	RaceArt.set_glow(rig.mat, 2, Color(RaceArt.PAL.dwarf.glow), 5.0 * heat)
+	# the hammer: struck down as it fires, cocked again
+	var since := float(_rt.get("dw_fired", 9.0)) + dt; _rt["dw_fired"] = since
+	(rig.hammer as Node3D).rotation.x = (0.55 if since < 0.07 else lerpf(0.55, -0.35, clampf((since - 0.15) / 0.3, 0.0, 1.0)))
+	# the needle: the pressure left, never quite still
+	var pr := 0.12 + 0.76 * float(f.ammo) / float(W.mag) + sin(t * 23.0) * 0.012 + sin(t * 7.3) * 0.02 + heat * 0.06
+	(rig.needle as Node3D).rotation = Vector3(0, -PI / 2.0, -lerpf(-2.4, 2.4, clampf(pr, 0.0, 1.0)))
+	# the mortar's glass: the grenade's liquid filling back as it returns (frost-blue with the rune)
+	var fill := clampf(1.0 - f.alt_cd / float(W.gren_cd), 0.03, 1.0) if f.alt_cd > 0.0 else 1.0
+	(rig.liquid as Node3D).scale = Vector3(1, 1, fill)
+	var frost := f.rune("dw_frost"); var lc: Color = Color(RaceArt.PAL.dwarf.frost) if frost else Color(RaceArt.PAL.dwarf.oil)
+	RaceArt.set_glow(rig.liq_mat, 2, lc, 0.9 if frost else 0.35)
+	# the reload
+	var u := 1.0 - f.reload_t / float(W.reload) if f.reload_t > 0.0 else 0.0
+	var valve := smoothstep(0.0, 0.18, u) * (1.0 - smoothstep(0.9, 1.0, u)) if u > 0.0 else 0.0
+	(rig.valve as Node3D).rotation.y = -3.2 * valve
+	var open := smoothstep(0.28, 0.42, u) * (1.0 - smoothstep(0.78, 0.9, u)) if u > 0.0 else 0.0
+	(rig.barrel as Node3D).rotation.x = -0.62 * open
+	var push := smoothstep(0.45, 0.72, u) if u > 0.0 else 0.0
+	var sh: Node3D = rig.shells; sh.visible = u > 0.4 and u < 0.76
+	sh.position = Vector3(-0.07, -0.02, 0.12).lerp(RaceArt.DW_HINGE + Vector3(0, 0.036, 0.01), push); sh.rotation = Vector3(0.0, 0.0, 0.0)
+	var lh: Node3D = rig.lhand; var reach := smoothstep(0.36, 0.5, u) * (1.0 - smoothstep(0.76, 0.9, u)) if u > 0.0 else 0.0
+	lh.position = (Vector3(-0.05, 0.02, 0.36) + (sh.position - Vector3(-0.07, -0.02, 0.12)) * 0.8) * reach; lh.rotation = Vector3(0.3 * reach, 0.6 * reach, 0.0)
+	if u > 0.0: at.y -= 0.05 * sin(u * PI); rot.x += 0.22 * open; rot.z += 0.25 * sin(u * PI)
+	# steam out of both vents as the valve opens (it scalds anyone at your side: RealmKit.vent)
+	if u > 0.12 and u < 0.46 and rm.fx != null:
+		var gx: Transform3D = (rig.root as Node3D).global_transform
+		for v: Vector3 in RaceArt.DW_VENTS:
+			if randf() < dt * 50.0: var side := (gx.basis * Vector3(signf(v.x), 0.35, 0.1)).normalized(); rm.fx.glow(gx * v, side * randf_range(1.5, 3.0), 0.45, 0.02, 0.16, Color(0.9, 0.96, 1.0, 0.55), -0.4, 2.0)
+	return [at, rot]
+
+## the greatsword in your right hand, held up before you, the chain axe reversed in your left, the chain between them.
+## Its three blows: from up on the right down across to the left; from down on the left up to the right; raised over
+## your head and swept flat across, its crescent of red flying on. The fuller fills with crimson as the bloodlust
+## stacks (its three steps), a red haze off the blade at three. Thrown, the axe leaves your hand and its chain runs out
+const OR_IDLE := [Vector3(0.27, -0.31, -0.4), Vector3(1.0, 0.28, -0.22)]
+const OR_AXE_IDLE := [Vector3(-0.25, -0.27, -0.42), Vector3(0.2, -0.35, 0.55)]
+func _orc(rig: Dictionary, f: Realm.Fighter, dt: float, t: float, mv: float, bob: float) -> void:
+	var sw: Node3D = rig.sword; var ax: Node3D = rig.axe
+	var sway := Vector3(sin(rm.player.step_phase) * 0.012 * mv, bob + rm.player.land_dip * 0.4 + sin(t * 1.3) * 0.004, 0.0)
+	var p: Vector3 = OR_IDLE[0]; var r: Vector3 = OR_IDLE[1]
+	if f.swing_t > 0.0 and f.swing_len > 0.0:
+		var u := 1.0 - f.swing_t / f.swing_len; var go := smoothstep(0.06, 0.4, u); var back := smoothstep(0.55, 1.0, u)
+		var keys: Array
+		match f.combo:
+			0: keys = [Vector3(0.36, -0.08, -0.34), Vector3(1.45, 0.75, -1.0), Vector3(-0.3, -0.4, -0.44), Vector3(0.15, -1.0, 0.75)]
+			1: keys = [Vector3(-0.28, -0.4, -0.4), Vector3(0.25, -1.0, 1.0), Vector3(0.34, -0.06, -0.38), Vector3(1.5, 0.9, -0.55)]
+			_:
+				var lift := smoothstep(0.0, 0.22, u)
+				keys = [Vector3(0.42, -0.16, -0.3).lerp(Vector3(0.1, 0.08, -0.18), lift * (1.0 - go)), Vector3(0.05, 1.3, -1.45).lerp(Vector3(2.3, 0.0, 0.0), lift * (1.0 - go)), Vector3(-0.32, -0.2, -0.42), Vector3(0.05, -1.25, -1.45)]
+		var a: Vector3 = (keys[0] as Vector3).lerp(keys[2], go); var b: Vector3 = (keys[1] as Vector3).lerp(keys[3], go)
+		p = a.lerp(OR_IDLE[0], back); r = b.lerp(OR_IDLE[1], back)
+	if f.cast_t > 0.0: var c := clampf(f.cast_t / 0.6, 0.0, 1.0); p = p.lerp(Vector3(0.16, -0.12, -0.36), c); r = r.lerp(Vector3(1.45, 0.2, -0.2), c)   # (the rage: the sword raised high)
+	if f.stun_t > 0.05: p += Vector3(0, -0.06, 0.04); r.x -= 0.3
+	sw.position = p + sway; sw.rotation = r
+	# the fuller: crimson filling as the bloodlust stacks; at three a red haze off the blade (the magma sword: lava, always full)
+	var magma := RaidLoot.skin_of("orc") != ""
+	var want := 1.0 if magma else float(f.stacks) / float(Races.LUST.max)
+	var fl := move_toward(float(_rt.get("or_fill", 0.0)), want, dt * 1.6); _rt["or_fill"] = fl
+	(rig.mat as ShaderMaterial).set_shader_parameter("fill", fl)
+	RaceArt.set_glow(rig.mat, 7, Color(RaceArt.SKIN_PAL.orc.glow) if magma else Color(RaceArt.PAL.orc.glow), 3.2 + (1.5 if f.stacks >= int(Races.LUST.max) else 0.0) * (0.7 + 0.3 * sin(t * 9.0)))
+	if (f.stacks >= int(Races.LUST.max) or magma) and rm.fx != null and randf() < dt * 30.0:
+		var q := randf_range(0.15, 0.95); var at := sw.global_transform * Vector3(randf_range(-0.04, 0.08), 0, -0.09 - q * RaceArt.OR_LEN)
+		rm.fx.glow(at, Vector3(0, randf_range(0.2, 0.5), 0), 0.6, 0.03, 0.09, Color(1.0, 0.12, 0.08, 0.35) if not magma else Color(1.0, 0.4, 0.08, 0.4), -0.3, 1.0)
+	# the axe in your left hand, or out on its chain
+	var out := false
+	for s: Dictionary in rm.kit.shots:
+		if s.kind == "axe" and s.get("by") == f: out = true; break
+	var ap: Vector3 = OR_AXE_IDLE[0]; var ar: Vector3 = OR_AXE_IDLE[1]
+	if out: ap = Vector3(-0.16, -0.18, -0.5); ar = Vector3(1.2, -0.2, 0.3)
+	elif f.alt_cd > float(Races.SWORD.axe_cd) - 0.35: var k := (f.alt_cd - (float(Races.SWORD.axe_cd) - 0.35)) / 0.35; ap = ap.lerp(Vector3(-0.1, -0.12, -0.5), k); ar = ar.lerp(Vector3(1.6, 0.0, 0.2), k)   # (the throw)
+	if f.swing_t > 0.0: ap += Vector3(-0.03, -0.03, 0.03)
+	ax.position = ap + sway * 0.7; ax.rotation = ar
+	(rig.axe_mesh as Node3D).visible = not out
+	# the chain: from the pommel, sagging, to the axe's haft (or to your fist, the axe gone out on it)
+	var a0 := sw.transform * RaceArt.OR_POMMEL; var a1 := ax.transform * (RaceArt.OR_AXE_TOP if not out else Vector3(0, 0.22, 0))
+	var mm: MultiMesh = (rig.chain as MultiMeshInstance3D).multimesh; var n := mm.instance_count
+	var mid := (a0 + a1) * 0.5 + Vector3(0, -0.12 - 0.05 * sin(t * 2.0), 0.02)
+	var prev := a0
+	for i in n:
+		var u2 := (i + 0.5) / n; var q := a0.lerp(mid, u2).lerp(mid.lerp(a1, u2), u2)
+		var u3 := (i + 1.0) / n; var q2 := a0.lerp(mid, u3).lerp(mid.lerp(a1, u3), u3)
+		var d := (q2 - prev); if d.length() < 0.0001: d = Vector3.FORWARD
+		var z := -d.normalized(); var x := Vector3.UP.cross(z)
+		if x.length() < 0.01: x = Vector3.RIGHT
+		x = x.normalized(); var y := z.cross(x)
+		var bas := Basis(x, y, z) * Basis(Vector3.FORWARD, PI / 2.0 * (i % 2)); var len := d.length() / 0.026
+		mm.set_instance_transform(i, Transform3D(bas.scaled(Vector3(1, 1, clampf(len, 0.6, 1.4))), q)); prev = q2
+		if i == 0: rig["chain_ends"] = [q, q, q]
+		elif i == n - 1: (rig.chain_ends as Array)[1] = q
+		elif i == n / 2: (rig.chain_ends as Array)[2] = q   # (its first link, its last, the one in its middle: the checks read them)
+
+## the hellfire staff in your right hand, its head up before you: flicked forward with each ember; its core grows and
+## turns faster as it heats and the horns open wider; past 80% white-hot, spitting black ash; at 100% sealed: the horns
+## shut on the core, the chain bites, the red rune lock about it. Your left hand comes up open to pour out the beam
+func _demon(rig: Dictionary, f: Realm.Fighter, dt: float, t: float, mv: float, bob: float) -> Array:
+	var W := Races.STAFF; var h := clampf(f.heat / 100.0, 0.0, 1.0); var crit := f.heat >= float(W.crit); var sealed := f.seal_t > 0.0
+	var at := Vector3(0.25 * hip + sin(rm.player.step_phase) * 0.01 * mv, -0.34 + bob + rm.player.land_dip * 0.4, -0.37 - kick * 0.05); var rot := Vector3(1.0 - kick * 0.14, 0.1, -0.24)
+	if sealed: var sl := clampf(f.seal_t / float(W.seal), 0.0, 1.0); at += Vector3(0.02, -0.06, 0.03) * minf(1.0, sl * 4.0); rot.z -= 0.3 * minf(1.0, sl * 4.0)
+	if f.beam_on: at += Vector3(-0.03, 0.02, -0.02); rot.x -= 0.1
+	# the core: its size and its turning are the heat; irregular as it fires; white-hot past the critical line
+	var spin := float(_rt.get("dm_spin", 0.0)) + dt * (1.0 + 9.0 * h) * (0.0 if sealed else 1.0); _rt["dm_spin"] = spin
+	var jit := (sin(t * 37.0) * 0.5 + sin(t * 23.0) * 0.5) * maxf(0.0, 1.0 - f.fired_t / 0.25) * 0.18
+	var core: Node3D = rig.core; core.rotation = Vector3(0, 0, spin); core.scale = Vector3.ONE * ((0.7 + 0.55 * h + jit + (0.25 + 0.08 * sin(t * 20.0) if crit else 0.0)) * (0.55 if sealed else 1.0))
+	var hot: Color = Color(RaceArt.PAL.demon.white) if crit else Color(RaceArt.PAL.demon.lava)
+	var flick := 0.75 + 0.25 * sin(t * 13.0 + sin(t * 5.0) * 2.0)
+	RaceArt.set_glow(rig.mat, 3, hot, (2.5 + 4.0 * h + (4.0 if crit else 0.0)) * (0.4 if sealed else 1.0))
+	RaceArt.set_glow(rig.mat, 1, hot if crit else Color(RaceArt.PAL.demon.lava), (0.6 + 3.2 * h) * flick)
+	RaceArt.set_glow(rig.mat, 2, Color(RaceArt.PAL.demon.hot), 0.4 + 3.5 * h + (2.0 if sealed else 0.0))
+	var cor: Node3D = rig.corona; cor.scale = Vector3.ONE * (0.6 + 0.8 * h + (0.6 if crit else 0.0)) * (0.4 if sealed else 1.0)
+	if crit and not sealed and rm.fx != null and randf() < dt * 25.0:   # (black ash off it)
+		var cw := core.global_position; rm.fx.glow(cw, Vector3(randf_range(-0.3, 0.3), randf_range(0.3, 0.9), randf_range(-0.3, 0.3)), 0.6, 0.012, 0.03, Color(0.05, 0.03, 0.04, 0.85), -0.5, 1.0)
+	# the horns: wider with the heat; shut on the seal
+	var open := lerpf(0.0, 0.32, h) - (0.42 if sealed else 0.0)
+	var o := lerpf(float(_rt.get("dm_open", 0.0)), open, minf(1.0, dt * 10.0)); _rt["dm_open"] = o
+	for hn: Node3D in rig.horns: hn.rotation.x = o
+	# the chain bites as it heats (tighter, glowing), the lock while it is sealed
+	var ch: Node3D = rig.chain; var tight := 1.0 - 0.1 * h - (0.12 if sealed else 0.0); ch.scale = Vector3(tight, tight, 1.0)
+	var lock: Node3D = rig.lock; lock.visible = sealed
+	if sealed: lock.rotation.z = t * 1.6; lock.scale = Vector3.ONE * (1.0 + 0.04 * sin(t * 12.0))
+	# your left hand, open, up to pour the beam
+	var lh: Node3D = rig.lhand; lh.visible = f.beam_on
+	if f.beam_on: lh.position = Vector3(-0.16, 0.06, -0.28); lh.rotation = Vector3(-0.3, 0.5, 0.2)
+	return [at, rot]
 
 ## where your weapon's mouth is seen (what you fire is drawn coming out of it); anyone else's: where his shots start
 func view_muzzle(f: Realm.Fighter) -> Vector3:
 	if f.me and models.has(f.race) and is_instance_valid(models[f.race]) and (models[f.race] as Node3D).is_visible_in_tree():
-		return (models[f.race] as Node3D).global_transform * (TIP[f.race] as Vector3)
+		if rigs[f.race].has("tip_node"): return (rigs[f.race].tip_node as Node3D).global_position
+		return (models[f.race] as Node3D).global_transform * (rigs[f.race].tip as Vector3)
 	return rm.kit.muzzle(f) + f.aim * 0.6
 
 # ---------------- what flies ----------------
@@ -264,11 +433,22 @@ func shot(s: Dictionary) -> Dictionary:
 	if s.has("size"): size = s.size   # (6-A's demons' missiles: each its own size and colour)
 	if s.has("col"): col = s.col
 	if rm.en == null: return s
-	var m := _mi(_box("shot_" + str(s.kind), size), _unlit("shot_" + key, col, s.kind != "axe" and s.kind != "flask" and s.kind != "gren"))
+	var m: Node3D
+	if s.kind == "flask" and not s.has("size"):   # (the bomb itself, flying: RaceArt's)
+		var b: Dictionary = RaceArt.bomb(str(s.bomb)); m = b.root; (b.root as Node3D).scale = Vector3.ONE * 1.6; _root().add_child(m); s.bomb_rig = b
+	elif s.kind == "axe" and not s.has("size"):   # (the chain axe, spinning out)
+		m = Node3D.new(); _root().add_child(m)
+		var ax := MeshInstance3D.new(); ax.mesh = RaceArt.built("or_axe", func(k: ArtKit) -> void: RaceArt.axe_body(k, RaceArt.pal("orc"))); ax.material_override = _axe_mat(); ax.position = Vector3(0, -0.18, 0); ax.scale = Vector3.ONE * 1.5; m.add_child(ax)
+	else: m = _mi(_box("shot_" + str(s.kind), size), _unlit("shot_" + key, col, s.kind != "axe" and s.kind != "flask" and s.kind != "gren"))
 	m.position = s.pos; s.node = m; s.age = 0.0
 	var by: Realm.Fighter = s.by
 	if by != null and by.me and s.kind != "wave": s.vis = view_muzzle(by) - (s.pos as Vector3)   # (yours: drawn from your weapon's mouth, closing on the line you aim along)
 	return s
+
+var _axe_m: ShaderMaterial = null
+func _axe_mat() -> ShaderMaterial:
+	if _axe_m == null: _axe_m = RaceArt.mat(false, {1: [Color(RaceArt.PAL.orc.glow), 2.4]})
+	return _axe_m
 
 func shot_gone(s: Dictionary) -> void:
 	if s.has("node") and is_instance_valid(s.node): (s.node as Node).queue_free()
@@ -467,7 +647,7 @@ func fired(f: Realm.Fighter, kind: String) -> void:
 
 ## the cannon goes off: a ring of steam from its mouth, the shards' ways, sparks where they end
 func cannon(f: Realm.Fighter, ends: Array, all_close: bool) -> void:
-	if f.me: kick = 1.6 if all_close else 1.1
+	if f.me: kick = 1.6 if all_close else 1.1; _rt["dw_heat"] = minf(1.0, float(_rt.get("dw_heat", 0.0)) + 0.75); _rt["dw_fired"] = 0.0
 	if rm.fx == null: return
 	var o := view_muzzle(f); var up := Vector3.UP if absf(f.aim.y) < 0.95 else Vector3.RIGHT; var x := f.aim.cross(up).normalized(); var y := x.cross(f.aim); var sz := 0.35 if f.me else 1.0
 	var furnace := rm.kit.mine(f) and RaidLoot.skin_of("dwarf") != ""   # (the abyss furnace skin: red sulphur smoke and sparks for the white steam)
@@ -492,7 +672,7 @@ func steam(at: Vector3, r: float, by: Realm.Fighter = null) -> void:
 	if furnace: rm.fx.sparks(at + Vector3(0, 0.4, 0), 8, [1.0, 0.55, 0.15], 3.5)
 
 func swing(f: Realm.Fighter, kind: String, i: int) -> void:
-	if f.me: swing_kind = kind; swing_i = i; swing_len = 0.3; swing_t = 0.3
+	if f.me: swing_kind = kind; swing_i = i; swing_len = 0.32; swing_t = 0.32
 
 ## the eclipse core's overload starting (on) or ending: a dark burst of fire about the staff; yours, a red edge on the view
 func overload(f: Realm.Fighter, on: bool) -> void:
@@ -614,7 +794,8 @@ func fell(v: Realm.Fighter, _by, _o: Dictionary) -> void:
 		"orc":   # a burst of red; only the sword is left, stuck in the ground
 			for i in 30: fx.glow(c, Vector3(randf_range(-1, 1), randf_range(-0.2, 1.2), randf_range(-1, 1)).normalized() * randf_range(2.0, 6.0), randf_range(0.5, 0.9), 0.4, 0.08, Color(0.8, 0.08, 0.08, 0.8), 1.0, 3.0)
 			if rm.en != null:
-				var s: Node3D = rm.en._part(_root(), v.pos + Vector3(0, 0.75, 0), "rm_left_sword", [[0.13, 1.6, 0.05, 0, 0, 0, "c9d3dc"], [0.42, 0.07, 0.07, 0, 0.7, 0, "6b4a2c"]]); s.rotation = Vector3(0.18, randf() * TAU, 0.1)
+				var s := Node3D.new(); _root().add_child(s); s.position = v.pos + Vector3(0, 0.25, 0); s.rotation = Vector3(0.18, randf() * TAU, 0.1)
+				var sm := MeshInstance3D.new(); sm.mesh = RaceArt.built("orc_sword_left", func(k: ArtKit) -> void: RaceArt.sword_left(k)); sm.material_override = RaceArt.body_mat(); s.add_child(sm)
 				_ghosts.push_back({"n": s, "t": 4.0})
 		"demon":   # black ash and embers, drawn down into a crack in the ground
 			for i in 28: fx.glow(v.pos + Vector3(randf_range(-0.5, 0.5), randf_range(0.2, v.H), randf_range(-0.5, 0.5)), Vector3(0, randf_range(-3.5, -1.5), 0), randf_range(0.5, 0.9), 0.16, 0.03, Color(0.06, 0.03, 0.05, 0.95) if i % 4 > 0 else Color(1.0, 0.4, 0.1, 0.9))
