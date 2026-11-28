@@ -197,7 +197,7 @@ func build(w: World, group: Node3D) -> void:
 	Phys.set_world_size(HALF); Phys.set_nav(int(HALF * 2.0) + 4, 1.0)
 	Phys.PIT = {"x0": -HALF - 10.0, "x1": HALF + 10.0, "z0": -HALF - 10.0, "z1": HALF + 10.0, "y": PIT_Y}
 	for i in 4: var k := ArtKit.new(); k.detail = 0.8; kits.push_back(k)
-	mat = RaceArt.mat(false, {1: [C_LAVA, 2.2], 2: [C_RUNE, 2.4], 3: [C_LAVA, 0.55], 4: [C_COLD, 1.8], 5: [C_LAVA2, 2.0]})
+	mat = RaceArt.mat(false, {1: [C_LAVA, 2.2], 2: [C_RUNE, 2.4], 3: [C_LAVA, 0.42], 4: [C_COLD, 1.8], 5: [C_LAVA2, 2.0]})
 	_tune(mat)
 	_spires()   # (first: the ring's parapet and the gallery leave room for them)
 	_rim(); _dais(); _bridges(); _ring(); _gallery(); _trench(); _ribs(); _floats(); _lava()
@@ -404,7 +404,7 @@ func _foundry(side: String) -> void:
 	k.paint(C_IRON, 0.85, 0.5, ArtKit.IRON)
 	for b: Array in [[-0.6, -1.7, 0.6, -1.5], [-0.6, 1.5, 0.6, 1.7], [-0.6, -1.5, -0.45, 1.5], [0.45, -1.5, 0.6, 1.5]]: k.slab(tq.x + float(b[0]), y0, tq.z + float(b[1]), tq.x + float(b[2]), y0 + 0.1, tq.z + float(b[3]))
 	glow.slab(tq.x - 0.45, y0 - 0.02, tq.z - 1.5, tq.x + 0.45, y0 + 0.03, tq.z + 1.5, Color("3ad0ff"))
-	troughs.push_back(tq); lamps_at.push_back(tq + Vector3(0, 1.0, 0))
+	troughs.push_back(tq); lamps_at.push_back(tq - Vector3(s * 1.6, -2.4, 0))   # (its lamp out over the ring, not in the doorway)
 	for zz: float in [z0 - 0.08, z1 + 0.08]: _briar(Vector3(x0 + 0.8, y0 + 0.2, zz), Vector3(x1 - 0.8, y0 + 3.2, zz), 1.2)   # briars up its walls
 
 ## sanguine briars: thorny red vines along a wall from a to b (touching them slows and cuts; they feed the demons near)
