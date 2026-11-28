@@ -31,9 +31,10 @@ func check(name: String, ok: bool, info = "") -> void:
 	if not ok: fails += 1
 
 # the pieces, each played in a game of its own: a fight in each stage (9: stage 5, the toy room, in its first mode; 10:
-# stage 6-1, the elves' Silverwood), 6-1's two team battles, 6-2 twice, 6-1's battle keys, the toy flamethrower, falling
+# stage 6-1, the elves' Silverwood), 6-1's two team battles, 6-2 twice, 6-A's raid and its keys, 6-1's battle keys, the toy
+# flamethrower, falling
 const PIECES := ["fight 1", "fight 6", "fight 5", "fight 2", "fight 3", "fight 7", "fight 8", "fight 4", "fight 9", "fight 10",
-	"realm sanctum elf 150", "realm siege orc 200", "plain elf 420 end", "plain dwarf 300 part", "keys", "flame", "death"]
+	"realm sanctum elf 150", "realm siege orc 200", "plain elf 420 end", "plain dwarf 300 part", "raid elf 700", "raidkeys", "keys", "flame", "death"]
 # a piece's seed, where it is not the usual one (7000 + the stage; 7300 + the mode; 7400 + the people) but that plus this.
 # Each piece is the same fight on every run and every computer, but how well the bot does is luck: measured over ten seeds,
 # each in a game of its own (1.11.0), most fights pass on all ten (1-2: 7, stage 2: 8, 3-1: 9, 6-2's dwarf: 8), the toy
@@ -59,6 +60,8 @@ func _ready() -> void:
 		"fight": _fight(int(w[1]))
 		"realm": _realm(w[1], w[2], float(w[3]))
 		"plain": _plain(w[1], float(w[2]), w[3] == "end")
+		"raid": _raid(w[1], float(w[2]))
+		"raidkeys": _raid_keys()
 		"keys": _realm_keys()
 		"flame": _toy_flame()
 		"death": _death_stops()
@@ -216,6 +219,47 @@ func _plain(race: String, secs: float, to_end := true) -> void:
 	if to_end: ok = ok and main.game.ended and main.game.result == "clear" and broken == 3 and (Store.save.cleared as Array).has(11) and Store.save.best.has("t11" + race)
 	check("stage 6-2 plays itself (your fighter too, as a %s): the landmarks summon, both sides fight and fall%s" % [Races.R[race].name, ", and theirs fall one by one till the plain is taken (the stage cleared, its record kept for the %s)" % Races.R[race].name if to_end else ", and theirs are struck"],
 		ok, {"seconds": snappedf(ticks * DT, 0.1), "summons": n.get("summon", 0), "falls": n.get("down", 0), "hit": int(hit), "broken": broken, "state": md.state(), "result": main.game.result})
+	main.command("menu")
+
+## 6-A played by itself (your fighter too, as one of the party): the party clears the gate and the bridge, climbs the tower and
+## brings Karnok down, takes his core and goes up onto the altar; the raid is decided against Baal (won or lost: how well the
+## four do against him without you is luck). Shift, the bombs and the ultimates used; javelins and bombs met on the way
+func _raid(race: String, secs: float) -> void:
+	seed(7500 + Races.ORDER.find(race) + off)
+	Store.settings.realmRace = race
+	main.command("start 13"); var rm = main.game.rm; rm.auto = true; rm.log_on = true
+	var ticks := 0
+	for i in int(secs / DT):
+		if main.game.ended: break
+		main.tick(DT); ticks += 1
+	var n := {}
+	for q: Array in rm.log:
+		n[q[0]] = int(n.get(q[0], 0)) + 1
+	var md = rm.mode
+	var sealed: int = rm.log.filter(func(q): return q[0] == "sealed").size()
+	var bosses: Array = rm.log.filter(func(q): return q[0] == "boss").map(func(q): return q[1])
+	var ok: bool = sealed == 2 and md.cleared.has(3) and md.core_taken and bosses == ["karnok", "baal"] and md.outcome != "" and main.game.ended and int(n.get("skill", 0)) >= 5 and int(n.get("bomb", 0)) >= 3 and int(n.get("ult", 0)) >= 2
+	if md.outcome == "won": ok = ok and main.game.result == "clear" and (Store.save.cleared as Array).has(13) and md.rank != ""
+	check("stage 6-A plays itself (your fighter too, as the %s of the party): the gate's guards and the bridge's snipers and beast fall and their seals lift, the party climbs the tower and brings Karnok down, takes his core and goes up onto the sky altar, and the raid is decided against Baal (%s); Shift, the bombs and the ultimates are used" % [Races.R[race].name, md.outcome],
+		ok, {"seconds": snappedf(ticks * DT, 0.1), "sealed": sealed, "bosses": bosses, "skill": n.get("skill", 0), "bomb": n.get("bomb", 0), "ult": n.get("ult", 0), "parry": n.get("parry", 0), "state": md.state()})
+	main.command("menu")
+
+## 6-A's keys through the game's own input: Tab into the next of the party, 1 to 4 into that one, B at the camp's altar
+func _raid_keys() -> void:
+	Store.settings.realmRace = "elf"
+	main.command("start 13"); var rm = main.game.rm; var md = rm.mode; rm.ai_off = true
+	main.tick(DT)
+	var p: Array = md.party()
+	_tap(KEY_TAB); main.tick(DT); var tab: bool = rm.me == p[1]
+	for i in 40: main.tick(DT)
+	_tap(KEY_4); main.tick(DT); var four: bool = rm.me == p[3]
+	for i in 40: main.tick(DT)
+	_tap(KEY_1); main.tick(DT); var one: bool = rm.me == p[0] and main.player.air_max == 1
+	main.player.pos = main.world.road.altar_at + Vector3(0, 0, 1.6); main.tick(DT)
+	_tap(KEY_B); var opened: bool = main.state == "paused" and main.ui.cur == "altar"; _tap(KEY_B); var shut: bool = main.state == "playing"
+	main.player.pos = DemonRoad.CHECK[1]; main.tick(DT); _tap(KEY_B); var refused: bool = main.state == "playing"
+	check("6-A's keys through the game's own input: Tab puts you into the next of the party, 4 and 1 into those; B opens the rune altar beside the camp's (and shuts it), and not out on the road",
+		tab and four and one and opened and shut and refused, [tab, four, one, opened, shut, refused])
 	main.command("menu")
 
 ## the battle's own keys through the game's input: B opens the rune altar in the preparation (and closes it); then the

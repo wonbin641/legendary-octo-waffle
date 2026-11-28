@@ -446,7 +446,10 @@ func _you_in() -> void:
 	if cam != null: me.aim = -cam.global_basis.z
 	else: me.aim = Vector3(-sin(player.yaw) * cos(player.pitch), sin(player.pitch), -cos(player.yaw) * cos(player.pitch))
 	# an orc's bound ends where he lands
-	if me.leaping and player.grounded and not _was_grounded: me.leaping = false; player.vel.x = 0.0; player.vel.z = 0.0; kit.landed(me)   # (he comes down where the bound ends: no sliding on)
+	if me.leaping and player.grounded and not _was_grounded:   # (he comes down where the bound ends: no sliding on)
+		me.leaping = false; player.vel.x = 0.0; player.vel.z = 0.0
+		if me.brain.has("fling"): me.brain.erase("fling")   # (6-A: one of the others thrown up by a gravity circle, and you took his place in the air)
+		else: kit.landed(me)
 	_was_grounded = player.grounded
 
 func _hands() -> Dictionary:

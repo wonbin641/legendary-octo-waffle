@@ -247,6 +247,27 @@ func _ready() -> void:
 	var pb: Dictionary = main._touch_buttons()
 	check("stage 6-2 on the phone: the same nine round buttons as the team battles; the rune altar's button while you get ready, and in the fight only by your own landmark",
 		p_prep and p_home and not p_away and pb.size() == 9, [p_prep, p_home, p_away, pb.keys()])
+	# stage 6-A on the phone: the same round buttons and a tenth, 교대, clear of the rest: a tap puts you into the next of the
+	# party; the rune altar's button by the camp's altar only
+	Store.settings.realmRace = "elf"
+	main.command("start 13"); await get_tree().create_timer(0.8).timeout; await _tap(Vector2(450, 200)); await get_tree().create_timer(0.2).timeout
+	var qm = main.game.rm; qm.ai_off = true; await _frames(2)
+	var qb: Dictionary = main._touch_buttons(); var q_clash := []; var q_names: Array = qb.keys()
+	for i in q_names.size():
+		var bq1: Vector2 = qb[q_names[i]][0]; var bqr: float = qb[q_names[i]][1]
+		if not Rect2(Vector2.ZERO, main.hud.size).grow(-2.0).encloses(Rect2(bq1 - Vector2.ONE * bqr, Vector2.ONE * bqr * 2.0)): q_clash.push_back([q_names[i], "off"])
+		if (main._touch_rects().pad as Rect2).grow(bqr).has_point(bq1): q_clash.push_back([q_names[i], "pad"])
+		for j in range(i + 1, q_names.size()):
+			if bq1.distance_to(qb[q_names[j]][0]) < bqr + float(qb[q_names[j]][1]) + 2.0: q_clash.push_back([q_names[i], q_names[j]])
+	var q_first = qm.me
+	if qb.has("switch"): await _tap(qb.switch[0]); await _frames(3)
+	var q_switched: bool = qm.me != q_first and qm.me == qm.mode.party()[1]
+	main.player.pos = main.world.road.altar_at + Vector3(0, 0, 1.6); qm.me.pos = main.player.pos; await _frames(2)
+	var q_altar: bool = main._touch_pills().has("altar")
+	main.player.pos = DemonRoad.CHECK[1]; qm.me.pos = main.player.pos; await _frames(2)
+	var q_road: bool = main._touch_pills().has("altar")
+	check("stage 6-A on the phone: the same round buttons and a tenth, 교대, all on the screen and clear of one another and of the arrows; a tap on it puts you into the next of the party; the rune altar's button by the camp's altar, not out on the road",
+		qb.size() == 10 and qb.has("switch") and str(qb.switch[2]) == "교대" and q_clash.is_empty() and q_switched and q_altar and not q_road, [q_names, q_clash, q_switched, q_altar, q_road])
 	Store.settings.realmMode = "solo"
 	main.to_menu(); Store.save = keep_save; Store.settings = keep_settings; Store.persist(); Store.persist_settings()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)

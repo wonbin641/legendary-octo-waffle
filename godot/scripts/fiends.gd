@@ -39,7 +39,7 @@ const KARNOK := {"jav": 85.0, "jav_speed": 42.0, "jav_cd": 3.2, "jav_back": 450.
 const BAAL := {"barrier_regen": 80.0, "barrier_wait": 4.0, "turned_cut": 400.0, "phase2": 0.65, "phase3": 0.30, "eclipse_at": 0.10,
 	"fan_cd": 9.0, "fan_n": 7, "fan_arc": 120.0, "fan_speed": 24.0, "fan_dmg": 34.0, "fan_waves": 3, "fan_gap": 0.5,
 	"bind_cd": 22.0, "bind_first": 12.0, "bind_hp": 360.0, "bind_t": 4.0, "bind_slow": 0.6,
-	"rift_cd": 15.0, "rift_n": 7, "rift_r": 4.2, "rift_warn": 1.8, "rift_dmg": 60.0, "rift_burn": 8.0, "rift_burn_t": 6.0,
+	"rift_cd": 15.0, "rift_cover": 0.40, "rift_max": 16, "rift_r": 5.0, "rift_warn": 1.8, "rift_dmg": 60.0, "rift_burn": 8.0, "rift_burn_t": 6.0,
 	"claw_dmg": 55.0, "claw_reach": 6.0, "claw_arc": 1.05, "claw_wind": 0.6, "claw_cd": 3.0,
 	"hover": 15.0, "meteor_cd": 20.0, "meteor_t": 5.0, "meteor_every": 0.4, "meteor_r": 3.2, "meteor_dmg": 70.0, "meteor_warn": 1.1,
 	"drain_cd": 16.0, "drain_t": 6.0, "drain_dps": 26.0, "drain_heal": 150.0,
@@ -497,9 +497,15 @@ func _karnok(f: Realm.Fighter, dt: float) -> void:
 			if v == null or not v.alive: b.state = "idle"; return
 			var q: Dictionary = b.line; q.a = f.eye_at(); q.b = v.feet_mid(); q.t = 0.2; _line_place(q)
 			if float(b.st) >= float(K.hook_warn):
-				# the hook bites: he hauls whoever it caught to his feet, then the axe goes up
-				var to := f.pos + Vector3(f.aim.x, 0, f.aim.z).normalized() * (f.R + 1.4)
+				# the hook bites: he hauls whoever it caught to his feet (on the steps, not over the well), then the axe goes up
+				var gap := Vector3(v.pos.x - f.pos.x, 0, v.pos.z - f.pos.z)
+				var to := f.pos + (gap.normalized() if gap.length() > 0.1 else Vector3(f.aim.x, 0, f.aim.z).normalized()) * (f.R + 1.4)
 				to.y = Phys.ground_at(to.x, f.pos.y + 1.0, to.z, 0.3)
+				var mine := DemonRoad.on_stair(f.pos)
+				if to.y < f.pos.y - 1.5 and not mine.is_empty():
+					var vs := DemonRoad.on_stair(v.pos)
+					var side := signf(float(vs[0]) - float(mine[0])) if not vs.is_empty() and absf(float(vs[0]) - float(mine[0])) > 0.5 else 1.0
+					to = DemonRoad.stair_point(clampf(float(mine[0]) + side * 9.0, 1.0, DemonRoad.SPIRAL - 1.0), 13.0)
 				v.pos = to; v.vel = Vector3.ZERO; v.push = Vector3.ZERO
 				if v.me and rm.player != null: rm.player.pos = to; rm.player.vel = Vector3.ZERO
 				rm.astray(v); v.stun_t = maxf(v.stun_t, float(K.hook_wind))
@@ -749,23 +755,36 @@ func _binds_tick(f: Realm.Fighter, dt: float) -> void:
 			rm.slay(v, f, {"src": "bind"}); mode.boss_says(f, "%s이(가) 사슬에 끌려 용암 심연으로 떨어졌습니다" % (Races.R[v.race].name if Races.R.has(v.race) else v.name))
 			if rm.fx != null: rm.fx.puff(v.pos + out * 3.0, 6, 1.0, 1.2)
 
-## the sulfur rifts: red cracks over four tenths of the floor; 1.8 s later they burst. The cooling circles put the burn out
+## the sulfur rifts: red cracks over four tenths of the floor (the paper's); 1.8 s later they burst. They keep off the
+## cooling circles, where the burn they leave goes out. The floor is counted in cells a metre square: one rift after
+## another goes where it covers the most not yet covered (of a few tried), till four tenths of the cells are under them
 func _rifts(f: Realm.Fighter) -> void:
-	var B := BAAL; var n := int(B.rift_n)
-	var placed: Array = []
-	for i in n:
-		var p := Vector3.ZERO; var tries := 0
-		while tries < 12:
-			tries += 1
-			var a := randf() * TAU; var r := sqrt(randf()) * (DemonRoad.AR_SMALL - 2.0 if road.rim_down else DemonRoad.AR - 3.0)
-			p = Vector3(DemonRoad.AC.x + cos(a) * r, DemonRoad.A_Y, DemonRoad.AC.y + sin(a) * r)
+	var B := BAAL; var R := float(B.rift_r)
+	var reach := DemonRoad.AR_SMALL if road.rim_down else DemonRoad.AR
+	var n_cells := 0; var k := int(reach)
+	for ix in range(-k, k + 1):
+		for iz in range(-k, k + 1):
+			if ix * ix + iz * iz <= reach * reach: n_cells += 1
+	var hit := {}; var placed: Array = []
+	while float(hit.size()) < float(B.rift_cover) * n_cells and placed.size() < int(B.rift_max):
+		var best := Vector2.INF; var gain := 0; var best_cells: Array = []
+		for t in 10:
+			var a := randf() * TAU; var r := sqrt(randf()) * (reach - R * 0.6)
+			var c := Vector2(cos(a) * r, sin(a) * r)
 			var bad := false
-			for c: Vector3 in road.cools:
-				if c.distance_to(p) < float(B.rift_r) + 2.6: bad = true
-			for q: Vector3 in placed:
-				if q.distance_to(p) < float(B.rift_r) * 1.2: bad = true
-			if not bad: break
-		placed.push_back(p)
+			for q: Vector3 in road.cools:
+				if Vector2(q.x - DemonRoad.AC.x, q.z - DemonRoad.AC.y).distance_to(c) < R + 2.6: bad = true
+			if bad: continue
+			var mine: Array = []
+			for ix in range(floori(c.x - R), ceili(c.x + R) + 1):
+				for iz in range(floori(c.y - R), ceili(c.y + R) + 1):
+					var cell := Vector2i(ix, iz)
+					if ix * ix + iz * iz <= reach * reach and not hit.has(cell) and Vector2(ix, iz).distance_to(c) < R: mine.push_back(cell)
+			if mine.size() > gain: gain = mine.size(); best = c; best_cells = mine
+		if best == Vector2.INF or gain < 8: break
+		for cell: Vector2i in best_cells: hit[cell] = true
+		placed.push_back(Vector3(DemonRoad.AC.x + best.x, DemonRoad.A_Y, DemonRoad.AC.y + best.y))
+	for p: Vector3 in placed:
 		var at := p
 		ring(at, float(B.rift_r), float(B.rift_warn), Color(1.0, 0.15, 0.05, 0.55), func() -> void:
 			Snd.play("rd_rift", 0.9, at)

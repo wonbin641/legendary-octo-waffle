@@ -1125,6 +1125,7 @@ func _ready() -> void:
 	_elf_wood(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_realm_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_plain_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
+	_raid_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_reward_card(gm, en, pl)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
@@ -4658,11 +4659,11 @@ func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: W
 		step.call(0.2); var decided := md.outcome == "won" and md.phase == "over"
 		step.call(ModePlain.OVER + 0.2)
 		return [waiting, decided, gm.ended and gm.result == "clear", Store.save.money - m0]
-	var t1: Array = take.call(); var first_elf: bool = Store.save.cleared.has(11) and Store.save.best.has("t11elf") and Store.next_stages(11) == []
+	var t1: Array = take.call(); var first_elf: bool = Store.save.cleared.has(11) and Store.save.best.has("t11elf") and Store.next_stages(11) == [13]   # (6-A opens after it; 6-3 is still to come)
 	var t2: Array = take.call()
 	Store.settings.realmRace = "orc"; var t3: Array = take.call()
 	var by := ModePlain.cleared_by()
-	check("the plain is taken when every landmark of theirs is broken and every one of theirs has fallen: the stage cleared and the record kept for the people you took it with; a first win with each people pays 100,000 (again with the same people, nothing), and the menu knows which peoples have taken it",
+	check("the plain is taken when every landmark of theirs is broken and every one of theirs has fallen: the stage cleared (6-A opens next) and the record kept for the people you took it with; a first win with each people pays 100,000 (again with the same people, nothing), and the menu knows which peoples have taken it",
 		t1[0] and t1[1] and t1[2] and int(t1[3]) == 50000 * Store.PAY and first_elf and t2[2] and int(t2[3]) == 0 and t3[2] and int(t3[3]) == 50000 * Store.PAY and by.keys() == ["elf", "orc"], [t1, t2, t3, by])
 	# ---- the menu and the briefing ----
 	var fu := Ui.new(); fu.game = gm
@@ -4686,4 +4687,362 @@ func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: W
 	for nm: String in ["rm_summon_elf", "rm_summon_dwarf", "rm_summon_orc", "rm_summon_demon", "rm_hall_hit", "rm_hall_fall", "rm_hall_alarm"]:
 		if not ResourceLoader.exists("res://sounds/%s.wav" % nm): snd_ok = false
 	check("6-2's own sounds are there: each landmark's summoning (a harp's run, the anvil, the war horn, the rift's roar), a landmark struck, falling, and yours under attack", snd_ok)
+	gm.begin(1)
+
+
+## 6-A (scripts/demonroad.gd, fiends.gd, mode_raid.gd): the road and its seals, the party of four and the switching between
+## them, the shared comebacks, the camp, the lava, Karnok's and Baal's tricks, the rank, the end, and the screens
+func _raid_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: World, cam: Camera3D, _fxn: Fx, _lt) -> void:
+	reset_test_state(); seed(613)
+	Store.settings.realmRace = "dwarf"; Store.settings.realmBomb = "oil"
+	gm.begin(13); var rm: Realm = gm.rm; var md: ModeRaid = rm.mode; var kit: RealmKit = rm.kit; var R: DemonRoad = w.road; var fd: Fiends = md.fiends
+	rm.log_on = true
+	var step := func(secs: float, dt := 1.0 / 60.0) -> void:
+		var t := 0.0
+		while t < secs - 1e-9: pl.update(dt, cam, 0.0); gm.rm.update(dt); w.road.update(dt, pl); t += dt
+	var party: Array = md.party(); var EL: Realm.Fighter = party[0]; var DW: Realm.Fighter = party[1]; var OR: Realm.Fighter = party[2]; var DM: Realm.Fighter = party[3]
+	var put := func(f: Realm.Fighter, p: Vector3) -> void:   # (someone set down somewhere: you, through the player)
+		f.pos = p; f.vel = Vector3.ZERO; f.vy = 0.0; rm.astray(f)
+		if f.me: pl.pos = p; pl.vel = Vector3.ZERO
+	var logged := func(what: String, src: String) -> int:
+		var n := 0
+		for e: Array in rm.log:
+			if str(e[0]) == what and (src == "" or str(e[e.size() - 1]) == src): n += 1
+		return n
+	# ---- the road ----
+	var kinds := {}
+	for f: Realm.Fighter in md.demons(): kinds[Fiends.kind_of(f)] = int(kinds.get(Fiends.kind_of(f), 0)) + 1
+	var seals_up: bool = R.seals.size() == 3 and R.seals.all(func(q): return not q.open)
+	var gate_shut := Phys.collide_at(DemonRoad.GATE_X1, 0.05, 0.0, 0.4, 1.8) != null
+	var door_shut := Phys.collide_at(DemonRoad.TC.x - DemonRoad.T_OUT + 0.3, 0.05, 0.0, 0.3, 1.8) != null
+	var top_shut := Phys.collide_at(DemonRoad.TC.x + DemonRoad.T_OUT - 0.4, DemonRoad.T_TOP + 0.05, 0.0, 0.3, 1.6) != null
+	var way: Array = rm.ai.route(DemonRoad.CHECK[0], DemonRoad.altar_point(180.0, 14.0))
+	# a walk up the stair from its foot to the top floor, as the others walk (their body, a step of half a metre): no
+	# fall off it and nothing overhead in the way (the top floor's edge leaves room above the last steps)
+	var sw := {"p": DemonRoad.stair_point(4.0, 13.0), "fell": 0, "stuck": 0, "top": 0.0}
+	var su := 4.0
+	while su < 575.0:
+		var to := DemonRoad.stair_point(su, 13.0); var p0: Vector3 = sw.p
+		for k in 8:
+			var d := Vector2(to.x - p0.x, to.z - p0.z)
+			if d.length() < 0.05: break
+			var mvv := d.normalized() * minf(0.3, d.length())
+			p0 = Phys.move_xz(p0, mvv.x, mvv.y, RealmAI.MOVE_R, RealmAI.MOVE_H, 0.5)[0]
+			var gy := Phys.ground_at(p0.x, p0.y, p0.z, RealmAI.MOVE_R)
+			if p0.y - gy > 1.0: sw.fell = int(sw.fell) + 1
+			p0.y = gy
+		if Vector2(to.x - p0.x, to.z - p0.z).length() > 0.6: sw.stuck = int(sw.stuck) + 1
+		sw.p = p0; sw.top = maxf(float(sw.top), p0.y); su += 2.0
+	check("6-A's road: from the camp in the wood to the sky altar, each way on shut by a seal of red light (the ruined gate's east way, the tower's door, its top floor's east door); the waypoints lead all the way; the stair round the tower's inside climbs to its top floor (24 m) with nothing overhead in the way and nobody walking off it into the well",
+		seals_up and gate_shut and door_shut and top_shut and way.size() > 40 and int(sw.fell) == 0 and int(sw.stuck) == 0 and float(sw.top) > DemonRoad.T_TOP - 0.2 and Phys.PIT.y == DemonRoad.LAVA,
+		[seals_up, gate_shut, door_shut, top_shut, way.size(), sw])
+	# ---- the party ----
+	var races: Array = party.map(func(f): return f.race)
+	var party_ok: bool = races == Races.ORDER and DW.me and rm.me == DW and party.all(func(f): return f.alive and f.name == str(Races.R[f.race].name) and f.pos.distance_to(DemonRoad.CHECK[0]) < 4.0)
+	var asleep: bool = md.demons().all(func(f): return not f.brain.get("awake", false))
+	check("the party: one of each people in the peoples' order (the keys 1 to 4), you the one picked on the briefing (here the dwarf), all at the camp; the demons at their posts and asleep: 15 guards (12 at the gate, 3 on the bridge's landing), 4 snipers on their pillars, the lava beast, 6 tower defenders, Karnok on the balcony, Baal on the altar; ten comebacks for the party",
+		party_ok and kinds == {"guard": 15, "sniper": 4, "beast": 1, "defender": 6, "karnok": 1, "baal": 1} and asleep and md.cp == 0 and md.revives == 10 and rm.all.size() == 32, [races, kinds, asleep])
+	# ---- into another's shoes ----
+	rm.press["switch"] = true; step.call(1.0 / 60.0)
+	var sw1: bool = rm.me == OR and OR.me and not DW.me and not DW.body.is_empty() and OR.body.is_empty() and is_equal_approx(pl.max_hp, OR.max_hp) and pl.pos.distance_to(OR.pos) < 0.05 and is_equal_approx(pl.eye, OR.eye)
+	rm.press["switch_0"] = true; step.call(1.0 / 60.0); var held_back := rm.me == OR   # (not again so soon)
+	step.call(ModeRaid.SWITCH_CD); rm.press["switch_0"] = true; step.call(1.0 / 60.0)
+	var sw2: bool = rm.me == EL and pl.air_max == 1 and is_equal_approx(pl.hp, EL.hp)
+	DW.inv = 0.0; rm.slay(DW, null); step.call(ModeRaid.SWITCH_CD + 0.05); rm.press["switch"] = true; step.call(1.0 / 60.0)
+	var sw3: bool = rm.me == OR   # (the dwarf down: passed over)
+	check("Tab (or 1 to 4) puts you into another of the party's shoes: you see from where he stands, with his health, his height and his people's own jumps, and the one you were goes on by himself, seen again; not twice in half a second; one who is down is passed over",
+		sw1 and held_back and sw2 and sw3, [sw1, held_back, sw2, sw3])
+	# ---- falling and coming back ----
+	var back0: bool = DW.back_t > ModeRaid.BACK - 1.0 and md.revives == 9 and md.deaths == 1
+	step.call(ModeRaid.BACK + 0.2)
+	var back1: bool = DW.alive and DW.pos.distance_to(DemonRoad.CHECK[0]) < 4.0 and md.revives == 9
+	md.revives = 0; OR.inv = 0.0; rm.slay(OR, null)
+	var none_left: bool = OR.back_t < 0.0 and rm.me == OR
+	step.call(ModeRaid.AUTO_SWITCH + 0.1)
+	var moved_on: bool = rm.me != OR and rm.me.alive and rm.me.me and md.outcome == ""
+	check("the party's ten comebacks are shared: a fallen one is back at the last checkpoint 8 s later, one comeback the fewer; with none left he stays down, and if he was you, you are in the shoes of another still standing a moment later",
+		back0 and back1 and none_left and moved_on, [back0, back1, none_left, moved_on, md.revives])
+	md.revives = 10; rm.back(OR); OR.inv = 0.0
+	# ---- the camp ----
+	var you: Realm.Fighter = rm.me; var guard: Realm.Fighter = null
+	for f: Realm.Fighter in md.demons():
+		if Fiends.kind_of(f) == "guard": guard = f; break
+	var plain_mul := md.dmg_mul(you, guard)
+	put.call(you, R.bless_at); step.call(0.1)
+	var blessed_mul := md.dmg_mul(you, guard)
+	put.call(DM, R.crates[0] + Vector3(0, 0, 1.0)); DM.bombs = 0; DM.bomb_t = 9.0; step.call(0.1)
+	put.call(EL, R.crates[1] + Vector3(0, 0, 1.0)); EL.ammo = 0; EL.reload_t = 0.0; step.call(0.1)
+	var supplied: bool = DM.bombs == DM.bomb_kinds.size() and EL.ammo == kit.mag(EL)
+	var altar_here := false
+	put.call(you, R.altar_at + Vector3(0, 0, 1.6)); altar_here = md.altar_ok()
+	put.call(you, DemonRoad.CHECK[1]); var altar_away := md.altar_ok()
+	check("the camp: its blessing circle (whoever steps in it does 15% more for a minute and a half), its supply crates (the weapon loaded and the bombs back), its rune altar (open beside it, not out on the road)",
+		is_equal_approx(plain_mul, 1.0) and is_equal_approx(blessed_mul, 1.15) and supplied and altar_here and not altar_away, [plain_mul, blessed_mul, supplied, altar_here, altar_away])
+	# ---- the gate: its guards wake, its seal lifts once they are down, and whoever stands is whole again ----
+	for f: Realm.Fighter in party: put.call(f, DemonRoad.CHECK[1] + Vector3(0, 0, party.find(f) * 1.5 - 2.0))
+	step.call(0.3)
+	var woke := 0
+	for f: Realm.Fighter in md.demons():
+		if int(f.brain.get("sec", -1)) == 1 and f.brain.get("awake", false): woke += 1
+	EL.hp = 20.0; EL.burn = 5.0; EL.burn_t = 3.0
+	for f: Realm.Fighter in md.demons():
+		if int(f.brain.get("sec", -1)) == 1: f.inv = 0.0; rm.slay(f, you)
+	for s9: Dictionary in kit.shots: rm.look.shot_gone(s9)
+	kit.shots.clear()   # (their spears still in the air: not to land after)
+	step.call(0.2)
+	var gate_open := Phys.collide_at(DemonRoad.GATE_X1, 0.05, 0.0, 0.4, 1.8) == null
+	check("the ruined gate: its twelve guards wake as the party comes in; once they are down its seal lifts (the checkpoint moves on with the party) and whoever of the party stands is whole again, the fire on him out",
+		woke == 12 and md.cleared.has(1) and gate_open and md.cp == 1 and is_equal_approx(EL.hp, EL.max_hp) and EL.burn_t <= 0.0, [woke, md.cleared, gate_open, md.cp, EL.hp])
+	# ---- the lava ----
+	var rev0 := md.revives
+	put.call(DM, Vector3(0.0, DemonRoad.LAVA + 0.2, 20.0)); DM.inv = 2.0; step.call(0.1)
+	check("whoever falls into the lava is done for, a comeback or not (not even the moments after coming back keep him)", not DM.alive and logged.call("down", "lava") >= 1 and md.revives == rev0 - 1, [DM.alive, md.revives])
+	step.call(ModeRaid.BACK + 0.2)
+	# ---- Karnok ----
+	for f: Realm.Fighter in md.demons():
+		if int(f.brain.get("sec", -1)) == 2 or Fiends.kind_of(f) == "defender": f.inv = 0.0; rm.slay(f, you)
+	step.call(0.2)
+	var K: Realm.Fighter = md.karnok
+	var door_open := Phys.collide_at(DemonRoad.TC.x - DemonRoad.T_OUT + 0.3, 0.05, 0.0, 0.3, 1.8) == null
+	for f: Realm.Fighter in party: put.call(f, Vector3(DemonRoad.TC.x - 4.0 + party.find(f) * 1.5, 0.0, 2.0))
+	step.call(0.5)
+	var anchors: Array = kit.things.filter(func(th): return str(th.kind) == "anchor" and float(th.hp) > 0.0)
+	var k_awake: bool = K.brain.get("awake", false) and md.boss_up == K and anchors.size() == 2
+	K.shield = 500.0; step.call(1.0); var regen := K.shield - 500.0
+	var a0: Dictionary = anchors[0] if anchors.size() > 0 else {}
+	var by_fire := kit.hurt_thing(a0, 100.0, "fire", you) if not a0.is_empty() else -1.0
+	var by_arcane := kit.hurt_thing(a0, 100.0, "arcane", you) if not a0.is_empty() else -1.0
+	for th: Dictionary in anchors: kit.hurt_thing(th, 99999.0, "physical", you)
+	K.shield = 500.0; step.call(1.0); var regen2 := K.shield - 500.0
+	check("Karnok: the section's seal at the tower's door lifted with the bridge cleared; he wakes as the party comes into the tower (his bar up at the screen's top), and his two obsidian crystals in the well mend his shield 200 a second; only arcane and physical blows break them (fire does nothing to them); once both are broken his shield mends no more",
+		door_open and k_awake and absf(regen - 200.0) < 20.0 and by_fire == 0.0 and by_arcane > 0.0 and regen2 <= 0.01, [door_open, k_awake, regen, by_fire, by_arcane, regen2])
+	# his javelin turned back by a dagger held up: 450 whatever, and 1,000 off his shield
+	rm.ai_off = true   # (the others stand by: what is done to him is only this)
+	var ka := atan2(K.pos.z - DemonRoad.TC.y, K.pos.x - DemonRoad.TC.x) + 0.45
+	put.call(you, Vector3(DemonRoad.TC.x + cos(ka) * 12.0, DemonRoad.T_TOP, DemonRoad.TC.y + sin(ka) * 12.0)); step.call(1.0 / 60.0)
+	K.shield = 1200.0; var kh0 := K.hp; var p0 := md.parries
+	var face := func() -> void:   # (you look at him: the dagger turns it back the way you look)
+		var dv := (K.feet_mid() - you.eye_at()).normalized(); pl.yaw = atan2(-dv.x, -dv.z); pl.pitch = asin(clampf(dv.y, -1.0, 1.0)); you.aim = dv
+	face.call(); you.parry_t = 0.4; you.parry_cd = 9.0
+	var jv := fd._throw(K, "jav", you.feet_mid(), float(Fiends.KARNOK.jav_speed), float(Fiends.KARNOK.jav), {"shove": 4.0, "turned_dmg": float(Fiends.KARNOK.jav_back), "turned_cut": float(Fiends.KARNOK.jav_cut), "r": 0.22, "life": 4.0})
+	var tt := 0.0
+	while tt < 3.0 and kit.shots.has(jv): face.call(); you.parry_t = maxf(you.parry_t, 0.05); step.call(1.0 / 60.0); tt += 1.0 / 60.0
+	rm.ai_off = false
+	check("…his chain javelin, met by the rune dagger held up (F), goes back into him: 450 whatever his armour, and a thousand off his shield (the rank counts these)",
+		md.parries == p0 + 1 and is_equal_approx(K.shield, 0.0) and absf((kh0 - K.hp) - (float(Fiends.KARNOK.jav_back) - 200.0)) < 1.0, [md.parries, K.shield, kh0 - K.hp])
+	# his second phase: down off the balcony onto the stair's middle
+	rm.ai_off = true   # (the others stand by again: only what the checks do reaches him)
+	K.hp = K.max_hp * 0.49; step.call(float(Fiends.KARNOK.roar) + 0.6)
+	var on_st := DemonRoad.on_stair(K.pos)
+	var phase2: bool = int(K.brain.get("phase", 1)) == 2 and not on_st.is_empty() and absf(float(on_st[0]) - DemonRoad.SPIRAL * 0.5) < 40.0
+	# the hook: someone hauled to him, then the axe; his chest's core shot through (700) or a bomb on him stops it
+	var hook := func() -> Realm.Fighter:
+		K.brain.hook_t = 0.0; K.brain.spin_t = 99.0; K.brain.state = "idle"; K.brain.stagger = 0.0
+		for f: Realm.Fighter in party:
+			if f.alive: put.call(f, DemonRoad.stair_point(float(DemonRoad.on_stair(K.pos)[0]) + 6.0 + party.find(f) * 3.0, 13.0))
+		var t2 := 0.0
+		while t2 < 3.0 and str(K.brain.get("state", "")) != "hook_wind": step.call(1.0 / 60.0); t2 += 1.0 / 60.0
+		return K.brain.get("victim")
+	var v1: Realm.Fighter = hook.call()
+	var hauled: bool = v1 != null and v1.pos.distance_to(K.pos) < K.R + 2.5 and v1.stun_t > 0.0
+	rm.hurt(K, 750.0, "physical", you, {"fixed": true}); step.call(0.05)
+	var cut1: bool = float(K.brain.get("stagger", 0.0)) > 0.0 and str(K.brain.state) != "hook_wind" and v1 != null and v1.alive
+	step.call(float(Fiends.KARNOK.stagger) + 0.1)
+	var v2: Realm.Fighter = hook.call()
+	var bomb_at := K.pos + Vector3(1.0, 0.5, 0.0)
+	kit.flask_burst({"bomb": "oil", "by": you, "team": "us"}, bomb_at); step.call(0.05)
+	var cut2: bool = float(K.brain.get("stagger", 0.0)) > 0.0 and v2 != null and v2.alive
+	step.call(float(Fiends.KARNOK.stagger) + 0.1)
+	var v3: Realm.Fighter = hook.call(); var ex0: int = logged.call("down", "execute")
+	if v3 != null: v3.inv = 0.0
+	step.call(float(Fiends.KARNOK.hook_wind) + 0.2)
+	var axed: bool = v3 != null and logged.call("down", "execute") == ex0 + 1
+	rm.ai_off = false
+	check("…at half his health he roars and comes down onto the stair's middle; his hook hauls one of the party to his feet and holds him, and 2.2 s later the axe falls on him (an end, whoever it is); 700 into him meanwhile (his chest's red core), or an alchemical bomb bursting on him, stops it and he reels",
+		phase2 and hauled and cut1 and cut2 and axed, [phase2, on_st, hauled, cut1, cut2, axed, v1.pos.distance_to(K.pos) if v1 != null else -1.0, v3 != null])
+	step.call(ModeRaid.BACK + 0.3)
+	# Karnok down: the top floor's door opens; the corrupted core: the party's ultimates ready, 400 shards each, the altar
+	K.inv = 0.0; rm.slay(K, you); step.call(0.2)
+	var top_open := Phys.collide_at(DemonRoad.TC.x + DemonRoad.T_OUT - 0.4, DemonRoad.T_TOP + 0.05, 0.0, 0.3, 1.6) == null
+	var shards0 := rm.me.shards   # (yours: the others spend theirs on runes as soon as they have it)
+	for f: Realm.Fighter in party: f.gauge = 0.0
+	put.call(you, ModeRaid.ALTAR_B); step.call(0.1)
+	var shards1 := rm.me.shards
+	var cored: bool = md.core_taken and party.all(func(f): return f.gauge >= float(Races.GAUGE.max)) and shards1 - shards0 == int(ModeRaid.SHARDS.core)
+	put.call(you, ModeRaid.ALTAR_B + Vector3(1.8, 0, 2.2)); var altar_b := md.altar_ok()
+	check("Karnok down: the top floor's east door opens and he leaves the corrupted core there: whoever takes it fills every one of the party's ultimates and gives each 400 shards, and the rune altar beside it wakes",
+		md.cleared.has(3) and top_open and cored and altar_b, [md.cleared, top_open, cored, altar_b, shards0, shards1])
+	# ---- Baal ----
+	var B: Realm.Fighter = md.baal; var BB := B.brain
+	for f: Realm.Fighter in party:
+		if not f.alive: rm.back(f)
+		put.call(f, DemonRoad.altar_point(150.0 + party.find(f) * 55.0, 14.0))
+	step.call(0.3)
+	var b_awake: bool = BB.get("awake", false) and md.boss_up == B and md.cp == 4
+	rm.ai_off = true; BB.bind_t = 99.0; BB.rift_t = 99.0; BB.fan_t = 99.0; BB.claw_t = 99.0
+	B.shield = 2000.0; BB.calm = 0.0; BB.last = B.hp + B.shield; step.call(float(Fiends.BAAL.barrier_wait) - 0.5); var held_sh := B.shield
+	step.call(2.0); var mended := B.shield - held_sh
+	# the binding chains: two of the party tied to the stakes; four seconds to break each
+	fd._bind(B)
+	var binds: Array = BB.get("binds", []); var bound := binds.size() == 2
+	var freed: Realm.Fighter = null; var dragged: Realm.Fighter = null
+	if bound:
+		freed = binds[0].v; dragged = binds[1].v; dragged.inv = 0.0
+		kit.hurt_thing(binds[0].thing, 9999.0, "physical", you)
+	var bd0: int = logged.call("down", "bind")
+	step.call(float(Fiends.BAAL.bind_t) + 0.2)
+	var bind_ok: bool = bound and freed.alive and logged.call("down", "bind") == bd0 + 1 and not dragged.alive
+	rm.ai_off = false
+	check("Baal: he wakes as the party comes up onto the altar; his fire barrier mends (80 a second) once he is left alone four seconds; his binding chains tie two of the party to the stakes at the edge: one broken in time sets its man free, the other drags his over into the lava",
+		b_awake and held_sh <= 2000.0 + 0.01 and absf(mended - float(Fiends.BAAL.barrier_regen) * 1.5) < 20.0 and bind_ok, [b_awake, held_sh, mended, bound, bind_ok])
+	# the sulfur rifts: red cracks over four tenths of the altar's floor (the paper's), none on the cooling circles; the
+	# others step out of them onto bare floor
+	var rg0 := fd.rings.size(); fd._rifts(B); var rifts: Array = fd.rings.slice(rg0)
+	var cells := 0; var under := 0
+	for ix in range(-26, 27):
+		for iz in range(-26, 27):
+			if ix * ix + iz * iz > 26 * 26: continue
+			cells += 1
+			for q: Dictionary in rifts:
+				if Vector2(DemonRoad.AC.x + ix - q.at.x, DemonRoad.AC.y + iz - q.at.z).length() < float(q.r): under += 1; break
+	var cover := float(under) / float(cells)
+	var cool_free := rifts.all(func(q): return R.cools.all(func(c: Vector3): return Vector2(c.x - q.at.x, c.z - q.at.z).length() > float(q.r) + 2.0))
+	var dodger: Realm.Fighter = party[1]; if not dodger.alive: rm.back(dodger)
+	put.call(dodger, rifts[0].at + Vector3(0.5, 0, 0.3))
+	var out_g: Dictionary = md.goal(dodger)
+	var out_ok: bool = out_g.has("at") and fd.danger_at(out_g.at) == Vector3.INF and absf(float(out_g.at.y) - DemonRoad.A_Y) < 1.0 and Vector2(out_g.at.x - DemonRoad.AC.x, out_g.at.z - DemonRoad.AC.y).length() < DemonRoad.AR - 0.5
+	for q: Dictionary in rifts: q.done = Callable(); q.t = 0.0
+	step.call(0.05)
+	check("…his sulfur rifts crack four tenths of the floor (%d circles), none on the cooling circles; one of the others standing in one steps out to bare floor" % rifts.size(),
+		cover > 0.37 and cover < 0.5 and cool_free and out_ok, [cover, rifts.size(), cool_free, out_g])
+	step.call(ModeRaid.BACK + 0.3)
+	for f: Realm.Fighter in party:
+		if f.alive: put.call(f, DemonRoad.altar_point(150.0 + party.find(f) * 55.0, 14.0))
+	# the second phase: wings, up into the air, three pillars broken; the sun's cores broken bring him down
+	B.hp = B.max_hp * 0.64; step.call(2.5)
+	var up_now: Array = R.pillars.map(func(q): return q.up)
+	var phase2b: bool = int(BB.phase) == 2 and BB.get("air", false) and B.pos.y > DemonRoad.A_Y + 10.0 and up_now == [false, true, false, true, false, true]
+	fd._sun_start(B); step.call(1.0 / 60.0)
+	var cores: Array = kit.things.filter(func(th): return str(th.kind) == "wcore" and float(th.hp) > 0.0)
+	var imps := md.demons().filter(func(f): return f.alive and Fiends.kind_of(f) == "imp").size()
+	for th: Dictionary in cores: kit.hurt_thing(th, 9999.0, "arcane", you)
+	step.call(0.1)
+	var crashed: bool = float(BB.get("crash", 0.0)) > 0.0 and is_equal_approx(fd.dmg_mul(you, B), float(Fiends.BAAL.crash_mul)) and md.cores_first
+	put.call(you, R.pads[0]); you.inv = 0.0; step.call(0.05)
+	var lifted: bool = pl.vel.y > 20.0 or you.vy > 20.0
+	step.call(float(Fiends.BAAL.crash_t) + 0.5)
+	check("…at 65% he spreads his wings and rises 15 m, three of the six pillars broken; the abyssal sun charges with four imps called and two violet cores on his wings: broken both, he crashes onto the floor and takes half as much again for five seconds; the altar's gravity circles throw you up at him meanwhile",
+		phase2b and cores.size() == 2 and imps == 4 and crashed and lifted, [phase2b, up_now, cores.size(), imps, crashed, lifted])
+	# under his sun the orc (and the dwarf) of the others make for the nearer gravity circle; thrown up and carried across
+	# at the nearer wing core, it is what he strikes as he passes it
+	step.call(4.0); fd._sun_start(B); step.call(1.0 / 60.0)
+	var orc: Realm.Fighter = party.filter(func(f): return f.race == "orc")[0]
+	if not orc.alive: rm.back(orc)
+	put.call(orc, DemonRoad.altar_point(0.0, 12.0)); step.call(1.0 / 60.0)
+	var orc_g: Dictionary = md.goal(orc); var to_pad: bool = orc_g.has("at") and R.pads.has(orc_g.at)
+	put.call(orc, R.pads[0]); md.lift_t[orc.id] = 0.0; orc.inv = 99.0; step.call(1.0 / 60.0)
+	var flung: bool = orc.leaping and orc.vy > 15.0 and Vector2(orc.vel.x, orc.vel.z).length() > 1.0
+	var struck_core := false; var nearest := INF
+	for k in 30:
+		step.call(0.05)
+		for th: Dictionary in kit.things:
+			if str(th.kind) == "wcore" and float(th.hp) > 0.0: nearest = minf(nearest, orc.eye_at().distance_to(th.pos))
+		var fo = md.focus(orc)
+		if fo is Dictionary and str(fo.kind) == "wcore": struck_core = true
+	orc.inv = 0.0
+	for th: Dictionary in kit.things.filter(func(th): return str(th.kind) == "wcore" and float(th.hp) > 0.0): kit.hurt_thing(th, 9999.0, "arcane", you)
+	step.call(float(Fiends.BAAL.crash_t) + 0.5)
+	check("…under his sun the orc of the others makes for the nearer gravity circle; thrown up, it carries him across at the nearer wing core, and that is what he strikes as he passes it (%.1f m from it at the nearest)" % nearest,
+		to_pad and flung and struck_core and nearest < 6.0, [to_pad, orc_g, flung, struck_core, nearest])
+	# the third phase: down, the rim falls, no cover; his furnace halves what mends
+	B.hp = B.max_hp * 0.29; step.call(2.6)
+	var phase3: bool = int(BB.phase) == 3 and R.rim_down and R.pillars.all(func(q): return not q.up)
+	var near_f: Realm.Fighter = null
+	for f: Realm.Fighter in party:
+		if f.alive: near_f = f; break
+	put.call(near_f, B.pos + Vector3(3.0, 0.0, 0.0)); near_f.hp = 50.0; near_f.burn_t = 0.0
+	var healed := rm.heal(near_f, 40.0)
+	check("…at 30% he comes down with a slam: the altar's rim falls into the lava (the floor 30% smaller) and the last pillars with it; about him the furnace burns, and what mends there mends half as much",
+		phase3 and absf(healed - 20.0) < 0.01 and md.furnace(near_f), [phase3, R.rim_down, healed])
+	# the eclipse of doom: at 10%, twelve seconds to bring him down; every blow twice; a bomb on him puts it off 2.5 s
+	B.hp = B.max_hp * 0.09; step.call(1.0 / 60.0)
+	var ecl: bool = str(BB.state) == "eclipse" and absf(float(BB.cast) - float(Fiends.BAAL.eclipse_t)) < 0.1 and is_equal_approx(fd.dmg_mul(you, B), 2.0)
+	var c0 := float(BB.cast); kit.flask_burst({"bomb": "smoke", "by": you, "team": "us"}, B.pos + Vector3(1.0, 0.5, 0.0)); var delayed := float(BB.cast) - c0
+	check("…at 10% the eclipse of doom: he kneels, twelve seconds to his end of you all; every blow on him counts twice, and an alchemical bomb bursting on him puts it off 2.5 s",
+		ecl and absf(delayed - float(Fiends.BAAL.eclipse_bomb)) < 0.01, [ecl, BB.get("cast"), delayed])
+	# the end: Baal down, the raid won; its rank; the stage cleared, the first win's bonus, the rank kept
+	var m0 := int(Store.save.money)
+	B.inv = 0.0; rm.slay(B, you); step.call(0.1)
+	var won: bool = md.outcome == "won" and md.rank in ["S", "A", "B", "C"] and md.eclipse_kill >= 0.0
+	step.call(ModeRaid.OVER + 0.2)
+	check("Baal down: the raid is won and ranked (S to C); what he called goes with him; the stage is cleared (6-B opens next), the best time and the best rank kept, and a first win pays 300,000",
+		won and gm.ended and gm.result == "clear" and Store.save.cleared.has(13) and Store.save.best.has("t13") and int(Store.save.best.get("r13", 0)) == int(ModeRaid.RANK_N[md.rank]) and Store.stage_open(16)
+		and int(Store.save.money) - m0 == 150000 * Store.PAY and md.demons().filter(func(f): return f.alive).is_empty(), [won, md.rank, gm.result, Store.save.best, int(Store.save.money) - m0])
+	# ---- the rank, by the paper's Normal ----
+	var rk := func(clock: float, deaths: int, parries: int, cores: bool, ecl_t: float) -> String:
+		md.clock = clock; md.deaths = deaths; md.parries = parries; md.cores_first = cores; md.eclipse_t0 = 1.0; md.eclipse_kill = ecl_t
+		return md.rank_now()
+	var ranks := [rk.call(700.0, 2, 2, true, 9.0), rk.call(700.0, 2, 1, true, 7.0), rk.call(950.0, 5, 0, false, 8.0), rk.call(950.0, 5, 0, false, 8.5), rk.call(1190.0, 9, 0, false, 11.0), rk.call(1210.0, 0, 3, true, 1.0), rk.call(900.0, 10, 3, true, 1.0)]
+	check("the rank (the paper's Normal): S within 12 minutes and 2 falls with two javelins turned back and the first sun's cores broken; A within 16 minutes and 5 falls with the eclipse stopped in 8 s; B within 20 minutes and 9 falls; C otherwise",
+		ranks == ["S", "A", "A", "B", "B", "C", "C"], ranks)
+	# ---- the eclipse completed: the raid lost ----
+	reset_test_state(); seed(614); Store.settings.realmRace = "elf"
+	gm.begin(13); rm = gm.rm; md = rm.mode; R = w.road; B = md.baal; BB = B.brain
+	for f: Realm.Fighter in md.demons():
+		if f != B: f.inv = 0.0; rm.slay(f, null)
+	md.core = {"pos": ModeRaid.ALTAR_B}; md.core_taken = true; md.cleared = {1: true, 2: true, 3: true}
+	for f: Realm.Fighter in md.party(): put.call(f, DemonRoad.altar_point(150.0 + md.party().find(f) * 55.0, 14.0))
+	step.call(0.3); B.hp = B.max_hp * 0.25; step.call(2.6); B.hp = B.max_hp * 0.09; step.call(1.0 / 60.0); BB.cast = 0.05; step.call(0.2)
+	var all_down: bool = md.party().all(func(f): return not f.alive and f.back_t < 0.0)
+	step.call(ModeRaid.OVER + 0.2)
+	check("the eclipse completed: the tower's top is gone and the party with it, no comebacks left: the raid is lost",
+		all_down and md.outcome == "lost" and gm.ended and gm.result == "lost" and not Store.save.cleared.has(13), [all_down, md.outcome, gm.result])
+	# ---- the screens ----
+	reset_test_state(); Store.settings.realmRace = "orc"
+	gm.begin(13); rm = gm.rm; md = rm.mode
+	var H := md.hud()
+	var hud_ok: bool = H.party.size() == 4 and int(H.revives) == 10 and not H.get("roster", true) and not H.has("boss") and str(H.title).contains("숲속 캠프")
+	rm.me.inv = 0.0; rm.slay(rm.me, null)
+	var line := RealmHud.new().prompt(rm, rm.me, false)
+	var tb: Dictionary = load("res://scripts/main.gd").touch_buttons_for(Vector2(1280, 720), [0.0, 0.0, 0.0, 0.0], false, true, true)
+	var tb_short: Dictionary = load("res://scripts/main.gd").touch_buttons_for(Vector2(760, 320), [0.0, 0.0, 0.0, 0.0], false, true, true)
+	var apart := func(bs: Dictionary) -> bool:
+		var ks: Array = bs.keys()
+		for i in ks.size():
+			for j in range(i + 1, ks.size()):
+				if (bs[ks[i]][0] as Vector2).distance_to(bs[ks[j]][0]) < float(bs[ks[i]][1]) + float(bs[ks[j]][1]) - 0.5: return false
+		return true
+	var plain_tb: Dictionary = load("res://scripts/main.gd").touch_buttons_for(Vector2(1280, 720), [0.0, 0.0, 0.0, 0.0], false, true)
+	check("6-A's screen: the party's four at the top (no five-a-side roster), the comebacks and the clock, the section's name and what it asks of you; fallen, it says when and where you are back and that Tab puts you into another; on a touch screen a 교대 button beside the others, clear of them (not in the other battles)",
+		hud_ok and line.contains("다시 일어납니다") and line.contains("Tab") and tb.has("switch") and str(tb.switch[2]) == "교대" and apart.call(tb) and tb_short.has("switch") and apart.call(tb_short) and not plain_tb.has("switch"), [hud_ok, line, tb.keys()])
+	var tm := TacMap.new(); tm.game = gm; tm.cam = cam; tm.f_mono = SystemFont.new(); tm.f_bold = SystemFont.new(); tm.setup(13)
+	var rc := MapRec.new(); tm.draw(rc, Vector2(600, 600)); var lg: Array = tm.legend(true).map(func(it): return str(it[1]))
+	var a_w := TacMap.road_at(Vector2.ZERO, 600.0 / (TacMap.ROAD_W + 2.0 * TacMap.PAD), -100.0, 0.0); var a_e := TacMap.road_at(Vector2.ZERO, 600.0 / (TacMap.ROAD_W + 2.0 * TacMap.PAD), 100.0, 0.0)
+	check("its map: the road folded once as 6-1's (the west half the upper band), the five parts of the way named, the checkpoints and the lords marked, the party and the demons; the legend says what the camp's things, the seals and the altar's circles are",
+		a_w.y < a_e.y and ["숲속 캠프", "무너진 외성문", "용암 사슬 다리", "마탑", "심연의 제단", "N ↑", "20m", "카르녹", "바알"].all(func(t): return rc.texts.has(t)) and rc.circles.size() > 30
+		and ["파티 (나머지 셋)", "악마", "거점 · 쓰러지면 여기서", "보급 상자", "붉은 선 · 아직 닫힌 봉인", "냉각진 · 화상 해제", "중력진 · 위로 솟구침"].all(func(t): return lg.has(t)), [rc.texts.size(), lg])
+	var snd_bad := []; var snd_used := {}; var re := RegEx.new(); re.compile("\"(rd_[a-z_]*[a-z])\"")
+	for path: String in ["res://scripts/fiends.gd", "res://scripts/mode_raid.gd", "res://scripts/realmkit.gd"]:
+		for ln: String in FileAccess.get_file_as_string(path).split("\n"):
+			if ln.find("Snd.") < 0: continue
+			for m9: RegExMatch in re.search_all(ln):
+				snd_used[m9.get_string(1)] = true
+				if not ResourceLoader.exists("res://sounds/%s.wav" % m9.get_string(1)): snd_bad.push_back(m9.get_string(1))
+	check("every sound 6-A plays is there (made by tools/make_sounds.py): the switch, the checkpoint, the camp, the lava, the seals, the lords coming and going, their javelins, chains, hooks and axes, the waves of fire, the rifts, the meteors, the sun and the eclipse", snd_bad.is_empty() and snd_used.size() >= 45, [snd_bad, snd_used.size()])
+	var fu := Ui.new(); fu.game = gm
+	fu.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); fu.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+	fu.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); fu.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
+	add_child(fu); fu._build_brief(); fu._build_loadout(); fu._build_shop(); fu._build_over(); fu._build_dialog()
+	fu.tac = TacMap.new(); fu.tac.game = gm; fu.tac.f_mono = fu.f_mono; fu.tac.f_bold = fu.f_bold
+	Store.settings.realmRace = "demon"; fu.open_brief(13)
+	var picks: Array = []; var stack: Array = [fu.br_modes]
+	while not stack.is_empty():
+		var nd: Node = stack.pop_back()
+		if nd.has_meta("pick"): picks.push_back(str(nd.get_meta("pick")))
+		stack.append_array(nd.get_children())
+	var title: String = fu.br_title.text; var gear: String = fu.br_gear.text; var note: String = fu.br_note.text
+	fu.queue_free()
+	check("6-A's briefing: the one of the party you start as and your bomb to pick, no modes; it says the others are played for you and that Tab switches, the road's five parts, the shared comebacks, the lords' tricks and the ranks, and the first win's bonus",
+		Races.ORDER.all(func(r): return picks.has(r)) and Races.BOMBS.all(func(b): return picks.has(b)) and not picks.has("solo") and title == "타락한 마탑의 진격로 · 타락한 마탑 토벌전"
+		and gear.contains("악마로 시작") and gear.contains("Tab") and note.contains("공유 부활 10회") and note.contains("등급 S") and note.contains("첫 승리 보너스"), [picks, title, gear])
 	gm.begin(1)

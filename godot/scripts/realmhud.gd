@@ -271,7 +271,7 @@ func _raid(ci, s: Vector2, c: Vector2, rm: Realm, H: Dictionary, x0: float, y0: 
 	var fm: Font = h.m.f_mono; var fb: Font = h.m.f_bold; var ft: Font = h.m.f_title
 	var B: Dictionary = H.get("boss", {})
 	if not B.is_empty():
-		h._t(ci, fb, str(B.name), x0 + 12, y0 + 18, 13, Hud.INK, "left", false)
+		h._t(ci, fb, str(B.name), x0 + 12, y0 + 16, 13, Hud.INK, "left", false)
 		for k in int(B.phases):   # (the phases: a pip each, lit up to the one he is in)
 			ci.draw_circle(Vector2(x0 + w - 16.0 - (int(B.phases) - 1 - k) * 12.0, y0 + 26.0), 4.0, RED if k < int(B.phase) else Color(1, 1, 1, 0.16))
 		var bx := x0 + 12.0; var bw := w - 24.0

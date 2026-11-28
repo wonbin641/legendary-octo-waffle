@@ -198,7 +198,7 @@ func _circles(dt: float) -> void:
 		if hall and Vector2(f.pos.x - DemonRoad.CORE_AT.x, f.pos.z - DemonRoad.CORE_AT.z).length() < float(LIFT.r) and f.pos.y < 0.6: _lift(f, float(LIFT.hall))
 		if pads:
 			for p: Vector3 in road.pads:
-				if Vector2(f.pos.x - p.x, f.pos.z - p.z).length() < float(LIFT.r) and absf(f.pos.y - p.y) < 0.6: _lift(f, float(LIFT.pad), baal.pos)
+				if Vector2(f.pos.x - p.x, f.pos.z - p.z).length() < float(LIFT.r) and absf(f.pos.y - p.y) < 0.6: _lift(f, float(LIFT.pad), _pad_aim(f))
 
 func _lift(f: Realm.Fighter, up: float, toward = null) -> void:
 	lift_t[f.id] = float(LIFT.cd); Snd.play("rd_lift", 1.0, f.feet_mid())
@@ -207,9 +207,18 @@ func _lift(f: Realm.Fighter, up: float, toward = null) -> void:
 		var gap := Vector3((toward as Vector3).x - f.pos.x, 0, (toward as Vector3).z - f.pos.z)
 		side = gap.normalized() * minf(12.0, gap.length() / (up / 19.0)) if gap.length() > 0.5 else Vector3.ZERO
 	if f.me and rm.player != null: rm.player.launch(Vector3(side.x if toward is Vector3 else rm.player.vel.x, up, side.z if toward is Vector3 else rm.player.vel.z))
-	else: f.vy = up; f.pos.y += 0.06; f.grounded = false
+	else:
+		f.vy = up; f.pos.y += 0.06; f.grounded = false
+		if toward is Vector3: f.leaping = true; f.vel = side; f.brain.fling = true   # (one of the others: carried across by the throw, as an orc's bound)
 	if rm.fx != null:
 		for i in 12: rm.fx.glow(f.pos + Vector3(randf_range(-0.6, 0.6), 0.2, randf_range(-0.6, 0.6)), Vector3(0, up * 0.5, 0), 0.6, 0.2, 0.03, Color(0.7, 0.3, 1.0, 0.8))
+
+## where an altar's gravity circle throws you: under his sun, at the nearer of his wing cores still whole; else at him
+func _pad_aim(f: Realm.Fighter) -> Vector3:
+	var best := baal.pos; var bd := INF
+	for c: Dictionary in baal.brain.get("cores", []):
+		if float(c.hp) > 0.0 and (c.pos as Vector3).distance_to(f.pos) < bd: bd = (c.pos as Vector3).distance_to(f.pos); best = c.pos
+	return best
 
 ## the corrupted core Karnok leaves on the tower's top: taken, the whole party's ultimates are ready and each has 400 shards
 ## more, and the rune altar beside it wakes (the last before Baal)
@@ -434,6 +443,9 @@ func focus(f: Realm.Fighter):
 	if baal != null and baal.alive:
 		if str(baal.brain.get("state", "")) == "eclipse" and rm.kit.sees(f, baal, 60.0): return baal
 		if baal.brain.has("sun") and (f.race == "dwarf" or f.race == "orc"):
+			# thrown up by a gravity circle: the wing core he is passing; on the floor, the imps
+			for th: Dictionary in rm.kit.things:
+				if str(th.kind) == "wcore" and float(th.hp) > 0.0 and eye.distance_to(th.pos) < 9.0: return th
 			var best: Realm.Fighter = null; var bd := INF
 			for e: Realm.Fighter in rm.all:
 				if e.alive and Fiends.kind_of(e) == "imp" and e.pos.distance_to(f.pos) < bd and rm.kit.sees(f, e, 40.0): bd = e.pos.distance_to(f.pos); best = e
@@ -443,6 +455,19 @@ func focus(f: Realm.Fighter):
 func jump(f: Realm.Fighter) -> bool: return fiends != null and not Fiends.is_mon(f) and fiends.wave_near(f)
 func deadly(p: Vector3) -> bool: return p.x > DemonRoad.CLIFF and Phys.ground_at(p.x, p.y + 0.6, p.z, 0.25) < DemonRoad.LAVA + 2.0
 
+## the nearest spot out of every circle about to burst (the rifts lie close together): along the way away first, then
+## turning further from it; on the same floor, not over the edge, not in a wall. None: six metres away
+func _clear_of(f: Realm.Fighter, away: Vector3) -> Vector3:
+	for d: float in [3.5, 5.5, 7.5, 10.0]:
+		for i in 12:
+			var turn := ceilf(i / 2.0) * (1.0 if i % 2 == 1 else -1.0) * PI / 6.0
+			var p := f.pos + away.rotated(Vector3.UP, turn) * d
+			p.y = Phys.ground_at(p.x, f.pos.y + 1.0, p.z, 0.3)
+			if absf(p.y - f.pos.y) > 1.2 or deadly(p) or fiends.danger_at(p) != Vector3.INF: continue
+			if Phys.collide_at(p.x, p.y + 0.05, p.z, f.R, f.H) != null: continue
+			return p
+	return f.pos + away * 6.0
+
 func goal(f: Realm.Fighter) -> Dictionary:
 	if phase != "fight" or Fiends.is_mon(f) or fiends == null: return {}
 	# a circle on the ground about to burst under him: out of it
@@ -450,7 +475,7 @@ func goal(f: Realm.Fighter) -> Dictionary:
 	if dz != Vector3.INF:
 		var away := Vector3(f.pos.x - dz.x, 0, f.pos.z - dz.z)
 		if away.length() < 0.2: away = Vector3(cos(f.id), 0, sin(f.id))
-		return {"at": f.pos + away.normalized() * 6.0, "near": 0.8, "hurry": true}
+		return {"at": _clear_of(f, away.normalized()), "near": 0.8, "hurry": true}
 	# a sniper's red line on him, about to loose: a quick step aside (along the bridge, never off it)
 	for e: Realm.Fighter in rm.all:
 		if e.alive and Fiends.kind_of(e) == "sniper" and str(e.brain.get("state", "")) == "aim" and e.brain.get("tgt") == f and float(e.brain.get("st", 0.0)) > 0.8:
@@ -530,6 +555,12 @@ func _at_baal(f: Realm.Fighter) -> Dictionary:
 			if q.distance_to(f.pos) < 14.0 and (cool == Vector3.INF or q.distance_to(f.pos) < cool.distance_to(f.pos)): cool = q
 		if cool != Vector3.INF: return {"at": cool, "near": 0.9, "hurry": true}
 	if str(bb.get("state", "")) == "eclipse": return {"at": baal.pos, "near": 2.5 if close else 8.0}
+	# his sun charging: the dwarf and the orc onto the nearer gravity circle, that throws them up at his wing cores
+	if close and bb.has("sun") and ph == 2 and not road.pads.is_empty():
+		var pad: Vector3 = road.pads[0]
+		for q: Vector3 in road.pads:
+			if q.distance_to(f.pos) < pad.distance_to(f.pos): pad = q
+		return {"at": pad, "near": 0.6, "hurry": true}
 	if close and ph != 2: return {"at": baal.pos, "near": float(Fiends.BAAL.aura_r) + 0.5 if (ph == 3 and f.hp < f.max_hp * 0.4) else 2.4}
 	var i := party().find(f); var a := deg_to_rad(150.0 + i * 55.0)
 	var r := (DemonRoad.AR_SMALL - 4.0) if road.rim_down else 15.0
@@ -567,15 +598,15 @@ func _aim_line() -> String:
 		var a := 0
 		for th: Dictionary in rm.kit.things:
 			if th.kind == "anchor" and float(th.hp) > 0.0: a += 1
-		if int(karnok.brain.get("phase", 1)) == 1 and a > 0: return "결계 수정 %d개가 카르녹의 보호막을 채웁니다 · 비전·물리 공격으로 부수세요" % a
-		if str(karnok.brain.get("state", "")) == "hook_wind": return "처형 직전 · 가슴의 붉은 영혼 코어를 집중 사격하거나 폭탄을 던지세요"
-		return "카르녹 · 투창은 F로 튕겨내고, 화염 파동은 점프나 벽의 석조 장식 위로"
+		if int(karnok.brain.get("phase", 1)) == 1 and a > 0: return "결계 수정 %d개가 보호막을 채웁니다 · 비전·물리로 부수기" % a
+		if str(karnok.brain.get("state", "")) == "hook_wind": return "처형 직전 · 가슴의 붉은 코어를 쏘거나 폭탄을!"
+		return "투창은 F로 튕겨내기 · 화염 파동은 점프나 석조 장식 위로"
 	if not core.is_empty() and not core_taken: return "탑 꼭대기의 타락한 마력 핵을 챙기세요"
 	if baal != null and baal.alive and baal.brain.get("awake", false):
 		match int(baal.brain.get("phase", 1)):
-			1: return "부채꼴 화염은 석주 뒤로 · 사슬은 4초 안에 끊고 · 균열 화상은 냉각진에서"
-			2: return "보라색 날개 코어를 부수면 추락 · 중력진이 위로 띄워 줍니다" if baal.brain.has("sun") else "유성우는 남은 석주 뒤로 · 흡수 광선은 시야를 끊으세요"
-			3: return "외곽이 무너졌습니다 · 세 번째 검기는 점프 · 화로 안에서는 치유 절반"
+			1: return "화염은 석주 뒤로 · 사슬은 4초 안에 · 화상은 냉각진"
+			2: return "보라색 날개 코어를 부수면 추락 · 중력진으로 위로" if baal.brain.has("sun") else "유성우는 석주 뒤로 · 흡수 광선은 시야를 끊기"
+			3: return "세 번째 검기는 점프 · 화로 안에선 치유 절반"
 	var s := cp
 	if s < 4 and (s == 0 or cleared.has(s)): return AIMS[0] if s == 0 else "봉인이 풀렸습니다 · 다음: " + str(SECTIONS[s + 1])
 	var n := left_in(s)

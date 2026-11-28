@@ -370,6 +370,13 @@ func _tower() -> void:
 	for i in 12:
 		var a := i * TAU / 12.0; glow.box(0.08, 0.08, 4.0, cx + cos(a) * 6.0, T_ROOF - 0.2, cz + sin(a) * 6.0, C_RUNE.darkened(0.4), -a + PI / 2.0)
 	for q: Array in [[0.0, 6.0], [120.0, 14.0], [240.0, 20.0]]: world.lamps.push_back({"x": cx + cos(deg_to_rad(q[0])) * 6.0, "y": q[1], "z": cz + sin(deg_to_rad(q[0])) * 6.0})
+	# fire bowls on the outer wall over the stair, every 64 degrees up it (the climb lit as it goes)
+	var fu := 40.0
+	while fu < SPIRAL - 10.0:
+		var fa := deg_to_rad(ST_A0 + fu); var fy := stair_y_at(ST_A0 + fu) + 2.2; var fx := cx + cos(fa) * (T_IN - 0.25); var fz := cz + sin(fa) * (T_IN - 0.25)
+		k.box(0.5, 0.14, 0.5, fx, fy - 0.1, fz, C_IRON2, -fa); glow.cyl(fx, fy, fz, 0.28, 0.0, 0.55, C_LAVA2, 6, false)
+		world.lamps.push_back({"x": cx + cos(fa) * 12.5, "y": fy + 0.6, "z": cz + sin(fa) * 12.5})
+		fu += 64.0
 
 ## the high bridge from the top floor's door to the sky altar: stone, walled, steps down at its end
 func _high() -> void:

@@ -204,7 +204,10 @@ func _fall(f: Realm.Fighter, dt: float) -> void:
 	f.pos = Phys.move_xz(f.pos, f.vel.x * dt, f.vel.z * dt, MOVE_R, MOVE_H, 0.2)[0]
 	f.vy -= 19.0 * dt; f.pos.y += f.vy * dt
 	var gy := Phys.ground_at(f.pos.x, f.pos.y + 0.5, f.pos.z, MOVE_R)
-	if f.pos.y <= gy and f.vy <= 0.0: f.pos.y = gy; f.vy = 0.0; f.grounded = true; f.leaping = false; f.vel = Vector3.ZERO; rm.kit.landed(f)
+	if f.pos.y <= gy and f.vy <= 0.0:
+		f.pos.y = gy; f.vy = 0.0; f.grounded = true; f.leaping = false; f.vel = Vector3.ZERO
+		if f.brain.has("fling"): f.brain.erase("fling")   # (thrown by a gravity circle, 6-A: down on his feet, no bound's blow)
+		else: rm.kit.landed(f)
 
 func _aim_to(f: Realm.Fighter, dir: Vector3, dt: float, rate: float) -> void:
 	if dir.length() < 0.001: return
