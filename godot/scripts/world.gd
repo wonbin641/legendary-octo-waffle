@@ -6,6 +6,9 @@ extends Node3D
 const CONT_COLORS := ["8c3a2b", "2c4f7c", "356b45", "c4682a", "7b8288", "2f7a7a", "6a2a35", "b8ab8a"]
 const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
+	# 6-A, the road to the fallen tower: dusk in a dark wood, then the red of the lava caldera under black smoke
+	13: {"road": true, "fog": [0.075, 0.03, 0.022], "density": 0.0085, "zenith": [0.03, 0.008, 0.006], "glow": [0.22, 0.05, 0.015], "hemi": ["c9846a", "3a160c", 0.74], "moon": ["ffb27a", 0.6], "lamp": ["ff8a3a", 0.8],
+		"seed": 113, "sunOff": [42, 58, 24], "exposure": 1.1},
 	# 6-2, the plain of the four banners: a clear afternoon over open grass, a high sun, haze on the hills
 	11: {"plain": true, "day": true, "fog": [0.46, 0.55, 0.64], "density": 0.0042, "zenith": [0.15, 0.31, 0.6], "glow": [0.32, 0.24, 0.12], "hemi": ["cfe0f4", "6a7a46", 0.74], "moon": ["fff0d8", 1.05],
 		"lamp": ["ffffff", 0.0], "seed": 97, "sunOff": [-52, 66, 38], "exposure": 0.92},
@@ -91,6 +94,7 @@ var toy: ToyRoom = null
 var toy_tm = null   # stage 5's team mode (ToyMatch) to build into the room, or null for the sweep
 var wood: ElfWood = null   # stage 6-1: the elves' Silverwood and the Archmage's tower
 var plain: BannerPlain = null   # stage 6-2: the plain of the four banners
+var road: DemonRoad = null      # stage 6-A: the road to the fallen tower
 const TOY_FPLUS_SUN := 2.5   # (the toy room's sun on Forward+: see build_stage)
 var village: Village = null
 var lab: Lab = null
@@ -352,6 +356,7 @@ static func stage_kind(stage: int) -> String:
 	if S.get("toy", false): return "toy"
 	if S.get("wood", false): return "wood"
 	if S.get("plain", false): return "plain"
+	if S.get("road", false): return "road"
 	return "village" if stage == 2 else "docks"
 
 ## the painted textures the other kinds keep are let go once a stage of another kind is built (the one played again, as after
@@ -365,7 +370,7 @@ static func forget_textures(keep: String) -> void:
 
 func dispose() -> void:
 	if group: group.queue_free(); group = null
-	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; _crate_dirty = false; toy = null; wood = null; plain = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
+	Phys.clear(); crates.clear(); lamps.clear(); blink = _backdrop_blink.duplicate(); crate_mm = null; crate_mmi = null; crate_xf = []; _crate_dirty = false; toy = null; wood = null; plain = null; road = null; village = null; lab = null; safari = null; ship = null; fire_mats.clear()
 
 func build_stage(stage: int) -> void:
 	dispose()
@@ -427,6 +432,7 @@ func build_stage(stage: int) -> void:
 	if not is_yard(stage): blink.clear()
 	if S.get("wood", false): wood = ElfWood.new(); wood.build(self, G); return   # (stage 6-1: no crates there, as in all of stage 6)
 	if S.get("plain", false): plain = BannerPlain.new(); plain.build(self, G, Realm.picked_race()); return   # (6-2: you start at your own people's landmark)
+	if S.get("road", false): road = DemonRoad.new(); road.build(self, G); return   # (6-A: a party of four from the camp in the wood)
 	if S.get("ship", false): Phys.set_world_size(166.0); Phys.set_nav(334, 1.0); ship = Ship.new(); ship.part = Store.ship(stage); ship.build(self, G, S, R); return
 	if S.get("lab", false): Phys.set_world_size(Lab.HALF + 1); Phys.set_nav(int(2 * Lab.HALF + 8), 1.0); lab = Lab.new(); lab.build(self, G, S, R); return
 	if S.get("savanna", false): Phys.set_world_size(178.0); Phys.set_nav(180, 2.0); safari = Safari.new(); safari.build(self, G, S, R); return

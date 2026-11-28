@@ -499,6 +499,7 @@ func flask_burst(s: Dictionary, at: Vector3) -> void:
 				if e.alive and e.team != by.team and e.feet_mid().distance_to(at) < float(B.r) + e.R and Phys.line_of_sight(at + Vector3(0, 0.3, 0), e.feet_mid()):
 					rm.hurt(e, float(B.dmg), "alchemy", by, {"fixed": true, "aoe": true, "src": "gravity", "from": at})
 			lay("gravity", at, by, float(B.r), float(B.t)); Snd.play("rm_gravity", 1.0, at)
+	rm.mode.bomb_burst(at)
 	rm.note(["burst", kind, at])
 
 func ignite(fd: Dictionary, by: Realm.Fighter) -> void:
@@ -571,6 +572,9 @@ func add_thing(th: Dictionary) -> Dictionary:
 func hurt_thing(th: Dictionary, dmg: float, elem: String, by: Realm.Fighter, at = null) -> float:
 	if float(th.hp) <= 0.0 or dmg <= 0.0 or (by != null and by.team == th.team) or not rm.mode.fighting(): return 0.0
 	if th.has("open") and not (th.open as Callable).call(): return 0.0
+	if th.has("elems") and not (th.elems as Array).has(elem):   # (6-A's obsidian crystals: only arcane and physical blows break them)
+		if by != null and by.me: rm.marks.push_back({"t": 0.0, "head": false, "dmg": 0.0, "thing": true, "no": true}); Snd.play("rd_immune", 0.5, th.pos)
+		return 0.0
 	if by != null and not by.me: dmg *= float(th.get("troops", 1.0))   # (6-2's landmarks: walls the summoned barely dent)
 	var left := dmg; var done := 0.0
 	if float(th.get("shield", 0.0)) > 0.0:
@@ -664,6 +668,7 @@ func _fly(s: Dictionary, dt: float) -> bool:
 	if float(s.life) <= 0.0:
 		if s.kind == "flask": flask_burst(s, s.pos)
 		elif s.kind == "gren": gren_burst(s, s.pos, null)
+		elif s.has("boom"): _splash(s, s.pos)
 		return false
 	return true
 
@@ -685,6 +690,7 @@ func _parried(s: Dictionary, p0: Vector3, d: Vector3, L: float) -> bool:
 		if (p0 + d * t).distance_to(c) > float(Races.DAGGER.parry_r) or d.dot(v.aim) > 0.2: continue
 		var sp := (s.vel as Vector3).length()
 		s.team = v.team; s.by = v; s.hit = {}; s.vel = v.aim * sp; s.pos = c + v.aim * 0.7; s.life = maxf(float(s.life), 1.0); s.erase("seek")
+		if s.has("turned_dmg"): s.dmg = float(s.turned_dmg); s.turned = true; s.erase("shove"); s.erase("boom")   # (6-A: what a demon threw, its own worth turned back)
 		if v.rune("c_mirror"): s.dmg = float(s.dmg) * float(Races.RUNE.mirror_mul)
 		Snd.play("rm_parry", 1.0, c); rm.look.parried(v, c); rm.look.shot_turned(s)
 		rm.note(["parry", v.id, str(s.kind)])
@@ -706,7 +712,14 @@ func _strike(s: Dictionary, who: Realm.Fighter, what, at: Vector3, d: Vector3) -
 	var o := {"ranged": true, "at": at, "from": s.from, "src": str(s.kind), "fog": s.get("fog", false)}
 	if s.has("head") and at.y > who.pos.y + who.H - who.head: o.head = float(s.head)
 	if s.get("giant", false): who.shield = 0.0   # (the giant's wave breaks a shield before it bites)
+	if s.get("turned", false):   # (6-A: a demon's missile turned back: so much whatever, and a lord's shield the less)
+		o.fixed = true
+		if float(s.get("turned_cut", 0.0)) > 0.0: who.shield = maxf(0.0, who.shield - float(s.turned_cut))
 	rm.hurt(who, float(s.dmg), s.elem, by, o)
+	if s.has("shove") and who.alive: rm.shove(who, d, float(s.shove))
+	if s.has("burn") and who.alive: rm.burn(who, float(s.burn), float(s.get("burn_t", 3.0)), by, str(s.kind))
+	if s.has("boom"): _splash(s, at)
+	rm.mode.struck(s, who)
 	if s.get("hot", false): rm.burn(who, float(Races.STAFF.burn), float(Races.STAFF.burn_t), by, "hot")
 	if s.get("burst", false): boom(at, float(Races.RUNE.burst_r), float(Races.RUNE.burst), "fire", by, {"src": "burst"})
 	if s.get("amp", false): boom(at, float(Realm.AMP.splash), float(s.dmg) * float(Realm.AMP.splash_dmg), s.elem, by, {"src": "amp"}, who)
@@ -736,8 +749,19 @@ func _wall(s: Dictionary, at: Vector3, n: Vector3, d: Vector3) -> bool:
 				s.through = true; s.pos = at + d * 1.3; return true   # (the giant's wave goes through thin cover, once)
 	if s.get("burst", false): boom(at, float(Races.RUNE.burst_r), float(Races.RUNE.burst), "fire", by, {"src": "burst"})
 	if s.get("amp", false): boom(at, float(Realm.AMP.splash), float(s.dmg) * float(Realm.AMP.splash_dmg), s.elem, by, {"src": "amp"})
+	if s.has("boom"): _splash(s, at + n * 0.1)
 	rm.look.impact(s.elem, at, n)
 	return false
+
+## a pot of fire bursting (6-A's tower defenders): everyone of the other side within its reach, nothing between; each burns
+func _splash(s: Dictionary, at: Vector3) -> void:
+	var by: Realm.Fighter = s.by; var r := float(s.get("boom_r", 2.5))
+	for e: Realm.Fighter in rm.all:
+		if not e.alive or e.team == s.team or e.feet_mid().distance_to(at) > r + e.R: continue
+		if not Phys.line_of_sight(at + Vector3(0, 0.3, 0), e.feet_mid()): continue
+		rm.hurt(e, float(s.boom), s.elem, by, {"aoe": true, "src": str(s.kind), "from": at})
+		if s.has("burn") and e.alive: rm.burn(e, float(s.burn), float(s.get("burn_t", 3.0)), by, str(s.kind))
+	rm.look.burst(at, r, s.elem); Snd.play("rd_pot", 0.9, at)
 
 ## the dwarf's grenade goes off: everyone by it, and what it leaves on the ground (oil; frost by the rune)
 func gren_burst(s: Dictionary, at: Vector3, _who) -> void:
@@ -791,7 +815,7 @@ func _field(fd: Dictionary, dt: float) -> void:
 		"gravity":
 			var c: Vector3 = fd.pos
 			for e: Realm.Fighter in rm.all:
-				if not e.alive or e.team == fd.team or rm.unstoppable(e) or e.inv > 0.0: continue
+				if not e.alive or e.team == fd.team or rm.unstoppable(e) or e.inv > 0.0 or rm.mode.heavy(e): continue
 				var gap := Vector3(c.x - e.pos.x, 0, c.z - e.pos.z); var far := gap.length()
 				if far > float(fd.r) or far < 0.5 or absf(e.pos.y - c.y) > 4.0: continue
 				var pull := float(Races.BOMB.gravity.pull) * (float(Races.THICK.push) if e.race == "dwarf" else 1.0) * dt

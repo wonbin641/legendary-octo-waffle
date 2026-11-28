@@ -8,7 +8,7 @@ extends RefCounted
 ## wood; RealmLook is what is seen of it all; the mode (ModeSanctum, ModeSiege) is the rules of the match.
 
 const MODES := ["solo", "sanctum", "siege"]
-const NAMES := {"solo": "은빛 경계림 돌파", "sanctum": "성소 각인전", "siege": "비전 핵 공성전", "plain": "네 깃발 평원"}
+const NAMES := {"solo": "은빛 경계림 돌파", "sanctum": "성소 각인전", "siege": "비전 핵 공성전", "plain": "네 깃발 평원", "raid": "타락한 마탑 토벌전"}
 const SIDE := 5
 const SPAWN_SAFE := 2.0            # ours: nothing hurts someone this long after he is back
 const SPAWN_HASTE := 1.25          # ours: the base circle's speed for the first four seconds (the papers give the seconds)
@@ -79,7 +79,7 @@ var log_on := false; var log: Array = []   # the checks read what happened: [wha
 
 static func create(k: String) -> Realm:
 	var rm := Realm.new(); rm.key = k
-	rm.mode = ModeSiege.new() if k == "siege" else (ModePlain.new() if k == "plain" else ModeSanctum.new())
+	rm.mode = ModeSiege.new() if k == "siege" else (ModePlain.new() if k == "plain" else (ModeRaid.new() if k == "raid" else ModeSanctum.new()))
 	rm.mode.rm = rm; rm.mode.key = k
 	rm.kit = RealmKit.new(); rm.kit.rm = rm; rm.ai = RealmAI.new(); rm.ai.rm = rm; rm.look = RealmLook.new(); rm.look.rm = rm
 	return rm
@@ -227,8 +227,8 @@ func slay(v: Fighter, by: Fighter, o := {}) -> void:
 
 func heal(f: Fighter, amount: float, by: Fighter = null) -> float:
 	if f == null or not f.alive or amount <= 0.0: return 0.0
-	var m := 1.0   # (burning: 30% less of it; in a demon's furnace: half, the worse of the two and not both)
-	if kit.in_furnace(f): m = float(Races.ULT.demon.heal_cut)
+	var m := 1.0   # (burning: 30% less of it; in a demon's furnace, or Baal's: half, the worse of the two and not both)
+	if kit.in_furnace(f) or mode.furnace(f): m = float(Races.ULT.demon.heal_cut)
 	elif f.burn_t > 0.0: m = Races.BURN_HEAL
 	var a := minf(amount * m, f.max_hp - f.hp)
 	if a <= 0.0: return 0.0
@@ -239,7 +239,7 @@ func heal(f: Fighter, amount: float, by: Fighter = null) -> float:
 ## a temporary shield, up to a cap (a dwarf's by his runes, the steam wall's)
 func shield(f: Fighter, amount: float, cap: float, by: Fighter = null) -> float:
 	if f == null or not f.alive or f.shield >= cap: return 0.0
-	var m := float(Races.ULT.demon.heal_cut) if kit.in_furnace(f) else 1.0
+	var m := float(Races.ULT.demon.heal_cut) if (kit.in_furnace(f) or mode.furnace(f)) else 1.0
 	var a := minf(amount * m, cap - f.shield); f.shield += a
 	if by != null: gain(by, a * float(Races.GAUGE.heal))
 	return a
@@ -265,6 +265,7 @@ func unstoppable(f: Fighter) -> bool: return f.race == "orc" and f.ult_t > 0.0
 ## shoved or pulled: so far, that way (a dwarf half as far; the warlord not at all). true: a wall stopped him short
 func shove(v: Fighter, dir: Vector3, dist: float) -> bool:
 	if v == null or not v.alive or unstoppable(v) or dist <= 0.0: return false
+	if mode.heavy(v): slow(v, "shove", 0.55, 1.2); return false   # (6-A's lords: not moved, only slowed)
 	if v.race == "dwarf": dist *= float(Races.THICK.push)
 	var d := Vector3(dir.x, 0, dir.z)
 	if d.length() < 0.001: return false
@@ -335,6 +336,28 @@ func down(v: Fighter, by: Fighter, o := {}) -> void:
 func astray(f: Fighter) -> void:
 	if f.brain.has("path"): f.brain["path"] = []; f.brain["gat"] = null; f.brain["repath"] = 0.0; f.brain["think"] = 0.0
 
+## you take over another of your side (6-A's party: Tab): the one you were goes on by himself, seen again, and you see
+## through the other's eyes from where he stands, as he is (his health, his weapon, Shift, the bombs, the gauge)
+func switch_me(to: Fighter) -> bool:
+	if to == null or to == me or not to.alive or me == null or to.team != me.team or to.brain.has("mon"): return false
+	var old := me
+	if player != null:
+		old.pos = player.pos; old.vel = Vector3(player.vel.x, 0.0, player.vel.z); old.vy = player.vel.y; old.grounded = player.grounded
+		if not old.grounded and not old.leaping and old.alive: old.vy = minf(old.vy, 0.0)
+	old.me = false; old.brain.clear(); old.charge = 0.0; old.charged = false; old.beam_on = false
+	if old.dash_t > 0.0: old.dash_t = 0.0; old.dash_kind = ""
+	to.me = true; me = to; to.brain.clear()
+	look.build(old); look.drop(to)
+	if player != null:
+		player.reset(to.pos.x, to.pos.z, to.yaw); player.pos.y = to.pos.y; player.out = false
+		player.max_hp = to.max_hp; player.hp = to.hp; player.eye = to.eye; player.air_max = 1 if to.race == "elf" else 0
+		_was_grounded = true
+	if guns != null: guns.trigger = false; guns.ads_held = false
+	if to.leaping and player != null: player.launch(Vector3(to.vel.x, maxf(to.vy, 0.0), to.vel.z))
+	to.vel = Vector3.ZERO
+	note(["switch", old.id, to.id])
+	return true
+
 func by_id(id: int) -> Fighter:
 	for f: Fighter in all:
 		if f.id == id: return f
@@ -381,7 +404,8 @@ func update(dt: float) -> void:
 				if f.back_t <= 0.0: back(f)
 			continue
 		_state(f, dt)
-		if f.me and not auto: kit.act(f, _hands(), dt)
+		if f.brain.has("mon"): mode.turn(f, dt)   # (6-A's demons: their minds are the mode's)
+		elif f.me and not auto: kit.act(f, _hands(), dt)
 		elif ai_off: kit.act(f, {}, dt)
 		else: ai.turn(f, dt)
 	press.clear()

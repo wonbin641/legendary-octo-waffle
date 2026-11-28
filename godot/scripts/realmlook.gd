@@ -218,6 +218,8 @@ func shot(s: Dictionary) -> Dictionary:
 		"wave": size = Vector3(2.6, 0.1, 0.5); col = Color(1.0, 0.16, 0.12, 0.8)
 		"axe": size = Vector3(0.5, 0.08, 0.4); col = Color(0.8, 0.84, 0.9, 1.0)
 		"bolt": size = Vector3(0.09, 0.09, 0.5); col = Color(0.75, 0.9, 1.0, 1.0)
+	if s.has("size"): size = s.size   # (6-A's demons' missiles: each its own size and colour)
+	if s.has("col"): col = s.col
 	if rm.en == null: return s
 	var m := _mi(_box("shot_" + str(s.kind), size), _unlit("shot_" + key, col, s.kind != "axe" and s.kind != "flask" and s.kind != "gren"))
 	m.position = s.pos; s.node = m; s.age = 0.0
@@ -245,6 +247,8 @@ func _shots(_dt: float) -> void:
 				"ember": rm.fx.glow(p, Vector3(0, 0.4, 0), 0.18, 0.1, 0.02, Color(1.0, 0.45, 0.1, 0.7))
 				"wave": rm.fx.glow(p + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * 0.8, Vector3.ZERO, 0.2, 0.25, 0.04, Color(1.0, 0.12, 0.1, 0.6))
 				"gren", "flask": rm.fx.glow(p, Vector3.ZERO, 0.3, 0.08, 0.02, Color(0.4, 1.0, 0.85, 0.5))
+				"fspear", "lance", "jav", "hfire", "fball": rm.fx.glow(p, Vector3(0, 0.5, 0), 0.3, 0.16 if s.kind == "hfire" or s.kind == "fball" else 0.1, 0.03, Color(1.0, 0.42, 0.1, 0.75))
+				"fbolt": rm.fx.glow(p, Vector3.ZERO, 0.2, 0.08, 0.02, Color(0.7, 0.35, 1.0, 0.7))
 
 # ---------------- what lies or hangs about ----------------
 func _flat(r: float, key: String, col: Color, y := 0.04) -> MeshInstance3D:
@@ -519,7 +523,7 @@ func struck(v: Realm.Fighter, elem: String, at: Vector3, from: Vector3, d: float
 		"fire":
 			for i in n: fx.glow(at + Vector3(randf_range(-0.2, 0.2), randf_range(-0.3, 0.3), randf_range(-0.2, 0.2)), Vector3(0, randf_range(0.8, 2.0), 0), 0.4, 0.22, 0.03, Color(1.0, randf_range(0.3, 0.6), 0.08, 0.9))
 		"physical":   # each people bleeds its own mist
-			var mc := {"elf": Color(0.8, 0.95, 0.9, 0.7), "dwarf": Color(0.95, 0.9, 0.8, 0.7), "orc": Color(0.75, 0.1, 0.1, 0.8), "demon": Color(0.25, 0.05, 0.08, 0.85)}[v.race] as Color
+			var mc := {"elf": Color(0.8, 0.95, 0.9, 0.7), "dwarf": Color(0.95, 0.9, 0.8, 0.7), "orc": Color(0.75, 0.1, 0.1, 0.8), "demon": Color(0.25, 0.05, 0.08, 0.85)}.get(v.race, Color(0.25, 0.05, 0.08, 0.85)) as Color   # (6-A's demons: as the demons')
 			for i in n: fx.glow(at, (away + Vector3(randf_range(-1, 1), randf_range(-0.2, 1), randf_range(-1, 1)) * 0.8) * 2.4, 0.4, 0.14, 0.04, mc, 6.0, 2.0)
 		"alchemy":
 			for i in n: fx.glow(at, Vector3(randf_range(-1, 1), randf_range(0.4, 1.6), randf_range(-1, 1)) * 1.8, 0.5, 0.09, 0.02, Color(c.r, c.g, c.b, 0.9), 9.0, 1.0)
@@ -531,6 +535,7 @@ func burning(f: Realm.Fighter) -> void:
 
 ## someone falls: no body left lying; each people goes its own way
 func fell(v: Realm.Fighter, _by, _o: Dictionary) -> void:
+	if rm.mode.fell(v): return   # (6-A's demons go their own way)
 	var fx := rm.fx; var c := v.feet_mid(); var top := v.pos + Vector3(0, v.H, 0)
 	Snd.play("rm_die_" + v.race, 1.0, null if v.me else c)
 	if fx == null: return
@@ -582,7 +587,7 @@ func resonance(at: Vector3, r: float) -> void:
 # ---------------- the frame ----------------
 func update(dt: float) -> void:
 	for f: Realm.Fighter in rm.all:
-		if not f.me: _place(f, dt)
+		if not f.me and not rm.mode.place(f, dt): _place(f, dt)   # (6-A's demons: the mode draws its own)
 	_shots(dt); _fields(dt); _hands(dt)
 	for i in range(_ghosts.size() - 1, -1, -1):
 		var q: Dictionary = _ghosts[i]; q.t = float(q.t) - dt

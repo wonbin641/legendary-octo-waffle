@@ -20,6 +20,8 @@ const THEME := {
 	10: {"bg": "16211f", "grid": [200, 255, 240, 0.06], "block": "6f7f7a", "blockHi": "a9b6b2", "wall": "cfd8d4", "label": "은빛 경계림"},
 	# stage 6-2, the plain of the four banners: grass, its stones and walls, the cliffs about it
 	11: {"bg": "26331f", "grid": [230, 240, 200, 0.06], "block": "777366", "blockHi": "9a968a", "wall": "8a7f6a", "label": "네 깃발 평원"},
+	# stage 6-A, the road to the fallen tower: the camp's grass, ash, obsidian over the lava (two bands, see _draw_road)
+	13: {"bg": "1a1214", "grid": [255, 200, 180, 0.06], "block": "4a4250", "blockHi": "6e6478", "wall": "9a8ea6", "label": "타락한 마탑의 진격로"},
 }
 ## what each dot colour means, per stage; the legend under the map is built from the same table
 const KINDS := {
@@ -34,6 +36,7 @@ const KINDS := {
 	9: [["soldier", "7fc96b", "플라스틱 군인"], ["figure", "ff7a3a", "액션 피규어"], ["rc", "4f8cff", "태엽·RC 유닛"], ["brick", "ffd23a", "조립 블록 피규어"]],
 	10: [["elf_ranger", "ff5260", "석궁병"], ["elf_blade", "ff9a3a", "바람검사"], ["elf_sniper", "ffd23a", "저격수 · 나무 위"], ["elf_mage", "ff7ad9", "비전술사"]],
 	11: [],   # (6-2 has no foes of the old kinds: its legend is the battle's)
+	13: [],   # (6-A: the party and the demons, its legend is the raid's)
 }
 const MAP_KIND := {"cctv": "cctv", "patrol": "patrol", "droneA": "droneA", "mine": "mine", "gdrone": "midboss", "bdrone": "boss"}
 const MELEE_KITS := ["saber", "saber2", "bat", "bomber", "dagger"]
@@ -57,6 +60,7 @@ static func _colors() -> Dictionary:
 static func half_of(st: int) -> float:
 	if st == Store.ST_ELF: return ElfWood.HALF   # (its map is folded in two: see _draw_strip)
 	if st == Store.ST_PLAIN: return BannerPlain.HALF
+	if st == Store.ST_ROAD: return DemonRoad.X1   # (folded in two as 6-1's: see _draw_road)
 	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == Store.ST_TOY else 68.0)))
 
 func setup(st: int) -> void:
@@ -99,6 +103,7 @@ func draw(ci, size: Vector2) -> void:
 	var r := square(size); var S := r.size.x
 	if S < 8.0: return
 	if stage == Store.ST_ELF: _draw_strip(ci, r); return
+	if stage == Store.ST_ROAD: _draw_road(ci, r); return
 	var o := r.position; var k := S / (2.0 * (H + PAD)); var kb := S / 1024.0; var u := S / 600.0
 	var X := func(x: float) -> float: return o.x + (x - CX + H + PAD) * k
 	var Z := func(z: float) -> float: return o.y + (z - CZ + H + PAD) * k
@@ -403,6 +408,110 @@ func _draw_strip(ci, r: Rect2) -> void:
 	var arrow := PackedVector2Array([rot.call(Vector2(11, 0)), rot.call(Vector2(-7, 7)), rot.call(Vector2(-3, 0)), rot.call(Vector2(-7, -7))])
 	ci.draw_colored_polygon(arrow, ME); arrow.push_back(arrow[0]); ci.draw_polyline(arrow, Color("0d1220"), 1.5 * u)
 
+# ---------------- 6-A, the road: folded in two as 6-1's wood ----------------
+const ROAD_W := 186.0; const ROAD_D := 64.0; const ROAD_GAP := 14.0
+
+## where a point of the road is on the picture: its west half on the upper band, its east half on the lower
+static func road_at(o: Vector2, k: float, x: float, z: float) -> Vector2:
+	var band := 0 if x < 0.0 else 1; var top := ((ROAD_W + 2.0 * PAD) - (2.0 * ROAD_D + ROAD_GAP)) * 0.5 + 4.0
+	return Vector2(o.x + (PAD + x - (DemonRoad.X0 if band == 0 else 0.0)) * k, o.y + (top + band * (ROAD_D + ROAD_GAP) + z + ROAD_D * 0.5) * k)
+
+func _road_rect(ci, o: Vector2, k: float, x0: float, z0: float, x1: float, z1: float, col: Color, filled := true, width := 1.0) -> void:
+	for band in 2:
+		var a := maxf(x0, DemonRoad.X0 if band == 0 else 0.0); var b := minf(x1, -0.001 if band == 0 else DemonRoad.X1)
+		if b <= a: continue
+		var p := road_at(o, k, a, z0); var q := road_at(o, k, b, z1)
+		ci.draw_rect(Rect2(p, Vector2(maxf(q.x - p.x, 1.0), maxf(q.y - p.y, 1.0))), col, filled, width if not filled else -1.0)
+
+func _draw_road(ci, r: Rect2) -> void:
+	var S := r.size.x; var o := r.position; var k := S / (ROAD_W + 2.0 * PAD); var kb := S / 1024.0; var u := S / 600.0
+	var T: Dictionary = THEME[stage]; var w: World = game.world
+	var live: bool = w != null and Store.map_of(game.stage) == stage and w.road != null
+	var at := func(x: float, z: float) -> Vector2: return road_at(o, k, x, z)
+	ci.draw_rect(r, Color(str(T.bg)))
+	var WZ := DemonRoad.WZ
+	# the ground: the camp's grass, the ash before the chasm, the lava beyond its cliff
+	for seg: Array in [[DemonRoad.X0, -128.0, "2a3a26"], [-128.0, DemonRoad.CLIFF, "37302f"], [DemonRoad.CLIFF, DemonRoad.X1, "4a160c"]]:
+		_road_rect(ci, o, k, seg[0], -WZ, seg[1], WZ, Color(str(seg[2])))
+	var g: Array = T.grid; var gc := Color(g[0] / 255.0, g[1] / 255.0, g[2] / 255.0, g[3]); var v := -180.0
+	while v < DemonRoad.X1:
+		if absf(v) > 0.5: ci.draw_line(at.call(v, -WZ), at.call(v, WZ), gc, maxf(1.0, kb))
+		v += 20.0
+	# the bridge's planks, its landing, the tower's rock, the high bridge, the altar's floor
+	var C_STONE := Color("3a3442"); var C_WOOD := Color("6a4a30")
+	_road_rect(ci, o, k, DemonRoad.CLIFF, -DemonRoad.BR_W, DemonRoad.BR_X1, DemonRoad.BR_W, C_WOOD)
+	_road_rect(ci, o, k, float(DemonRoad.MID[0]), -float(DemonRoad.MID[2]), float(DemonRoad.MID[1]), float(DemonRoad.MID[2]), C_STONE)
+	_road_rect(ci, o, k, float(DemonRoad.ISLE[0]), -float(DemonRoad.ISLE[2]), float(DemonRoad.ISLE[1]), float(DemonRoad.ISLE[2]), Color("3b2f2c"))
+	_road_rect(ci, o, k, DemonRoad.HB_X0, -DemonRoad.HB_W, DemonRoad.AC.x - DemonRoad.AR + 1.0, DemonRoad.HB_W, C_STONE)
+	var ac := at.call(DemonRoad.AC.x, DemonRoad.AC.y) as Vector2; var rim_down: bool = live and w.road.rim_down
+	ci.draw_circle(ac, (DemonRoad.AR_SMALL if rim_down else DemonRoad.AR) * k, Color("2b2733")); ci.draw_arc(ac, (DemonRoad.AR_SMALL if rim_down else DemonRoad.AR) * k, 0, TAU, 48, Color(str(T.wall)), 1.5 * u)
+	ci.draw_arc(ac, 9.8 * k, 0, TAU, 40, Color(1.0, 0.2, 0.25, 0.5), 1.2 * u)
+	# the tower: its wall, the stair round the inside, the well
+	var tc := at.call(DemonRoad.TC.x, DemonRoad.TC.y) as Vector2
+	ci.draw_arc(tc, (DemonRoad.T_IN + DemonRoad.T_OUT) * 0.5 * k, 0, TAU, 48, Color(str(T.blockHi)), (DemonRoad.T_OUT - DemonRoad.T_IN) * k)
+	ci.draw_arc(tc, (DemonRoad.T_STAIR + DemonRoad.T_IN) * 0.5 * k, 0, TAU, 48, Color(str(T.block)), (DemonRoad.T_IN - DemonRoad.T_STAIR) * k)
+	ci.draw_circle(tc, DemonRoad.T_STAIR * k, Color("1d1a22")); ci.draw_circle(tc, 2.4 * k, Color(0.69, 0.29, 1.0, 0.55))
+	# what stands in the way (the gate's ramparts and rubble, the pillars, the walls: drawn by height)
+	var list: Array = Phys.colliders if live else []
+	for b: Phys.Box in list:
+		if b.maxy <= 0.6 or b.maxy - b.miny < 0.6: continue
+		var bw := b.maxx - b.minx; var bd := b.maxz - b.minz
+		if bw > 120.0 or bd > 50.0 or bw * bd < 0.2: continue   # (the map's edges; slivers)
+		if b.minx > DemonRoad.TC.x - DemonRoad.T_OUT - 1.0 and b.maxx < DemonRoad.TC.x + DemonRoad.T_OUT + 1.0 and absf((b.minz + b.maxz) * 0.5) < DemonRoad.T_OUT + 1.0: continue   # (the tower's drawn by hand)
+		if b.miny > 3.0: continue   # (what is up in the air: the high bridge and the altar are drawn by hand)
+		_road_rect(ci, o, k, b.minx, b.minz, b.maxx, b.maxz, Color(str(T.blockHi if b.maxy - b.miny > 4.0 else T.block)))
+	if live:
+		var rd: DemonRoad = w.road
+		for p: Dictionary in rd.pillars:
+			var pp := at.call((p.at as Vector3).x, (p.at as Vector3).z) as Vector2
+			if p.up: ci.draw_rect(Rect2(pp - Vector2(1.1, 1.1) * k, Vector2(2.2, 2.2) * k), Color(str(T.blockHi)))
+			else: ci.draw_rect(Rect2(pp - Vector2(1.1, 1.1) * k, Vector2(2.2, 2.2) * k), Color(str(T.block)), false, 1.0 * u)
+		for c: Vector3 in rd.cools: ci.draw_circle(at.call(c.x, c.z), 2.4 * k, Color(0.42, 0.85, 1.0, 0.7))
+		for c: Vector3 in rd.pads: ci.draw_arc(at.call(c.x, c.z), 2.2 * k, 0, TAU, 20, Color("b04aff"), 1.6 * u)
+		# the camp: the rune altar, the blessing circle, the supply crates
+		ci.draw_rect(Rect2(at.call(rd.altar_at.x - 1.2, rd.altar_at.z - 0.8), Vector2(2.4, 1.6) * k), Color("8ff7ea"))
+		ci.draw_arc(at.call(rd.bless_at.x, rd.bless_at.z), 3.6 * k, 0, TAU, 28, Color("8ff7ea"), 1.6 * u)
+		for c: Vector3 in rd.crates: ci.draw_rect(Rect2(at.call(c.x - 0.7, c.z - 0.5), Vector2(1.4, 1.0) * k), Color("e0b050"))
+		# the seals still up: red across the way
+		for q: Dictionary in rd.seals:
+			if q.open: continue
+			var b2: Phys.Box = q.box
+			ci.draw_line(at.call((b2.minx + b2.maxx) * 0.5, b2.minz), at.call((b2.minx + b2.maxx) * 0.5, b2.maxz), Color("ff3a4a"), 3.0 * u)
+	# the border of each band, the fold between them, the names of the five parts of the way
+	for band in 2:
+		var p := at.call(DemonRoad.X0 if band == 0 else 0.0, -WZ) as Vector2; var q := at.call(-0.001 if band == 0 else DemonRoad.X1, WZ) as Vector2
+		ci.draw_rect(Rect2(p, q - p), Color(236 / 255.0, 230 / 255.0, 216 / 255.0, 0.5), false, 2.0 * kb)
+	var f0 := at.call(-0.001, 0.0) as Vector2; var f1 := at.call(0.0, 0.0) as Vector2; var mid := (f0.y + f1.y) * 0.5; var fc := Color(SODIUM, 0.75)
+	for seg: Array in [[f0 + Vector2(2.0 * u, 0), Vector2(f0.x + PAD * k * 0.6, f0.y)], [Vector2(f0.x + PAD * k * 0.6, f0.y), Vector2(f0.x + PAD * k * 0.6, mid)], [Vector2(f0.x + PAD * k * 0.6, mid), Vector2(f1.x - PAD * k * 0.6, mid)],
+			[Vector2(f1.x - PAD * k * 0.6, mid), Vector2(f1.x - PAD * k * 0.6, f1.y)], [Vector2(f1.x - PAD * k * 0.6, f1.y), f1 - Vector2(2.0 * u, 0)]]:
+		ci.draw_dashed_line(seg[0], seg[1], fc, 1.6 * u, 5.0 * u)
+	for nm: Array in [["숲속 캠프", DemonRoad.X0], ["무너진 외성문", DemonRoad.GATE_X0], ["용암 사슬 다리", DemonRoad.CLIFF], ["마탑", DemonRoad.ISLE[0]], ["심연의 제단", DemonRoad.HB_X1]]:
+		var p := at.call(float(nm[1]), -WZ) as Vector2
+		ci.draw_line(p, p - Vector2(0, 9.0 * u), Color(INKC, 0.6), 1.2 * u); _text(ci, f_bold, str(nm[0]), p.x + 5.0 * u, p.y - 9.0 * u, roundi(12.0 * u), INKC, "left", 3.5 * u, Color(13 / 255.0, 18 / 255.0, 32 / 255.0, 0.9))
+	var edge := PAD * k + 8.0 * u; var bar := 20.0
+	ci.draw_rect(Rect2(o.x + edge, o.y + edge, 40.0 * u, 22.0 * u), CHIP); _text(ci, f_mono, "N ↑", o.x + edge + 20.0 * u, o.y + edge + 11.5 * u, roundi(13.0 * u), INKC)
+	var bw2 := bar * k + 16.0 * u; var sc_x := o.x + S - edge - bw2
+	ci.draw_rect(Rect2(sc_x, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP); ci.draw_rect(Rect2(sc_x + bw2 - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
+	_text(ci, f_mono, "%dm" % int(bar), sc_x + bw2 - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
+	if not live: return
+	# the raid: its marks (the checkpoints, the lords), the party in blue, the demons in red
+	if game.rm != null:
+		for q: Dictionary in game.rm.mode.tac():
+			var mp := at.call(float(q.x), float(q.z)) as Vector2; var mc := Color(str(q.c)); var mr := maxf(float(q.r) * k, 4.0 * u)
+			ci.draw_circle(mp, mr, Color(mc, 0.18)); ci.draw_arc(mp, mr, 0, TAU, 24, mc, 1.6 * u); _tag(ci, str(q.label), mp.x, mp.y + mr + 7.0 * u, u, mc)
+		for f in game.rm.all:
+			if f.me or not f.alive: continue
+			var fp := at.call(f.pos.x, f.pos.z) as Vector2
+			ci.draw_circle(fp, 3.0 * u, Color("5f9cff") if f.team == "us" else Color("ff5260")); ci.draw_arc(fp, 3.0 * u, 0, TAU, 14, Color(0.05, 0.08, 0.15, 0.9), 1.0 * u)
+	var pl: Player = game.player; var pp2 := at.call(pl.pos.x, pl.pos.z) as Vector2; var ang := atan2(-cos(pl.yaw), -sin(pl.yaw))
+	var fov := deg_to_rad(cam.fov if cam != null else 75.0) * 0.6; var cone := PackedVector2Array([pp2]); var cc := PackedColorArray([Color(ME, 0.45)])
+	for i in 17:
+		var a := ang - fov / 2.0 + fov * i / 16.0; cone.push_back(pp2 + Vector2(cos(a), sin(a)) * 50.0 * u); cc.push_back(Color(ME, 0.0))
+	ci.draw_polygon(cone, cc)
+	var rot := func(p: Vector2) -> Vector2: return pp2 + p.rotated(ang) * u
+	var arrow := PackedVector2Array([rot.call(Vector2(11, 0)), rot.call(Vector2(-7, 7)), rot.call(Vector2(-3, 0)), rot.call(Vector2(-7, -7))])
+	ci.draw_colored_polygon(arrow, ME); arrow.push_back(arrow[0]); ci.draw_polyline(arrow, Color("0d1220"), 1.5 * u)
+
 # ---------------- the legend ----------------
 ## the legend's items: [kind, text, colour, letter]; drawn by legend_icon
 func legend(live: bool) -> Array:
@@ -410,6 +519,11 @@ func legend(live: bool) -> Array:
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else (("에어록 · 시작하는 곳" if part == "corr" else "시작하는 곳 · 문 앞 복도") if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
+	if stage == Store.ST_ROAD:   # 6-A: the party, the demons, the camp's things, the seals, the altar's circles
+		out.push_back(["en", "파티 (나머지 셋)", Color("5f9cff"), ""]); out.push_back(["en", "악마", Color("ff5260"), ""]); out.push_back(["en", "거점 · 쓰러지면 여기서", Color("c9a85a"), ""])
+		out.push_back(["en", "룬 제단 · 축복의 마법진", Color("8ff7ea"), ""]); out.push_back(["cr", "보급 상자", Color("e0b050"), ""]); out.push_back(["al", "붉은 선 · 아직 닫힌 봉인", Color("ff3a4a"), ""])
+		out.push_back(["en", "냉각진 · 화상 해제", Color(0.42, 0.85, 1.0), ""]); out.push_back(["al", "중력진 · 위로 솟구침", Color("b04aff"), ""])
+		return out
 	if not ((stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null): out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else _lz_letter(lab)])   # (a realm battle has no one place to start)
 	if (stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null:   # a realm battle: the two sides and the match's marks
 		out.push_back(["en", "우리 편", Color("5f9cff"), ""]); out.push_back(["en", "적", Color("ff5260"), ""])

@@ -133,6 +133,8 @@ func _top(ci, s: Vector2, c: Vector2, rm: Realm) -> void:
 			ci.draw_line(Vector2(bx + bw * float(H.mark) / 100.0, by - 1), Vector2(bx + bw * float(H.mark) / 100.0, by + 10), Color(1, 1, 1, 0.6), 1.0)
 			h._t(ci, fm, "%d%%" % int(float(H[team])), bx + bw + 6, by - 3, 11, Hud.INK, "left", false)
 			for k in 2: ci.draw_circle(Vector2(x0 + w - 22.0 + k * 11.0, by + 4.5), 3.5, col if int(H.wins[team]) > k else Color(1, 1, 1, 0.16))
+	elif H.has("party"):   # 6-A: the lord's bar (his shield over it, his phases as pips) or the section's count; the party beside
+		_raid(ci, s, c, rm, H, x0, y0, w, hh); return
 	elif H.has("halls"):   # 6-2: the four landmarks, each its people's initial and what it has left (yours edged blue, one just struck edged white); a broken one crossed out
 		var hs: Array = H.halls; var tw := (w - 24.0 - 3.0 * 8.0) / 4.0
 		for i in hs.size():
@@ -263,9 +265,54 @@ func _fit(font: Font, text: String, fs: int, w: float) -> String:
 	while t.length() > 2 and h._w(font, t, fs) > w: t = t.substr(0, t.length() - 1)
 	return t
 
+## 6-A's top: the panel (the lord, or the section), the party's four to its left, the comebacks and the clock to its right,
+## the eclipse's count under it
+func _raid(ci, s: Vector2, c: Vector2, rm: Realm, H: Dictionary, x0: float, y0: float, w: float, hh: float) -> void:
+	var fm: Font = h.m.f_mono; var fb: Font = h.m.f_bold; var ft: Font = h.m.f_title
+	var B: Dictionary = H.get("boss", {})
+	if not B.is_empty():
+		h._t(ci, fb, str(B.name), x0 + 12, y0 + 18, 13, Hud.INK, "left", false)
+		for k in int(B.phases):   # (the phases: a pip each, lit up to the one he is in)
+			ci.draw_circle(Vector2(x0 + w - 16.0 - (int(B.phases) - 1 - k) * 12.0, y0 + 26.0), 4.0, RED if k < int(B.phase) else Color(1, 1, 1, 0.16))
+		var bx := x0 + 12.0; var bw := w - 24.0
+		ci.draw_rect(Rect2(bx, y0 + 38, bw, 11), Color(1, 1, 1, 0.1)); ci.draw_rect(Rect2(bx, y0 + 38, bw * float(B.q), 11), Color("ff9a3a") if bool(B.stagger) else RED)
+		if float(B.sh) > 0.0: ci.draw_rect(Rect2(bx, y0 + 34, bw * float(B.sh), 3), Color("e8f4ff"))
+		ci.draw_rect(Rect2(bx, y0 + 38, bw, 11), Hud.LINE, false, 1.0)
+		h._t(ci, fm, "%d%%" % ceili(float(B.q) * 100.0), bx + bw - 4, y0 + 37, 10, Hud.INK, "right", false)
+	else:
+		h._t(ci, ft, str(H.get("title", "")).get_slice(" · ", 1), c.x, y0 + 20, 18, Hud.INK, "center", false)
+	h._t(ci, fm, str(H.get("sub", "")), c.x, y0 + hh - 17, 11, Hud.SODIUM, "center", false)
+	# the party: each one's people, edged white for you; dimmed while down (the seconds till he is back, or a cross)
+	var ps: Array = H.party
+	for k in ps.size():
+		var q: Dictionary = ps[k]; var bx := x0 - 8.0 - (ps.size() - k) * 30.0
+		if bx < 4.0: continue
+		var col := Color(str(Races.R[q.race].col)); var r := Rect2(bx, y0, 26, 26); var up: bool = q.alive
+		ci.draw_rect(r, Color(col, 0.8 if up else 0.15)); ci.draw_rect(r, Color.WHITE if bool(q.me) else Color(col, 0.9), false, 2.0 if bool(q.me) else 1.0)
+		h._t(ci, fb, str(INITIAL[q.race]), bx + 13, y0 + 4, 13, Hud.NIGHT if up else Hud.STEEL, "center", false)
+		h._t(ci, fm, str(k + 1), bx + 2, y0 - 1, 9, Hud.NIGHT if up else Hud.STEEL, "left", false)
+		if up:
+			ci.draw_rect(Rect2(bx, y0 + 28, 26.0 * float(q.q), 4), BLUE if not bool(q.me) else Hud.VITAL)
+			if bool(q.ult): ci.draw_circle(Vector2(bx + 22, y0 + 4), 2.8, GOLD)
+			if bool(q.bless): ci.draw_circle(Vector2(bx + 4, y0 + 22), 2.4, CYAN)
+		elif float(q.back) > 0.0: h._t(ci, fm, str(ceili(float(q.back))), bx + 13, y0 + 28, 10, Hud.STEEL, "center", false)
+		else: ci.draw_line(Vector2(bx + 4, y0 + 30), Vector2(bx + 22, y0 + 30), Hud.ALARM, 2.0)
+	# the comebacks left, the clock
+	var rx := x0 + w + 8.0
+	if rx + 64.0 < s.x:
+		h._panel(ci, Rect2(rx, y0, 64, 40)); h._t(ci, fm, "부활", rx + 32, y0 + 3, 10, Hud.STEEL, "center", false)
+		h._t(ci, fb, "×%d" % int(H.revives), rx + 32, y0 + 16, 15, Hud.ALARM if int(H.revives) <= 2 else Hud.INK, "center", false)
+		h._t(ci, fm, Store.fmt_time(float(H.clock)), rx + 32, y0 + 44, 11, Hud.STEEL, "center", false)
+	# the eclipse of doom: the seconds left, big, under the panel
+	if H.has("eclipse"):
+		var e := float(H.eclipse); var t: float = h.m.time; var a := 0.7 + 0.3 * sin(t * 10.0)
+		h._t(ci, ft, "종말의 일식 %.1f" % maxf(0.0, e), c.x, y0 + hh + 12, 26, Color(1.0, 0.3, 0.2, a), "center")
+		ci.draw_rect(Rect2(c.x - 140, y0 + hh + 48, 280, 6), Color(1, 1, 1, 0.12)); ci.draw_rect(Rect2(c.x - 140, y0 + hh + 48, 280.0 * clampf(e / float(Fiends.BAAL.eclipse_t), 0.0, 1.0), 6), RED)
+
 ## a line under the crosshair: what the match wants of you now
 func prompt(rm: Realm, f: Realm.Fighter, touch: bool) -> String:
 	var md := rm.mode; var H := md.hud()
+	if not f.alive and md is ModeRaid: return "쓰러짐 · " + md.down_line(f).replace("Tab", "교대 버튼" if touch else "Tab")
 	if not f.alive: return "쓰러짐 · %d초 뒤 본진 마법진에서 다시 일어납니다" % ceili(f.back_t)
 	if md.phase == "prep": return "준비 시간 · " + ("제단 버튼" if touch else "B 키") + "로 룬 제단을 엽니다"
 	if f.cast_t > 0.0: return "포효!"

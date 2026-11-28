@@ -4,11 +4,13 @@ extends Node
 
 const ST_ARMED := 5   # the inner number of stage 1-2 (the armed docks)
 const ST_TOY := 9     # the inner number of stage 5 (the toy room)
-const ST_ELF := 10    # the inner number of stage 6-1 (the elves' Silverwood); 6-2, 6-3 and 6-4 are 11, 12 and 13
+const ST_ELF := 10    # the inner number of stage 6-1 (the elves' Silverwood); 6-2 and 6-3 are 11 and 12, 6-A and 6-B 13 and 16
 const ST_PLAIN := 11  # the inner number of stage 6-2 (the plain of the four banners)
-const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11, 12, 13]   # 4, 14, 15 are stage 4 (4-1 to 4-3); 9 is stage 5, the toy room; 10 to 13 are stage 6 (6-1 to 6-4)
-const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4-1", 14: "4-2", 15: "4-3", 9: "5", 10: "6-1", 11: "6-2", 12: "6-3", 13: "6-4"}
-const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [14], 14: [15], 15: [9], 9: [10], 10: [11], 11: [12], 12: [13], 13: []}
+const ST_ROAD := 13   # the inner number of stage 6-A (the road to the fallen tower, the demons': alone, to their lord)
+const ST_ALTAR := 16  # the inner number of stage 6-B (the obsidian altar of the abyss, the demons' caldera: alone, or a battle)
+const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11, 12, 13, 16]   # 4, 14, 15 are stage 4 (4-1 to 4-3); 9 is stage 5, the toy room; 10 to 13 and 16 are stage 6 (6-1, 6-2, 6-3, 6-A, 6-B)
+const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4-1", 14: "4-2", 15: "4-3", 9: "5", 10: "6-1", 11: "6-2", 12: "6-3", 13: "6-A", 16: "6-B"}
+const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [14], 14: [15], 15: [9], 9: [10], 10: [11], 11: [13, 12], 12: [], 13: [16], 16: []}
 ## stage 4 is the ship, played in three parts on the one ship: 4-1 the airlock, the passage and the long corridor (cleared when
 ## every robot there is down), 4-2 the bridge at its west end (the gold bee), 4-3 the main hall at its east end (the boss drone
 ## and its chest). "Stage 4" means all three; 4-1 keeps stage 4's inner number, so a stage 4 cleared before the split is 4-1's
@@ -16,10 +18,11 @@ const SHIP := {4: "corr", 14: "bridge", 15: "hall"}
 static func ship(n: int) -> String: return str(SHIP.get(n, ""))
 ## the stage whose place (map, look, tables) a stage is played on: 4-2 and 4-3 are on 4-1's ship
 static func map_of(n: int) -> int: return 4 if SHIP.has(n) else n
-## stage 6 is four places of the peoples' world: the elves' wood (6-1), the plain where all four peoples meet (6-2), the orcs'
-## (6-3) and the demons' (6-4), those two to come. "Stage 6" means all four. No crate there holds a health potion
-const REALM := {10: "elf", 11: "plain", 12: "orc", 13: "demon"}
-const SOON := [12, 13]   # named on the stage board, not made yet (their maps are to come)
+## stage 6 is the places of the peoples' world: the elves' wood (6-1), the plain where all four peoples meet (6-2), the orcs'
+## (6-3, to come) and the demons' two (6-A the road up to their lord's altar, 6-B their caldera, where the battles are fought
+## too). "Stage 6" means all of them. No crate there holds a health potion
+const REALM := {10: "elf", 11: "plain", 12: "orc", 13: "demon", 16: "demon"}
+const SOON := [12]   # named on the stage board, not made yet (its map is to come)
 static func realm(n: int) -> String: return str(REALM.get(n, ""))
 ## the stages there are to play (those only named so far are left out)
 static func playable() -> Array: return STAGE_ORDER.filter(func(s): return not SOON.has(s))
@@ -128,7 +131,7 @@ func persist_settings() -> void:
 ## cleared: 1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1. New side stages follow the same rule. Developer mode opens
 ## them all, and a stage once cleared stays open (every stage used to be open from the start). NEXT only says which stages follow
 ## on the stage tree
-const NEEDS := {6: 1, 5: 6, 7: 3, 8: 7, 14: 4, 15: 14, 11: 10, 12: 11, 13: 12}   # (stages 4 and 6: the first part open as a main stage is, each of the rest after the one before)
+const NEEDS := {6: 1, 5: 6, 7: 3, 8: 7, 14: 4, 15: 14, 11: 10, 12: 11, 13: 11, 16: 13}   # (stages 4 and 6: the first part open as a main stage is, each of the rest after the one before)
 const PAY := 2   # every way of earning pays twice what the browser game pays (kills, bosses, ivory, stage 5's team modes): the owner's rule
 func stage_open(n: int) -> bool:
 	if not STAGE_TAG.has(n) or SOON.has(n): return false

@@ -14,7 +14,8 @@ const STAGES := {
 	10: {"name": "은빛 경계림", "enemy": "elf", "goal": 61, "unit": "명", "label": "엘프", "intro": "서쪽 숲 경계에서 동쪽 끝 대마법사의 나선형 탑까지 · 지하 수로, 뿌리 길, 수관 다리 세 층 · 회복은 달샘에서만 · 탑 꼭대기의 대마법사를 쓰러뜨리면 끝"},
 	11: {"name": "네 깃발 평원", "enemy": "realm", "goal": 0, "unit": "명", "label": "종족", "intro": "정사각형 평원의 네 모서리에 엘프·드워프·오크·악마의 상징 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환합니다 · 적 건물 셋과 남은 적을 모두 쓰러뜨리면 끝"},
 	12: {"name": "오크", "enemy": "orc", "goal": 0, "unit": "명", "label": "오크", "intro": "준비 중"},
-	13: {"name": "악마", "enemy": "demon", "goal": 0, "unit": "명", "label": "악마", "intro": "준비 중"},
+	13: {"name": "타락한 마탑의 진격로", "enemy": "demon", "goal": 0, "unit": "명", "label": "악마", "intro": "숲속 캠프 → 무너진 외성문의 경비병 → 용암 칼데라 위 사슬 다리의 정예병 → 탑 안 나선 계단의 중간 수호자 → 꼭대기 심연의 제단 · 심연의 대군주 바알을 쓰러뜨리면 끝"},
+	16: {"name": "심연의 흑요석 제단", "enemy": "demon", "goal": 0, "unit": "명", "label": "악마", "intro": "끓는 용암 위 세 층의 칼데라 · 위는 고문관의 감시 회랑, 가운데는 쇠사슬에 매달린 혈월의 심연 제단, 아래는 유황 균열 협곡의 징검다리 · 혈약의 차원문이 층을 잇습니다 · 악마를 모두 쓰러뜨리면 끝"},
 	4: {"name": "우주선 복도", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도 · CCTV 포탑, 순찰 로봇, 드론 떼, 바닥에 숨은 스파이더 마인 · 복도의 로봇을 모두 처치하면 클리어 · 운전실과 메인홀 문은 4-2, 4-3에서"},
 	14: {"name": "운전실", "enemy": "robot", "goal": 1, "unit": "대", "label": "로봇", "intro": "복도 서쪽 끝 2층 운전실 · 황금꿀벌드론과의 결전 · 돌진과 부하 드론 소환 · 문을 열고 들어가면 잠김 · 쓰러뜨리면 메인홀 열쇠를 얻고 클리어"},
 	15: {"name": "메인홀", "enemy": "robot", "goal": 1, "unit": "대", "label": "로봇", "intro": "복도 동쪽 끝 넓은 메인홀 · 3페이즈 보스 드론 B-3 · 빨간 조준선을 피해 벽 뒤로(레이저는 즉사) · 바닥 붕괴, 해치의 드론 떼 · 보스를 잡으면 보물상자"},
@@ -108,6 +109,8 @@ func begin(stage_: int) -> void:
 		rm = Realm.create(Realm.picked()); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	elif stage == Store.ST_PLAIN:   # 6-2: you, one of the four peoples, against the other three's landmarks
 		rm = Realm.create("plain"); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
+	elif stage == Store.ST_ROAD:   # 6-A: a party of four, one of each people, up the road to the demons' lord
+		rm = Realm.create("raid"); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	world.build_stage(stage); calm = 0; mid = null
 	if tm != null: tm.room = world.toy
 	if world.toy != null: tf.brk.prepare()   # (the breakages' pictures and materials, made as the room is, not at the first hit)
@@ -190,8 +193,8 @@ func populate() -> void:
 			var o := {"yaw": SR.rng(0, TAU), "y": p.get("y", 0.0)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
-	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null or world.plain != null:
-		if (world.wood != null or world.plain != null) and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves; 6-2's landmarks and you)
+	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null or world.plain != null or world.road != null:
+		if (world.wood != null or world.plain != null or world.road != null) and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves; 6-2's landmarks and you)
 		elif world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
 		elif world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS.get(stage, {}))
@@ -290,7 +293,7 @@ func update(dt: float) -> void:
 	flask_cd = maxf(0.0, flask_cd - dt)
 	# the enemies' way to you, every 0.3 s as the browser game's: at most 3 ms of the search a frame (a fast computer does it
 	# all at once, as there; a slow one over a few frames, the enemies keeping the last way meanwhile), the next once it is done
-	if world.toy == null and world.wood == null and world.plain == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
+	if world.toy == null and world.wood == null and world.plain == null and world.road == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
 		flow_t -= dt
 		if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
 		if Phys.flow_busy: Phys.flow_step(flow_budget)

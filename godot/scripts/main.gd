@@ -121,6 +121,8 @@ func _smoke() -> void:
 	Store.settings.realmMode = was_r
 	command("start 11"); command("sim 2")   # 6-2: the plain of the four banners
 	print("smoke: stage 6-2 %s, %d fighters, %d landmarks" % [state, game.rm.all.size() if game.rm != null else -1, game.rm.mode.halls.size() if game.rm != null else -1])
+	command("start 13"); command("sim 2")   # 6-A: the party of four up the road to the fallen tower
+	print("smoke: stage 6-A %s, %d fighters, %d demons" % [state, game.rm.all.size() if game.rm != null else -1, (game.rm.mode as ModeRaid).demons().size() if game.rm != null and game.rm.mode is ModeRaid else -1])
 	to_menu(); print("smoke: ok"); get_tree().quit(0)
 
 func apply_settings() -> void:
@@ -364,13 +366,13 @@ static func insets_of(safe: Rect2, win: Vector2, scale: float) -> Array:
 
 ## the round buttons on the right: [centre, radius, label] (a little smaller and closer on a very short screen)
 func _touch_buttons() -> Dictionary:
-	var b := touch_buttons_for(hud.size, safe_in, player.jet_on, game.rm != null)
+	var b := touch_buttons_for(hud.size, safe_in, player.jet_on, game.rm != null, game.rm != null and game.rm.mode is ModeRaid)
 	if game.rm != null and game.rm.me != null:   # (a realm battle: what is not ready shows its seconds)
 		var q: Array = hudd.realm.chips(game.rm, game.rm.me)
 		for it: Array in [["skill", 1, "이동기"], ["bomb", 2, "폭탄"], ["swap", 4, "튕기기"], ["ult", 5, "비기"]]:
 			if float(q[it[1]][2]) < 1.0 or it[0] == "ult": b[it[0]][2] = str(it[2]) + " " + str(q[it[1]][3])
 	return b
-static func touch_buttons_for(s: Vector2, ins: Array, jet: bool, realm := false) -> Dictionary:
+static func touch_buttons_for(s: Vector2, ins: Array, jet: bool, realm := false, party := false) -> Dictionary:
 	var short := s.y <= 340.0
 	var at := func(right: float, bottom: float, d: float) -> Vector2: return Vector2(s.x - right - ins[2] - d / 2.0, s.y - bottom - ins[3] - d / 2.0)
 	var b := {}
@@ -385,6 +387,7 @@ static func touch_buttons_for(s: Vector2, ins: Array, jet: bool, realm := false)
 		b.fire[2] = "공격"; b.ads[2] = "특수"; b.melee[2] = "단검"; b.swap[2] = "튕기기"
 		if short: b.merge({"skill": [at.call(180, 28, 50), 25.0, "이동기"], "bomb": [at.call(180, 90, 50), 25.0, "폭탄"], "ult": [at.call(180, 152, 50), 25.0, "비기"]})
 		else: b.merge({"skill": [at.call(198, 30, 54), 27.0, "이동기"], "bomb": [at.call(198, 100, 54), 27.0, "폭탄"], "ult": [at.call(198, 170, 54), 27.0, "비기"]})
+		if party: b["switch"] = [at.call(180, 214, 50), 25.0, "교대"] if short else [at.call(198, 240, 54), 27.0, "교대"]   # (6-A: into the next one of the party)
 	return b
 
 ## the pill buttons low in the middle: the antidote (while infected or poisoned), getting on or the hall's key, getting off.
@@ -463,7 +466,7 @@ func enter_play(intro := false) -> void:
 	if cu_light != null: cu_light.visible = false
 	guns.look_mode = look_mode; apply_settings(); hudd.reset(); reward.stop(); ui.in_stage = true
 	if world.ship != null: world.ship.on_cut = _boss_cut
-	if intro and world.toy == null and world.wood == null and world.plain == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
+	if intro and world.toy == null and world.wood == null and world.plain == null and world.road == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
 	else: _go_play()
 
@@ -483,7 +486,7 @@ func _back_to_play() -> void:
 	_set_state("playing"); player.invuln = maxf(player.invuln, 1.0); request_lock()
 
 func _on_result(kind: String) -> void:
-	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null and world.plain == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
+	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null and world.plain == null and world.road == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_outro(func() -> void: _show_result("clear")); return
 	_show_result(kind)
 
@@ -620,7 +623,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				"melee":
 					if game.rm != null: game.rm.press["slash"] = true
 					else: guns.melee_start()
-				"skill", "bomb", "ult":
+				"skill", "bomb", "ult", "switch":
 					if game.rm != null: game.rm.press[hit] = true
 				"altar": open_altar()
 				"anti": game.use_antidote()
@@ -680,6 +683,7 @@ func _tick(dt: float) -> void:
 	if world.toy: world.toy.update(dt, player)
 	if world.wood: world.wood.update(dt, player)   # (stage 6-1: the wind path, the moonwell, the portals and the rest)
 	if world.plain: world.plain.update(dt)   # (6-2: the landmarks' fires, smoke, turning crystals and falls)
+	if world.road: world.road.update(dt, player)   # (6-A: the lava's swell, the seals)
 	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 	if world.lab != null: world.lab.anim(dt, time)
@@ -706,6 +710,12 @@ func realm_key(k: int) -> bool:
 			rm.press["bomb"] = true
 		KEY_X: rm.press["ult"] = true
 		KEY_B: open_altar()
+		KEY_TAB:   # (6-A's party: the next one of you)
+			if not (rm.mode is ModeRaid): return false
+			rm.press["switch"] = true
+		KEY_1, KEY_2, KEY_3, KEY_4:   # (6-A: that one of the party, in the peoples' order)
+			if not (rm.mode is ModeRaid): return false
+			rm.press["switch_%d" % (k - KEY_1)] = true
 		_: return false
 	return true
 

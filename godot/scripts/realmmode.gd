@@ -60,6 +60,19 @@ func extra_nodes() -> Dictionary: return {}   # the mode's own waypoints and way
 func extra_edges() -> Array: return []
 ## something of the mode's the others should strike rather than a person (the nucleus), or null
 func prize(_f: Realm.Fighter): return null
+## what one of the others should strike before anyone else, whatever is nearer (6-A: a boss's crystal, a chain, a core), or null
+func focus(_f: Realm.Fighter): return null
+## whether one of the others should jump now (6-A: a wave of fire coming at his feet)
+func jump(_f: Realm.Fighter) -> bool: return false
+
+# ---------------- fighters the mode moves itself (6-A's demons) ----------------
+func turn(_f: Realm.Fighter, _dt: float) -> void: pass      # its turn, in the realm's frame (for a fighter whose brain has "mon")
+func place(_f: Realm.Fighter, _dt: float) -> bool: return false   # its body, each frame (true: seen to)
+func fell(_f: Realm.Fighter) -> bool: return false          # its fall (true: seen to)
+func struck(_s: Dictionary, _who: Realm.Fighter) -> void: pass   # a missile has just struck someone
+func bomb_burst(_at: Vector3) -> void: pass                  # an alchemical bomb has just burst there
+func furnace(_f: Realm.Fighter) -> bool: return false        # whether someone stands in a fire that halves what mends him
+func heavy(_f: Realm.Fighter) -> bool: return false          # whether a shove only slows him (a lord of 6-A)
 
 # ---------------- the screens ----------------
 func hud() -> Dictionary: return {}        # what the top of the screen shows: {title, left, right, clock, bars...}

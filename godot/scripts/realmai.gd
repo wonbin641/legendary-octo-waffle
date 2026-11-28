@@ -160,6 +160,7 @@ func turn(f: Realm.Fighter, dt: float) -> void:
 			b.cool = false; b.draw = false
 		if float(b.dodge) > 0.0: b.dodge = float(b.dodge) - dt; want = b.dodge_dir
 	rm.kit.act(f, I, dt)
+	if f.grounded and not f.leaping and f.dash_t <= 0.0 and not held and f.stun_t <= 0.0 and rm.mode.jump(f): f.vy = 7.2; f.pos.y += 0.05; f.grounded = false   # (6-A: over a wave of fire)
 	# feet
 	var sp := rm.speed_of(f) * pace
 	if f.leaping: _fall(f, dt)
@@ -214,6 +215,8 @@ func _aim_to(f: Realm.Fighter, dir: Vector3, dt: float, rate: float) -> void:
 ## the nearest foe in sight (one carrying the bomb counts as nearer); failing that, a made thing of theirs in sight, or
 ## what the mode wants struck
 func target(f: Realm.Fighter):
+	var fz = rm.mode.focus(f)   # (6-A: a boss's crystal, a chain on a friend, the cores: before anyone)
+	if fz != null: return fz
 	var cands: Array = []
 	for e: Realm.Fighter in rm.all:
 		if e.alive and e.team != f.team: cands.push_back([f.pos.distance_to(e.pos) - (10.0 if e.carrying else 0.0) - (6.0 if e.mark_t > 0.0 else 0.0), e])

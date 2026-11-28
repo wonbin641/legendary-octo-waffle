@@ -314,18 +314,22 @@ func _ready() -> void:
 	Store.save.cleared = [1]; var ul_1 := [Store.stage_open(6), Store.stage_open(5)]; Store.save.cleared = [1, 6]; ul_1.push_back(Store.stage_open(5))
 	Store.save.cleared = [3]; var ul_3 := [Store.stage_open(7), Store.stage_open(8)]; Store.save.cleared = [3, 7]; ul_3.push_back(Store.stage_open(8))
 	Store.save.cleared = [5, 8]; var ul_kept := [Store.stage_open(5), Store.stage_open(8), Store.stage_open(6), Store.stage_open(7)]; Store.save.cleared = []
-	Store.save.cleared = [10]; var ul_6 := [Store.stage_open(10), Store.stage_open(11), Store.stage_open(12), Store.stage_open(13)]; var ul_6n := [Store.next_stages(9), Store.next_stages(10)]; Store.save.cleared = []
+	Store.save.cleared = [10]; var ul_6 := [Store.stage_open(10), Store.stage_open(11), Store.stage_open(12), Store.stage_open(13), Store.stage_open(16)]; var ul_6n := [Store.next_stages(9), Store.next_stages(10)]
+	Store.save.cleared = [10, 11]; ul_6.append_array([Store.stage_open(13), Store.stage_open(16)]); ul_6n.push_back(Store.next_stages(11))
+	Store.save.cleared = [13]; ul_6.push_back(Store.stage_open(16)); ul_6n.push_back(Store.next_stages(13)); Store.save.cleared = []
 	Store.save.cleared = [4]; var ul_4 := [Store.stage_open(14), Store.stage_open(15)]; Store.save.cleared = [4, 14]; ul_4.push_back(Store.stage_open(15)); var ul_4n := [Store.next_stages(4), Store.next_stages(14), Store.next_stages(15)]; Store.save.cleared = []
 	check("the five main stages (1 to 5) and stage 6's first place (6-1) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
-		Store.STAGE_ORDER.size() == 15 and Store.playable().size() == 13 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(16), [ul_open, ul_1, ul_3, ul_kept])
+		Store.STAGE_ORDER.size() == 16 and Store.playable().size() == 15 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(17), [ul_open, ul_1, ul_3, ul_kept])
 	check("stage 4 is three parts on the one ship (4-1 the corridor, 4-2 the bridge, 4-3 the main hall): 4-1 is open as a main stage is (it keeps stage 4's own number: a stage 4 cleared before is 4-1's), 4-2 opens once 4-1 is cleared, 4-3 once 4-2 is; after 4-3 comes stage 5",
 		[4, 14, 15].map(func(s4): return Store.STAGE_TAG[s4]) == ["4-1", "4-2", "4-3"] and [4, 14, 15].map(func(s4): return Store.ship(s4)) == ["corr", "bridge", "hall"] and [4, 14, 15].all(func(s4): return Store.map_of(s4) == 4)
 		and Store.map_of(9) == 9 and Store.ship(9) == "" and not Store.NEEDS.has(4) and Store.NEEDS[14] == 4 and Store.NEEDS[15] == 14 and ul_4 == [true, false, true] and ul_4n == [[14], [15], [9]]
 		and Store.STAGE_ORDER.slice(7, 10) == [4, 14, 15] and Game.STAGES[14].enemy == "robot" and Game.STAGES[15].enemy == "robot" and Game.BOSS.has(15) and not Game.BOSS.has(4) and not Game.BOSS.has(14), [ul_4, ul_4n])
-	check("stage 6 is four places (6-1 the elves' wood, 6-2 the plain where all four peoples meet, 6-3 the orcs', 6-4 the demons'): each after the first waits for the one before it (6-2 opens once 6-1 is cleared); those not made yet (6-3, 6-4) are named on the board and do not open",
-		[10, 11, 12, 13].map(func(s6): return Store.STAGE_TAG[s6]) == ["6-1", "6-2", "6-3", "6-4"] and [10, 11, 12, 13].map(func(s6): return Store.realm(s6)) == ["elf", "plain", "orc", "demon"] and Store.realm(9) == ""
-		and not Store.NEEDS.has(10) and Store.NEEDS[11] == 10 and Store.NEEDS[12] == 11 and Store.NEEDS[13] == 12 and Store.SOON == [12, 13] and ul_6 == [true, true, false, false] and ul_6n == [[10], [11]]
-		and Game.STAGES[10].enemy == "elf" and Game.STAGES[11].enemy == "realm" and Game.STAGES[12].enemy == "orc" and Game.STAGES[13].enemy == "demon", [ul_6, ul_6n])
+	check("stage 6 is the peoples' places (6-1 the elves' wood, 6-2 the plain where all four peoples meet, 6-3 the orcs', and the demons' two: 6-A the road to the fallen tower, 6-B the obsidian altar): 6-2 opens once 6-1 is cleared, 6-A once 6-2 is, 6-B once 6-A is; 6-3, not made yet, is named on the board and does not open",
+		[10, 11, 12, 13, 16].map(func(s6): return Store.STAGE_TAG[s6]) == ["6-1", "6-2", "6-3", "6-A", "6-B"] and [10, 11, 12, 13, 16].map(func(s6): return Store.realm(s6)) == ["elf", "plain", "orc", "demon", "demon"] and Store.realm(9) == ""
+		and Store.ST_ROAD == 13 and Store.ST_ALTAR == 16 and Store.STAGE_ORDER.slice(11) == [10, 11, 12, 13, 16]
+		and not Store.NEEDS.has(10) and Store.NEEDS[11] == 10 and Store.NEEDS[12] == 11 and Store.NEEDS[13] == 11 and Store.NEEDS[16] == 13 and Store.SOON == [12]
+		and ul_6 == [true, true, false, false, false, true, false, true] and ul_6n == [[10], [11], [13], [16]]
+		and Game.STAGES[10].enemy == "elf" and Game.STAGES[11].enemy == "realm" and Game.STAGES[12].enemy == "orc" and Game.STAGES[13].enemy == "demon" and Game.STAGES[16].enemy == "demon", [ul_6, ul_6n])
 	Store.save = keep_save; Store.settings.dev = keep_dev
 	# a grenade passing low by a man (knee high) bursts on him: his body found by its height and girth (it was a ball round his
 	# middle, and a grenade at his knees flew on to burst on the ground behind him)
@@ -3961,9 +3965,10 @@ func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, c
 	check("the Archmage down: 80,000 (a hit to the head half as much again), the great sphere runs down and stops, his chest stands where he fell on top of the tower, and the stage is won when you open it (6-1 cleared, a gun for good: its card shown first)",
 		fall == [true, true, true, 120000, false, false] and am_card and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(10) and (Store.save.owned as Array).size() == owned0 + 1 and Store.save.best.has("t10"), [fall, gm.ended, gm.result, Store.save.cleared])
 	# ---- its screens ----
-	check("the stage board: 6-1 stands at the end of the top row after stage 5 and can be played, and 6-2 (the plain of the four banners) under it; 6-3 and 6-4 are named on it (the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
-		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][1] == Ui.NODE_AT[9][1] and Ui.NODE_AT[10][0] > Ui.NODE_AT[9][0] and Ui.NODE_AT[11][0] == Ui.NODE_AT[10][0] and Ui.NODE_AT[11][1] > Ui.NODE_AT[10][1] and Ui.BUILT.has(10) and Ui.BUILT.has(11) and not Ui.BUILT.has(12)
-		and [[9, 10], [10, 11], [11, 12], [12, 13]].all(func(t6): return Ui.TRACKS.has(t6)) and Meta.spec(10) == {"all": ["sniper", "vest"], "any": [["rifle", "smg", "lmg"]]} and Game.STAGES[10].name == "은빛 경계림")
+	check("the stage board: 6-1 stands at the end of the top row after stage 5 and can be played, and 6-2 (the plain of the four banners) under it; 6-3 (the orcs) under 6-2 is named on it and waits to be made; the demons' 6-A is to the left of 6-2, on its row, and 6-B under 6-A; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
+		[10, 11, 12, 13, 16].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][1] == Ui.NODE_AT[9][1] and Ui.NODE_AT[10][0] > Ui.NODE_AT[9][0] and Ui.NODE_AT[11][0] == Ui.NODE_AT[10][0] and Ui.NODE_AT[11][1] > Ui.NODE_AT[10][1] and Ui.BUILT.has(10) and Ui.BUILT.has(11) and not Ui.BUILT.has(12)
+		and Ui.NODE_AT[13][1] == Ui.NODE_AT[11][1] and Ui.NODE_AT[13][0] < Ui.NODE_AT[11][0] and Ui.NODE_AT[16][0] == Ui.NODE_AT[13][0] and Ui.NODE_AT[16][1] > Ui.NODE_AT[13][1]
+		and [[9, 10], [10, 11], [11, 12], [11, 13], [13, 16]].all(func(t6): return Ui.TRACKS.has(t6)) and Meta.spec(10) == {"all": ["sniper", "vest"], "any": [["rifle", "smg", "lmg"]]} and Game.STAGES[10].name == "은빛 경계림")
 	gm.begin(10); W = w.wood
 	var tm6 := TacMap.new(); tm6.game = gm; tm6.cam = cam; tm6.f_mono = SystemFont.new(); tm6.f_bold = SystemFont.new(); tm6.setup(10)
 	var rc6 := MapRec.new(); tm6.draw(rc6, Vector2(600, 600)); var k6 := 600.0 / (TacMap.STRIP_W + 2.0 * TacMap.PAD)

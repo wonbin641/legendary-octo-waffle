@@ -13,13 +13,15 @@ const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵�
 	14: "복도 서쪽 끝 2층 운전실 · 황금꿀벌드론 · 돌진과 부하 드론 · 쓰러뜨리면 메인홀 열쇠와 함께 클리어",
 	15: "복도 동쪽 끝 메인홀 · 3페이즈 보스 드론 B-3 · 레이저는 즉사 · 바닥 붕괴와 해치의 드론 떼 · 처치하면 보물상자",
 	10: "엘프의 숲 · 서쪽 경계에서 동쪽 대마법사의 탑까지 · 엘프 60명과 대마법사 · 회복 물약 상자 없음 · 달샘 연못이 체력을 채워 줍니다",
-	11: "정사각형 평원 · 네 모서리의 엘프·드워프·오크·악마 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환 · 적 건물과 남은 적을 모두 쓰러뜨리면 클리어", 12: "오크의 땅 · 준비 중", 13: "악마의 땅 · 준비 중"}
+	11: "정사각형 평원 · 네 모서리의 엘프·드워프·오크·악마 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환 · 적 건물과 남은 적을 모두 쓰러뜨리면 클리어", 12: "오크의 땅 · 준비 중",
+	13: "악마의 땅 · 숲속 캠프에서 무너진 외성문, 용암 위 사슬 다리, 탑의 나선 계단을 지나 꼭대기 제단의 심연의 대군주 바알까지 · 회복 물약 상자 없음",
+	16: "악마의 칼데라 · 끓는 용암 위 세 층(감시 회랑, 쇠사슬에 매달린 제단, 유황 협곡) · 혼자 악마들과 싸우거나, 성소 각인전·공성전·건물 소환전"}
 # (six columns: the main stages along the top, 1, 2, 3, 4-1, 5 and 6-1; each stage's later parts hang under it, 1-1 and 1-2 under 1,
-# 3-1 and 3-2 under 3, 4-2 and 4-3 under 4-1, 6-2 and 6-3 under 6-1, then back to the left with 6-4)
+# 3-1 and 3-2 under 3, 4-2 and 4-3 under 4-1, 6-2 and 6-3 under 6-1; from 6-2 back to the left, 6-A, and 6-B under it)
 const NODE_AT := {1: [0.08, 0.17], 2: [0.248, 0.17], 3: [0.416, 0.17], 4: [0.584, 0.17], 9: [0.752, 0.17], 10: [0.92, 0.17],
-	6: [0.08, 0.50], 5: [0.08, 0.82], 7: [0.416, 0.50], 8: [0.416, 0.82], 14: [0.584, 0.50], 15: [0.584, 0.82], 11: [0.92, 0.50], 12: [0.92, 0.82], 13: [0.752, 0.82]}
-const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [9, 10], [1, 6], [6, 5], [3, 7], [7, 8], [4, 14], [14, 15], [10, 11], [11, 12], [12, 13]]
-const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11]   # stages the Godot version can play so far
+	6: [0.08, 0.50], 5: [0.08, 0.82], 7: [0.416, 0.50], 8: [0.416, 0.82], 14: [0.584, 0.50], 15: [0.584, 0.82], 11: [0.92, 0.50], 12: [0.92, 0.82], 13: [0.752, 0.50], 16: [0.752, 0.82]}
+const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [9, 10], [1, 6], [6, 5], [3, 7], [7, 8], [4, 14], [14, 15], [10, 11], [11, 12], [11, 13], [13, 16]]
+const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11, 13]   # stages the Godot version can play so far
 const RACE_SHORT := {"elf": "엘", "dwarf": "드", "orc": "오", "demon": "악"}
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
@@ -1054,9 +1056,9 @@ func _pack_size() -> Vector2:
 ## what is inside springs out) and builds the room for it
 var _torn := ""
 func _mode_buttons(stage: int) -> void:
-	clear(br_modes); br_modes.visible = stage == Store.ST_TOY or stage == Store.ST_ELF or stage == Store.ST_PLAIN
+	clear(br_modes); br_modes.visible = stage == Store.ST_TOY or stage == Store.ST_ELF or stage == Store.ST_PLAIN or stage == Store.ST_ROAD
 	if stage == Store.ST_ELF: _realm_buttons(); return
-	if stage == Store.ST_PLAIN: _realm_buttons(false); return   # (6-2: no modes, only your people and your bomb)
+	if stage == Store.ST_PLAIN or stage == Store.ST_ROAD: _realm_buttons(false); return   # (6-2: no modes, only your people and your bomb; 6-A: the one of the party you start as)
 	if stage != Store.ST_TOY: return
 	var cur_mode := ToyMatch.picked(); var ps := _pack_size()
 	for k: String in ToyMatch.MODES:
@@ -1076,9 +1078,10 @@ func _pick_mode(k: String) -> void:
 	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("toy_rip"); _torn = k; open_brief(9)
 
 func _brief_gear() -> void:
-	if (sel == Store.ST_ELF and Realm.picked() != "solo") or sel == Store.ST_PLAIN:   # (a realm battle: your people's own arms, not the layout)
+	if (sel == Store.ST_ELF and Realm.picked() != "solo") or sel == Store.ST_PLAIN or sel == Store.ST_ROAD:   # (a realm battle: your people's own arms, not the layout)
 		var R: Dictionary = Races.R[Realm.picked_race()]
-		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q(또는 G) 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(%s)" % [str(R.name), str(R.weapon), "준비 시간이나 우리 건물 곁" if sel == Store.ST_PLAIN else "준비 시간"]
+		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q(또는 G) 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(%s)" % [str(R.name), str(R.weapon), "준비 시간이나 우리 건물 곁" if sel == Store.ST_PLAIN else ("캠프와 탑 꼭대기의 제단 곁" if sel == Store.ST_ROAD else "준비 시간")]
+		if sel == Store.ST_ROAD: br_gear.text = "%s로 시작 · 나머지 세 종족은 인공지능 동료\n" % str(R.name) + br_gear.text.get_slice("\n", 1) + " · Tab(또는 1~4) 동료로 교대"
 		br_gear.add_theme_color_override("font_color", SODIUM); br_go.disabled = false; return
 	if sel == Store.ST_TOY:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
 		var k := ToyMatch.picked()
@@ -1167,8 +1170,10 @@ func render_altar() -> void:
 		for it: Array in items:
 			var b := btn(str(it[1]), "primary" if picked.has(it[0]) else "ghost", func() -> void: cb.call(it[0]); render_altar())
 			b.disabled = off.has(it[0]); b.set_meta("pick", it[0]); fl.add_child(b)
-	row.call("종족 (다른 종족의 각인은 값을 돌려받습니다)", Races.ORDER.map(func(r): return [r, Races.R[r].name]), [f.race], func(r) -> void:
-		rm.become(f, str(r)); Store.settings.realmRace = str(r); Store.persist_settings())
+	if not (rm.mode is ModeRaid):   # (6-A's party is one of each people: each keeps his own)
+		row.call("종족 (다른 종족의 각인은 값을 돌려받습니다)", Races.ORDER.map(func(r): return [r, Races.R[r].name]), [f.race], func(r) -> void:
+			rm.become(f, str(r)); Store.settings.realmRace = str(r); Store.persist_settings())
+	else: al_body.add_child(lbl("지금 맡은 동료 · %s (%s) · 다른 동료의 각인은 Tab으로 교대한 뒤에" % [str(Races.R[f.race].name), str(Races.R[f.race].weapon)], f_body, 13, INK, true))
 	row.call("연금술 폭탄", Races.BOMBS.map(func(b): return [b, Races.BOMB[b].name]), [f.bomb_kinds[0]], func(b) -> void:
 		f.bomb_kinds = [str(b)]; rm.refit(f); Store.settings.realmBomb = str(b); Store.persist_settings())
 	if f.rune("c_pouch"):
@@ -1256,6 +1261,9 @@ func show_result(kind: String) -> void:
 		(ov.stamp as Label).text = "임무 완료" if clear_ else md.lose_stamp
 	(ov.title as Label).text = (md.win_title() if clear_ else md.lose_title) if md != null else "스테이지 %s 클리어" % tag if clear_ else ("좀비가 되었습니다" if kind == "zombie" else ("독이 퍼져 쓰러졌습니다" if kind == "poison" else ("고릴라에게 짓눌렸습니다" if kind == "slam" else ("피를 너무 많이 흘렸습니다" if kind == "bleed" else ("보스 드론의 레이저에 맞았습니다" if kind == "laser" else "스테이지 %s · 쓰러짐" % tag)))))
 	(ov.kills as Label).text = ("%d · %d 대 %d" % [st.kills, game.tm.score.us, game.tm.score.them]) if game.tm != null else ("%d · %d 대 %d" % [st.kills, game.rm.score("us"), game.rm.score("them")]) if game.rm != null else "%d%s / %d" % [st.kills, " + 길들임 %d" % game.calm if game.calm > 0 else "", game.goal]; (ov.earn as Label).text = Store.won(st.earned); (ov.hs as Label).text = str(st.heads)
+	if game.rm != null and game.rm.mode is ModeRaid:   # (6-A: the party's demons felled, its falls, the rank)
+		var rd: ModeRaid = game.rm.mode
+		(ov.kills as Label).text = "파티 %d · 쓰러짐 %d%s" % [rd.score("us"), rd.deaths, (" · 등급 " + rd.rank) if rd.rank != "" else ""]
 	(ov.earn as Label).add_theme_color_override("font_color", ALARM if (not clear_ and st.earned > 0) else INK)
 	(ov.acc as Label).text = "%d%%" % (roundi(100.0 * st.hits / st.shots) if st.shots > 0 else 0); (ov.time as Label).text = Store.fmt_time(st.time)
 	(ov.code as Label).text = "보고 번호 " + Store.iso_code("YRD", (game.stage * 100000 + st.kills * 997) % 1000000)
@@ -1267,6 +1275,7 @@ func show_result(kind: String) -> void:
 	var all_done: bool = Store.playable().all(func(s): return Store.save.cleared.has(s))
 	ov.best_head = (("모든 스테이지를 깼습니다 · " if all_done else ("탑을 떠나 번 돈을 챙겼습니다 · " if Store.realm(game.stage) != "" else "헬기로 탈출해 번 돈을 챙겼습니다 · ")) if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else ""))
 	if md != null: ov.best_head = (("이겨서 번 돈을 챙겼습니다 · 최고 기록 " + Store.fmt_time(float(Store.save.best.get(md.record_key(), 0)))) if clear_ else ("져서 이번에 번 %s을 잃었습니다" % Store.won(st.earned) if st.earned > 0 else "다시 도전해 보세요")) + " · "
+	if md is ModeRaid and clear_: ov.best_head = str(ov.best_head) + "최고 등급 " + ModeRaid.best_rank() + " · "
 	if clear_ and Weapons.LIST.has(str(st.get("prize", ""))):   # a boss's chest gave you a new gun: said first
 		var PW: Dictionary = Weapons.LIST[str(st.prize)]; ov.best_head = "보물상자 · 새 총 %s %s 획득 · " % [PW.model, PW.name] + str(ov.best_head)
 	back_stack.clear(); show_screen("over")   # (which writes the bag on the last line: _over_money)
