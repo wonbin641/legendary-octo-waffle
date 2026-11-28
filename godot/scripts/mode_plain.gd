@@ -307,8 +307,8 @@ func marks() -> Array:
 		if r == mine or not standing(r): continue
 		out.push_back({"at": BannerPlain.at(r) + Vector3(0, float(BannerPlain.BODY[r][1]) + 2.0, 0), "c": str(Races.R[r].col), "label": str(BannerPlain.NAMES[r])})
 	return out
-## the music: the tower's set for now; how far it has come by the landmarks fallen
-func music_set() -> String: return "rt"
+## the music: the plain's own set (the four banners' march); how far it has come by the landmarks fallen
+func music_set() -> String: return "rp"
 func music_stage() -> int:
 	if phase != "fight": return 1
 	var down := 3 - halls_left()

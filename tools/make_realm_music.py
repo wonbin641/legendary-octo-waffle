@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""종족 전투(다섯 대 다섯)의 적응형 배경 음악(godot/music/rf_1..4.ogg, rt_1..4.ogg)을 만듭니다. 필요한 것: python3, numpy, ffmpeg(libvorbis).
+"""종족 전투(다섯 대 다섯)와 6-2(네 깃발 평원)의 적응형 배경 음악(godot/music/rf_1..4.ogg, rt_1..4.ogg, rp_1..4.ogg)을 만듭니다. 필요한 것: python3, numpy, ffmpeg(libvorbis).
 
-두 벌, 벌마다 네 층(스템): 모두 90 BPM 4/4 16마디(42.67초)로 길이가 같아, 한 벌의 네 층을 한 번에 같이 돌리고 게임이 층의 크기만 바꿉니다.
+세 벌, 벌마다 네 층(스템): 모두 90 BPM 4/4 16마디(42.67초)로 길이가 같아, 한 벌의 네 층을 한 번에 같이 돌리고 게임이 층의 크기만 바꿉니다.
 층은 쌓아서 듣습니다(1, 1+2, 1+2+3, 넷 모두).
   rf  엘프의 숲 "은빛 경계림의 노래", D 도리아: 켈틱 하프, 글래스 하모니카, 나무 플루트, 프레임 드럼과 셰이커
   rt  대마법사의 탑 "마법사의 시계", D 단조에 프리지아의 빛깔(E♭): 파이프 오르간, 콘트라베이스, 태엽 타악기(째깍 소리, 톱니, 작은 종)
+  rp  네 깃발 평원 "네 깃발의 행진", A 단조(딸림화음은 장조 E): 콘트라베이스, 멀리서 부는 호른, 행진 피리와 작은북, 전쟁 북
+      (나중에 넣은 벌이라 앞의 두 벌을 다 만든 뒤에 만듭니다: 앞의 두 벌은 그대로입니다)
   1  탐색          잔잔한 바탕: 하프 아르페지오와 글래스 하모니카 / 오르간 플루트와 느린 베이스 드론 (혼자서도 들을 만하게)
   2  소규모 교전    선율(플루트 / 오르간 리드)과 가벼운 타악기 (숲에는 짧게 뜯는 현의 오스티나토도)
   3  거점 난전      16분음표로 몰아가는 타악기(셋·셋·둘로 치는 강세: 90 위에 120쯤의 박이 얹혀 빨라진 듯 들립니다), 베이스 오스티나토, 대선율
@@ -120,6 +122,42 @@ T_BRASS = {'Dm': ['D3', 'A3', 'D4', 'F4'], 'Gm': ['G3', 'Bb3', 'D4', 'G4'], 'Eb'
 T_CHOIR = {'Dm': ['D3', 'A3', 'F4', 'A4'], 'Gm': ['G3', 'Bb3', 'G4', 'Bb4'], 'Eb': ['Eb3', 'Bb3', 'G4', 'Bb4'], 'A': ['A2', 'C#4', 'E4', 'A4'], 'Bb': ['Bb2', 'D4', 'F4', 'Bb4'],
            'F': ['F3', 'C4', 'F4', 'A4'], 'Cm': ['C3', 'G3', 'Eb4', 'C5']}
 T_DRUM = {'Dm': 'D2', 'Gm': 'G2', 'Eb': 'Eb2', 'A': 'A2', 'Bb': 'Bb2', 'F': 'F2', 'Cm': 'G2'}
+
+# ---------------- the plain: "the four banners' march", A minor with the major E for its cadences ----------------
+P_TUNE = [
+    [('A4', 1.5), ('E5', .5), ('E5', 1), ('D5', .5), ('C5', .5)],
+    [('C5', 1.5), ('B4', .5), ('A4', 1), ('E4', 1)],
+    [('F4', 1.5), ('A4', .5), ('C5', 1), ('F5', 1)],
+    [('E5', 2.5), ('D5', .5), ('B4', 1)],
+    [('A4', 1.5), ('E5', .5), ('E5', 1), ('A5', 1)],
+    [('G5', 1.5), ('E5', .5), ('C5', 1), ('E5', 1)],
+    [('F5', 1.5), ('E5', .5), ('D5', 1), ('F5', 1)],
+    [('E5', 1), ('B4', 1), ('A4', 2)],
+    [('C5', 1), ('F5', 1), ('A5', 1.5), ('G5', .5)],
+    [('G5', 1), ('D5', 1), ('B4', 1.5), ('D5', .5)],
+    [('E5', 1), ('G5', 1), ('C6', 1.5), ('B5', .5)],
+    [('B5', 2), ('G#5', 1), ('E5', 1)],
+    [('A5', 1.5), ('E5', .5), ('C5', 1), ('A5', 1)],
+    [('F5', 1.5), ('C5', .5), ('A4', 1), ('C5', 1)],
+    [('D5', 1), ('F5', .5), ('E5', .5), ('D5', 1), ('B4', 1)],
+    [('A4', 2.5), ('E4', .5), ('A4', 1)],
+]
+# a second fife under it, in quarters, a third or a sixth below where it can
+P_UNDER = [
+    [('E4', 1), ('C4', 1), ('E4', 1), ('A4', 1)], [('C4', 1), ('E4', 1), ('A3', 1), ('C4', 1)], [('A3', 1), ('C4', 1), ('F4', 1), ('A4', 1)], [('G#4', 1), ('B4', 1), ('G#4', 1), ('E4', 1)],
+    [('C4', 1), ('E4', 1), ('A4', 1), ('E4', 1)], [('E4', 1), ('G4', 1), ('E4', 1), ('C4', 1)], [('D4', 1), ('A4', 1), ('F4', 1), ('D4', 1)], [('G#4', 1), ('E4', 1), ('C4', 1), ('A3', 1)],
+    [('A4', 1), ('C5', 1), ('F4', 1), ('A4', 1)], [('B4', 1), ('G4', 1), ('D4', 1), ('G4', 1)], [('C5', 1), ('E4', 1), ('G4', 1), ('E4', 1)], [('E4', 1), ('G#4', 1), ('B4', 1), ('G#4', 1)],
+    [('C5', 1), ('A4', 1), ('E4', 1), ('C4', 1)], [('A4', 1), ('F4', 1), ('C4', 1), ('F4', 1)], [('F4', 1), ('A4', 1), ('G#4', 1), ('E4', 1)], [('E4', 1), ('C4', 1), ('A3', 2)],
+]
+P_LONG = ['A4 E5', 'C5 A4', 'F4 C5', 'E5 E5', 'A4 E5', 'G5 C5', 'F5 D5', 'E5 A4', 'C5 A5', 'G5 B4', 'E5 C6', 'B5 E5', 'A5 C5', 'F5 A4', 'D5 D5', 'A4 A4']
+P_BARS = ['Am', 'Am', 'F', 'E', 'Am', 'C', 'Dm', ('E', 'Am'), 'F', 'G', 'C', 'E', 'Am', 'F', ('Dm', 'E'), 'Am']
+P_PAD = {'Am': ['E4', 'A4', 'C5'], 'F': ['F4', 'A4', 'C5'], 'E': ['E4', 'G#4', 'B4'], 'C': ['E4', 'G4', 'C5'], 'Dm': ['F4', 'A4', 'D5'], 'G': ['D4', 'G4', 'B4']}
+P_PLUCK = {'Am': ['A3', 'E4', 'C4'], 'F': ['F3', 'C4', 'A3'], 'E': ['E3', 'B3', 'G#3'], 'C': ['C4', 'G4', 'E4'], 'Dm': ['D4', 'A4', 'F4'], 'G': ['G3', 'D4', 'B3']}
+P_BASS = {'Am': ['A2', 'E2'], 'F': ['F2', 'C3'], 'E': ['E2', 'B2'], 'C': ['C3', 'G2'], 'Dm': ['D2', 'A2'], 'G': ['G2', 'D3']}
+P_HORNS = {'Am': ['A2', 'E3', 'A3', 'C4'], 'F': ['F2', 'C3', 'F3', 'A3'], 'E': ['E2', 'B2', 'E3', 'G#3'], 'C': ['C3', 'G3', 'C4', 'E4'], 'Dm': ['D3', 'A3', 'D4', 'F4'], 'G': ['G2', 'D3', 'G3', 'B3']}
+P_CHOIR = {'Am': ['A2', 'E3', 'C4', 'A4'], 'F': ['F2', 'C3', 'A3', 'F4'], 'E': ['E2', 'B2', 'G#3', 'E4'], 'C': ['C3', 'G3', 'E4', 'C5'], 'Dm': ['D3', 'A3', 'F4', 'D5'], 'G': ['G2', 'D3', 'B3', 'G4']}
+# the far horn call, every other bar: the tune's opening leap (beat, beats, note)
+P_CALL = [(0.0, 1.5, 'A3'), (1.5, 0.5, 'E4'), (2.0, 2.0, 'E4')]
 
 DRIVE = (0, 3, 6, 8, 11, 14)   # the fight's accents, in sixteenths of the bar: three and three and two, twice (a pulse of 120 over the 90)
 
@@ -414,10 +452,60 @@ def tower():
         [('works', 0.6, 0.18, 1.2), ('cb', 0.5, 0.1), ('tenor', 0.38, 0.28)],
         [('brass', 0.56, 0.3), ('choir', 0.4, 0.4), ('big', 0.8, 0.2, 1.1)]])
 
+def plain():
+    """the plain of the four banners, "the four banners' march": its four stems"""
+    L = {k: mm.Loop(SEC) for k in ('drone', 'call', 'fife', 'pluck', 'snare', 'drums', 'bass', 'under', 'brass', 'choir', 'big')}
+    half = halves(P_BARS)
+    # 1 exploring: two contrabasses on the chords' roots, bowed long and soft, a pair of horns holding the chords low, and
+    # far off, every other bar, a horn calling the tune's opening leap (wind over open ground: no echo to speak of)
+    for p in (0, 1):
+        for b, d, m in held(half, P_BASS, 0): put(L['drone'], b, v_bass(hz(m) * (1.002 if p else 0.998), d * SPB * 0.98, 0.9, att=0.45, rel=0.5, tilt=1.4), 0.03)
+    for k in range(3):
+        for b, d, m in held(half, P_PAD, k): put(L['drone'], b, 0.35 * v_brass(hz(m) / 2.0, d * SPB * 0.97, 0.35, players=2), 0.02)
+    for i in range(0, BARS, 2):
+        for q, d, name in P_CALL: put(L['call'], i * 4.0 + q, v_brass(hz(midi(name)), d * SPB * 0.92, 0.55 * arc(i * 4.0), players=1), 0.01)
+    # 2 a skirmish: the march on a fife, a flick on its long notes; strings plucked on the beat and its half; the side drum's
+    # march, its fingertips rolling into the fourth beat
+    for b, d, m in mm.seq(P_TUNE):
+        put(L['fife'], b, v_flute(hz(m) * 2.0, d * SPB, (0.82 + 0.12 * (b % 4.0 == 0)) * arc(b), 1 if d >= 1.5 else 0), 0.005)
+    for i in range(BARS):
+        for e in range(8):
+            k = (0, 2, 1, 2, 0, 2, 1, 2)[e]
+            put(L['pluck'], i * 4.0 + e * 0.5, mm.v_pizz(hz(midi(P_PLUCK[half[2 * i + (e >= 4)]][k])), 0.25, 0.9 if e % 2 == 0 else 0.55), 0.005)
+        for s, kind, v in ((0, 'd', 0.75), (4, 't', 0.55), (6, 't', 0.4), (8, 'd', 0.6), (12, 't', 0.55), (13, 't', 0.4), (14, 't', 0.5), (15, 't', 0.6)):
+            put(L['snare'], i * 4.0 + s * 0.25, v_frame(kind, v), 0.003)
+    # 3 the fight for the landmarks: the war drums in sixteenths with the fight's accents, toms under the bar, a roll into every
+    # fourth bar line; the bass plucked on the accents; the second fife under the tune
+    for i in range(BARS):
+        roll = roll_at(i)
+        for s in range(16):
+            b = i * 4.0 + s * 0.25
+            if s >= roll: put(L['drums'], b, v_frame('d', 0.45 + 0.55 * (s - roll + 1) / (16 - roll)), 0.003)
+            elif s in DRIVE: put(L['drums'], b, v_frame('d', 1.0 if s % 8 == 0 else 0.8), 0.003)
+            else: put(L['drums'], b, v_frame('t' if s % 2 else 'k', 0.32 + 0.14 * RNG.random()), 0.004)
+        for s, v in ((0, 1.0), (6, 0.6), (8, 0.9), (14, 0.7)):
+            if s < roll: put(L['drums'], i * 4.0 + s * 0.25, 0.95 * v_tom(v), 0.003)
+        for s, k in zip(DRIVE, (0, 0, 1, 0, 0, 1)):
+            put(L['bass'], i * 4.0 + s * 0.25, v_pluck(hz(midi(P_BASS[half[2 * i + (s >= 8)]][k])), 0.5, 1.0 if s % 8 == 0 else 0.8), 0.004)
+    for b, d, m in mm.seq(P_UNDER): put(L['under'], b, v_flute(hz(m) * 2.0, d * SPB * 0.9, 0.8 * arc(b)), 0.007)
+    # 4 the climax: the horns and a choir on the chords and the tune's long notes, the great war drums on every beat, heavier
+    # on the bar, rolling into every fourth bar line
+    climax(L, half, P_HORNS, P_CHOIR, P_LONG)
+    for i in range(BARS):
+        roll = roll_at(i)
+        for s, v in ((0, 1.0), (4, 0.6), (8, 0.85), (12, 0.6)):
+            if s < roll: put(L['big'], i * 4.0 + s * 0.25, v_bigdrum(v, 55.0), 0.004)
+        for s in range(roll, 16): put(L['big'], i * 4.0 + s * 0.25, v_bigdrum(0.4 + 0.5 * (s - roll + 1) / (16 - roll), 55.0), 0.003)
+    return stems(L, mm.room_ir(1.3, 4200.0), [   # (the open plain: a short bright echo off the cliffs)
+        [('drone', 0.32, 0.15), ('call', 0.3, 0.35)],
+        [('fife', 0.55, 0.25), ('pluck', 0.35, 0.15), ('snare', 0.6, 0.12)],
+        [('drums', 0.88, 0.12, 1.2), ('bass', 0.8, 0.06), ('under', 0.32, 0.25)],
+        [('brass', 0.5, 0.3), ('choir', 0.3, 0.35), ('big', 0.85, 0.18, 1.1)]])
+
 # ---------------- out ----------------
 def main():
     said = []
-    for name, piece in (('rf', forest), ('rt', tower)):
+    for name, piece in (('rf', forest), ('rt', tower), ('rp', plain)):   # (in this order: each set takes its noise after the one before, so the first two stay as they were)
         S = piece()
         # one level for the four stems: the loudest of the ways they are heard (1, 1+2, 1+2+3, all four) just under full scale
         g = 0.89 / max(np.max(np.abs(np.sum(S[:k], axis=0))) for k in (1, 2, 3, 4))

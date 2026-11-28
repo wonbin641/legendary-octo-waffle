@@ -38,6 +38,8 @@ func _ready() -> void:
 	for st in STAGES: _fight(st)
 	_realm("sanctum", "elf", 150.0)
 	_realm("siege", "orc", 200.0)
+	_plain("elf", 420.0)
+	_plain("dwarf", 300.0, false)
 	_realm_keys()
 	_toy_flame()
 	_death_stops()
@@ -147,6 +149,27 @@ func _realm(mode: String, race: String, secs: float) -> void:
 		falls.us >= 3 and falls.them >= 3 and back >= 2 and int(n.get("skill", 0)) >= 5 and int(n.get("bomb", 0)) >= 3 and int(n.get("ult", 0)) >= 1 and moved,
 		{"seconds": snappedf(ticks * DT, 0.1), "falls": falls, "back": back, "skill": n.get("skill", 0), "bomb": n.get("bomb", 0), "ult": n.get("ult", 0), "state": md.state()})
 	Store.settings.realmMode = "solo"; main.command("menu")
+
+## 6-2 played by itself (your fighter too, as one of a people): the landmarks summon, both sides fight and fall, you come back
+## at yours; to the end (an elf takes the plain), or a while (a dwarf at least strikes one of theirs)
+func _plain(race: String, secs: float, to_end := true) -> void:
+	seed(7400 + Races.ORDER.find(race))
+	Store.settings.realmRace = race
+	main.command("start 11"); var rm = main.game.rm; rm.auto = true; rm.log_on = true
+	var ticks := 0
+	for i in int(secs / DT):
+		if main.game.ended: break
+		main.tick(DT); ticks += 1
+	var n := {}; var hit := 0.0
+	for q: Array in rm.log:
+		n[q[0]] = int(n.get(q[0], 0)) + 1
+		if q[0] == "thing" and q.size() > 4 and str(q[4]) == "them": hit += float(q[2])   # (what was done to theirs)
+	var md = rm.mode; var broken: int = rm.log.filter(func(q): return q[0] == "hall").size()
+	var ok: bool = int(n.get("summon", 0)) >= 8 and int(n.get("down", 0)) >= 4 and hit > (6000.0 if to_end else 500.0) and int(n.get("skill", 0)) >= 3
+	if to_end: ok = ok and main.game.ended and main.game.result == "clear" and broken == 3 and (Store.save.cleared as Array).has(11) and Store.save.best.has("t11" + race)
+	check("stage 6-2 plays itself (your fighter too, as a %s): the landmarks summon, both sides fight and fall%s" % [Races.R[race].name, ", and theirs fall one by one till the plain is taken (the stage cleared, its record kept for the %s)" % Races.R[race].name if to_end else ", and theirs are struck"],
+		ok, {"seconds": snappedf(ticks * DT, 0.1), "summons": n.get("summon", 0), "falls": n.get("down", 0), "hit": int(hit), "broken": broken, "state": md.state(), "result": main.game.result})
+	main.command("menu")
 
 ## the battle's own keys through the game's input: B opens the rune altar in the preparation (and closes it); then the
 ## left button fires, the right one throws the dwarf's grenade, R loads, Shift dashes, Q or G throws a bomb, V and the mouse's

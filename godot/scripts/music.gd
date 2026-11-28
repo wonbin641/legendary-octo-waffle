@@ -76,12 +76,12 @@ var _clock := -1.0           # the audio's clock at the last frame
 var keep_log := false; var log: Array = []
 
 # stage 6's team battles
-const R_SETS := ["rf", "rt"]
+const R_SETS := ["rf", "rt", "rp"]   # the wood's, the tower's, 6-2's plain
 const R_BAR := 240.0 / 90.0; const R_LOOP := R_BAR * 16.0   # (90 BPM, 16 bars: 42.67 s)
 const R_GAIN := 0.32         # the battle's music under its sounds (음량 and 음악 on top)
 const R_DUCK := 0.5          # an ultimate near you: 6 dB under
 const R_UP := 0.8; const R_DOWN := 2.0; const R_OFF := 6.0   # a stem comes in this quickly; goes this quickly (the skirmish's over six seconds)
-var r_set := ""              # the set heard ("rf", "rt"), or ""
+var r_set := ""              # the set heard ("rf", "rt", "rp"), or ""
 var _r := {}                 # set -> its four players
 var r_level := [0.0, 0.0, 0.0, 0.0]
 var r_t := 0.0               # where the set is: seconds into its loop
@@ -104,11 +104,13 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new(); p.bus = "Music"; add_child(p); _shot.push_back(p)
 	for k in LAYERS: level[k] = 0.0
 	var loops := []
-	for p: AudioStreamPlayer in _n.values() + _o.values() + [_lobby] + _r.rf + _r.rt:
+	var realm: Array = []
+	for s: String in R_SETS: realm.append_array(_r[s])
+	for p: AudioStreamPlayer in _n.values() + _o.values() + [_lobby] + realm:
 		if p.stream != null: loops.push_back(p.stream)
 	Snd.music_loops(loops)
 	var together := []
-	for p: AudioStreamPlayer in _n.values() + _o.values() + [_leadin] + _r.rf + _r.rt:
+	for p: AudioStreamPlayer in _n.values() + _o.values() + [_leadin] + realm:
 		if p.stream != null: together.push_back(p.stream)
 	lead = Snd.music_together(together)
 

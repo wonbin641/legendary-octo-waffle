@@ -7,8 +7,8 @@ const CONT_COLORS := ["8c3a2b", "2c4f7c", "356b45", "c4682a", "7b8288", "2f7a7a"
 const OWNERS := ["YRD", "KJT", "HWS", "SLV", "PRC", "DGN", "TRV", "BNK"]
 const STAGE_STYLE := {
 	# 6-2, the plain of the four banners: a clear afternoon over open grass, a high sun, haze on the hills
-	11: {"plain": true, "day": true, "fog": [0.46, 0.55, 0.64], "density": 0.0042, "zenith": [0.15, 0.31, 0.6], "glow": [0.32, 0.24, 0.12], "hemi": ["cfe0f4", "6a7a46", 0.66], "moon": ["fff0d8", 1.05],
-		"lamp": ["ffffff", 0.0], "seed": 97, "sunOff": [-52, 66, 38], "exposure": 0.84},
+	11: {"plain": true, "day": true, "fog": [0.46, 0.55, 0.64], "density": 0.0042, "zenith": [0.15, 0.31, 0.6], "glow": [0.32, 0.24, 0.12], "hemi": ["cfe0f4", "6a7a46", 0.74], "moon": ["fff0d8", 1.05],
+		"lamp": ["ffffff", 0.0], "seed": 97, "sunOff": [-52, 66, 38], "exposure": 0.92},
 	# 6-1, the elves' Silverwood: dusk under great pale trees, the air blue-green, lanterns and crystals for light
 	10: {"wood": true, "fog": [0.026, 0.07, 0.078], "density": 0.011, "zenith": [0.005, 0.016, 0.03], "glow": [0.03, 0.1, 0.1], "hemi": ["86a8b0", "20302a", 0.72], "moon": ["c4e6ff", 0.62], "lamp": ["8ff7ea", 0.62],
 		"seed": 91, "sunOff": [-36, 62, -28], "exposure": 1.12},

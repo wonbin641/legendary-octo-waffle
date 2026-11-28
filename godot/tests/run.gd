@@ -4387,8 +4387,8 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 		for i in 4:
 			var st: AudioStream = Mu._r[s][i].stream
 			if st == null or not (st is AudioStreamOggVorbis) or absf(st.get_length() - Music.R_LOOP) > 0.001 or not (st as AudioStreamOggVorbis).loop or Mu._r[s][i].bus != &"Music": mbad.push_back("%s_%d" % [s, i + 1])
-	check("the battles' music (tools/make_realm_music.py): two sets of four stems, the wood's and the tower's, each 16 bars at 90 (42.67 s), looping, on the music's bus",
-		mbad.is_empty() and absf(Music.R_LOOP - 128.0 / 3.0) < 1e-4, mbad)
+	check("the battles' music (tools/make_realm_music.py): three sets of four stems, the wood's, the tower's and 6-2's plain, each 16 bars at 90 (42.67 s), looping, on the music's bus",
+		mbad.is_empty() and Music.R_SETS == ["rf", "rt", "rp"] and absf(Music.R_LOOP - 128.0 / 3.0) < 1e-4, mbad)
 	var runm := func(ctx: Dictionary, sec: float) -> void:
 		for i in roundi(sec / 0.05): Mu.update(0.05, ctx, 0.05)
 	var rc := {"what": "realm", "set": "rf", "stage": 1, "fight": false, "breaks": 0, "duck": false, "semis": 0}
@@ -4510,7 +4510,7 @@ func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: W
 	var paid := me.shards - sh0 == int(ModePlain.SHARDS.hall)
 	md.next.dwarf = 0.01; var w0: int = md.waves.dwarf; step.call(0.5); var no_more: bool = md.waves.dwarf == w0
 	step.call(3.0); var sunk: bool = not (P.halls.dwarf.node as Node3D).visible and (P.halls.dwarf.ruin as Node3D).visible
-	var stage3 := md.music_stage() == 3 and md.music_set() == "rt"
+	var stage3 := md.music_stage() == 3 and md.music_set() == "rp"
 	check("a landmark broken: its boxes go and its ruin's come, it sinks into its dust and its ruin is left; it summons no more, what it had summoned comes for you, you have 250 shards for it, and the music climbs a step",
 		fell and hunting and paid and no_more and sunk and stage3, [fell, hunting, paid, no_more, sunk, md.music_stage()])
 	# ---- the fallen summoned leave the field ----

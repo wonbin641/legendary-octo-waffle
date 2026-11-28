@@ -234,6 +234,19 @@ func _ready() -> void:
 	check("stage 6-1's team battle on the phone: while the round is made ready a button opens the rune altar; then the round buttons are the people's own (attack, special, Shift, bomb, ultimate, dagger, parry, jump, load), all on the screen and clear of one another and of the arrows, and each does what it says",
 		a_has and alt_open and names.size() == 9 and clash.is_empty() and labels == ["공격", "특수", "단검", "튕기기"] and t_skill == 1 and t_bomb == 1 and t_cut and t_parry and t_alt and t_swing >= 1 and ult_word.begins_with("비기") and t_ult == 1,
 		[a_has, alt_open, names, clash, labels, t_skill, t_bomb, t_cut, t_parry, t_alt, t_swing, ult_word, t_ult])
+	# stage 6-2 on the phone: the same round buttons; the rune altar's button while you get ready, and in the fight only by
+	# your own people's landmark
+	Store.settings.realmRace = "elf"
+	main.command("start 11"); await get_tree().create_timer(0.8).timeout; await _tap(Vector2(450, 200)); await get_tree().create_timer(0.2).timeout
+	var pm = main.game.rm; var pme = pm.me
+	var p_prep: bool = main._touch_pills().has("altar")
+	pm.mode.set_phase("fight"); pm.ai_off = true; await _frames(2)
+	var p_home: bool = main._touch_pills().has("altar")
+	main.player.pos = Vector3(0.0, 0.0, -30.0); pme.pos = main.player.pos; await _frames(2)
+	var p_away: bool = main._touch_pills().has("altar")
+	var pb: Dictionary = main._touch_buttons()
+	check("stage 6-2 on the phone: the same nine round buttons as the team battles; the rune altar's button while you get ready, and in the fight only by your own landmark",
+		p_prep and p_home and not p_away and pb.size() == 9, [p_prep, p_home, p_away, pb.keys()])
 	Store.settings.realmMode = "solo"
 	main.to_menu(); Store.save = keep_save; Store.settings = keep_settings; Store.persist(); Store.persist_settings()
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)

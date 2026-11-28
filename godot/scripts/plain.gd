@@ -131,7 +131,7 @@ func _middle() -> void:
 		var a := i * TAU / 10.0 + 0.16; var x := cos(a) * STONES; var z := sin(a) * STONES
 		var w := 0.7 + (i % 3) * 0.15; var h := 3.2 + (i % 4) * 0.55
 		if i == 3 or i == 8: h = 1.3   # (two have fallen: something to crouch behind)
-		block(kit, x - w, 0.0, z - w * 0.7, x + w, h, z + w * 0.7, C_ROCK2 if i % 2 == 0 else C_ROCK)
+		block(kit, x - w, 0.0, z - w * 0.7, x + w, h, z + w * 0.7, Color("948f84") if i % 2 == 0 else Color("a49f92"))   # (old stones, paler than the boulders)
 		kit.slab(x - w - 0.05, h - 0.12, z - w * 0.7 - 0.05, x + w + 0.05, h, z + w * 0.7 + 0.05, C_MOSS.lerp(C_ROCK, 0.5))
 
 ## the cliffs all round (what stops you), the grass on their tops

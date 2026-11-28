@@ -584,7 +584,7 @@ func hurt_thing(th: Dictionary, dmg: float, elem: String, by: Realm.Fighter, at 
 		rm.gain(by, done * float(Races.GAUGE.object)); by.dealt += done
 		if by.me: rm.marks.push_back({"t": 0.0, "head": false, "dmg": done, "thing": true})
 	rm.look.thing_hit(th, elem, at if at != null else (th.pos as Vector3) + Vector3(0, float(th.h) * 0.6, 0))
-	rm.note(["thing", str(th.kind), done, elem])
+	rm.note(["thing", str(th.kind), done, elem, str(th.team)])
 	if float(th.hp) <= 0.0:
 		th.hp = 0.0
 		if th.has("dead"): (th.dead as Callable).call(by)
