@@ -14,6 +14,24 @@ var root: Node3D = null
 var view: Node3D = null    # your weapon
 var models := {}           # race -> its node in your hands
 var dagger: Node3D = null
+var gauge: MeshInstance3D = null; var gauge_mat: StandardMaterial3D = null   # the furnace cannon's pressure gauge (its skin's)
+var orbit: Node3D = null      # the obsidian staff's shards, round its top above 80% heat (its skin's)
+var charm: Node3D = null      # Karnok's miniature mace, hung from the weapon in your hands
+## the mythic skins' colours for each people's weapon, held (in your hands) and carried (on a body): the paper's looks
+const SKIN := {
+	"elf": {"5a3d22": "1a1420", "c9d3dc": "8e4fd0", "8ff7ea": "c98bff", "dcfff9": "e8d0ff"},
+	"dwarf": {"b07a2e": "3a2a2a", "d6a43a": "ff6a1a", "6a7280": "4a3a3a", "8a8f98": "5a4a4a"},
+	"orc": {"c9d3dc": "2a2228", "b03030": "ff5a1a", "6b4a2c": "1a1216"},
+	"demon": {"2a1c22": "0e0a0e", "ff7a2a": "120a0a", "d0a040": "ff6a1a"},
+}
+## a list of boxes in a mythic skin's colours
+static func skinned(race: String, boxes: Array) -> Array:
+	var map: Dictionary = SKIN.get(race, {}); var out: Array = []
+	for b: Array in boxes:
+		var c := b.duplicate()
+		if c.size() > 6 and map.has(str(c[6])): c[6] = map[str(c[6])]
+		out.push_back(c)
+	return out
 var kick := 0.0; var swing_t := 0.0; var swing_len := 0.0; var swing_kind := ""; var swing_i := 0
 var hip := 1.0               # (a narrow screen: the weapon comes in from the side less far; Main sets it)
 const VIEW_SCALE := {"elf": 1.0, "dwarf": 0.66, "orc": 0.75, "demon": 0.8}
@@ -87,6 +105,7 @@ func build(f: Realm.Fighter) -> void:
 	if f.body.has("g") and is_instance_valid(f.body.g): (f.body.g as Node).queue_free()
 	if f.body.has("bar") and is_instance_valid(f.body.bar): (f.body.bar as Node).queue_free()
 	var P := parts(f.race, f.team); var key := "rm_%s_%s_" % [f.race, f.team]
+	if rm.kit.mine(f) and RaidLoot.skin_of(f.race) != "": P.right = skinned(f.race, P.right); key += "sk_"   # (yours: its mythic skin)
 	var g := Node3D.new(); g.rotation_order = EULER_ORDER_YXZ; _root().add_child(g)
 	var wide := f.R / 0.36
 	g.scale = Vector3(wide, f.H / MODEL_H, wide)
@@ -161,7 +180,20 @@ func _view() -> void:
 		"demon": [[0.035, 0.035, 0.95, 0, 0, -0.2, "2a1c22"], [0.12, 0.12, 0.12, 0, 0, -0.7, "ff7a2a"], [0.19, 0.03, 0.19, 0, 0, -0.62, "d0a040"]],
 	}
 	for r: String in held:
-		var n: Node3D = en._part(view, Vector3.ZERO, "rm_hand_" + r, held[r]); n.visible = false; models[r] = n
+		var sk := RaidLoot.skin_of(r) != ""; var boxes: Array = held[r]
+		if sk:
+			boxes = skinned(r, boxes)
+			if r == "orc": boxes.push_back([0.02, 0.012, 0.95, 0, 0.022, -0.6, "ff8a2a"])   # (the magma greatsword: a vein of lava down the blade)
+		var n: Node3D = en._part(view, Vector3.ZERO, "rm_hand_" + r + ("_sk" if sk else ""), boxes); n.visible = false; models[r] = n
+		if sk and r == "demon":   # the eclipse: a black planet in a ring of fire at the staff's top, and its shards
+			var ring := _ball(0.085, "skin_corona", Color(1.0, 0.42, 0.08, 0.55)); ring.position = Vector3(0, 0, -0.7); ring.scale = Vector3(0.085, 0.02, 0.085); n.add_child(ring)
+			orbit = Node3D.new(); orbit.position = Vector3(0, 0, -0.7); n.add_child(orbit)
+			for k in 4:
+				var sh := _mi(_box("skin_shard", Vector3(0.025, 0.05, 0.025)), _unlit("skin_shard", Color(0.08, 0.05, 0.09))); sh.position = Vector3(cos(k * TAU / 4.0) * 0.12, 0, sin(k * TAU / 4.0) * 0.12); orbit.add_child(sh)
+		if sk and r == "dwarf":   # the pressure gauge on the boiler's side, lava-lit while it loads
+			gauge_mat = StandardMaterial3D.new(); gauge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; gauge_mat.albedo_color = Color(0.35, 0.12, 0.05)
+			gauge = MeshInstance3D.new(); gauge.mesh = _box("skin_gauge", Vector3(0.07, 0.07, 0.02)); gauge.material_override = gauge_mat; gauge.position = Vector3(0.075, 0.05, -0.05); gauge.rotation.y = PI / 2.0; n.add_child(gauge)
+	charm = en._part(view, Vector3.ZERO, "rm_charm_mace", [[0.008, 0.07, 0.008, 0, -0.035, 0, "3a2c24"], [0.03, 0.03, 0.03, 0, -0.08, 0, "4c4a50"], [0.012, 0.012, 0.045, 0, -0.08, 0, "8a8f98"], [0.045, 0.012, 0.012, 0, -0.08, 0, "8a8f98"]]); charm.visible = false
 	dagger = en._part(view, Vector3.ZERO, "rm_hand_dagger", [[0.035, 0.012, 0.3, 0, 0, -0.17, "dfe8f0"], [0.1, 0.03, 0.03, 0, 0, -0.01, "8a6a2a"], [0.03, 0.03, 0.1, 0, 0, 0.05, "3a2c24"]]); dagger.visible = false
 
 func _hands(dt: float) -> void:
@@ -171,7 +203,7 @@ func _hands(dt: float) -> void:
 	for r: String in models: (models[r] as Node3D).visible = on and r == f.race
 	kick = maxf(0.0, kick - dt * 6.0)
 	if swing_t > 0.0 and rm.stop_t <= 0.0: swing_t = maxf(0.0, swing_t - dt)
-	if not on: dagger.visible = false; return
+	if not on: dagger.visible = false; charm.visible = false; return
 	var n: Node3D = models[f.race]; var t := rm.clock
 	var mv := clampf(rm.player.speed_xz / 5.0, 0.0, 1.3) * (1.0 if rm.player.grounded else 0.2)
 	var bob := -absf(cos(rm.player.step_phase)) * 0.012 * mv
@@ -195,6 +227,13 @@ func _hands(dt: float) -> void:
 			if f.seal_t > 0.0: at.y -= 0.1; rot.z = 0.5
 			if f.beam_on: at += Vector3(-0.06, 0.03, 0.0)
 	n.position = at; n.rotation = rot; n.scale = Vector3.ONE * float(VIEW_SCALE[f.race])
+	# the skins' moving parts: the gauge while the cannon loads, the shards above 80% heat; the charm swinging under the weapon
+	if gauge != null and f.race == "dwarf": var lit := f.reload_t > 0.0 and fmod(t, 0.3) < 0.18; gauge_mat.albedo_color = Color(1.0, 0.45, 0.08) if lit else Color(0.35, 0.12, 0.05)
+	if orbit != null and f.race == "demon": orbit.visible = f.heat >= float(Races.STAFF.crit); orbit.rotation.y = t * 4.0; orbit.rotation.x = 0.3 * sin(t * 2.0)
+	charm.visible = RaidLoot.wearing("charm_mace")
+	if charm.visible:
+		var sway := sin(t * 3.1) * 0.25 + clampf(rm.player.vel.x * 0.04, -0.4, 0.4) + kick * 0.3
+		charm.position = at + Vector3(-0.05, -0.07, 0.08); charm.rotation = Vector3(rot.x * 0.2 + 0.2 * sin(t * 2.3), 0, sway)
 	# the dagger in the left hand: a cut, or held up to turn a missile
 	var cut := f.dag_t > float(Races.DAGGER.cd) - 0.25
 	dagger.visible = cut or f.parry_t > 0.0
@@ -212,10 +251,14 @@ func shot(s: Dictionary) -> Dictionary:
 	var size := Vector3(0.04, 0.04, 0.8); var col := Color(0.56, 0.97, 0.92, 0.95); var key: String = s.kind
 	match s.kind:
 		"big": size = Vector3(0.07, 0.07, 1.3); col = Color(0.8, 0.62, 1.0, 1.0)
-		"ember": size = Vector3(0.13, 0.13, 0.3); col = Color(1.0, 0.25, 0.08, 1.0) if s.get("hot", false) else Color(1.0, 0.6, 0.2, 0.95); key = "ember_hot" if s.get("hot", false) else "ember"
+		"ember":
+			size = Vector3(0.13, 0.13, 0.3); col = Color(1.0, 0.25, 0.08, 1.0) if s.get("hot", false) else Color(1.0, 0.6, 0.2, 0.95); key = "ember_hot" if s.get("hot", false) else "ember"
+			if s.get("over", false): size = Vector3(0.17, 0.17, 0.42); col = Color(0.75, 0.05, 0.1, 1.0); key = "ember_over"   # (the eclipse overload's: deep red, longer)
 		"gren": size = Vector3(0.22, 0.22, 0.22); col = Color(0.3, 0.9, 0.75, 1.0)
 		"flask": size = Vector3(0.18, 0.24, 0.18); col = {"oil": Color(0.2, 0.55, 0.5, 1.0), "gravity": Color(0.45, 0.2, 0.8, 1.0), "smoke": Color(0.7, 0.5, 1.0, 1.0)}[s.bomb]; key = "flask_" + str(s.bomb)
-		"wave": size = Vector3(2.6, 0.1, 0.5); col = Color(1.0, 0.16, 0.12, 0.8)
+		"wave":
+			size = Vector3(2.6, 0.1, 0.5); col = Color(1.0, 0.16, 0.12, 0.8)
+			if s.get("skin", false): col = Color(0.06, 0.01, 0.03, 0.92); key = "wave_skin"   # (the magma sword's: a black eclipse with lava along it)
 		"axe": size = Vector3(0.5, 0.08, 0.4); col = Color(0.8, 0.84, 0.9, 1.0)
 		"bolt": size = Vector3(0.09, 0.09, 0.5); col = Color(0.75, 0.9, 1.0, 1.0)
 	if s.has("size"): size = s.size   # (6-A's demons' missiles: each its own size and colour)
@@ -245,7 +288,9 @@ func _shots(_dt: float) -> void:
 			match s.kind:
 				"big": rm.fx.glow(p, Vector3.ZERO, 0.25, 0.12, 0.02, Color(0.7, 0.55, 1.0, 0.7))
 				"ember": rm.fx.glow(p, Vector3(0, 0.4, 0), 0.18, 0.1, 0.02, Color(1.0, 0.45, 0.1, 0.7))
-				"wave": rm.fx.glow(p + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * 0.8, Vector3.ZERO, 0.2, 0.25, 0.04, Color(1.0, 0.12, 0.1, 0.6))
+				"wave":
+					rm.fx.glow(p + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * 0.8, Vector3.ZERO, 0.2, 0.25, 0.04, Color(1.0, 0.45, 0.08, 0.85) if s.get("skin", false) else Color(1.0, 0.12, 0.1, 0.6))
+					if s.get("skin", false): rm.fx.glow(p + Vector3(randf_range(-1.3, 1.3), randf_range(-0.1, 0.2), 0), Vector3(0, 1.2, 0), 0.35, 0.2, 0.05, Color(1.0, 0.3, 0.05, 0.8))
 				"gren", "flask": rm.fx.glow(p, Vector3.ZERO, 0.3, 0.08, 0.02, Color(0.4, 1.0, 0.85, 0.5))
 				"fspear", "lance", "jav", "hfire", "fball": rm.fx.glow(p, Vector3(0, 0.5, 0), 0.3, 0.16 if s.kind == "hfire" or s.kind == "fball" else 0.1, 0.03, Color(1.0, 0.42, 0.1, 0.75))
 				"fbolt": rm.fx.glow(p, Vector3.ZERO, 0.2, 0.08, 0.02, Color(0.7, 0.35, 1.0, 0.7))
@@ -425,18 +470,36 @@ func cannon(f: Realm.Fighter, ends: Array, all_close: bool) -> void:
 	if f.me: kick = 1.6 if all_close else 1.1
 	if rm.fx == null: return
 	var o := view_muzzle(f); var up := Vector3.UP if absf(f.aim.y) < 0.95 else Vector3.RIGHT; var x := f.aim.cross(up).normalized(); var y := x.cross(f.aim); var sz := 0.35 if f.me else 1.0
-	for i in 10: var a := i * TAU / 10.0; rm.fx.glow(o + f.aim * 0.15, f.aim * 5.0 + (x * cos(a) + y * sin(a)) * 2.2, 0.35, 0.16 * sz, 0.5 * sz, Color(0.95, 0.98, 1.0, 0.45), 0.0, 3.0)   # (the vortex ring)
+	var furnace := rm.kit.mine(f) and RaidLoot.skin_of("dwarf") != ""   # (the abyss furnace skin: red sulphur smoke and sparks for the white steam)
+	for i in 10: var a := i * TAU / 10.0; rm.fx.glow(o + f.aim * 0.15, f.aim * 5.0 + (x * cos(a) + y * sin(a)) * 2.2, 0.35, 0.16 * sz, 0.5 * sz, Color(0.75, 0.18, 0.08, 0.55) if furnace else Color(0.95, 0.98, 1.0, 0.45), 0.0, 3.0)   # (the vortex ring)
+	if furnace: rm.fx.sparks(o + f.aim * 0.3, 6, [1.0, 0.55, 0.15], 4.0)
 	for i in ends.size():
 		var e: Vector3 = ends[i]
 		if i % 2 == 0: rm.fx.streak(o, e, Color(1.0, 0.85, 0.6, 0.5), 0.02, 0.06)
 		if i % 3 == 0: rm.fx.sparks(e, 2, [1.0, 0.8, 0.5], 2.5)
 
-func steam(at: Vector3, r: float) -> void:
+## the corrupted starlight crossbow's glance: a violet crack across the air from a to b, stars along it
+func constellation(a: Vector3, b: Vector3) -> void:
 	if rm.fx == null: return
-	for i in 12: var a := i * TAU / 12.0; rm.fx.glow(at, Vector3(cos(a), 0.25, sin(a)) * r * 2.2, 0.5, 0.3, 0.9, Color(0.95, 0.98, 1.0, 0.45), 0.0, 2.5)
+	rm.fx.streak(a, b, Color(0.7, 0.35, 1.0, 0.85), 0.03, 1.2)
+	var n := clampi(int(a.distance_to(b) / 1.5), 2, 14)
+	for k in n: rm.fx.glow(a.lerp(b, (k + randf()) / n) + Vector3(randf_range(-0.2, 0.2), randf_range(-0.2, 0.2), randf_range(-0.2, 0.2)), Vector3.ZERO, 1.2, 0.1, 0.06, Color(0.85, 0.65, 1.0, 0.95))
+
+func steam(at: Vector3, r: float, by: Realm.Fighter = null) -> void:
+	if rm.fx == null: return
+	var furnace := by != null and rm.kit.mine(by) and RaidLoot.skin_of("dwarf") != ""
+	for i in 12: var a := i * TAU / 12.0; rm.fx.glow(at, Vector3(cos(a), 0.25, sin(a)) * r * 2.2, 0.5, 0.3, 0.9, Color(0.75, 0.18, 0.08, 0.55) if furnace else Color(0.95, 0.98, 1.0, 0.45), 0.0, 2.5)
+	if furnace: rm.fx.sparks(at + Vector3(0, 0.4, 0), 8, [1.0, 0.55, 0.15], 3.5)
 
 func swing(f: Realm.Fighter, kind: String, i: int) -> void:
 	if f.me: swing_kind = kind; swing_i = i; swing_len = 0.3; swing_t = 0.3
+
+## the eclipse core's overload starting (on) or ending: a dark burst of fire about the staff; yours, a red edge on the view
+func overload(f: Realm.Fighter, on: bool) -> void:
+	if f.me: rm.flash["overload"] = 0.35 if on else 0.15
+	if rm.fx == null: return
+	var at := rm.kit.muzzle(f) + f.aim * 0.4
+	for i in (18 if on else 8): rm.fx.glow(at, Vector3(randf_range(-1, 1), randf_range(-0.3, 1.0), randf_range(-1, 1)).normalized() * 3.0, 0.35, 0.3, 0.05, Color(0.9, 0.15, 0.05, 0.9) if i % 3 else Color(0.05, 0.02, 0.04, 0.95), 2.0, 3.0)
 
 func sealed(f: Realm.Fighter) -> void:
 	if rm.fx != null: rm.fx.puff(rm.kit.muzzle(f) + f.aim * 0.6, 5, 0.25, 0.4)
@@ -533,13 +596,17 @@ func burning(f: Realm.Fighter) -> void:
 		for i in 3: rm.fx.glow(f.feet_mid() + Vector3(randf_range(-0.3, 0.3), randf_range(-0.5, 0.6), randf_range(-0.3, 0.3)), Vector3(0, 1.6, 0), 0.4, 0.26, 0.03, Color(1.0, 0.45, 0.1, 0.85))
 	if f.me or randf() < 0.3: Snd.play("rm_burn", 0.5, null if f.me else f.feet_mid())
 
-## someone falls: no body left lying; each people goes its own way
+## someone falls: no body left lying; each people goes its own way (felled by you in the eclipse elimination's look: a
+## small black sun over his head half a second, then it bursts, and he goes as a demon goes, as ash into a crack)
 func fell(v: Realm.Fighter, _by, _o: Dictionary) -> void:
+	var ecl: bool = _by is Realm.Fighter and (_by as Realm.Fighter).me and RaidLoot.wearing("vfx_eclipse")
+	if ecl: _eclipse_pop(v)
 	if rm.mode.fell(v): return   # (6-A's demons go their own way)
 	var fx := rm.fx; var c := v.feet_mid(); var top := v.pos + Vector3(0, v.H, 0)
 	Snd.play("rm_die_" + v.race, 1.0, null if v.me else c)
 	if fx == null: return
-	match v.race:
+	var style: String = "demon" if ecl else v.race
+	match style:
 		"elf":   # silver drops of light and leaves, rising
 			for i in 26: fx.glow(v.pos + Vector3(randf_range(-0.35, 0.35), randf_range(0.1, v.H), randf_range(-0.35, 0.35)), Vector3(randf_range(-0.3, 0.3), randf_range(1.0, 2.6), randf_range(-0.3, 0.3)), randf_range(0.8, 1.5), 0.14, 0.02, Color(0.9, 0.97, 1.0, 0.85) if i % 3 > 0 else Color(0.35, 0.8, 0.5, 0.9))
 		"dwarf":   # the rune armour comes apart; the pack lets out its last steam
@@ -554,6 +621,13 @@ func fell(v: Realm.Fighter, _by, _o: Dictionary) -> void:
 			if rm.en != null:
 				var d := _flat(0.9, "rift", Color(0.05, 0.0, 0.08, 0.9)); d.position = v.pos + Vector3(0, 0.05, 0); _ghosts.push_back({"n": d, "t": 0.9, "shrink": true})
 	if top.y > 0.0 and v.me and rm.player != null: rm.player.shake = maxf(rm.player.shake, 0.4)
+
+func _eclipse_pop(v: Realm.Fighter) -> void:
+	if rm.en == null: return
+	var at := v.pos + Vector3(0, v.H + 0.55, 0)
+	var sun := _ball(0.22, "ecl_sun", Color(0.02, 0.0, 0.02, 1.0)); sun.position = at
+	var ring := _ball(0.3, "ecl_ring", Color(1.0, 0.45, 0.1, 0.6)); ring.scale = Vector3(0.36, 0.05, 0.36); sun.add_child(ring); ring.scale = Vector3(1.5, 0.22, 1.5)
+	_ghosts.push_back({"n": sun, "t": 0.5, "pop": at})
 
 ## someone off the field for good: his body and his bar
 func drop(f: Realm.Fighter) -> void:
@@ -593,7 +667,12 @@ func update(dt: float) -> void:
 		var q: Dictionary = _ghosts[i]; q.t = float(q.t) - dt
 		if not is_instance_valid(q.n): _ghosts.remove_at(i); continue
 		if q.get("shrink", false): (q.n as Node3D).scale = Vector3(maxf(0.01, float(q.t)), 1.0, maxf(0.01, float(q.t)))
-		if float(q.t) <= 0.0: (q.n as Node).queue_free(); _ghosts.remove_at(i)
+		if q.has("pop"): (q.n as Node3D).rotation.y += dt * 6.0; (q.n as Node3D).scale = Vector3.ONE * 0.22 * (1.0 + 0.4 * (0.5 - float(q.t)))
+		if float(q.t) <= 0.0:
+			if q.has("pop") and rm.fx != null:   # (the black sun bursts)
+				var p: Vector3 = q.pop; Snd.play("rd_eclipse_pop", 0.9, p)
+				for k in 22: rm.fx.glow(p, Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)).normalized() * 3.2, 0.45, 0.18, 0.04, Color(0.04, 0.01, 0.04, 0.95) if k % 2 else Color(1.0, 0.45, 0.1, 0.9), 1.0, 3.0)
+			(q.n as Node).queue_free(); _ghosts.remove_at(i)
 	# the demon's beam
 	for f: Realm.Fighter in rm.all:
 		if f.alive and f.beam_on and rm.fx != null: rm.fx.streak(view_muzzle(f), f.beam_end, Color(0.75, 0.1, 0.45, 0.6), 0.035 if f.me else 0.06, 0.05)

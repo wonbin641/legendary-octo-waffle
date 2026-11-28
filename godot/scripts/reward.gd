@@ -1,6 +1,6 @@
 class_name Reward
 extends Node
-## A boss's chest giving you a gun you did not have: shown big. A card across the upper middle of the screen (the crosshair
+## A boss's chest giving you a gun you did not have, or 6-A's spoils (start_spoils): shown big. A card across the upper middle of the screen (the crosshair
 ## stays clear under it) with the gun's name in large letters and the gun itself turning in it, gold rays wheeling behind,
 ## confetti blown up from both sides and raining down, fireworks bursting over it, and a fanfare (sounds/reward_fanfare.wav).
 ## Game.party_t holds the stage's clear back until it has been seen. Its own random numbers: the game's are not drawn.
@@ -10,7 +10,10 @@ const COLS := ["f2c14e", "ff5260", "5ed6b0", "5f9cff", "ffffff", "f78fb3", "ffa9
 const GOLD := Color("f2c14e"); const GOLD_DEEP := Color("b8862a"); const NIGHT := Color(0.04, 0.06, 0.12, 0.93); const INK := Color("ece6d8")
 
 var m                       # main: the fonts
-var id := ""                # the gun won ("" when nothing is on)
+var id := ""                # the gun won ("" when nothing is on; "spoils" for 6-A's)
+var kind := "gun"           # gun, or spoils: 6-A's spoils, a row for each thing (RaidLoot.grant's list)
+var rows: Array = []        # the spoils' rows: {kind, id, n, name}
+var head := ""; var sub_head := ""
 var t := 0.0                # how long it has been on
 var bits: Array = []        # the confetti: [x, y, vx, vy, angle, spin, colour, w, h, flutter phase], in pixels of the screen
 var booms: Array = []       # the fireworks: [x, y, at, colour, directions: Array of [angle, speed]]
@@ -25,7 +28,23 @@ func on() -> bool: return id != ""
 
 ## the gun won, on a screen this big: everything starts from here
 func start(gun: String, screen: Vector2) -> void:
-	id = gun; t = 0.0; _size = screen; bits.clear(); booms.clear(); stars.clear(); _R.randomize()
+	kind = "gun"; id = gun
+	_party(screen)
+	_show_gun()
+	Snd.play("reward_fanfare")
+
+## 6-A won: the spoils, a row each, under the rank (and the difficulty past the Normal)
+func start_spoils(list: Array, rank: String, diff: String, screen: Vector2) -> void:
+	kind = "spoils"; id = "spoils"; rows = list.duplicate(); head = "토벌 보상 · 등급 " + rank
+	sub_head = ("난이도 " + str(RaidLoot.DIFF[diff].name) + " · " if diff != "normal" else "") + "연금술 공방(처음 화면)에 보관됩니다"
+	_party(screen)
+	if vp != null: vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	Snd.play("reward_fanfare")
+	if rows.any(func(r): return str(r.kind) == "relic" or str(r.kind) == "box" or str(r.kind) == "look"): Snd.play("rd_relic", 1.1)
+
+## the confetti, the fireworks and the glints, made anew
+func _party(screen: Vector2) -> void:
+	t = 0.0; _size = screen; bits.clear(); booms.clear(); stars.clear(); _R.randomize()
 	var k := screen.y / 720.0
 	for side: float in [-1.0, 1.0]:   # two cannons low at the sides, aimed up and in
 		for i in 55:
@@ -42,11 +61,9 @@ func start(gun: String, screen: Vector2) -> void:
 		var lx := R.position.x + R.size.x * _R.randf_range(0.0, 0.22) if i % 2 == 0 else R.end.x - R.size.x * _R.randf_range(0.0, 0.22)
 		booms.push_back([lx, R.position.y + R.size.y * (_R.randf_range(0.0, 0.25) if i % 3 != 2 else _R.randf_range(0.85, 1.05)), 0.12 + i * 0.4 + _R.randf_range(0.0, 0.12), Color(COLS[_R.randi() % 4]), dirs])
 	for i in 14: stars.push_back([_R.randf(), _R.randf(), _R.randf() * TAU])
-	_show_gun()
-	Snd.play("reward_fanfare")
 
 func stop() -> void:
-	id = ""; bits.clear(); booms.clear()
+	id = ""; kind = "gun"; bits.clear(); booms.clear()
 	if vp != null: vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 func update(dt: float) -> void:
@@ -67,14 +84,14 @@ func _in() -> float:
 func _alpha() -> float: return clampf(t / 0.25, 0.0, 1.0) * clampf((LONG - t) / 0.6, 0.0, 1.0)
 
 ## the card's rectangle on a screen this big
-static func card_rect(s: Vector2) -> Rect2:
+static func card_rect(s: Vector2, n_rows := 0) -> Rect2:
 	var h := maxf(s.y * 0.42, 170.0); var w := clampf(minf(s.x * 0.8, 860.0 * s.y / 720.0), 300.0, s.x - 16.0)   # (as big on any screen, for its height)
+	if n_rows > 0: h = clampf(s.y * (0.2 + 0.06 * n_rows), 170.0, s.y * 0.8)   # (the spoils: as tall as their rows need)
 	return Rect2(s.x / 2.0 - w / 2.0, s.y * 0.055, w, h)
 
 func draw(ci) -> void:
 	if not on(): return
-	var s: Vector2 = ci.size; _size = s; var a := _alpha(); var e := _in(); var R := card_rect(s); var c := R.get_center()
-	var W: Dictionary = Weapons.LIST[id]
+	var s: Vector2 = ci.size; _size = s; var a := _alpha(); var e := _in(); var R := card_rect(s, rows.size() if kind == "spoils" else 0); var c := R.get_center()
 	# the rays wheeling behind the card, and a white flash as it opens
 	if t < 0.3: ci.draw_rect(Rect2(Vector2.ZERO, s), Color(1, 0.97, 0.85, 0.35 * (1.0 - t / 0.3)))
 	var rr := maxf(s.x, s.y) * 0.75 * e
@@ -87,30 +104,18 @@ func draw(ci) -> void:
 		ci.draw_rect(Rc.grow(10.0), Color(0, 0, 0, 0.35 * a)); ci.draw_rect(Rc, Color(NIGHT.r, NIGHT.g, NIGHT.b, NIGHT.a * a))
 		ci.draw_rect(Rc, Color(GOLD.r, GOLD.g, GOLD.b, a), false, 3.0); ci.draw_rect(Rc.grow(-7.0), Color(GOLD.r, GOLD.g, GOLD.b, 0.45 * a), false, 1.0)
 	if e > 0.6:
-		var f_t: Font = m.f_title; var f_b: Font = m.f_bold; var h := Rc.size.y; var y := Rc.position.y
+		var h := Rc.size.y; var y := Rc.position.y
 		# the ribbon over the top edge
-		var rib_h := h * 0.16; var rib := Rect2(c.x - Rc.size.x * 0.3, y - rib_h * 0.45, Rc.size.x * 0.6, rib_h)
+		var rib_h := minf(h * 0.16, 72.0 * s.y / 720.0); var rib := Rect2(c.x - Rc.size.x * 0.3, y - rib_h * 0.45, Rc.size.x * 0.6, rib_h)
 		ci.draw_rect(rib, Color(GOLD.r, GOLD.g, GOLD.b, a)); ci.draw_rect(rib, Color(GOLD_DEEP.r, GOLD_DEEP.g, GOLD_DEEP.b, a), false, 2.0)
 		for sd: float in [-1.0, 1.0]:   # its ends folded back
 			var ex := rib.position.x if sd < 0.0 else rib.end.x; var tip := ex + sd * rib_h * 0.6
 			ci.draw_colored_polygon(PackedVector2Array([Vector2(ex, rib.position.y + rib_h * 0.2), Vector2(tip, rib.position.y + rib_h * 0.2), Vector2(tip - sd * rib_h * 0.25, rib.position.y + rib_h * 0.6), Vector2(tip, rib.end.y + rib_h * 0.2), Vector2(ex, rib.end.y + rib_h * 0.2)]), Color(GOLD_DEEP.r, GOLD_DEEP.g, GOLD_DEEP.b, a))
-		_text(ci, f_t, "새 총 획득!", c.x, rib.position.y + rib_h * 0.12, int(rib_h * 0.66), Color(0.1, 0.07, 0.02, a), false)
-		# the gun's name, big; its model and kind under it
-		var big := int(maxf(h * 0.2, 26.0)); var name_y := rib.end.y + h * 0.04
-		_text(ci, f_t, str(W.name), c.x, name_y, big, Color(1, 1, 1, a), true, Color(GOLD_DEEP.r, GOLD_DEEP.g, GOLD_DEEP.b, a))
-		var sub_y := name_y + big * 1.08
-		_text(ci, f_b, "%s · %s" % [str(W.model), str(W.cls)], c.x, sub_y, int(maxf(h * 0.07, 13.0)), Color(GOLD.r, GOLD.g, GOLD.b, a), true)
-		# the gun itself, turning
-		var pic_top := sub_y + h * 0.1; var pic_h := Rc.end.y - h * 0.14 - pic_top
-		if vp != null and pic_h > 20.0:
-			var pw := minf(Rc.size.x * 0.94, pic_h * 3.0); var pr := Rect2(c.x - pw / 2.0, pic_top, pw, pw / 3.0)
-			if pr.size.y > pic_h: pr = Rect2(c.x - pic_h * 1.5, pic_top, pic_h * 3.0, pic_h)
-			ci.draw_texture_rect(_glow_tex(), Rect2(pr.get_center() - Vector2(pr.size.x * 0.42, pr.size.y * 0.62), Vector2(pr.size.x * 0.84, pr.size.y * 1.24)), false, Color(1, 1, 1, 0.75 * a))
-			ci.draw_texture_rect(vp.get_texture(), pr, false, Color(1, 1, 1, a))
-		_text(ci, m.f_mono, "영구히 내 총 · 살아서 나가면 · 모든 총 탄약 가득", c.x, Rc.end.y - h * 0.11, int(maxf(h * 0.05, 11.0)), Color(INK.r, INK.g, INK.b, 0.85 * a), false)
+		if kind == "spoils": _spoils(ci, Rc, rib, a)
+		else: _gun_card(ci, Rc, rib, a)
 		for S: Array in stars:   # glints along the card's edge
 			var gx: float = Rc.position.x + float(S[0]) * Rc.size.x; var gy: float = Rc.position.y + (0.0 if float(S[1]) < 0.5 else Rc.size.y); var tw := maxf(0.0, sin(t * 6.0 + float(S[2])))
-			_star(ci, Vector2(gx, gy), (5.0 + 7.0 * tw) * h / 300.0, Color(1, 0.95, 0.75, tw * a))
+			_star(ci, Vector2(gx, gy), (5.0 + 7.0 * tw) * minf(h, 300.0) / 300.0, Color(1, 0.95, 0.75, tw * a))
 	# the fireworks, over the card's edges
 	var kk := s.y / 720.0
 	for B: Array in booms:
@@ -130,6 +135,60 @@ func draw(ci) -> void:
 		var hw: float = float(b[7]) * 0.5; var hh: float = float(b[8]) * 0.5 * (0.25 + 0.75 * flip); var ang: float = b[4]
 		var xa := Vector2(cos(ang), sin(ang)); var ya := Vector2(-xa.y, xa.x)
 		ci.draw_colored_polygon(PackedVector2Array([p - xa * hw - ya * hh, p + xa * hw - ya * hh, p + xa * hw + ya * hh, p - xa * hw + ya * hh]), Color(col.r, col.g, col.b, a))
+
+## the gun's card: "새 총 획득!" on the ribbon, the gun's name big, its model and kind, the gun itself turning
+func _gun_card(ci, Rc: Rect2, rib: Rect2, a: float) -> void:
+	var W: Dictionary = Weapons.LIST[id]; var f_t: Font = m.f_title; var f_b: Font = m.f_bold; var h := Rc.size.y; var c := Rc.get_center(); var rib_h := rib.size.y
+	_text(ci, f_t, "새 총 획득!", c.x, rib.position.y + rib_h * 0.12, int(rib_h * 0.66), Color(0.1, 0.07, 0.02, a), false)
+	var big := int(maxf(h * 0.2, 26.0)); var name_y := rib.end.y + h * 0.04
+	_text(ci, f_t, str(W.name), c.x, name_y, big, Color(1, 1, 1, a), true, Color(GOLD_DEEP.r, GOLD_DEEP.g, GOLD_DEEP.b, a))
+	var sub_y := name_y + big * 1.08
+	_text(ci, f_b, "%s · %s" % [str(W.model), str(W.cls)], c.x, sub_y, int(maxf(h * 0.07, 13.0)), Color(GOLD.r, GOLD.g, GOLD.b, a), true)
+	var pic_top := sub_y + h * 0.1; var pic_h := Rc.end.y - h * 0.14 - pic_top
+	if vp != null and pic_h > 20.0:
+		var pw := minf(Rc.size.x * 0.94, pic_h * 3.0); var pr := Rect2(c.x - pw / 2.0, pic_top, pw, pw / 3.0)
+		if pr.size.y > pic_h: pr = Rect2(c.x - pic_h * 1.5, pic_top, pic_h * 3.0, pic_h)
+		ci.draw_texture_rect(_glow_tex(), Rect2(pr.get_center() - Vector2(pr.size.x * 0.42, pr.size.y * 0.62), Vector2(pr.size.x * 0.84, pr.size.y * 1.24)), false, Color(1, 1, 1, 0.75 * a))
+		ci.draw_texture_rect(vp.get_texture(), pr, false, Color(1, 1, 1, a))
+	_text(ci, m.f_mono, "영구히 내 총 · 살아서 나가면 · 모든 총 탄약 가득", c.x, Rc.end.y - h * 0.11, int(maxf(h * 0.05, 11.0)), Color(INK.r, INK.g, INK.b, 0.85 * a), false)
+
+## 6-A's spoils: a row for each, its mark and its line, one after another; a relic, a choice box, a look or a title in gold
+func _spoils(ci, Rc: Rect2, rib: Rect2, a: float) -> void:
+	var f_t: Font = m.f_title; var f_b: Font = m.f_bold; var c := Rc.get_center(); var rib_h := rib.size.y; var h := Rc.size.y; var k := _size.y / 720.0
+	_text(ci, f_t, head, c.x, rib.position.y + rib_h * 0.12, int(rib_h * 0.62), Color(0.1, 0.07, 0.02, a), false)
+	var top := rib.end.y + 10.0 * k; var bottom := Rc.end.y - 30.0 * k; var n := maxi(1, rows.size())
+	var rh := clampf((bottom - top) / n, 14.0, 46.0 * k); var fs := int(clampf(rh * 0.52, 11.0, 22.0 * k))
+	var x0 := Rc.position.x + maxf(Rc.size.x * 0.1, rh * 1.4)
+	for i in rows.size():
+		var r: Dictionary = rows[i]; var y := top + rh * i; var big: bool = str(r.kind) in ["relic", "box", "look", "title"]
+		var u := clampf((t - 0.35 - i * 0.12) / 0.3, 0.0, 1.0)   # (one row after another, each sliding in)
+		if u <= 0.0: continue
+		var aa := a * u; var dx := (1.0 - u) * 30.0 * k
+		var col := Color(GOLD.r, GOLD.g, GOLD.b, aa) if big else Color(INK.r, INK.g, INK.b, aa)
+		if big: ci.draw_rect(Rect2(Rc.position.x + 10, y + 1, Rc.size.x - 20, rh - 2), Color(GOLD.r, GOLD.g, GOLD.b, 0.12 * aa))
+		_icon(ci, r, Vector2(x0 - rh * 0.6 + dx, y + rh * 0.5), rh * 0.3, aa)
+		var tx := RaidLoot.line(r); var ffont: Font = f_t if big else f_b; var fz := fs + (2 if big else 0)
+		var w := ffont.get_string_size(tx, HORIZONTAL_ALIGNMENT_LEFT, -1, fz).x; var room := Rc.end.x - 14.0 - (x0 + dx)
+		if w > room: fz = maxi(9, int(fz * room / w))
+		ci.draw_string(ffont, Vector2(x0 + dx, y + rh * 0.5 + ffont.get_ascent(fz) * 0.42), tx, HORIZONTAL_ALIGNMENT_LEFT, -1, fz, col)
+	_text(ci, m.f_mono, sub_head, c.x, Rc.end.y - 24.0 * k, int(maxf(12.0 * k, 10.0)), Color(INK.r, INK.g, INK.b, 0.85 * a), false)
+
+## a spoil's mark: a gem for each material, a coin, a rune for a relic, a box, a star for a title or a look
+func _icon(ci, r: Dictionary, at: Vector2, rr: float, a: float) -> void:
+	match str(r.kind):
+		"mat":
+			var col := Color(str(RaidLoot.MAT_COL.get(str(r.id), "ffffff")))
+			ci.draw_colored_polygon(PackedVector2Array([at + Vector2(0, -rr), at + Vector2(rr * 0.8, -rr * 0.2), at + Vector2(rr * 0.5, rr), at + Vector2(-rr * 0.5, rr), at + Vector2(-rr * 0.8, -rr * 0.2)]), Color(col.r, col.g, col.b, a))
+			ci.draw_line(at + Vector2(0, -rr), at + Vector2(0, rr), Color(1, 1, 1, 0.35 * a), 1.5)
+		"coins":
+			ci.draw_circle(at, rr, Color(GOLD.r, GOLD.g, GOLD.b, a)); ci.draw_arc(at, rr * 0.7, 0, TAU, 20, Color(GOLD_DEEP.r, GOLD_DEEP.g, GOLD_DEEP.b, a), 2.0)
+		"relic", "dup":
+			var col := Color("b04aff") if str(r.kind) == "relic" else Color(0.6, 0.55, 0.6)
+			ci.draw_circle(at, rr * 1.15, Color(col.r, col.g, col.b, 0.3 * a)); ci.draw_colored_polygon(PackedVector2Array([at + Vector2(0, -rr), at + Vector2(rr * 0.7, 0), at + Vector2(0, rr), at + Vector2(-rr * 0.7, 0)]), Color(col.r, col.g, col.b, a))
+			ci.draw_line(at + Vector2(-rr * 0.35, -rr * 0.2), at + Vector2(rr * 0.35, rr * 0.2), Color(1, 0.9, 1, a), 2.0)
+		"box":
+			ci.draw_rect(Rect2(at - Vector2(rr, rr * 0.7), Vector2(rr * 2, rr * 1.5)), Color(0.35, 0.12, 0.5, a)); ci.draw_rect(Rect2(at - Vector2(rr * 0.18, rr * 0.7), Vector2(rr * 0.36, rr * 1.5)), Color(GOLD.r, GOLD.g, GOLD.b, a))
+		_: _star(ci, at, rr * 1.2, Color(GOLD.r, GOLD.g, GOLD.b, a))
 
 var _glow: GradientTexture2D
 func _glow_tex() -> GradientTexture2D:   # a soft gold light behind the gun

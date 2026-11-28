@@ -34,6 +34,9 @@ var road: DemonRoad = null
 var fiends: Fiends = null
 var cp := 0                         # the last checkpoint reached (its section)
 var revives := REVIVES
+var diff := "normal"                # the difficulty (RaidLoot.DIFF): the lords' health, blows and pace, the comebacks, the eclipse
+var spoils: Array = []              # what the raid won gave (RaidLoot.grant), for the screens
+var _rng := RandomNumberGenerator.new()   # (the spoils' dice: the game's own are not drawn)
 var deaths := 0                     # the party's falls
 var clock := 0.0                    # seconds since the party set off
 var cleared := {}                   # section -> true, once its seal is gone
@@ -68,6 +71,7 @@ func left_in(sec: int) -> int:
 	return n
 
 func lineup() -> bool: return false     # (the party is made here: one of each people)
+func relics() -> bool: return true      # (the legendary relics are the raid's)
 func own_graph() -> bool: return true   # (the road's own waypoints)
 func clears() -> bool: return true      # (a win is the stage cleared)
 func held(_f: Realm.Fighter) -> bool: return phase == "over" or phase == "end"
@@ -75,28 +79,31 @@ func rooted() -> bool: return phase == "over" or phase == "end"
 
 # ---------------- the raid ----------------
 func build() -> void:
+	diff = RaidLoot.picked()
 	road = rm.world.road if rm.world != null else null
 	fiends = Fiends.new(); fiends.rm = rm; fiends.mode = self; fiends.road = road
 	if road != null: road.make_seals()
 
 func start() -> void:
-	won = ""; outcome = ""; rank = ""; clock = 0.0; cp = 0; revives = REVIVES; deaths = 0; cleared = {}; core = {}; core_taken = false
+	won = ""; outcome = ""; rank = ""; clock = 0.0; cp = 0; revives = int(D().revives); deaths = 0; cleared = {}; core = {}; core_taken = false; spoils = []
 	parries = 0; cores_first = false; eclipse_t0 = -1.0; eclipse_kill = -1.0; boss_up = null
 	var first := rm.me
 	for r: String in Races.ORDER:
 		if r == first.race: continue
 		var f := rm.add("us", r); f.bomb_kinds = [Races.BOMBS[randi() % 3]]; rm.refit(f)
 	rm.all.sort_custom(func(a: Realm.Fighter, b: Realm.Fighter) -> bool: return Races.ORDER.find(a.race) < Races.ORDER.find(b.race))   # (the party in the four peoples' order: the keys 1 to 4)
-	for f: Realm.Fighter in party(): f.shards = int(SHARDS.start); f.name = str(Races.R[f.race].name)
+	for f: Realm.Fighter in party():
+		f.shards = int(SHARDS.start); f.name = str(Races.R[f.race].name)
+		for id: String in RaidLoot.relics_for(f.race): rm.fit_relic(f, id)   # (the relics you have, each with the one of the party that carries it)
 	shop_ai()
 	for f: Realm.Fighter in party(): rm.back(f); f.inv = 0.0; f.haste_t = 0.0
 	if road != null:
 		for p: Dictionary in road.posts: fiends.make(str(p.type), Vector3(float(p.x), float(p.y), float(p.z)), int(p.sec), {"perch": p.get("perch", false), "yaw": float(p.get("yaw", PI / 2.0))})
 		var kp := road.balcony_at(120.0); var kd := Vector3(DemonRoad.TC.x - kp.x, 0, DemonRoad.TC.y - kp.z)
-		karnok = fiends.make("karnok", kp, 3, {"yaw": atan2(-kd.x, -kd.z)})
-		baal = fiends.make("baal", Vector3(DemonRoad.AC.x, DemonRoad.A_Y, DemonRoad.AC.y), 4, {"yaw": PI / 2.0})
+		karnok = fiends.make("karnok", kp, 3, {"yaw": atan2(-kd.x, -kd.z), "hp_mul": float(D().hp)})
+		baal = fiends.make("baal", Vector3(DemonRoad.AC.x, DemonRoad.A_Y, DemonRoad.AC.y), 4, {"yaw": PI / 2.0, "hp_mul": float(D().hp)})
 	set_phase("fight")
-	if rm.game != null: rm.game.say_banner("타락한 마탑 토벌전", "Tab: 동료로 교대 · B: 캠프의 룬 제단 · 봉인은 구간의 악마를 모두 쓰러뜨리면 풀립니다", 3.4); Snd.play("rm_prep")
+	if rm.game != null: rm.game.say_banner("타락한 마탑 토벌전" + ("" if diff == "normal" else " · " + str(D().name)), "Tab: 동료로 교대 · B: 캠프의 룬 제단 · 봉인은 구간의 악마를 모두 쓰러뜨리면 풀립니다", 3.4); Snd.play("rm_prep")
 
 func update(dt: float) -> void:
 	if fiends != null: fiends.tick(dt)
@@ -162,7 +169,7 @@ func _lava(f: Realm.Fighter) -> void:
 	f.inv = 0.0; f.phased_t = 0.0
 	rm.slay(f, null, {"src": "lava"})
 	Snd.play("rd_lava", 1.0, f.feet_mid())
-	if rm.game != null and not Fiends.is_mon(f): rm.game.say_feed(str(Races.R[f.race].name) + "이(가) 용암에 떨어졌습니다")
+	if rm.game != null and not Fiends.is_mon(f): rm.game.say_feed(Races.josa(str(Races.R[f.race].name), "이가") + " 용암에 떨어졌습니다")
 
 ## the camp: its blessing circle, its supply crates
 func _camp(dt: float) -> void:
@@ -236,7 +243,7 @@ func _take_core(by: Realm.Fighter) -> void:
 	shop_ai()
 	if rm.look != null: rm.look.burst(ALTAR_B + Vector3(0, 1.0, 0), 3.0, "arcane")
 	Snd.play("rd_core", 1.2, ALTAR_B)
-	if rm.game != null: rm.game.say_banner("타락한 마력 핵", "%s이(가) 챙겼습니다 · 파티 전원 비기 게이지 100%% · 마력 파편 +%d · 곁의 룬 제단이 깨어났습니다 (B)" % [str(Races.R[by.race].name), int(SHARDS.core)], 3.2)
+	if rm.game != null: rm.game.say_banner("타락한 마력 핵", "%s 챙겼습니다 · 파티 전원 비기 게이지 100%% · 마력 파편 +%d · 곁의 룬 제단이 깨어났습니다 (B)" % [Races.josa(str(Races.R[by.race].name), "이가"), int(SHARDS.core)], 3.2)
 	rm.note(["core", by.id])
 
 ## a section won: whoever of the party stands is whole again, the fire on him out (the comebacks are for the fallen)
@@ -269,8 +276,12 @@ func _end(how: String) -> void:
 	outcome = how; won = "us" if how == "won" else "them"
 	if how == "won":
 		rank = rank_now()
-		var best := int(Store.save.best.get("r13", 0))
-		if int(RANK_N[rank]) > best: Store.save.best["r13"] = int(RANK_N[rank])
+		var rk := RaidLoot.rank_key(diff); var best := int(Store.save.best.get(rk, 0))
+		if int(RANK_N[rank]) > best: Store.save.best[rk] = int(RANK_N[rank])
+		_rng.randomize()
+		spoils = RaidLoot.grant(rank, diff, _rng, eclipse_kill if eclipse_kill >= 0.0 else -1.0)   # (eclipse_kill: how long his eclipse lasted)
+		Store.persist()
+		if rm.game != null and rm.game.has_method("show_spoils"): rm.game.show_spoils(spoils, rank, diff)
 	set_phase("over", OVER)
 	Snd.play("rm_round_win" if how == "won" else "rm_round_lose")
 	if rm.game != null:
@@ -399,6 +410,7 @@ func altar_why() -> String: return "룬 제단은 숲속 캠프의 제단 곁에
 func dmg_mul(by: Realm.Fighter, v: Realm.Fighter) -> float:
 	var m := 1.0
 	if by != null and not Fiends.is_mon(by) and float(bless.get(by.id, 0.0)) > 0.0: m *= float(BLESS.mul)
+	if by != null and Fiends.is_mon(by) and bool(Fiends.KINDS[Fiends.kind_of(by)].get("boss", false)): m *= float(D().dmg)   # (the lords' blows, by the difficulty)
 	if Fiends.is_mon(v) and fiends != null: m *= fiends.dmg_mul(by, v)
 	return m
 func furnace(f: Realm.Fighter) -> bool: return fiends != null and not Fiends.is_mon(f) and fiends.in_furnace(f)
@@ -581,13 +593,13 @@ func hud() -> Dictionary:
 	var ps: Array = []
 	for f: Realm.Fighter in party():
 		ps.push_back({"race": f.race, "q": clampf(f.hp / f.max_hp, 0.0, 1.0), "sh": f.shield, "alive": f.alive, "back": f.back_t, "me": f.me, "ult": f.gauge >= float(Races.GAUGE.max), "bless": float(bless.get(f.id, 0.0)) > 0.0})
-	var out := {"title": "타락한 마탑 토벌전 · " + str(SECTIONS[cp]), "party": ps, "revives": revives, "clock": clock, "roster": false, "deaths": deaths}
+	var out := {"title": "타락한 마탑 토벌전 · " + ("" if diff == "normal" else str(D().name) + " · ") + str(SECTIONS[cp]), "party": ps, "revives": revives, "clock": clock, "roster": false, "deaths": deaths}
 	var B := boss_up
 	if B != null and B.alive:
 		var T: Dictionary = Fiends.KINDS[Fiends.kind_of(B)]
 		out.boss = {"name": str(B.name), "q": clampf(B.hp / B.max_hp, 0.0, 1.0), "sh": clampf(B.shield / maxf(1.0, float(T.get("shield", 1.0))), 0.0, 1.0), "phase": int(B.brain.get("phase", 1)), "phases": 2 if Fiends.kind_of(B) == "karnok" else 3,
 			"stagger": float(B.brain.get("stagger", 0.0)) > 0.0 or float(B.brain.get("crash", 0.0)) > 0.0}
-		if str(B.brain.get("state", "")) == "eclipse": out.eclipse = float(B.brain.get("cast", 0.0))
+		if str(B.brain.get("state", "")) == "eclipse": out.eclipse = float(B.brain.get("cast", 0.0)); out.eclipse_max = eclipse_time()
 	out.sub = _aim_line()
 	if outcome == "won": out.sub = "토벌 성공 · 등급 " + rank
 	elif outcome == "lost": out.sub = "토벌 실패"
@@ -617,16 +629,31 @@ func brief() -> Array:
 	return ["엘프·드워프·오크·악마 넷이 한 파티 · 나는 그중 하나를 맡고 나머지 셋은 인공지능이 싸웁니다 · Tab(또는 1~4, 터치 '교대')으로 언제든 다른 동료로 시점이 바뀝니다",
 		"① 숲속 캠프(룬 제단·축복의 마법진·보급 상자) → ② 무너진 외성문 → ③ 용암 사슬 다리 → ④ 탑 나선 계단의 카르녹 → ⑤ 심연의 제단의 바알",
 		"구간의 마법 결계는 그 구간의 악마를 모두 쓰러뜨려야 풀리고, 그때 살아 있는 동료는 체력이 모두 찹니다 · 용암에 떨어지면 즉사",
-		"파티 공유 부활 %d회: 쓰러지면 %d초 뒤 마지막 거점에서 다시 일어납니다 · 넷이 모두 쓰러지면 실패" % [REVIVES, int(BACK)],
+		("파티 공유 부활 %d회: 쓰러지면 %d초 뒤 마지막 거점에서 다시 일어납니다 · 넷이 모두 쓰러지면 실패" % [int(D().revives), int(BACK)]) if int(D().revives) > 0 else "부활 없음: 쓰러진 동료는 일어나지 않습니다 · 넷이 모두 쓰러지면 바로 실패",
 		"카르녹: 투창 튕겨내기(F) · 나선 화염 파동은 점프 · 결계 수정 · 2페이즈 처형 갈고리는 코어 집중 사격이나 폭탄으로 끊기",
-		"바알: 석주 뒤 엄폐 · 혈약 사슬 4초 안에 끊기 · 냉각진 · 날개 코어 · 종말의 일식은 12초 안에 처치 (폭탄이 영창을 늦춤)",
-		"등급 S: 12분 안·쓰러짐 2번 이하·투창 2번 되돌리기·첫 태양 때 코어 파괴 · A: 16분·5번·일식 8초 안 · B: 20분·9번"]
+		"바알: 석주 뒤 엄폐 · 혈약 사슬 4초 안에 끊기 · 냉각진 · 날개 코어 · 종말의 일식은 %d초 안에 처치 (폭탄이 영창을 늦춤)" % int(eclipse_time()),
+		"등급 S: 12분 안·쓰러짐 2번 이하·투창 2번 되돌리기·첫 태양 때 코어 파괴 · A: 16분·5번·일식 8초 안 · B: 20분·9번",
+		diff_line(diff),
+		"토벌 보상(이길 때마다): 등급에 따라 소재·명성 주화, 파티원마다 그 종족의 전설 룬 유물 기회 · 연금술 공방(처음 화면)에서 연성과 외형"]
+## what a difficulty is, in a line
+static func diff_line(k: String) -> String:
+	var Q: Dictionary = RaidLoot.DIFF[k]
+	match k:
+		"normal": return "난이도 일반 · 기본 능력치 · 파티 부활 10회"
+		"nightmare": return "난이도 악몽 · 보스 체력 +45%, 공격 +25%, 패턴 15% 빠름 · 파티 부활 5회 · 소재 1.5배, 유물 확률 +15%p, 처음 깨면 '카르녹의 미니어처 철퇴'"
+		"abyss": return "난이도 심연 · 보스 체력 +90%%, 공격 +50%%, 패턴 15%% 빠름 · 부활 없음 · 종말의 일식 %d초 · S 등급이면 신화 무기 스킨 선택 상자와 칭호 「심연을 길들인 대마법사」" % int(Q.eclipse)
+	return ""
 func win_title() -> String: return "타락한 마탑 토벌 · 등급 " + (rank if rank != "" else "C")
-func pause_line() -> String: return "타락한 마탑 토벌전 · %s · 남은 부활 %d · 쓰러짐 %d" % [str(SECTIONS[cp]), revives, deaths]
-func record_key() -> String: return "t13"
+func pause_line() -> String: return "타락한 마탑 토벌전 · %s · %s · 남은 부활 %d · 쓰러짐 %d" % [str(D().name), str(SECTIONS[cp]), revives, deaths]
+func record_key() -> String: return RaidLoot.time_key(diff)
+## the difficulty's numbers
+func D() -> Dictionary: return RaidLoot.DIFF[diff]
+## how quick the lords' moves are, and how long Baal's eclipse takes, at this difficulty
+func boss_speed() -> float: return float(D().speed)
+func eclipse_time() -> float: return float(D().eclipse)
 func bonus() -> int: return 150000 * Store.PAY
-static func best_rank() -> String:
-	var n := int(Store.save.best.get("r13", 0))
+static func best_rank(dk := "normal") -> String:
+	var n := int(Store.save.best.get(RaidLoot.rank_key(dk), 0))
 	for k: String in RANK_N:
 		if int(RANK_N[k]) == n: return k
 	return ""

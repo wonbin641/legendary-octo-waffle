@@ -62,6 +62,8 @@ func extra_edges() -> Array: return []
 func prize(_f: Realm.Fighter): return null
 ## what one of the others should strike before anyone else, whatever is nearer (6-A: a boss's crystal, a chain, a core), or null
 func focus(_f: Realm.Fighter): return null
+## whether the legendary relics count here (6-A, the raid: they are for fighting demons, not people)
+func relics() -> bool: return false
 ## whether one of the others should jump now (6-A: a wave of fire coming at his feet)
 func jump(_f: Realm.Fighter) -> bool: return false
 ## whether a step to there would be the end of him (6-A: over the lava): the others do not walk off into it

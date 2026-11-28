@@ -35,6 +35,8 @@ var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var 
 var banner: Callable = Callable(); var feed: Callable = Callable(); var on_result: Callable = Callable()   # on_result(kind) shows the result sheet
 var on_down: Callable = Callable()   # on_down(kind): you have fallen (not in a team mode): the fight stops there and then
 var on_reward: Callable = Callable()   # on_reward(gun): a boss's chest gave you a gun you did not have: shown big (Reward)
+var on_spoils: Callable = Callable()   # on_spoils(list, rank, diff): 6-A won: what it gave, shown big (Reward)
+var spoils: Array = []                 # what the raid just won gave (RaidLoot.grant): the result sheet says it too
 ## what a chest's opening is given to be seen before the stage can end: the new gun's card (Reward.LONG), or the banner saying
 ## you have every gun already
 const PARTY := 4.8
@@ -92,7 +94,7 @@ func layout() -> Array:
 	return (Store.save.loadout as Array).map(func(id): return id if (id != null and Store.gun_available(id, bonus_guns)) else null)
 
 func begin(stage_: int) -> void:
-	stage = stage_
+	stage = stage_; spoils = []
 	var an := enemies.animals; an.player = player; an.game = self; an.world = world; an.fx = fx; player.rider = an; player.on_toss_land = an.toss_land
 	var tf := enemies.toys; tf.player = player; tf.game = self; tf.world = world; tf.fx = fx; tf.proj = proj
 	var rb := enemies.robots; rb.player = player; rb.game = self; rb.world = world; rb.fx = fx; rb.proj = proj
@@ -146,7 +148,7 @@ func begin(stage_: int) -> void:
 	if Store.ship(stage) == "bridge":   # 4-2: the gold bee is what the stage is about (paying as a commander does: ten times a robot)
 		var bee: Dictionary = Robots.ROBOTS.gdrone; boss_msg = str(bee.name) + "이 운전실에 있습니다" + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(int(bee.get("money", 1000)) * 10 * Store.PAY))
 	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
-	if rm != null: boss_msg = rm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
+	if rm != null: boss_msg = rm.mode.brief_line() + ((" · 다시 하기라 돈은 없고, 토벌 보상은 그대로" if rm.mode is ModeRaid else " · 다시 하기라 보상은 없습니다") if replay else "")   # (6-A's spoils come with every win)
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
 
 ## what the stage's boss pays: twenty times one of its kind (a man, a zombie: 1,000), and then twice that, as all pay here
@@ -515,6 +517,11 @@ func finish() -> void:
 	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", ("탑의 마력이 잦아듭니다 · " if world.wood != null else "헬기가 데리러 옵니다 · ") + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
 	result = "clear"; _result_kind = "clear"; _result_t = 1.7
 
+## 6-A won: its spoils (already kept), shown big over the fight and said again on the result sheet
+func show_spoils(list: Array, rank: String, diff: String) -> void:
+	spoils = list
+	if on_spoils.is_valid(): on_spoils.call(list, rank, diff)
+
 ## a team mode won: the record, the first win's bonus, and the result sheet (no helicopter: you are already home)
 func win_match() -> void:
 	if ended: return
@@ -526,7 +533,7 @@ func win_match() -> void:
 	Store.save.money += extra; stats.earned += extra
 	if first or t < int(Store.save.best[key]): Store.save.best[key] = t
 	return_rentals(); Store.persist(); Snd.play("clear"); player.jet_end()
-	_say(banner, [md.win_title(), ("첫 승리 보너스 +" + Store.won(extra) if extra > 0 else "다시 하기라 보상 없음") + " · 가방 " + Store.won(Store.save.money), 2.6])
+	_say(banner, [md.win_title(), ("첫 승리 보너스 +" + Store.won(extra) if extra > 0 else ("토벌 보상은 연금술 공방에" if md is ModeRaid else "다시 하기라 보상 없음")) + " · 가방 " + Store.won(Store.save.money), 2.6])
 	result = "clear"; _result_kind = "clear"; _result_t = 2.2
 
 ## a team mode lost: what you earned in it is gone, as when you fall anywhere else

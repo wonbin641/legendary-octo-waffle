@@ -78,6 +78,7 @@ func _ready() -> void:
 	game.world = world; game.player = player; game.enemies = enemies; game.guns = guns; game.proj = proj; game.loot = loot; game.fx = fx
 	game.banner = banner; game.feed = feed; game.on_result = _on_result; game.on_down = _on_down
 	game.on_reward = func(id: String) -> void: reward.start(id, hud.size)
+	game.on_spoils = func(list: Array, rank: String, diff: String) -> void: reward.start_spoils(list, rank, diff, hud.size)
 	enemies.on_bite = game.bitten; enemies.on_poison = game.poison; enemies.on_stun = game.stun; enemies.banner = banner; game.hint = hint
 	game.on_flash = func(a: float, from: Vector3) -> void: hudd.hurt(a, from)
 	game.on_pay = func(n: int) -> void: if look_mode != "touch": hudd.money_pop(n)

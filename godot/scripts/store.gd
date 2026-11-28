@@ -41,7 +41,8 @@ var ivory_lock = null
 var own_lock = null
 
 static func save0() -> Dictionary:
-	return {"v": 4, "money": 0, "cleared": [], "best": {}, "loadout": ["pistol", null, null, null, null, null, null], "rented": [], "owned": [], "items": {"helmet": 0, "vest": 0, "jet": 0, "ivory": 0}, "custom": {}, "toy_order": Toys.ORDER.duplicate()}
+	return {"v": 4, "money": 0, "cleared": [], "best": {}, "loadout": ["pistol", null, null, null, null, null, null], "rented": [], "owned": [], "items": {"helmet": 0, "vest": 0, "jet": 0, "ivory": 0}, "custom": {}, "toy_order": Toys.ORDER.duplicate(),
+		"raid": RaidLoot.blank()}   # (6-A's spoils: the materials, coins, relics, looks and titles; not in the save code)
 
 func _ready() -> void:
 	var touch: bool = OS.has_feature("mobile") or OS.has_feature("web") and bool(JavaScriptBridge.eval("(window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0)"))
@@ -110,6 +111,7 @@ func fix_save() -> void:
 	# the toy room's nine toy guns in the order you put them (keys 1-9); not in the save code
 	var to: Array = save.toy_order if save.get("toy_order") is Array else []
 	save.toy_order = to.duplicate() if (to.size() == Toys.ORDER.size() and Toys.ORDER.all(func(id): return to.has(id))) else Toys.ORDER.duplicate()
+	save.raid = RaidLoot.fix(save.get("raid"))   # 6-A's spoils: known things only, nothing below nothing
 	save.v = 4
 
 ## the save as it is kept (inside a stage: with what you came in with, not what you have picked up there)

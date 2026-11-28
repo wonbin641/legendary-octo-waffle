@@ -24,6 +24,7 @@ func draw(hud: Hud, ci, s: Vector2, c: Vector2, touch: bool) -> void:
 	h._feed(ci, s, touch, h.m.f_body, h.m.f_mono)
 	_vitals(ci, s, touch, rm, f)
 	_weapon(ci, s, touch, rm, f)
+	if RaidLoot.wearing("frame_obsidian"): _frame(ci, s, touch)   # (the tower conqueror's frame round both)
 	if not touch: _chips(ci, s, c, rm, f)
 	_prompt(ci, s, c, touch, rm, f)
 
@@ -35,6 +36,8 @@ func _veils(ci, s: Vector2, c: Vector2, rm: Realm, f: Realm.Fighter) -> void:
 	if f.alive and f.race == "demon" and f.ult_t > 0.0: h._glow(ci, "low", 0.5 + 0.2 * sin(t * 5.0))
 	if f.alive and f.burn_t > 0.0: h._glow(ci, "hurt", 0.35)
 	if not f.alive: h._glow(ci, "down", 1.0)
+	if rm.flash.has("overload"): h._glow(ci, "hurt", float(rm.flash.overload) / 0.35 * 0.6)
+	if f.alive and f.relic_t > 0.0: h._glow(ci, "low", 0.35 + 0.15 * sin(t * 12.0))   # (the eclipse overload: the view's edge darkly red while it holds)
 	if rm.flash.has("parry"):
 		var a := float(rm.flash.parry) / 0.25; ci.draw_arc(c, 30.0 + (1.0 - a) * 60.0, 0.0, TAU, 40, Color(0.9, 0.97, 1.0, a), 3.0)
 	# the dagger's finishing blow: for a moment the view is black and white, turned inside out
@@ -200,6 +203,8 @@ func _vitals(ci, s: Vector2, touch: bool, rm: Realm, f: Realm.Fighter) -> void:
 	if f.mark_t > 0.0: chips.push_back(["드러남", VIOLET])
 	if f.inv > 0.0: chips.push_back(["무적", Color.WHITE])
 	if f.carrying: chips.push_back(["폭탄 운반", Color("ff9a3a")])
+	if f.relic_t > 0.0: chips.push_back(["일식 과부하 %.1f초" % f.relic_t, Color(1.0, 0.3, 0.25)])   # (6-A's relics)
+	elif f.rune("rl_eclipse") and f.relic_cd > 0.0: chips.push_back(["일식 코어 %d초" % ceili(f.relic_cd), Hud.STEEL])
 	var cx := vx
 	for it: Array in chips:
 		var tw: float = h._w(fb, it[0], 11) + 14.0
@@ -238,8 +243,8 @@ func chips(rm: Realm, f: Realm.Fighter, drag := false) -> Array:
 		"dwarf": out.push_back(["우클릭", ALT.dwarf, 1.0 - f.alt_cd / float(Races.CANNON.gren_cd), ("%d초" % ceili(f.alt_cd)) if f.alt_cd > 0.0 else "준비"])
 		"orc": out.push_back(["우클릭", ALT.orc, 1.0 - f.alt_cd / float(Races.SWORD.axe_cd), ("%d초" % ceili(f.alt_cd)) if f.alt_cd > 0.0 else "준비"])
 		"demon": out.push_back(["우클릭", ALT.demon, 1.0 if f.hp > float(Races.STAFF.beam_floor) else 0.0, "체력"])
-	var S: Dictionary = Races.SKILL[f.race]; var cd := kit.skill_cd(f)
-	out.push_back(["Shift", str(Races.R[f.race].skill), 1.0 if f.skill_n > 0 else 1.0 - f.skill_t / cd, ("×%d" % f.skill_n if int(S.charges) > 1 and f.skill_n > 0 else ("준비" if f.skill_n > 0 else "%d초" % ceili(f.skill_t)))])
+	var cd := kit.skill_cd(f)
+	out.push_back(["Shift", str(Races.R[f.race].skill), 1.0 if f.skill_n > 0 else 1.0 - f.skill_t / cd, ("×%d" % f.skill_n if kit.charges(f) > 1 and f.skill_n > 0 else ("준비" if f.skill_n > 0 else "%d초" % ceili(f.skill_t)))])
 	var bk: String = BOMB_SHORT[f.bomb_kinds[f.bomb_i % f.bomb_kinds.size()]] if not f.bomb_kinds.is_empty() else ""
 	out.push_back(["G" if drag else "Q", bk + " 폭탄", 1.0 if f.bombs > 0 else 1.0 - f.bomb_t / Races.BOMB_CD, ("×%d" % f.bombs) if f.bombs > 0 else "%d초" % ceili(f.bomb_t)])
 	out.push_back(["V", "룬 단검", 1.0 - f.dag_t / float(Races.DAGGER.cd), "처형 40"])
@@ -259,6 +264,24 @@ func _chips(ci, s: Vector2, c: Vector2, rm: Realm, f: Realm.Fighter) -> void:
 		h._t(ci, fm, str(q[0]), r.position.x + 5, r.position.y + 2, 10, Hud.SODIUM if ready else Hud.STEEL, "left", false)
 		h._t(ci, fm, str(q[3]), r.end.x - 5, r.position.y + 2, 10, Hud.INK if ready else Hud.STEEL, "right", false)
 		h._t(ci, fb, _fit(fb, str(q[1]), 11, r.size.x - 8.0), r.position.x + r.size.x / 2.0, r.position.y + 19, 11, Hud.INK if ready else Hud.STEEL, "center", false)
+
+## the tower conqueror's obsidian frame (a mythic look): a black band edged in gold round your health at the bottom left and
+## your weapon at the bottom right, a gold rune at each corner and in the middle of each long side
+func _frame(ci, s: Vector2, touch: bool) -> void:
+	var bottom := 12.0 if touch else 18.0; var vw := minf(200.0, s.x * 0.4) if touch else minf(280.0, s.x * 0.42)
+	var by := s.y - bottom - 30.0
+	var left := Rect2(6.0, by - 50.0, vw + 22.0, 92.0)
+	var ax := s.x - 16.0 - (float(h.m.safe_in[2]) if touch else 0.0); var ay := s.y - (12.0 if touch else 18.0)
+	if touch: ay = 132.0 + float(h.m.safe_in[1])
+	var right := Rect2(ax - 214.0, ay - 80.0, 224.0, 86.0)
+	for r: Rect2 in [left, right]:
+		ci.draw_rect(r, Color(0.05, 0.03, 0.06, 0.55), false, 5.0); ci.draw_rect(r.grow(-3.0), Color(GOLD, 0.9), false, 1.2)
+		for p: Vector2 in [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]:   # the corner runes
+			ci.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -7), p + Vector2(7, 0), p + Vector2(0, 7), p + Vector2(-7, 0)]), Color(0.08, 0.05, 0.08, 0.95))
+			ci.draw_polyline(PackedVector2Array([p + Vector2(0, -7), p + Vector2(7, 0), p + Vector2(0, 7), p + Vector2(-7, 0), p + Vector2(0, -7)]), GOLD, 1.5)
+		for m: Vector2 in [Vector2(r.get_center().x, r.position.y), Vector2(r.get_center().x, r.end.y)]:   # a rune on each long side
+			ci.draw_line(m + Vector2(-9, 0), m + Vector2(9, 0), Color(0.05, 0.03, 0.06, 1.0), 5.0)
+			ci.draw_line(m + Vector2(-6, -3), m + Vector2(6, 3), GOLD, 1.5); ci.draw_line(m + Vector2(-6, 3), m + Vector2(6, -3), GOLD, 1.5)
 
 func _fit(font: Font, text: String, fs: int, w: float) -> String:
 	var t := text
@@ -307,7 +330,7 @@ func _raid(ci, s: Vector2, c: Vector2, rm: Realm, H: Dictionary, x0: float, y0: 
 	if H.has("eclipse"):
 		var e := float(H.eclipse); var t: float = h.m.time; var a := 0.7 + 0.3 * sin(t * 10.0)
 		h._t(ci, ft, "종말의 일식 %.1f" % maxf(0.0, e), c.x, y0 + hh + 12, 26, Color(1.0, 0.3, 0.2, a), "center")
-		ci.draw_rect(Rect2(c.x - 140, y0 + hh + 48, 280, 6), Color(1, 1, 1, 0.12)); ci.draw_rect(Rect2(c.x - 140, y0 + hh + 48, 280.0 * clampf(e / float(Fiends.BAAL.eclipse_t), 0.0, 1.0), 6), RED)
+		ci.draw_rect(Rect2(c.x - 140, y0 + hh + 48, 280, 6), Color(1, 1, 1, 0.12)); ci.draw_rect(Rect2(c.x - 140, y0 + hh + 48, 280.0 * clampf(e / float(H.get("eclipse_max", Fiends.BAAL.eclipse_t)), 0.0, 1.0), 6), RED)
 
 ## a line under the crosshair: what the match wants of you now
 func prompt(rm: Realm, f: Realm.Fighter, touch: bool) -> String:

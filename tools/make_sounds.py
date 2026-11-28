@@ -455,6 +455,25 @@ SOUNDS = {
     'rd_crash': lambda: [T('sine', 150, 28, 1.0, 1.0), N(1.0, 'lowpass', 1400, 60, 0.7, 1.3), T('sawtooth', 120, 40, 0.8, 0.4)] + shatter(0.8, 0.4, 0.05),
     'rd_eclipse': lambda: [H('sawtooth', 41, 41, 4.0, 0.35, 0.0, 1.5, 0.8), H('sawtooth', 43.6, 43.6, 4.0, 0.3, 0.0, 1.5, 0.8), H('sine', 82, 77, 4.0, 0.35, 0.0, 1.5, 0.8), H('square', 116.5, 110, 4.0, 0.08, 0.5, 2.0, 0.8),
                            BACK(N(1.5, 'bandpass', 200, 1200, 1, 0.6)), N(3.0, 'lowpass', 400, 60, 0.7, 0.6, 1.0)],
+    # ---- 6-A's spoils: the relics at work, the looks, the workshop (1.13.0; after the rest, so theirs keep their noise) ----
+    # a legendary relic won or cut into the altar: a violet chord of glass, rising
+    'rd_relic': lambda: [l for k, m in enumerate((62, 69, 74, 78, 81, 86)) for l in ping(NOTE(m), 0.32 - 0.03 * k, 0.07 * k, 1.6)] + [H('sine', NOTE(50), NOTE(50), 1.4, 0.18, 0.0, 0.3, 0.6)],
+    # the eclipse core's overload: a dark rush in, and a low burning drone under it
+    'rd_relic_eclipse': lambda: [BACK(N(0.45, 'bandpass', 300, 1400, 1, 0.9)), H('sawtooth', 49, 55, 1.2, 0.28, 0.4, 0.1, 0.5), H('sine', 98, 110, 1.2, 0.3, 0.4, 0.1, 0.5), N(1.0, 'lowpass', 700, 150, 0.7, 0.5, 0.4)],
+    # Karnok's axe free again: its chain reeled in, and a bright ring
+    'rd_relic_chain': lambda: [l for k in range(4) for l in clank(600 + 80 * k, 0.32, 0.04 * k)] + ping(NOTE(88), 0.35, 0.18, 1.2),
+    # the obsidian ward: a shield of black glass over the party, shimmering
+    'rd_relic_ward': lambda: [N(0.6, 'highpass', 4000, 8000, 0.8, 0.35), H('sine', NOTE(76), NOTE(76), 0.7, 0.2, 0.0, 0.05, 0.5), H('sine', NOTE(83), NOTE(83), 0.7, 0.16, 0.05, 0.05, 0.5)] + ping(NOTE(91), 0.3, 0.02, 1.4),
+    # where a turned missile lands with the ward on it: a burst of lava
+    'rd_relic_boom': lambda: [T('sine', 170, 36, 0.6, 1.0), N(0.6, 'lowpass', 2400, 90, 0.7, 1.2), N(0.9, 'bandpass', 700, 300, 1, 0.5, 0.05), N(0.6, 'highpass', 3000, 5500, 0.7, 0.25, 0.1)],
+    # the magma greatsword's blow: a heavy chain dragged across it
+    'rd_skin_chain': lambda: [N(0.25, 'bandpass', 1800, 700, 2, 0.5)] + [l for k in range(5) for l in clank(330 + 40 * (k % 2), 0.3 - 0.03 * k, 0.03 * k)],
+    # the eclipse elimination: a small black sun, a breath in, and it bursts
+    'rd_eclipse_pop': lambda: [BACK(N(0.4, 'bandpass', 500, 2200, 1, 0.5)), T('sine', 260, 60, 0.3, 0.6, 0.4), N(0.5, 'lowpass', 1600, 120, 0.7, 0.6, 0.4), N(0.7, 'highpass', 2500, 6000, 0.7, 0.2, 0.45)],
+    # the workshop: a relic or a skin made: the anvil twice, the rune chord
+    'rd_craft': lambda: clank(880, 0.6) + clank(880, 0.5, 0.32) + [T('sine', 120, 60, 0.3, 0.5), N(0.3, 'lowpass', 1200, 200, 0.7, 0.4)] + [l for k, m in enumerate((67, 71, 74, 79)) for l in ping(NOTE(m), 0.28, 0.55 + 0.08 * k, 1.4)],
+    # a mythic skin's choice box opened: paper torn, a sparkle
+    'rd_box': lambda: [N(0.35, 'highpass', 1500, 4000, 1, 0.5)] + [N(0.02, 'highpass', 7000 - 400 * k, 5000, 1, 0.25, 0.3 + 0.05 * k) for k in range(8)] + ping(NOTE(84), 0.3, 0.3, 1.5),
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]

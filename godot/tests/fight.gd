@@ -239,9 +239,9 @@ func _raid(race: String, secs: float) -> void:
 	var sealed: int = rm.log.filter(func(q): return q[0] == "sealed").size()
 	var bosses: Array = rm.log.filter(func(q): return q[0] == "boss").map(func(q): return q[1])
 	var ok: bool = sealed == 2 and md.cleared.has(3) and md.core_taken and bosses == ["karnok", "baal"] and md.outcome != "" and main.game.ended and int(n.get("skill", 0)) >= 5 and int(n.get("bomb", 0)) >= 3 and int(n.get("ult", 0)) >= 2
-	if md.outcome == "won": ok = ok and main.game.result == "clear" and (Store.save.cleared as Array).has(13) and md.rank != ""
-	check("stage 6-A plays itself (your fighter too, as the %s of the party): the gate's guards and the bridge's snipers and beast fall and their seals lift, the party climbs the tower and brings Karnok down, takes his core and goes up onto the sky altar, and the raid is decided against Baal (%s); Shift, the bombs and the ultimates are used" % [Races.R[race].name, md.outcome],
-		ok, {"seconds": snappedf(ticks * DT, 0.1), "sealed": sealed, "bosses": bosses, "skill": n.get("skill", 0), "bomb": n.get("bomb", 0), "ult": n.get("ult", 0), "parry": n.get("parry", 0), "state": md.state()})
+	if md.outcome == "won": ok = ok and main.game.result == "clear" and (Store.save.cleared as Array).has(13) and md.rank != "" and (main.game.spoils as Array).size() >= 2 and int(RaidLoot.data().runs) == 1 and int(RaidLoot.data().coins) >= 120
+	check("stage 6-A plays itself (your fighter too, as the %s of the party): the gate's guards and the bridge's snipers and beast fall and their seals lift, the party climbs the tower and brings Karnok down, takes his core and goes up onto the sky altar, and the raid is decided against Baal (%s; won: its spoils kept, by its rank); Shift, the bombs and the ultimates are used" % [Races.R[race].name, md.outcome],
+		ok, {"seconds": snappedf(ticks * DT, 0.1), "sealed": sealed, "bosses": bosses, "skill": n.get("skill", 0), "bomb": n.get("bomb", 0), "ult": n.get("ult", 0), "parry": n.get("parry", 0), "state": md.state(), "spoils": (main.game.spoils as Array).map(func(r): return RaidLoot.line(r))})
 	main.command("menu")
 
 ## 6-A's keys through the game's own input: Tab into the next of the party, 1 to 4 into that one, B at the camp's altar

@@ -42,6 +42,7 @@ var shop_list: VBoxContainer; var shop_msg: Label; var shop_head: Label; var sho
 var lo_list: VBoxContainer; var lo_sum: Label; var lo_msg: Label
 var cu_gun := "pistol"; var cu_body: VBoxContainer
 var cx_tab := "gun"; var cx_list: VBoxContainer
+var ws_list: VBoxContainer; var ws_msg: Label   # the tower's alchemy workshop (6-A's spoils)
 var set_body: VBoxContainer; var set_msg: Label
 var dlg_title: Label; var dlg_text: Label; var dlg_in: LineEdit; var dlg_msg: Label; var dlg_ok: Button; var dlg_kind := ""
 var br_title: Label; var br_code: Label; var br_map: Control; var br_note: Label; var br_gear: Label; var br_go: Button
@@ -127,6 +128,7 @@ func show_screen(key: String) -> void:
 		"loadout": render_loadout()
 		"custom": render_custom()
 		"codex": render_codex()
+		"workshop": render_workshop()
 		"settings": render_settings()
 		"account": render_account()
 		"pause": render_pause()
@@ -181,7 +183,7 @@ func _ready() -> void:
 func build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); mouse_filter = Control.MOUSE_FILTER_IGNORE   # (already in the tree: the offsets must be set too)
 	tac = TacMap.new(); tac.game = game; tac.f_mono = f_mono; tac.f_bold = f_bold
-	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_account(); _build_brief(); _build_map(); _build_altar(); _build_pause(); _build_over()
+	_build_menu(); _build_shop(); _build_loadout(); _build_custom(); _build_codex(); _build_settings(); _build_dialog(); _build_account(); _build_brief(); _build_map(); _build_altar(); _build_pause(); _build_over(); _build_workshop()
 	resized.connect(layout); layout()
 
 # ================= the main menu: the harbour control console =================
@@ -195,7 +197,7 @@ func _build_menu() -> void:
 	var rv := vbox(0); rail.add_child(rv)
 	brand = Control.new(); brand.custom_minimum_size = Vector2(0, 150); rv.add_child(brand); brand.draw.connect(_draw_brand)
 	var items := [["작전", func() -> void: show_screen("menu")], ["상점", func() -> void: shop_ctx = sel; open_sub("shop")], ["무기 편성", func() -> void: open_sub("loadout")],
-		["총기 커스텀", func() -> void: open_sub("custom")], ["도감", func() -> void: open_sub("codex")], ["설정 · 저장", func() -> void: open_sub("settings")]]
+		["총기 커스텀", func() -> void: open_sub("custom")], ["도감", func() -> void: open_sub("codex")], ["설정 · 저장", func() -> void: open_sub("settings")], ["연금술 공방", func() -> void: open_sub("workshop")]]
 	var rg := GridContainer.new(); rg.columns = 1; rg.add_theme_constant_override("h_separation", 0); rg.add_theme_constant_override("v_separation", 0); rv.add_child(rg); rail.set_meta("grid", rg)
 	for i in items.size():
 		var b := btn("", "rail", items[i][1]); b.set_meta("label", items[i][0]); b.set_meta("num", "%02d" % (i + 1)); b.size_flags_horizontal = Control.SIZE_EXPAND_FILL; rg.add_child(b); rail_btns.push_back(b)
@@ -244,13 +246,13 @@ func _layout_menu() -> void:
 	brand.custom_minimum_size.y = 150.0 if m == "pc" else (44.0 if m == "portrait" else 40.0)
 	for b: Button in rail_btns:
 		b.text = ("%s   %s" % [b.get_meta("num"), b.get_meta("label")]) if m == "pc" else str(b.get_meta("label"))
-		b.custom_minimum_size.y = 46.0 if m == "pc" else (44.0 if m == "portrait" else clampf(floorf((H - top - 40.0) / 6.0), 36.0, 46.0))   # a short phone: all six still fit
+		b.custom_minimum_size.y = 46.0 if m == "pc" else (44.0 if m == "portrait" else clampf(floorf((H - top - 40.0) / rail_btns.size()), 36.0, 46.0))   # a short phone: all seven still fit
 		b.add_theme_font_size_override("font_size", 15 if m == "pc" else 13)
 	(rail.get_meta("bug") as Control).visible = m == "pc"
 	(rail.get_meta("grid") as GridContainer).columns = 3 if m == "portrait" else 1
 	if m == "portrait":
 		# everything stacked: the brand and the menu on top, the map, then the picked stage
-		var rh := 44.0 + 44.0 * 2 + 4; rail.position = Vector2(0, top); rail.size = Vector2(W, rh)
+		var rh := 44.0 + 44.0 * ceili(rail_btns.size() / 3.0) + 4; rail.position = Vector2(0, top); rail.size = Vector2(W, rh)
 		var bh := minf(H * 0.36, 320.0); board.position = Vector2(0, top + rh); board.size = Vector2(W, bh)
 		detail.position = Vector2(8, top + rh + bh + 4); detail.size = Vector2(W - 16, H - (top + rh + bh + 12))
 	else:
@@ -338,6 +340,10 @@ func refresh_menu() -> void:
 	if cxb.disabled == cx_ok: cxb.disabled = not cx_ok; cxb.set_meta("label", "도감" if cx_ok else "도감 · 첫 클리어 후"); _layout_menu()
 	var set_label := "설정 · 계정" if Cloud.enabled() else "설정 · 저장"   # (the account is in with the settings and the save codes)
 	if str(rail_btns[5].get_meta("label")) != set_label: rail_btns[5].set_meta("label", set_label); _layout_menu()
+	var wsb: Button = rail_btns[6]; var ws_ok := Store.stage_open(Store.ST_ROAD)   # (the workshop opens with 6-A)
+	if wsb.disabled == ws_ok: wsb.disabled = not ws_ok; wsb.set_meta("label", "연금술 공방" if ws_ok else "연금술 공방 · 6-A 후"); _layout_menu()
+	var tt := str(RaidLoot.data().title)
+	if tt != "": strip_l.text += "  ·  「%s」" % str(RaidLoot.TITLES[tt])
 	var open := Store.stage_open(sel); var st: Array = _status(sel); var best := int(Store.save.best.get("t%d" % sel, 0)); var done: bool = Store.save.cleared.has(sel)
 	d_code.text = "스테이지 " + Store.STAGE_TAG[sel] + "  ·  " + st[1]
 	d_name.text = Game.STAGES[sel].name
@@ -647,6 +653,95 @@ func render_codex() -> void:
 		if e.has("pay"): rows.push_back(["처치 보상", Store.won(int(e.pay) * Store.PAY)])   # (twice the browser game's, as every income here)
 		grid.add_child(_cx_card({"name": e.name, "st": e.st, "boss": e.get("boss", 0), "rows": rows}, true))
 	cx_list.add_child(lbl(Codex.INFO_FOE, f_body, 12, STEEL, true))
+
+# ================= the tower's alchemy workshop (6-A's spoils) =================
+func _build_workshop() -> void:
+	var s := sheet("workshop", "마탑 연금술 공방 · 토벌 보상", "WORKSHOP", 860.0); ws_list = s[1]; ws_msg = s[3]
+	var b := btn("돌아가기", "primary", close_sub); b.set_meta("first", true); s[2].add_child(b); s[2].move_child(b, 0)
+
+## a card in the workshop: its title (gold once yours), what it is, and its buttons
+func _ws_card(title: String, sub: String, text: String, have: bool, buttons: Array) -> Control:
+	var p := PanelContainer.new(); p.add_theme_stylebox_override("panel", _box(Color("f2c14e", 0.06) if have else Color(INK, 0.03), Color("f2c14e", 0.6) if have else LINE, 1, 10)); p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var v := vbox(5); p.add_child(v)
+	var top := HFlowContainer.new(); top.add_theme_constant_override("h_separation", 8); v.add_child(top)
+	top.add_child(lbl(title, f_title, 18, Color("f2c14e") if have else INK))
+	if sub != "": top.add_child(lbl(sub, f_mono, 11, STEEL))
+	v.add_child(lbl(text, f_body, 12, Color("d9dee8"), true))
+	if not buttons.is_empty():
+		var row := HFlowContainer.new(); row.add_theme_constant_override("h_separation", 8); row.add_theme_constant_override("v_separation", 6); v.add_child(row)
+		for b: Control in buttons: row.add_child(b)
+	return p
+
+func _ws_cost(what: String) -> String:
+	var c: Dictionary = RaidLoot.CRAFT[what]; var parts: Array = []
+	for k: String in RaidLoot.MATS:
+		if int(c.get(k, 0)) > 0: parts.push_back("%s %d" % [str(RaidLoot.MAT_SHORT[k]), int(c[k])])
+	if int(c.get("coins", 0)) > 0: parts.push_back("주화 %s" % Store.won(int(c.coins)).trim_suffix("원"))
+	return " + ".join(PackedStringArray(parts))
+
+func _ws_done(msg: String, snd := "rd_craft") -> void:
+	Store.persist(); Snd.play(snd); render_workshop(); ws_msg.text = msg
+
+func render_workshop() -> void:
+	_hold_scroll(ws_list); clear(ws_list)
+	var d := RaidLoot.data()
+	# what is kept: the three materials and the coins
+	var bag := HFlowContainer.new(); bag.add_theme_constant_override("h_separation", 16); bag.add_theme_constant_override("v_separation", 6); ws_list.add_child(bag)
+	for k: String in RaidLoot.MATS: bag.add_child(lbl("%s %d" % [str(RaidLoot.MAT_NAME[k]), int(d.mat[k])], f_bold, 15, Color(str(RaidLoot.MAT_COL[k]))))
+	bag.add_child(lbl("%s %d" % [RaidLoot.COIN_NAME, int(d.coins)], f_bold, 15, Color("f2c14e")))
+	var rec: Array = []
+	for k: String in RaidLoot.DIFF_ORDER:
+		var r := ModeRaid.best_rank(k); var t := int(Store.save.best.get(RaidLoot.time_key(k), 0))
+		rec.push_back("%s %s" % [str(RaidLoot.DIFF[k].name), ("최고 " + r + " · " + Store.fmt_time(t)) if r != "" else ("잠김" if not RaidLoot.diff_open(k) else "—")])
+	ws_list.add_child(lbl("토벌 %d번 · %s · 소재와 주화는 6-A 타락한 마탑 토벌전을 이길 때마다, 등급에 따라" % [int(d.runs), " · ".join(PackedStringArray(rec))], f_body, 12, STEEL, true))
+	# the legendary relics: had, or made for sure
+	ws_list.add_child(_head("전설 룬 유물 · 토벌전에서만 · 룬 제단의 슬롯에 파편 없이 (가진 것은 그 종족 동료가 지니고 출전)", SODIUM))
+	for id: String in RaidLoot.RELICS:
+		var q: Dictionary = RaidLoot.RELICS[id]; var have := RaidLoot.has_relic(id); var bs: Array = []
+		if have and str(q.race) == "":   # the ward: which of the party carries it into the raid
+			for r: String in Races.ORDER:
+				var b := btn(str(Races.R[r].name) + ("가 지님" if str(d.ward) == r else ""), "primary" if str(d.ward) == r else "small", func() -> void: d.ward = r; _ws_done("흑요석 결계 성물은 %s 동료가 지니고 출전합니다" % str(Races.R[r].name), "rm_shard"))
+				b.set_meta("ward", r); bs.push_back(b)
+		elif not have:
+			var b := btn("확정 연성 · " + _ws_cost("relic"), "ghost", func() -> void:
+				if RaidLoot.craft_relic(id): _ws_done(Races.josa(str(q.name), "을를") + " 연성했습니다"))
+			b.disabled = not RaidLoot.can_pay("relic"); b.set_meta("craft", id); bs.push_back(b)
+		var who := "전 종족 공용" if str(q.race) == "" else str(Races.R[str(q.race)].name) + " 전용"
+		ws_list.add_child(_ws_card(str(q.name) + (" · 보유" if have else ""), "슬롯 %s · %s" % [str(q.slot).to_upper(), who], str(q.text), have, bs))
+	# the mythic skins: worn or not, smelted for sure, or taken from a choice box
+	ws_list.add_child(_head("신화 무기 스킨 · 모든 종족 전투에서 · 겉모습만 바뀜" + ("  ·  선택 상자 %d개" % int(d.boxes) if int(d.boxes) > 0 else ""), SODIUM))
+	for id: String in RaidLoot.SKINS:
+		var q: Dictionary = RaidLoot.LOOKS[id]; var have := RaidLoot.has_look(id); var bs: Array = []
+		if have:
+			var on := RaidLoot.wearing(id)
+			var b := btn("착용 중 (누르면 벗음)" if on else "착용하기", "primary" if on else "ghost", func() -> void: RaidLoot.wear(id, not on); _ws_done("%s · %s" % [str(q.name), "벗었습니다" if on else "착용했습니다"], "rm_shard"))
+			b.set_meta("wear", id); bs.push_back(b)
+		else:
+			var b := btn("제련 · " + _ws_cost("skin"), "ghost", func() -> void:
+				if RaidLoot.craft_skin(id): _ws_done(Races.josa(str(q.name), "을를") + " 제련했습니다"))
+			b.disabled = not RaidLoot.can_pay("skin"); b.set_meta("craft", id); bs.push_back(b)
+			if int(d.boxes) > 0:
+				var bx := btn("선택 상자에서 받기", "primary", func() -> void:
+					if RaidLoot.craft_skin(id, true): _ws_done("선택 상자에서 " + Races.josa(str(q.name), "을를") + " 받았습니다", "rd_box"))
+				bx.set_meta("box", id); bs.push_back(bx)
+		ws_list.add_child(_ws_card(str(q.name) + (" · 보유" if have else ""), str(Races.R[str(q.race)].weapon), str(q.text), have, bs))
+	# the other looks: had by deeds
+	ws_list.add_child(_head("업적 외형", SODIUM))
+	for id: String in ["vfx_eclipse", "frame_obsidian", "charm_mace"]:
+		var q: Dictionary = RaidLoot.LOOKS[id]; var have := RaidLoot.has_look(id); var bs: Array = []
+		if have:
+			var on := RaidLoot.wearing(id)
+			var b := btn("켜짐 (누르면 끔)" if on else "켜기", "primary" if on else "ghost", func() -> void: RaidLoot.wear(id, not on); _ws_done("%s · %s" % [str(q.name), "껐습니다" if on else "켰습니다"], "rm_shard"))
+			b.set_meta("wear", id); bs.push_back(b)
+		ws_list.add_child(_ws_card(str(q.name) + (" · 보유" if have else ""), "" if have else "얻는 법 · " + str(RaidLoot.FEATS[id]), str(q.text), have, bs))
+	# the titles
+	ws_list.add_child(_head("칭호 · 처음 화면 윗줄에 보입니다", SODIUM))
+	var tr := HFlowContainer.new(); tr.add_theme_constant_override("h_separation", 8); tr.add_theme_constant_override("v_separation", 6); ws_list.add_child(tr)
+	for id: String in RaidLoot.TITLES:
+		var have := (d.titles as Array).has(id); var on := str(d.title) == id
+		var b := btn("「%s」%s" % [str(RaidLoot.TITLES[id]), (" · 다는 중" if on else "") if have else (" · " + ("S 등급 첫 달성" if id == "eclipse_breaker" else "심연 난이도 S 등급"))], "primary" if on else "ghost", func() -> void: d.title = "" if on else id; _ws_done("칭호를 바꿨습니다", "rm_shard"))
+		b.disabled = not have; b.set_meta("title", id); tr.add_child(b)
+	ws_list.add_child(lbl("소재 · 확정 소재는 등급마다(S 심장 2·사슬 파편 4·유황 15, A 1·3·10, B 0·2·6, C 유황 4), 악몽은 1.5배 · 유물은 파티원마다 자기 종족 것을 S 35%·A 18%·B 8%·C 2%(악몽 +15%p)로, S는 하나 확정 · 이미 가진 유물은 유황 결정 10 · 명성 주화 S 500·A 350·B 220·C 120 · 저장 코드에는 담기지 않고 계정에는 함께 저장됩니다", f_body, 11, STEEL, true))
 
 # ================= settings and saving =================
 func _build_settings() -> void:
@@ -1032,6 +1127,7 @@ func open_brief(stage: int) -> void:
 	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n" + game.boss_msg if Store.ship(stage) == "bridge" else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1)))) if game.goal > 0 else "")   # (4-2: the gold bee alone)
 	if game.tm != null: br_note.text = game.tm.mode.brief() + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.tm.mode.bonus()))
 	if game.rm != null: br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.rm.mode.bonus()))
+	if game.rm != null and game.rm.mode is ModeRaid and game.replay: br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + "\n이 난이도는 이미 이겼습니다 · 돈은 없고, 토벌 보상(소재·주화·유물)은 이길 때마다"
 	if game.rm != null and game.rm.key == "plain": br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + ("\n이 종족으로 이미 깼습니다 · 다시 하기 보상은 없습니다" if game.replay else "\n이 종족으로 처음 깨면 보너스 " + Store.won(game.rm.mode.bonus()))
 	_mode_buttons(stage); br_map.queue_redraw()
 
@@ -1142,6 +1238,18 @@ func _realm_buttons(modes := true) -> void:
 	box.add_child(lbl("%s · 체력 %d · 이동 %.1f m/s · 교전 거리 %s\n무기 %s · 패시브 %s · 이동기 %s · 비전 비기 %s" % [str(R.role), int(R.hp), float(R.speed), str(R.range), str(R.weapon), str(R.passive), str(R.skill), str(R.ult)], f_body, 12, INK, true))
 	row.call("연금술 폭탄", Races.BOMBS.map(func(b): return [b, Races.BOMB[b].name]), bomb, func(b: String) -> void: _pick_setting("realmBomb", b))
 	box.add_child(lbl(str(Races.BOMB[bomb].text), f_body, 12, INK, true))
+	if sel == Store.ST_ROAD:   # 6-A: the difficulty (each opens once the one before it is won)
+		var dk := RaidLoot.picked()
+		box.add_child(lbl("난이도", f_mono, 11, STEEL))
+		var f := _flow(); f.alignment = FlowContainer.ALIGNMENT_BEGIN; f.add_theme_constant_override("h_separation", 8); box.add_child(f)
+		for k: String in RaidLoot.DIFF_ORDER:
+			var open := RaidLoot.diff_open(k); var i := RaidLoot.DIFF_ORDER.find(k)
+			var t := str(RaidLoot.DIFF[k].name) + ("" if open else " · %s 승리 후" % str(RaidLoot.DIFF[RaidLoot.DIFF_ORDER[i - 1]].name))
+			var best: String = ModeRaid.best_rank(k)
+			if open and best != "": t += " · 최고 " + best
+			var b := btn(t, "primary" if k == dk else "ghost", func() -> void: _pick_setting("raidDiff", k))
+			b.disabled = not open; b.set_meta("pick", k); f.add_child(b)
+		box.add_child(lbl(ModeRaid.diff_line(dk), f_body, 12, INK, true))
 
 func _pick_setting(key: String, v: String) -> void:
 	if str(Store.settings.get(key, "")) == v: return
@@ -1191,6 +1299,23 @@ func render_altar() -> void:
 				Snd.play("rm_shard"); render_altar())
 			b.disabled = not own and f.shards + back < int(q.cost); b.set_meta("rune", id); line.add_child(b)
 			var t := lbl(str(q.text), f_body, 12, INK, true); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL; line.add_child(t); al_body.add_child(line)
+		if rm.mode.relics():   # 6-A: the legendary relics you have, for nothing (one of the party carries each)
+			for id: String in RaidLoot.RELICS:
+				var q: Dictionary = RaidLoot.RELICS[id]
+				if str(q.slot) != slot or not RaidLoot.has_relic(id) or (str(q.race) != "" and str(q.race) != f.race): continue
+				var own := str(f.runes[slot]) == id; var holder: Realm.Fighter = null
+				for o: Realm.Fighter in rm.all:
+					if o != f and o.team == f.team and o.rune(id): holder = o
+				var line := hbox(10)
+				var what := "장착됨 (누르면 뺍니다)" if own else ("%s에게서 가져오기" % str(Races.R[holder.race].name) if holder != null else "끼우기 · 파편 없이")
+				var b := btn("전설 · %s · %s" % [str(q.name), what], "primary" if own else "ghost", func() -> void:
+					if own: rm.sell(f, slot)
+					else:
+						if holder != null: rm.sell(holder, slot)
+						rm.fit_relic(f, id)
+					Snd.play("rd_relic", 0.7); render_altar())
+				b.set_meta("rune", id); line.add_child(b)
+				var t := lbl(str(q.text), f_body, 12, Color("f2c14e"), true); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL; line.add_child(t); al_body.add_child(line)
 	if rm.mode is ModeSiege and (rm.mode as ModeSiege).defenders() == "us":   # your side holds the tower: where its two traps lie
 		var sg: ModeSiege = rm.mode
 		row.call("역소환 함정진 자리 (둘)", range(ModeSiege.SLOTS.size()).map(func(i): return [i, ModeSiege.SLOTS[i][0]]), sg.trap_pick, func(i) -> void:
@@ -1248,6 +1373,7 @@ func _build_over() -> void:
 	for k in [["kills", "처치"], ["earn", "번 돈"], ["hs", "헤드샷"], ["acc", "명중률"], ["time", "시간"]]:
 		var v := vbox(0); v.add_child(lbl(k[1], f_mono, 11, STEEL)); ov[k[0]] = lbl("0", f_bold, 20, INK); v.add_child(ov[k[0]]); grid.add_child(v)
 	ov.best = lbl("", f_body, 13, STEEL, true); body.add_child(ov.best)
+	ov.loot = lbl("", f_body, 13, Color("f2c14e"), true); ov.loot.visible = false; body.add_child(ov.loot)   # (6-A: what the raid won gave)
 	ov.again = btn("다시 도전", "primary", func() -> void: do_again.call(game.stage)); ov.again.set_meta("first", true)
 	ov.next = btn("", "primary", func() -> void: do_again.call(int(ov.next.get_meta("st")))); ov.next2 = btn("", "primary", func() -> void: do_again.call(int(ov.next2.get_meta("st"))))
 	var b1 := btn("상점", "ghost", func() -> void: shop_ctx = sel; open_sub("shop")); var b2 := btn("처음 화면", "ghost", func() -> void: do_menu.call())
@@ -1275,7 +1401,12 @@ func show_result(kind: String) -> void:
 	var all_done: bool = Store.playable().all(func(s): return Store.save.cleared.has(s))
 	ov.best_head = (("모든 스테이지를 깼습니다 · " if all_done else ("탑을 떠나 번 돈을 챙겼습니다 · " if Store.realm(game.stage) != "" else "헬기로 탈출해 번 돈을 챙겼습니다 · ")) if clear_ else ("탈출하지 못해 이번에 번 %s을 잃었습니다 · " % Store.won(st.earned) if st.earned > 0 else ""))
 	if md != null: ov.best_head = (("이겨서 번 돈을 챙겼습니다 · 최고 기록 " + Store.fmt_time(float(Store.save.best.get(md.record_key(), 0)))) if clear_ else ("져서 이번에 번 %s을 잃었습니다" % Store.won(st.earned) if st.earned > 0 else "다시 도전해 보세요")) + " · "
-	if md is ModeRaid and clear_: ov.best_head = str(ov.best_head) + "최고 등급 " + ModeRaid.best_rank() + " · "
+	if md is ModeRaid and clear_: ov.best_head = str(ov.best_head) + "최고 등급 " + ModeRaid.best_rank((md as ModeRaid).diff) + " · "
+	(ov.loot as Label).visible = md is ModeRaid and clear_ and not game.spoils.is_empty()
+	if (ov.loot as Label).visible:
+		var d := RaidLoot.data(); var have: Array = []
+		for k: String in RaidLoot.MATS: have.push_back("%s %d" % [str(RaidLoot.MAT_SHORT[k]), int(d.mat[k])])
+		(ov.loot as Label).text = "토벌 보상 · " + " · ".join(PackedStringArray(game.spoils.map(func(r): return RaidLoot.line(r)))) + "\n보관 중 · " + " · ".join(PackedStringArray(have)) + " · 명성 주화 %d · 연금술 공방에서 연성과 외형" % int(d.coins)
 	if clear_ and Weapons.LIST.has(str(st.get("prize", ""))):   # a boss's chest gave you a new gun: said first
 		var PW: Dictionary = Weapons.LIST[str(st.prize)]; ov.best_head = "보물상자 · 새 총 %s %s 획득 · " % [PW.model, PW.name] + str(ov.best_head)
 	back_stack.clear(); show_screen("over")   # (which writes the bag on the last line: _over_money)

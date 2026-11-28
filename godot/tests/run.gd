@@ -1126,6 +1126,7 @@ func _ready() -> void:
 	_realm_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_plain_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_raid_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
+	_raid_spoils(gm, pl, w, cam)
 	_reward_card(gm, en, pl)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
@@ -4692,6 +4693,195 @@ func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: W
 
 ## 6-A (scripts/demonroad.gd, fiends.gd, mode_raid.gd): the road and its seals, the party of four and the switching between
 ## them, the shared comebacks, the camp, the lava, Karnok's and Baal's tricks, the rank, the end, and the screens
+## 6-A's spoils (the boss raid paper's second part): what a won raid gives by rank and difficulty, the difficulties
+## themselves, the four legendary relics at work in the raid (and nowhere else), the mythic looks, the workshop, the screens
+func _raid_spoils(gm: Game, pl: Player, w: World, cam: Camera3D) -> void:
+	reset_test_state(); seed(729)
+	var fresh := func() -> void: Store.save.raid = RaidLoot.blank()
+	var rng := RandomNumberGenerator.new(); rng.seed = 4242
+	# ---- what is kept ----
+	var junk := {"mat": {"heart": -5, "shard": 3.7, "sulfur": "12", "gold": 9}, "coins": -1, "relics": ["rl_wing", "rl_wing", "nope"], "looks": ["skin_elf", "x"], "wear": ["skin_elf", "skin_orc"],
+		"titles": ["eclipse_breaker", "king"], "title": "king", "ward": "goblin", "cleared": ["normal", "hard"], "boxes": 500}
+	var fixed := RaidLoot.fix(junk)
+	var s0: Dictionary = Store.save0(); Store.save.raid = junk; Store.fix_save()
+	check("6-A's spoils are kept in the save (the materials, coins, relics, looks, titles, the difficulties won), brought into shape: known things only, each once, nothing below nothing, what is worn only what is had; a fresh save starts with none",
+		s0.has("raid") and (s0.raid as Dictionary) == RaidLoot.blank() and fixed.mat == {"heart": 0, "shard": 3, "sulfur": 12} and int(fixed.coins) == 0 and fixed.relics == ["rl_wing"] and fixed.looks == ["skin_elf"] and fixed.wear == ["skin_elf"]
+		and fixed.titles == ["eclipse_breaker"] and str(fixed.title) == "" and str(fixed.ward) == "dwarf" and fixed.cleared == ["normal"] and int(fixed.boxes) == 99 and (Store.save.raid as Dictionary) == fixed, [fixed])
+	# ---- by rank: the paper's table ----
+	fresh.call(); var sS := RaidLoot.grant("S", "normal", rng); var dS := RaidLoot.data().duplicate(true)
+	fresh.call(); var sC := RaidLoot.grant("C", "normal", rng); var dC := RaidLoot.data().duplicate(true)
+	fresh.call(); var sA := RaidLoot.grant("A", "nightmare", rng); var dA := RaidLoot.data().duplicate(true)
+	fresh.call(); var sB := RaidLoot.grant("B", "normal", rng); var dB := RaidLoot.data().duplicate(true)
+	var relics_of := func(list: Array) -> int: return list.filter(func(r): return str(r.kind) == "relic").size()
+	check("a won raid gives, by its rank (the paper's table): S 2 of Baal's obsidian hearts, 4 of Karnok's chain shards, 15 sulphur crystals and 500 renown coins, a relic sure (and the title 「일식을 부순 자」 the first time); A 1 · 3 · 10 and 350; B 0 · 2 · 6 and 220; C 4 crystals and 120; the Nightmare's materials half as many again (A: 1 · 4 · 15)",
+		dS.mat == {"heart": 2, "shard": 4, "sulfur": 15} and int(dS.coins) == 500 and relics_of.call(sS) >= 1 and (dS.titles as Array).has("eclipse_breaker")
+		and dC.mat == {"heart": 0, "shard": 0, "sulfur": 4} and int(dC.coins) == 120 and dB.mat == {"heart": 0, "shard": 2, "sulfur": 6} and int(dB.coins) == 220
+		and dA.mat == {"heart": 1, "shard": 4, "sulfur": 15} and int(dA.coins) == 350, [dS.mat, dS.relics, dC.mat, dB.mat, dA.mat, sS.map(func(r): return RaidLoot.line(r))])
+	# each of the party rolls for his people's relic: over many raids, the paper's chances (B 8% each, so 0.32 a raid; S at least one)
+	var got_b := 0; var got_s := 0; var s_none := 0; var by_race := {}
+	for i in 600:
+		fresh.call(); var l := RaidLoot.grant("B", "normal", rng); got_b += relics_of.call(l)
+		for r: Dictionary in l:
+			if str(r.kind) == "relic": by_race[str(RaidLoot.RELICS[str(r.id)].of)] = true
+		fresh.call(); var l2 := RaidLoot.grant("S", "normal", rng); var n2: int = relics_of.call(l2); got_s += n2
+		if n2 == 0: s_none += 1
+	check("each of the party rolls for his own people's relic (the elf the abyss wings, the dwarf the obsidian ward, the orc Karnok's axe, the demon Baal's core): at B 8%% each (%.2f a raid over 600, the paper's 0.32), at S 35%% each with one sure (%.2f a raid, never none)" % [got_b / 600.0, got_s / 600.0],
+		absf(got_b / 600.0 - 0.32) < 0.08 and s_none == 0 and got_s / 600.0 > 1.45 and got_s / 600.0 < 1.75 and by_race.size() == 4, [got_b, got_s, s_none, by_race.keys()])
+	# a relic you have, come again: ten crystals; the Abyssal's S: a choice box and its title; deeds: the looks
+	fresh.call(); RaidLoot.data().relics = RaidLoot.RELICS.keys().duplicate()
+	var dup := RaidLoot.grant("S", "normal", rng); var dup_n: int = dup.filter(func(r): return str(r.kind) == "dup").size()
+	var dup_ok: bool = dup_n >= 1 and int(RaidLoot.data().mat.sulfur) == 15 + 10 * dup_n
+	fresh.call(); var ab := RaidLoot.grant("S", "abyss", rng, 6.5); var dab := RaidLoot.data()
+	var ab_ok: bool = int(dab.boxes) == 1 and (dab.titles as Array).has("abyss_tamer") and (dab.looks as Array).has("vfx_eclipse") and (dab.looks as Array).has("frame_obsidian") and RaidLoot.wearing("vfx_eclipse") and not (dab.looks as Array).has("charm_mace")
+	fresh.call(); RaidLoot.grant("C", "nightmare", rng); var nm_first: bool = RaidLoot.has_look("charm_mace") and RaidLoot.has_look("frame_obsidian")
+	fresh.call(); RaidLoot.data().looks = RaidLoot.SKINS.duplicate(); RaidLoot.grant("S", "abyss", rng); var all_skins: bool = int(RaidLoot.data().boxes) == 0 and int(RaidLoot.data().coins) == 500 + 2000
+	check("a relic you have already comes as ten sulphur crystals; an S on the Abyssal gives a mythic skin's choice box and 「심연을 길들인 대마법사」 (2,000 coins when every skin is yours); the eclipse ended within 8 s gives the eclipse elimination, a win past the Normal the obsidian frame, the first on the Nightmare Karnok's miniature mace",
+		dup_ok and ab_ok and nm_first and all_skins, [dup_ok, dab, nm_first, all_skins])
+	# ---- the workshop ----
+	fresh.call(); var d := RaidLoot.data()
+	var poor: bool = not RaidLoot.craft_relic("rl_chain") and not RaidLoot.craft_skin("skin_orc")
+	d.mat.heart = 17; d.mat.sulfur = 30; d.mat.shard = 20; d.coins = 2000
+	var made1 := RaidLoot.craft_relic("rl_chain"); var again := RaidLoot.craft_relic("rl_chain"); var left1: Dictionary = d.mat.duplicate()
+	var made2 := RaidLoot.craft_skin("skin_orc"); var worn := RaidLoot.wearing("skin_orc") and RaidLoot.skin_of("orc") == "skin_orc"
+	RaidLoot.wear("skin_orc", false); var off := RaidLoot.skin_of("orc") == ""
+	d.boxes = 1; var boxed := RaidLoot.craft_skin("skin_elf", true); var boxed2 := RaidLoot.craft_skin("skin_dwarf", true)
+	check("the tower's alchemy workshop: a relic made for sure for 5 hearts and 30 crystals (the one you pick, not one you have); a mythic skin smelted for 12 hearts, 20 chain shards and 2,000 coins, worn at once and taken off at will; a choice box gives one free",
+		poor and made1 and not again and left1 == {"heart": 12, "shard": 20, "sulfur": 0} and made2 and worn and off and d.mat == {"heart": 0, "shard": 0, "sulfur": 0} and int(d.coins) == 0 and boxed and not boxed2 and RaidLoot.has_look("skin_elf"),
+		[made1, again, left1, made2, worn, off, boxed, boxed2])
+	# ---- the difficulties ----
+	fresh.call(); var open0: Array = RaidLoot.DIFF_ORDER.map(func(k): return RaidLoot.diff_open(k))
+	RaidLoot.data().cleared = ["normal"]; var open1: Array = RaidLoot.DIFF_ORDER.map(func(k): return RaidLoot.diff_open(k))
+	Store.settings.raidDiff = "abyss"; var fall_back := RaidLoot.picked() == "nightmare" or RaidLoot.picked() == "normal"
+	RaidLoot.data().cleared = ["normal", "nightmare"]; var picked_abyss := RaidLoot.picked() == "abyss"
+	var made := {}
+	for k: String in RaidLoot.DIFF_ORDER:
+		Store.settings.raidDiff = k; gm.begin(13); var md2: ModeRaid = gm.rm.mode
+		made[k] = [md2.revives, int(md2.karnok.max_hp), int(md2.baal.max_hp), md2.record_key(), md2.eclipse_time(), md2.boss_speed()]
+	var dmg_k := 0.0
+	if true:   # (a lord's blow by the Abyssal: half as hard again)
+		var md3: ModeRaid = gm.rm.mode; dmg_k = md3.dmg_mul(md3.baal, md3.party()[0])
+	check("the difficulties (the paper's): the Normal (10 comebacks), the Nightmare (the lords' health +45%, their blows +25%, their moves 15% quicker, 5 comebacks) and the Abyssal (+90%, +50%, no comebacks, the eclipse 9 s); each opens once the one before it is won; each keeps its own best time and rank",
+		open0 == [true, false, false] and open1 == [true, true, false] and fall_back and picked_abyss
+		and made.normal == [10, 8000, 22000, "t13", 12.0, 1.0] and made.nightmare == [5, 11600, 31900, "t13n", 12.0, 1.15] and made.abyss == [0, 15200, 41800, "t13a", 9.0, 1.15] and is_equal_approx(dmg_k, 1.5), [open0, open1, made, dmg_k])
+	# ---- the relics at work (the raid only) ----
+	Store.settings.raidDiff = "normal"; fresh.call(); RaidLoot.data().relics = RaidLoot.RELICS.keys().duplicate(); RaidLoot.data().ward = "elf"
+	Store.settings.realmRace = "demon"; gm.begin(13)
+	var rm: Realm = gm.rm; var md: ModeRaid = rm.mode; var kit: RealmKit = rm.kit; rm.log_on = true; rm.ai_off = true
+	var step := func(secs: float, dt := 1.0 / 60.0) -> void:
+		var t := 0.0
+		while t < secs - 1e-9: pl.update(dt, cam, 0.0); gm.rm.update(dt); w.road.update(dt, pl); t += dt
+	var party: Array = md.party(); var EL: Realm.Fighter = party[0]; var DW: Realm.Fighter = party[1]; var OR: Realm.Fighter = party[2]; var DM: Realm.Fighter = party[3]
+	var carried: bool = DM.rune("rl_eclipse") and OR.rune("rl_chain") and EL.rune("rl_wing") and EL.rune("rl_ward") and not DW.rune("rl_ward") and kit.charges(EL) == 2 and kit.charges(DW) == 1
+	# the demon's eclipse core: at 80% heat the overload, 95% held four seconds, its embers through and a quarter again as hard
+	var put := func(f: Realm.Fighter, p: Vector3) -> void:
+		f.pos = p; f.vel = Vector3.ZERO; f.vy = 0.0; rm.astray(f)
+		if f.me: pl.pos = p; pl.vel = Vector3.ZERO
+	var A := DemonRoad.CHECK[0] + Vector3(6, 0, 0)
+	put.call(DM, A); DM.heat = 81.0; DM.fire_t = 0.0
+	kit.act(DM, {"fire": true}, 1.0 / 60.0); var over_on: bool = DM.relic_t > 3.9 and is_equal_approx(DM.heat, 95.0) or (DM.relic_t > 3.9 and DM.heat >= 95.0)
+	var em: Dictionary = kit.shots[kit.shots.size() - 1] if not kit.shots.is_empty() else {}
+	var em_ok: bool = em.get("pierce", false) and absf(float(em.get("dmg", 0.0)) - float(Races.STAFF.dmg) * 1.25) < 0.01
+	for k in 200: DM.fire_t = 0.0; kit.act(DM, {"fire": true}, 1.0 / 60.0)
+	var held95: bool = DM.seal_t <= 0.0 and DM.heat <= 95.0 + 0.01
+	for k in 80: kit.act(DM, {}, 1.0 / 60.0)
+	var over_off: bool = DM.relic_t <= 0.0 and DM.relic_cd > 0.0 and DM.relic_cd <= 12.0 - 4.0 + 0.1
+	check("Baal's eclipse furnace core (the demon's, slot A): at 80% heat the eclipse overload, four seconds held at 95% with no sealing however much he fires, embers that go through whoever they meet, a quarter again as hard; twelve seconds before it comes again",
+		carried and over_on and em_ok and held95 and over_off, [carried, over_on, em, held95, DM.relic_t, DM.relic_cd])
+	kit.clear()
+	# Karnok's axe (the orc's, slot A): through three of them, each hauled to two metres before him; one of them felled by the sword within three seconds: the axe again at once
+	var G := DemonRoad.CHECK[1]; put.call(OR, G + Vector3(-12, 0, 0)); OR.aim = Vector3(1, 0, 0); OR.yaw = atan2(-OR.aim.x, -OR.aim.z); OR.alt_cd = 0.0
+	var foes: Array = md.demons().filter(func(f): return Fiends.kind_of(f) == "guard").slice(0, 3)
+	for i in foes.size():
+		var e: Realm.Fighter = foes[i]; put.call(e, G + Vector3(-4.0 + i * 3.0, 0, 0)); e.brain.awake = true; e.hp = e.max_hp
+	kit.act(OR, {"alt": true}, 1.0 / 60.0)
+	for k in 40: kit.step(1.0 / 60.0)
+	var hauled: Array = foes.map(func(e: Realm.Fighter) -> float: return Vector2(e.pos.x - (OR.pos.x + 2.0), e.pos.z - OR.pos.z).length())
+	var hauled_ok: bool = hauled.all(func(dd: float) -> bool: return dd < 1.5) and foes.all(func(e: Realm.Fighter) -> bool: return e.chain_by == OR.id)
+	var cd_was := OR.alt_cd; var V: Realm.Fighter = foes[0]; V.hp = 1.0
+	rm.hurt(V, 99.0, "physical", OR, {"melee": true, "src": "sword1"}); var reset: bool = cd_was > 1.0 and not V.alive and OR.alt_cd == 0.0
+	check("Karnok's chain execution axe (the orc's, slot A): his chain axe goes through three of them and hauls them all to two metres before him; one it holds felled by the great sword within three seconds, and the axe is ready again at once",
+		hauled_ok and reset, [hauled, cd_was, OR.alt_cd])
+	# the abyss wings (the elf's, slot B): two wind steps, two jumps in the air for you; a head shot from the air at 2.5
+	EL.grounded = false; var head_air := kit._xbow_head(EL); EL.grounded = true; var head_ground := kit._xbow_head(EL)
+	rm.switch_me(EL); step.call(1.0 / 60.0); var air2: bool = pl.air_max == 2
+	check("the abyss wings' constellation (the elf's, slot B): Shift twice before it needs to come back, two jumps in the air before you land, and the crossbow's head shots from the air at 2.5 (2.0 on the ground)",
+		kit.charges(EL) == 2 and EL.skill_n == 2 and air2 and is_equal_approx(head_air, 2.5) and is_equal_approx(head_ground, 2.0), [EL.skill_n, pl.air_max, head_air, head_ground])
+	# the obsidian ward (anyone's, slot C; here the elf carries it): a parry shields those within six metres with 50 and the turned missile bursts where it lands
+	put.call(EL, A); put.call(DW, A + Vector3(-1, 0, 2.5)); put.call(OR, A + Vector3(0, 0, 9)); EL.shield = 0.0; DW.shield = 0.0; OR.shield = 0.0
+	EL.aim = Vector3(1, 0, 0); EL.parry_t = 0.4
+	var foe: Realm.Fighter = foes[1]; put.call(foe, A + Vector3(14, 0, 0)); foe.hp = foe.max_hp; foe.inv = 0.0
+	var b2: Realm.Fighter = foes[2]; put.call(b2, A + Vector3(15.5, 0, 1.5)); b2.hp = b2.max_hp; b2.inv = 0.0
+	kit.shoot({"kind": "fspear", "pos": A + Vector3(3.0, 1.2, 0), "vel": Vector3(-30, 0, 0), "life": 2.0, "team": "them", "by": foe, "r": 0.1, "dmg": 26.0, "elem": "fire"})
+	for k in 60: kit.step(1.0 / 60.0)
+	var shielded: bool = EL.shield >= 49.0 and DW.shield >= 49.0 and OR.shield < 1.0
+	var burst_hit: bool = b2.hp < b2.max_hp - 100.0 or not b2.alive
+	check("the obsidian ward's relic (anyone's, slot C: with whoever you gave it to in the workshop): a parry gives each of the party within six metres a shield of 50, and the missile turned back bursts where it lands, 180 of fire four metres round",
+		shielded and burst_hit and rm.log.any(func(e): return str(e[0]) == "ward_boom"), [EL.shield, DW.shield, OR.shield, b2.hp, b2.max_hp])
+	# the relics are the raid's: nowhere else does one go into a slot
+	Store.settings.realmMode = "sanctum"; Store.settings.realmRace = "orc"; gm.begin(10)
+	var not_there: bool = gm.rm != null and not gm.rm.mode.relics() and not gm.rm.fit_relic(gm.rm.me, "rl_chain") and not gm.rm.me.rune("rl_chain") and not gm.rm.buy(gm.rm.me, "rl_chain")
+	check("the legendary relics are for the raid (PvE, as the paper says): in the four peoples' battles none goes into a slot", not_there)
+	# ---- the looks ----
+	fresh.call(); var dd2 := RaidLoot.data(); dd2.looks = ["skin_orc", "skin_demon", "skin_elf", "skin_dwarf", "vfx_eclipse", "frame_obsidian", "charm_mace"]; dd2.wear = dd2.looks.duplicate()
+	Store.settings.realmRace = "orc"; gm.begin(13); rm = gm.rm; md = rm.mode; rm.cam = cam; step.call(1.0 / 60.0)   # (the weapon in your hands hangs from the camera)
+	var lk := rm.look; var held_keys: Array = lk.models.keys()
+	var parts_sk: Dictionary = RealmLook.parts("elf", "us"); var sk_right := RealmLook.skinned("elf", parts_sk.right)
+	var recolored: bool = sk_right.any(func(b): return str(b[6]) == "8e4fd0") and not parts_sk.right.any(func(b): return str(b[6]) == "8e4fd0")
+	var ally: Realm.Fighter = md.party()[0]; lk.build(ally); var ally_sk: bool = rm.kit.mine(ally)
+	var gauge_ok: bool = lk.gauge != null and lk.orbit != null and lk.charm != null
+	var victim: Realm.Fighter = md.demons()[0]; victim.inv = 0.0; var g0: int = lk._ghosts.size(); rm.slay(victim, rm.me)
+	var popped: bool = lk._ghosts.size() > g0 and lk._ghosts.any(func(q): return q.has("pop"))
+	check("the mythic looks, worn: each people's weapon in its skin's colours in your hands and on the party's bodies (6-A: all of them yours), the furnace cannon's pressure gauge and the obsidian staff's shards, Karnok's mace hanging from the weapon; felled by you, a small black sun over the head bursts",
+		recolored and ally_sk and gauge_ok and popped, [held_keys, recolored, ally_sk, gauge_ok, popped])
+	var M := HudMain.new(); M.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); M.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); M.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf"); M.f_body = M.f_bold
+	M.game = gm; M.player = pl; M.cam = cam
+	var hud := Hud.new(); hud.m = M; var rh: RealmHud = hud.realm
+	var rec := DrawRec.new(); rh.draw(hud, rec, Vector2(1280, 720), Vector2(640, 360), false); var with_frame := rec.polys
+	RaidLoot.wear("frame_obsidian", false); var rec2 := DrawRec.new(); rh.draw(hud, rec2, Vector2(1280, 720), Vector2(640, 360), false)
+	check("the tower conqueror's obsidian frame: gold-edged runes round your health and your weapon at the bottom of the screen, while it is on", with_frame >= rec2.polys + 8, [with_frame, rec2.polys])
+	# ---- the screens ----
+	var R := Reward.new(); R.m = M; add_child(R); Snd.keep_log = true; Snd.played.clear()
+	var list := [{"kind": "mat", "id": "heart", "n": 2, "name": RaidLoot.MAT_NAME.heart}, {"kind": "coins", "id": "coins", "n": 500, "name": RaidLoot.COIN_NAME}, {"kind": "relic", "id": "rl_wing", "n": 1, "name": str(RaidLoot.RELICS.rl_wing.name)}]
+	R.start_spoils(list, "S", "nightmare", Vector2(1280, 720)); R.update(1.5); var rc := DrawRec.new(); R.draw(rc)
+	var cr := Reward.card_rect(Vector2(1280, 720), 3)
+	check("a raid won: its spoils shown big over the fight, the rank on the ribbon, a row for each (the relic in gold), the difficulty and where it is kept under them, a fanfare and the relic's chord",
+		R.on() and R.kind == "spoils" and rc.has("토벌 보상 · 등급 S") and rc.has(RaidLoot.line(list[0])) and rc.has(RaidLoot.line(list[2])) and rc.texts.any(func(q): return str(q[0]).begins_with("난이도 악몽")) and Snd.played.has("reward_fanfare") and Snd.played.has("rd_relic") and cr.end.y < 720.0,
+		[rc.texts.map(func(q): return q[0]).slice(0, 8)])
+	R.queue_free(); Snd.keep_log = false
+	var wu := Ui.new(); wu.game = gm; wu.f_title = M.f_title; wu.f_body = M.f_bold; wu.f_bold = M.f_bold; wu.f_mono = M.f_mono; add_child(wu); wu._build_workshop(); wu.size = Vector2(1280, 720)
+	fresh.call(); RaidLoot.data().mat = {"heart": 5, "shard": 0, "sulfur": 30}; wu.render_workshop()
+	var crafts: Array = wu.ws_list.find_children("*", "Button", true, false).filter(func(b): return b.has_meta("craft"))
+	var relic_btn: Button = crafts.filter(func(b): return RaidLoot.RELICS.has(str(b.get_meta("craft"))))[0]
+	var skin_btn: Button = crafts.filter(func(b): return RaidLoot.SKINS.has(str(b.get_meta("craft"))))[0]
+	var en_ok: bool = not relic_btn.disabled and skin_btn.disabled
+	relic_btn.pressed.emit(); var after: Array = wu.ws_list.find_children("*", "Button", true, false).filter(func(b): return b.has_meta("craft") and RaidLoot.RELICS.has(str(b.get_meta("craft"))))
+	var made_ok: bool = RaidLoot.data().relics.size() == 1 and after.all(func(b): return b.disabled)
+	check("the workshop's screen: what you have, a card for each relic, skin, look and title; a making you can pay for is pressable and makes it (then the rest wait for more), one you cannot is not",
+		en_ok and made_ok and wu.ws_list.find_children("*", "Label", true, false).any(func(l): return str(l.text).contains("바알의 흑요석 심장 0")), [en_ok, made_ok])
+	wu.queue_free()
+	# the briefing's difficulties (the ones not open yet shown, not pressable) and the result sheet's spoils
+	var fu := Ui.new(); fu.game = gm; fu.f_title = M.f_title; fu.f_body = M.f_bold; fu.f_bold = M.f_bold; fu.f_mono = M.f_mono
+	add_child(fu); fu._build_brief(); fu._build_loadout(); fu._build_shop(); fu._build_over(); fu._build_dialog()
+	fu.tac = TacMap.new(); fu.tac.game = gm; fu.tac.f_mono = fu.f_mono; fu.tac.f_bold = fu.f_bold
+	var diff_btns := func() -> Dictionary:
+		var out := {}; var stack: Array = [fu.br_modes]
+		while not stack.is_empty():
+			var nd: Node = stack.pop_back()
+			if nd is Button and nd.has_meta("pick") and RaidLoot.DIFF.has(str(nd.get_meta("pick"))): out[str(nd.get_meta("pick"))] = not (nd as Button).disabled
+			stack.append_array(nd.get_children())
+		return out
+	fresh.call(); Store.settings.raidDiff = "normal"; fu.open_brief(13); var b0: Dictionary = diff_btns.call()
+	RaidLoot.data().cleared = ["normal"]; fu.open_brief(13); var b1: Dictionary = diff_btns.call()
+	Store.settings.raidDiff = "nightmare"; fu.open_brief(13); var nm_note: String = fu.br_note.text; var nm_title := str((gm.rm.mode as ModeRaid).diff)
+	gm.rm.mode.rank = "A"; gm.spoils = [{"kind": "mat", "id": "shard", "n": 4, "name": RaidLoot.MAT_NAME.shard}, {"kind": "relic", "id": "rl_chain", "n": 1, "name": str(RaidLoot.RELICS.rl_chain.name)}]
+	fu.show_result("clear"); var loot_line: String = (fu.ov.loot as Label).text; var loot_on: bool = (fu.ov.loot as Label).visible
+	fu.queue_free(); gm.spoils = []
+	check("6-A's briefing has the three difficulties to pick, each but the Normal shut till the one before it is won (said on its button), and says what the picked one is; the result sheet lists what the raid gave and what is kept",
+		b0 == {"normal": true, "nightmare": false, "abyss": false} and b1 == {"normal": true, "nightmare": true, "abyss": false} and nm_title == "nightmare" and nm_note.contains("난이도 악몽") and nm_note.contains("파티 부활 5회")
+		and loot_on and loot_line.contains("카르녹의 룬 사슬 파편 ×4") and loot_line.contains("전설 룬 유물 · 카르녹의 연쇄 집행 도끼") and loot_line.contains("보관 중"), [b0, b1, nm_title, loot_line])
+	Store.settings.raidDiff = "normal"; Store.settings.realmRace = "elf"; Store.settings.realmMode = "solo"
+	reset_test_state(); rm = null
+
 func _raid_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: World, cam: Camera3D, _fxn: Fx, _lt) -> void:
 	reset_test_state(); seed(613)
 	Store.settings.realmRace = "dwarf"; Store.settings.realmBomb = "oil"

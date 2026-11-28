@@ -107,6 +107,23 @@ const EDGE := 0.15         # a hit's swing either way, no more (aim counts for m
 const SHIELD_ARCANE := 1.2 # arcane on the nucleus' shield
 const BURN_HEAL := 0.7     # while burning: what mends you, by this much
 
+## a word with the Korean particle that fits it: pair "이가" (이 after a final consonant, 가 after a vowel), "을를", "은는",
+## "와과", or "으로" (으로, or 로 after a vowel or ㄹ). A word ending in a digit or a Latin letter is read as said
+static func josa(word: String, pair: String) -> String:
+	var has := false; var rieul := false
+	if word != "":
+		var c := word.unicode_at(word.length() - 1)
+		if c >= 0xAC00 and c <= 0xD7A3: var jong := (c - 0xAC00) % 28; has = jong != 0; rieul = jong == 8
+		elif c >= 48 and c <= 57: has = "0136780".contains(char(c)); rieul = "178".contains(char(c))   # (영, 일, 삼, 육, 칠, 팔: a final consonant; 일, 칠, 팔: ㄹ)
+		elif "LMNRlmnr".contains(char(c)): has = true; rieul = "Ll".contains(char(c))
+	match pair:
+		"이가": return word + ("이" if has else "가")
+		"을를": return word + ("을" if has else "를")
+		"은는": return word + ("은" if has else "는")
+		"와과": return word + ("과" if has else "와")
+		"으로": return word + ("으로" if has and not rieul else "로")
+	return word
+
 static func runes_for(race: String, slot: String) -> Array:
 	var out: Array = []
 	for id: String in RUNES:
@@ -114,10 +131,16 @@ static func runes_for(race: String, slot: String) -> Array:
 		if q.slot == slot and (q.race == "" or q.race == race): out.push_back(id)
 	return out
 
-## whether someone has a rune cut (a rune of another people's is nothing to him)
+## a rune's table row, or a legendary relic's (6-A's: RaidLoot.RELICS, cut into the same slots, for nothing)
+static func rune_def(id: String) -> Dictionary:
+	if RUNES.has(id): return RUNES[id]
+	return RaidLoot.RELICS.get(id, {})
+
+## whether someone has a rune cut (a rune of another people's is nothing to him), or a relic
 static func has(runes: Dictionary, race: String, id: String) -> bool:
-	var q: Dictionary = RUNES[id]
-	return str(runes.get(q.slot, "")) == id and (q.race == "" or q.race == race)
+	var q := rune_def(id)
+	if q.is_empty(): return false
+	return str(runes.get(q.slot, "")) == id and (str(q.race) == "" or str(q.race) == race)
 
 ## a hit's element against what it meets. what: the struck one's state, each key there or not:
 ##   shield   a temporary shield up, or an orc's bloodlust turning shots from the front (heavy armour: arcane goes through some)

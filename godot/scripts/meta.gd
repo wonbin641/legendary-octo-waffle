@@ -70,7 +70,7 @@ static func item_state(id: String) -> String:
 
 static func buy_item(id: String) -> String:
 	var I: Dictionary = ITEMS[id]; var price: int = 0 if Store.settings.dev else I.price
-	if int(Store.save.items[id]) > 0: return I.name + "은(는) 이미 가지고 있습니다"
+	if int(Store.save.items[id]) > 0: return Races.josa(str(I.name), "은는") + " 이미 가지고 있습니다"
 	if Store.save.money < price: return Store.won(price - Store.save.money) + " 더 필요합니다"
 	spend(price); Store.save.items[id] = 10 if id == "vest" else 1; Store.persist(); Snd.play("buy")
 	return I.name + " 구매" + (" · 싸우는 중에 점프를 두 번 누르면 날아오릅니다" if id == "jet" else " · 바로 착용했습니다")

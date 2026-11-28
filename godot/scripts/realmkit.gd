@@ -32,6 +32,10 @@ func skill_cd(f: Realm.Fighter) -> float:
 	return float(Races.SKILL[f.race].cd)
 
 func parry_len(f: Realm.Fighter) -> float: return float(Races.RUNE.mirror) if f.rune("c_mirror") else float(Races.DAGGER.parry)
+## how many uses of Shift someone holds at most (the abyss wings' relic: an elf two)
+func charges(f: Realm.Fighter) -> int:
+	if f.race == "elf" and f.rune("rl_wing"): return int(RaidLoot.RELIC.wing_dash)
+	return int(Races.SKILL[f.race].charges)
 
 ## the first place along a ray (from o, the way d, no farther than far) within r of an upright post at c, h tall; -1: none
 static func ray_cyl(o: Vector3, d: Vector3, far: float, c: Vector3, r: float, h: float) -> float:
@@ -160,10 +164,11 @@ func act(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 	# (what is left over of a frame counts toward the next shot: a weapon's rate is its own at any frame rate)
 	f.fire_t = maxf(-dt, f.fire_t - dt); f.alt_cd = maxf(0.0, f.alt_cd - dt); f.dag_t = maxf(0.0, f.dag_t - dt); f.parry_cd = maxf(0.0, f.parry_cd - dt); f.parry_t = maxf(0.0, f.parry_t - dt)
 	f.skill_gap = maxf(0.0, f.skill_gap - dt); f.steady_t = maxf(0.0, f.steady_t - dt); f.since_swing += dt; f.idle_t += dt
-	var S: Dictionary = Races.SKILL[f.race]
-	if f.skill_n < int(S.charges):
+	var most := charges(f)
+	if f.skill_n < most:
 		f.skill_t -= dt
-		if f.skill_t <= 0.0: f.skill_n += 1; f.skill_t = skill_cd(f) if f.skill_n < int(S.charges) else 0.0
+		if f.skill_t <= 0.0: f.skill_n += 1; f.skill_t = skill_cd(f) if f.skill_n < most else 0.0
+	f.relic_cd = maxf(0.0, f.relic_cd - dt)
 	if f.bombs < f.bomb_kinds.size():
 		f.bomb_t -= dt
 		if f.bomb_t <= 0.0: f.bombs += 1; f.bomb_t = Races.BOMB_CD
@@ -208,15 +213,24 @@ func _xbow(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 			f.ammo -= 1; f.fire_t += 1.0 / float(W.rate); f.fired_t = 0.0
 			var prism := f.rune("elf_prism")
 			shoot({"kind": "big", "pos": muzzle(f), "vel": f.aim * float(W.big_speed), "life": 1.6, "team": f.team, "by": f, "r": 0.1, "dmg": float(W.big) * (float(Races.RUNE.rapid_big) if f.rune("elf_rapid") else 1.0),
-				"head": float(W.head), "elem": "arcane", "pierce": true, "bounces": int(W.bounces) + (1 if prism else 0), "split": prism})
+				"head": _xbow_head(f), "elem": "arcane", "pierce": true, "bounces": int(W.bounces) + (1 if prism else 0), "split": prism, "skin": RaidLoot.skin_of("elf") != "" and mine(f)})
 			_say(f, "rm_xbow_big"); rm.look.fired(f, "big")
 		f.charge = 0.0; f.charged = false
 		return
 	if I.get("fire", false) and f.fire_t <= 0.0:
 		f.ammo -= 1; f.fire_t += 1.0 / (float(W.rate) * (float(Races.RUNE.rapid_rate) if f.rune("elf_rapid") else 1.0)); f.fired_t = 0.0
 		var d := cone(f.aim, float(W.air_spread) if (not f.grounded and f.steady_t <= 0.0) else 0.0)
-		shoot({"kind": "arrow", "pos": muzzle(f), "vel": d * float(W.speed), "life": float(W.life), "team": f.team, "by": f, "r": 0.08, "dmg": float(W.dmg), "head": float(W.head), "elem": "arcane"})
+		shoot({"kind": "arrow", "pos": muzzle(f), "vel": d * float(W.speed), "life": float(W.life), "team": f.team, "by": f, "r": 0.08, "dmg": float(W.dmg), "head": _xbow_head(f), "elem": "arcane"})
 		_say(f, "rm_xbow", 0.8); rm.look.fired(f, "arrow")
+
+## the crossbow's head multiplier: 2.0, and 2.5 loosed in the air by an elf with the abyss wings' relic
+func _xbow_head(f: Realm.Fighter) -> float:
+	if f.rune("rl_wing") and not f.grounded: return float(RaidLoot.RELIC.wing_head)
+	return float(Races.XBOW.head)
+
+## whether someone's looks are yours to dress (the mythic skins and the rest): you, and in 6-A the whole party (all yours)
+func mine(f: Realm.Fighter) -> bool:
+	return f != null and (f.me or (rm.mode.relics() and f.team == "us"))
 
 ## the elf's arcane sight: drawing the heavy shot shows, for a moment, the foes near by who lately fired or used a circle
 ## (not those in smoke)
@@ -290,7 +304,7 @@ func vent(f: Realm.Fighter) -> int:
 		if not e.alive or e.team == f.team or e.feet_mid().distance_to(f.feet_mid()) > float(W.vent_r) + e.R: continue
 		if rm.hurt(e, float(W.vent), "fire", f, {"aoe": true, "src": "vent", "from": f.feet_mid()}) > 0.0: n += 1; rm.chill(e)
 	if n > 0: f.skill_t = maxf(0.0, f.skill_t - float(Races.SKILL.dwarf.refund))
-	_say(f, "rm_vent", 0.7); rm.look.steam(f.feet_mid(), float(W.vent_r))
+	_say(f, "rm_vent", 0.7); rm.look.steam(f.feet_mid(), float(W.vent_r), f)
 	for fd: Dictionary in fields:
 		if fd.kind == "oil" and inside(fd, f.pos, float(W.vent_r)): ignite(fd, f)
 	return n
@@ -313,7 +327,9 @@ func _sword(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 		_say(f, "rm_swing_big" if f.combo == 2 else "rm_swing", 0.9); rm.look.swing(f, "sword", f.combo)
 	elif I.get("alt", false) and f.alt_cd <= 0.0 and f.dash_t <= 0.0:
 		f.alt_cd = float(W.axe_cd); f.fired_t = 0.0
-		shoot({"kind": "axe", "pos": muzzle(f) + f.aim * 0.4, "vel": f.aim * float(W.axe_speed), "life": float(W.axe_range) / float(W.axe_speed), "team": f.team, "by": f, "r": 0.25, "dmg": float(W.axe), "elem": "physical"})
+		var chain := f.rune("rl_chain")   # (Karnok's axe: through three, and all of them hauled to the orc)
+		shoot({"kind": "axe", "pos": muzzle(f) + f.aim * 0.4, "vel": f.aim * float(W.axe_speed), "life": float(W.axe_range) / float(W.axe_speed), "team": f.team, "by": f, "r": 0.25, "dmg": float(W.axe), "elem": "physical",
+			"pierce": chain, "chain": chain, "chain_left": int(RaidLoot.RELIC.chain_n) if chain else 0, "chained": 0})
 		_say(f, "rm_axe"); rm.look.swing(f, "axe", 0)
 
 func sword_lands(f: Realm.Fighter) -> int:
@@ -324,13 +340,15 @@ func sword_lands(f: Realm.Fighter) -> int:
 			n += 1; v.stun_t = maxf(v.stun_t, stop)
 			if i == 2: v.delay_t = maxf(v.delay_t, 0.3)
 	for th: Dictionary in arc_things(f, float(W.reach), float(W.arc)): hurt_thing(th, float(W.dmg[i]), "physical", f); n += 1
+	var magma := mine(f) and RaidLoot.skin_of("orc") != ""   # (the overlord's magma greatsword)
 	if n > 0:
 		rm.add_stack(f); f.hold_t = stop; _say(f, "rm_blade_hit")
+		if magma: _say(f, "rd_skin_chain", 0.7)
 		if f.me: rm.stop_t = stop
 	if i == 2 or f.ult_t > 0.0:
 		var giant := f.rune("orc_giant"); var far := float(Races.RUNE.giant_range) if giant else float(W.wave_range)
 		var d := f.aim
-		shoot({"kind": "wave", "pos": f.eye_at() - Vector3(0, 0.35, 0) + d * 0.9, "vel": d * float(W.wave_speed), "life": far / float(W.wave_speed), "team": f.team, "by": f, "r": float(W.wave_r), "dmg": float(W.wave), "elem": "physical", "pierce": true, "giant": giant})
+		shoot({"kind": "wave", "pos": f.eye_at() - Vector3(0, 0.35, 0) + d * 0.9, "vel": d * float(W.wave_speed), "life": far / float(W.wave_speed), "team": f.team, "by": f, "r": float(W.wave_r), "dmg": float(W.wave), "elem": "physical", "pierce": true, "giant": giant, "skin": magma})
 		if f.me: rm.flash["wave"] = 0.18
 	rm.note(["swing", f.id, i, n])
 	return n
@@ -339,6 +357,15 @@ func sword_lands(f: Realm.Fighter) -> int:
 func _staff(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 	var W: Dictionary = Races.STAFF; var lit := f.ult_t > 0.0
 	if lit: f.heat = float(Races.ULT.demon.heat); f.seal_t = 0.0
+	# Baal's eclipse furnace core: at 80% heat the overload, four seconds held at 95% (no sealing), its embers through
+	# whoever they meet and a quarter again as hard; twelve seconds before it comes again
+	if f.rune("rl_eclipse"):
+		var RL: Dictionary = RaidLoot.RELIC
+		if f.relic_t <= 0.0 and f.relic_cd <= 0.0 and f.heat >= float(RL.eclipse_at) and f.seal_t <= 0.0 and not lit:
+			f.relic_t = float(RL.eclipse_t); f.relic_cd = float(RL.eclipse_cd); _say(f, "rd_relic_eclipse", 0.9); rm.look.overload(f, true); rm.note(["overload", f.id])
+		if f.relic_t > 0.0:
+			f.relic_t -= dt; f.heat = float(RL.eclipse_heat); f.seal_t = 0.0
+			if f.relic_t <= 0.0: rm.look.overload(f, false)
 	if f.seal_t > 0.0:
 		f.seal_t -= dt; f.beam_on = false
 		if f.seal_t <= 0.0: f.heat = float(W.seal_to)
@@ -346,12 +373,13 @@ func _staff(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 	f.beam_on = bool(I.get("alt", false)) and f.hp > float(W.beam_floor)
 	if f.beam_on: _beam(f, dt)
 	elif I.get("fire", false) and f.fire_t <= 0.0:
-		var hot := rm.critical(f); var burst := f.rune("dm_burst")
+		var hot := rm.critical(f); var burst := f.rune("dm_burst"); var over := f.relic_t > 0.0
 		f.fire_t += 1.0 / float(W.rate); f.idle_t = 0.0; f.fired_t = 0.0
-		shoot({"kind": "ember", "pos": muzzle(f), "vel": cone(f.aim, 0.012) * float(W.speed), "life": float(W.life), "team": f.team, "by": f, "r": 0.1, "dmg": float(W.dmg), "head": float(W.head), "elem": "fire", "hot": hot, "burst": hot and burst})
+		shoot({"kind": "ember", "pos": muzzle(f), "vel": cone(f.aim, 0.012) * float(W.speed), "life": float(W.life), "team": f.team, "by": f, "r": 0.1, "dmg": float(W.dmg) * (float(RaidLoot.RELIC.eclipse_mul) if over else 1.0), "head": float(W.head), "elem": "fire", "hot": hot, "burst": hot and burst,
+			"pierce": over, "over": over})
 		Snd.toy("rm_ember_hot" if hot else "rm_ember", 0.7, null if f.me else f.eye_at(), 0.85 + 0.45 * minf(1.0, f.heat / float(W.crit)))   # (its pitch climbs with the heat)
 		rm.look.fired(f, "ember")
-		if not lit:
+		if not lit and not over:
 			f.heat += float(W.heat) * (float(Races.RUNE.burst_heat) if burst else 1.0)
 			if f.heat > 100.0: f.heat = 100.0; f.seal_t = float(W.seal); _say(f, "rm_seal"); rm.look.sealed(f)
 	if f.idle_t > float(W.cool_wait) and not lit: f.heat = maxf(0.0, f.heat - float(W.cool) * (float(Races.RUNE.core_cool) if f.rune("dm_core") else 1.0) * dt)
@@ -421,7 +449,7 @@ func _dash(f: Realm.Fighter, dt: float) -> void:
 	if f.dash_kind == "steam": _steam_hits(f, 1.1)
 	if f.dash_t <= 0.0:
 		match f.dash_kind:
-			"steam": _steam_hits(f, float(Races.SKILL.dwarf.r)); rm.look.steam(f.feet_mid(), 2.0)
+			"steam": _steam_hits(f, float(Races.SKILL.dwarf.r)); rm.look.steam(f.feet_mid(), 2.0, f)
 			"rift":
 				if f.rune("dm_trail"): fields.push_back(rm.look.field({"kind": "trail", "pos": (f.dash_from + f.pos) * 0.5, "a": f.dash_from, "b": f.pos, "r": f.dash_from.distance_to(f.pos) * 0.5 + 1.2, "t": float(Races.RUNE.trail_t), "team": f.team, "by": f}))
 		f.dash_kind = ""
@@ -669,6 +697,7 @@ func _fly(s: Dictionary, dt: float) -> bool:
 		if s.kind == "flask": flask_burst(s, s.pos)
 		elif s.kind == "gren": gren_burst(s, s.pos, null)
 		elif s.has("boom"): _splash(s, s.pos)
+		if s.get("ward", false): _ward_boom(s, s.pos)
 		return false
 	return true
 
@@ -692,6 +721,7 @@ func _parried(s: Dictionary, p0: Vector3, d: Vector3, L: float) -> bool:
 		s.team = v.team; s.by = v; s.hit = {}; s.vel = v.aim * sp; s.pos = c + v.aim * 0.7; s.life = maxf(float(s.life), 1.0); s.erase("seek")
 		if s.has("turned_dmg"): s.dmg = float(s.turned_dmg); s.turned = true; s.erase("shove"); s.erase("boom")   # (6-A: what a demon threw, its own worth turned back)
 		if v.rune("c_mirror"): s.dmg = float(s.dmg) * float(Races.RUNE.mirror_mul)
+		if v.rune("rl_ward"): _ward(v, s)
 		Snd.play("rm_parry", 1.0, c); rm.look.parried(v, c); rm.look.shot_turned(s)
 		rm.note(["parry", v.id, str(s.kind)])
 		return true
@@ -699,6 +729,7 @@ func _parried(s: Dictionary, p0: Vector3, d: Vector3, L: float) -> bool:
 
 func _strike(s: Dictionary, who: Realm.Fighter, what, at: Vector3, d: Vector3) -> void:
 	var by: Realm.Fighter = s.by
+	if s.get("ward", false): _ward_boom(s, at)
 	if what != null:
 		if s.kind == "flask": flask_burst(s, at); return
 		hurt_thing(what, float(s.dmg), s.elem, by, at)
@@ -729,6 +760,7 @@ func _strike(s: Dictionary, who: Realm.Fighter, what, at: Vector3, d: Vector3) -
 func _wall(s: Dictionary, at: Vector3, n: Vector3, d: Vector3) -> bool:
 	var by: Realm.Fighter = s.by
 	if n.length_squared() < 0.25: n = -d   # (met from inside a corner: straight back)
+	if s.get("ward", false): _ward_boom(s, at + n * 0.1)
 	match s.kind:
 		"flask": flask_burst(s, at + n * 0.1); return false
 		"gren": gren_burst(s, at + n * 0.1, null); return false
@@ -736,6 +768,7 @@ func _wall(s: Dictionary, at: Vector3, n: Vector3, d: Vector3) -> bool:
 		"big":
 			if int(s.get("bounces", 0)) > 0:
 				var first: bool = not s.get("bounced", false)
+				if s.get("skin", false): rm.look.constellation(s.get("seg", s.from), at); s.seg = at   # (the corrupted starlight crossbow: a violet crack of stars along its way)
 				s.bounces = int(s.bounces) - 1; s.bounced = true; s.vel = (s.vel as Vector3).bounce(n); s.pos = at + n * 0.04; s.life = maxf(float(s.life), 0.9); s.hit = {}
 				Snd.play("rm_rico1" if first else "rm_rico2", 0.9, at); rm.look.impact("arcane", at, n)
 				if first and s.get("split", false):   # the prism: two arrows from the one, each the less
@@ -774,11 +807,38 @@ func gren_burst(s: Dictionary, at: Vector3, _who) -> void:
 			if e.alive and e.team != by.team and e.feet_mid().distance_to(at) < float(Races.FROST.r) + e.R: rm.chill(e)
 	else: lay("oil", at, by, float(W.oil_r), float(W.oil_t))
 
-## the chain axe lodges: the orc is hauled to it (or, by the hook rune, whoever it bit is hauled to him)
+## the obsidian ward's relic, at a parry: a shield on each of his side within six metres (him too), and the turned
+## missile to burst where it lands
+func _ward(v: Realm.Fighter, s: Dictionary) -> void:
+	var RL: Dictionary = RaidLoot.RELIC; var n := 0
+	for e: Realm.Fighter in rm.all:
+		if e.alive and e.team == v.team and e.pos.distance_to(v.pos) <= float(RL.ward_r): rm.shield(e, float(RL.ward_shield), float(RL.ward_cap), v); n += 1
+	s.ward = true; s.ward_by = v
+	_say(v, "rd_relic_ward", 0.9); rm.look.burst(v.feet_mid(), float(RL.ward_r) * 0.5, "arcane")
+	rm.note(["ward", v.id, n])
+
+func _ward_boom(s: Dictionary, at: Vector3) -> void:
+	s.ward = false
+	var by: Realm.Fighter = s.get("ward_by", s.by); var RL: Dictionary = RaidLoot.RELIC
+	boom(at, float(RL.ward_boom_r), float(RL.ward_boom), "fire", by, {"src": "ward", "blast": true})
+	Snd.play("rd_relic_boom", 1.0, at); rm.look.burst(at, float(RL.ward_boom_r), "fire")
+	rm.note(["ward_boom", by.id if by != null else 0])
+
+## the chain axe lodges: the orc is hauled to it (or, by the hook rune, whoever it bit is hauled to him; by Karnok's
+## relic, it goes through three and hauls each of them to two metres before him, held three seconds)
 func _axe_end(s: Dictionary, who: Realm.Fighter, at: Vector3) -> void:
 	var f: Realm.Fighter = s.by; var W: Dictionary = Races.SWORD
 	Snd.play("rm_axe_hit", 1.0, at)
 	if f == null or not f.alive: return
+	if s.get("chain", false):
+		if who != null:
+			who.chain_at = rm.clock; who.chain_by = f.id
+			if who.alive and not rm.unstoppable(who) and not rm.mode.heavy(who): _haul(f, who, int(s.chained))
+			s.chained = int(s.chained) + 1; s.chain_left = int(s.chain_left) - 1
+			if int(s.chain_left) <= 0: s.life = 0.0
+			_say(f, "rm_chain"); rm.note(["hook", f.id, who.id]); return
+		s.life = 0.0   # (it lodges in a wall or a thing: no further)
+		if int(s.chained) > 0: return   # (it held someone: the orc stays where he is)
 	if who != null and who.alive and f.rune("orc_hook"):
 		var to := f.pos + flat(f.aim) * float(Races.RUNE.hook_to); var gap := to - who.pos
 		if rm.unstoppable(who): return
@@ -788,10 +848,20 @@ func _axe_end(s: Dictionary, who: Realm.Fighter, at: Vector3) -> void:
 		q.y = Phys.ground_at(q.x, maxf(q.y, to.y) + 0.6, q.z, who.R); who.pos = q; who.vel = Vector3.ZERO; who.vy = 0.0
 		rm.astray(who)
 		_say(f, "rm_chain"); rm.note(["hook", f.id, who.id]); return
-	var gap2 := at - f.eye_at(); var dist := gap2.length() - (1.3 if who != null else 0.9)
+	var gap2 := at - f.eye_at(); var dist := gap2.length() - (1.3 if who != null else 0.9)   # (the orc, hauled to it)
 	if dist < 1.0: return
 	dash(f, gap2.normalized() * float(W.axe_dash), dist / float(W.axe_dash), "chain"); _say(f, "rm_chain")
 	rm.note(["chain", f.id, dist])
+
+## one bitten by the relic's axe, hauled to two metres before the orc (side by side: the second to his left, the third to his right)
+func _haul(f: Realm.Fighter, who: Realm.Fighter, i: int) -> void:
+	var fwd := flat(f.aim); var side := Vector3(-fwd.z, 0, fwd.x) * (0.0 if i == 0 else (1.1 if i == 1 else -1.1))
+	var to := f.pos + fwd * float(RaidLoot.RELIC.chain_to) + side; var gap := to - who.pos
+	var far := gap.length() * (float(Races.THICK.push) if who.race == "dwarf" else 1.0); var dir := flat(gap)
+	var q := who.pos
+	for k in 8: q = Phys.move_xz(q, dir.x * far / 8.0, dir.z * far / 8.0, who.R, who.H, 0.6)[0]
+	q.y = Phys.ground_at(q.x, maxf(q.y, to.y) + 0.6, q.z, who.R); who.pos = q; who.vel = Vector3.ZERO; who.vy = 0.0
+	rm.astray(who)
 
 # ---------------- what lies or hangs about ----------------
 func _field(fd: Dictionary, dt: float) -> void:

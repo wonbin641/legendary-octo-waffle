@@ -103,6 +103,14 @@ func _ready() -> void:
 	ui.open_sub("settings"); await _frames(); var sr := _list().get_global_rect()
 	var sx: Array = await _scrolls(Vector2(sr.position.x + 30, sr.position.y + sr.size.y * 0.7))
 	check("the codex and the settings scroll under a finger", cx[0] > 40 and sx[0] > 40, [cx, sx])
+	# the tower's alchemy workshop (6-A's spoils) on a phone: its cards and buttons on the screen, big enough, apart, and the list scrolls
+	_list().scroll_vertical = 0; ui.close_sub(); await _frames()
+	Store.save.raid = RaidLoot.blank(); Store.save.raid.mat = {"heart": 12, "shard": 20, "sulfur": 30}; Store.save.raid.coins = 2000; Store.save.raid.relics = ["rl_ward"]; Store.save.raid.boxes = 1
+	ui.open_sub("workshop"); await _frames(3); var ws_issues: Array = ui.audit(); var wr := _list().get_global_rect()
+	var wx: Array = await _scrolls(Vector2(wr.get_center().x, wr.position.y + wr.size.y * 0.7))
+	check("the tower's alchemy workshop on a phone: nothing off the screen, squeezed, on top of another or smaller than a finger, and its list scrolls under a finger", ws_issues.is_empty() and wx[0] > 40, [ws_issues.slice(0, 6), wx])
+	_list().scroll_vertical = 0; await _frames(); Store.save.raid = RaidLoot.blank()
+	ui.close_sub(); await _frames(); ui.open_sub("settings"); await _frames()
 	_list().scroll_vertical = 0; await _frames()
 	var sl: HSlider = (ui.screens.settings as Control).find_children("*", "HSlider", true, false)[0]; var g := sl.get_global_rect()
 	var v_to := sl.min_value + (sl.max_value - sl.min_value) * 0.8

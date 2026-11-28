@@ -44,6 +44,8 @@ class Fighter extends RefCounted:
 	var gauge := 0.0; var ult_t := 0.0; var ult_more := 0; var cast_t := 0.0
 	# the altar
 	var runes := {"a": "", "b": "", "c": ""}; var shards := 0; var bonus := 0
+	# 6-A's legendary relics: the eclipse overload (seconds left, its wait), the chain axe's hold on him (when, by whom)
+	var relic_t := 0.0; var relic_cd := 0.0; var chain_at := -99.0; var chain_by := 0
 	var kills := 0; var deaths := 0; var assists := 0; var dealt := 0.0
 	var hits := {}                  # who hurt him and when (for the assists)
 	var carrying := false           # the siege's bomb on his back
@@ -149,16 +151,17 @@ func become(f: Fighter, race: String) -> void:
 	if changed:   # (another people's runes are nothing to him: what they cost comes back)
 		for s in ["a", "b"]:
 			var id := str(f.runes[s])
-			if id != "" and str(Races.RUNES[id].race) != race: f.shards += int(Races.RUNES[id].cost); f.runes[s] = ""
+			if id != "" and str(Races.rune_def(id).race) != race: f.shards += cost_of(id); f.runes[s] = ""
 	refit(f)
-	if f.me and player != null: player.max_hp = f.max_hp; player.hp = f.hp; player.eye = f.eye; player.air_max = 1 if race == "elf" else 0
+	if f.me and player != null: player.max_hp = f.max_hp; player.hp = f.hp; player.eye = f.eye; player.air_max = air_jumps(f)
 	if changed and not f.me and not f.body.is_empty(): look.build(f)
 
 ## the weapon full and cold, Shift and the bombs ready: at the start, on coming back, after the altar
 func refit(f: Fighter) -> void:
 	f.ammo = kit.mag(f); f.reload_t = 0.0; f.fire_t = 0.0; f.charge = 0.0; f.charged = false; f.heat = 0.0; f.seal_t = 0.0; f.combo = 0; f.swing_t = 0.0; f.swing_hit = true
 	f.beam_on = false; f.vent_done = true; f.dash_t = 0.0; f.leaping = false
-	f.skill_n = int(Races.SKILL[f.race].charges); f.skill_t = 0.0; f.skill_gap = 0.0
+	f.skill_n = kit.charges(f); f.skill_t = 0.0; f.skill_gap = 0.0; f.relic_t = 0.0; f.relic_cd = 0.0
+	if f.me and player != null: player.air_max = air_jumps(f)
 	var two := f.rune("c_pouch")
 	if f.bomb_kinds.is_empty(): f.bomb_kinds = [picked_bomb()]
 	if two and f.bomb_kinds.size() < 2: f.bomb_kinds.push_back(Races.BOMBS[(Races.BOMBS.find(f.bomb_kinds[0]) + 1) % 3])
@@ -319,6 +322,8 @@ func down(v: Fighter, by: Fighter, o := {}) -> void:
 		if by.race == "orc" and bool(o.get("melee", false)): by.skill_t = 0.0; by.skill_n = 1
 		if by.race == "orc" and by.ult_t > 0.0 and by.ult_more < int(Races.ULT.orc.more_n): by.ult_more += 1; by.ult_t += float(Races.ULT.orc.more)
 		if by.rune("orc_roar"): heal(by, float(Races.RUNE.roar_heal), by)
+		if by.rune("rl_chain") and v.chain_by == by.id and clock - v.chain_at <= float(RaidLoot.RELIC.chain_t) and str(o.get("src", "")).begins_with("sword"):   # (Karnok's axe: one it held felled by the sword, the axe again at once)
+			by.alt_cd = 0.0; Snd.play("rd_relic_chain", 0.9, by.eye_at()); note(["chain_reset", by.id])
 	for h: Fighter in helpers: h.assists += 1; gain(h, float(Races.GAUGE.assist)); add_stack(h)
 	look.fell(v, by, o)
 	mode.on_down(v, by)
@@ -350,7 +355,7 @@ func switch_me(to: Fighter) -> bool:
 	look.build(old); look.drop(to)
 	if player != null:
 		player.reset(to.pos.x, to.pos.z, to.yaw); player.pos.y = to.pos.y; player.out = false
-		player.max_hp = to.max_hp; player.hp = to.hp; player.eye = to.eye; player.air_max = 1 if to.race == "elf" else 0
+		player.max_hp = to.max_hp; player.hp = to.hp; player.eye = to.eye; player.air_max = air_jumps(to)
 		_was_grounded = true
 	if guns != null: guns.trigger = false; guns.ads_held = false
 	if to.leaping and player != null: player.launch(Vector3(to.vel.x, maxf(to.vy, 0.0), to.vel.z))
@@ -535,10 +540,15 @@ func _port(f: Fighter, q: Dictionary) -> void:
 	look.ported(f, q.a, b)
 
 # ---------------- the shards and the runes ----------------
-func cost_of(id: String) -> int: return int(Races.RUNES[id].cost)
+func cost_of(id: String) -> int: return int(Races.rune_def(id).get("cost", 0))
+## the jumps someone may take in the air: an elf one (two with the abyss wings' relic)
+func air_jumps(f: Fighter) -> int:
+	if f.race != "elf": return 0
+	return int(RaidLoot.RELIC.wing_air) if f.rune("rl_wing") else 1
 
 ## cut a rune at the altar: what was in its slot is given back for what it cost. false: not enough shards, or not his people's
 func buy(f: Fighter, id: String) -> bool:
+	if RaidLoot.RELICS.has(id): return fit_relic(f, id)
 	if not Races.RUNES.has(id): return false
 	var q: Dictionary = Races.RUNES[id]; var slot: String = q.slot
 	if str(q.race) != "" and str(q.race) != f.race: return false
@@ -546,6 +556,20 @@ func buy(f: Fighter, id: String) -> bool:
 	var back := cost_of(str(f.runes[slot])) if str(f.runes[slot]) != "" else 0
 	if f.shards + back < int(q.cost): return false
 	f.shards += back - int(q.cost); f.runes[slot] = id
+	refit(f)
+	return true
+
+## a legendary relic into its slot: only in the raid (mode.relics), only one you have, only your people's (the ward: anyone's),
+## and only one of the party carries each; what was in the slot is given back
+func fit_relic(f: Fighter, id: String) -> bool:
+	var q: Dictionary = RaidLoot.RELICS[id]; var slot: String = q.slot
+	if not mode.relics() or not RaidLoot.has_relic(id): return false
+	if str(q.race) != "" and str(q.race) != f.race: return false
+	for o: Fighter in all:
+		if o != f and o.team == f.team and o.rune(id): return false
+	if str(f.runes[slot]) == id: return true
+	var back := cost_of(str(f.runes[slot])) if str(f.runes[slot]) != "" else 0
+	f.shards += back; f.runes[slot] = id
 	refit(f)
 	return true
 

@@ -286,8 +286,8 @@ func turn(f: Realm.Fighter, dt: float) -> void:
 		"beast": _beast(f, dt)
 		"defender": _defender(f, dt)
 		"imp": _imp(f, dt)
-		"karnok": _karnok(f, dt)
-		"baal": _baal(f, dt)
+		"karnok": _karnok(f, dt * mode.boss_speed())   # (the Nightmare's lords: their moves 15% the quicker)
+		"baal": _baal(f, dt * mode.boss_speed())
 
 ## asleep till one of the party is in its section, or near and seen
 func _waken(f: Realm.Fighter) -> bool:
@@ -509,7 +509,7 @@ func _karnok(f: Realm.Fighter, dt: float) -> void:
 				v.pos = to; v.vel = Vector3.ZERO; v.push = Vector3.ZERO
 				if v.me and rm.player != null: rm.player.pos = to; rm.player.vel = Vector3.ZERO
 				rm.astray(v); v.stun_t = maxf(v.stun_t, float(K.hook_wind))
-				b.state = "hook_wind"; b.st = 0.0; b.taken = 0.0; b.hp0 = f.hp + f.shield; Snd.play("rd_hook", 1.0, v.feet_mid()); mode.boss_says(f, "%s이(가) 갈고리에 끌려갔습니다 · 붉은 영혼 코어를 쏘거나 폭탄을 던지세요!" % Races.R.get(v.race, {"name": v.name}).name if not is_mon(v) else v.name)
+				b.state = "hook_wind"; b.st = 0.0; b.taken = 0.0; b.hp0 = f.hp + f.shield; Snd.play("rd_hook", 1.0, v.feet_mid()); mode.boss_says(f, Races.josa(str(Races.R.get(v.race, {"name": v.name}).name), "이가") + " 갈고리에 끌려갔습니다 · 붉은 영혼 코어를 쏘거나 폭탄을 던지세요!")
 				_drop_line(b)
 			return
 		"hook_wind":
@@ -752,7 +752,7 @@ func _binds_tick(f: Realm.Fighter, dt: float) -> void:
 		if float(q.t) <= 0.0:   # dragged over the edge, into the lava
 			ln.t = 0.0; th.hp = 0.0; b.binds.remove_at(i)
 			var out := Vector3(v.pos.x - DemonRoad.AC.x, 0, v.pos.z - DemonRoad.AC.y).normalized()
-			rm.slay(v, f, {"src": "bind"}); mode.boss_says(f, "%s이(가) 사슬에 끌려 용암 심연으로 떨어졌습니다" % (Races.R[v.race].name if Races.R.has(v.race) else v.name))
+			rm.slay(v, f, {"src": "bind"}); mode.boss_says(f, Races.josa(str(Races.R[v.race].name if Races.R.has(v.race) else v.name), "이가") + " 사슬에 끌려 용암 심연으로 떨어졌습니다")
 			if rm.fx != null: rm.fx.puff(v.pos + out * 3.0, 6, 1.0, 1.2)
 
 ## the sulfur rifts: red cracks over four tenths of the floor (the paper's); 1.8 s later they burst. They keep off the
@@ -823,9 +823,9 @@ func _baal_fall(f: Realm.Fighter) -> void:
 ## the eclipse of doom: he kneels in the middle; twelve seconds (more for each bomb that cools him) to bring him down
 func _eclipse(f: Realm.Fighter) -> void:
 	var b := f.brain
-	b.ecl = true; b.state = "eclipse"; b.cast = float(BAAL.eclipse_t); b.st = 0.0
+	b.ecl = true; b.state = "eclipse"; b.cast = float(mode.eclipse_time()); b.st = 0.0   # (12 s; the Abyssal's 9)
 	f.pos = Vector3(DemonRoad.AC.x, DemonRoad.A_Y, DemonRoad.AC.y)
-	Snd.play("rd_eclipse", 1.4, f.feet_mid()); mode.boss_says(f, "종말의 일식 · 12초 안에 쓰러뜨리세요! 모든 공격 2배, 연금술 폭탄은 영창을 늦춥니다"); mode.eclipse_start()
+	Snd.play("rd_eclipse", 1.4, f.feet_mid()); mode.boss_says(f, "종말의 일식 · %d초 안에 쓰러뜨리세요! 모든 공격 2배, 연금술 폭탄은 영창을 늦춥니다" % int(mode.eclipse_time())); mode.eclipse_start()
 	rm.note(["eclipse", f.id])
 
 ## in the air: a slow circle about the altar's middle, 15 m up
