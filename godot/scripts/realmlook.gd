@@ -72,7 +72,7 @@ func build(f: Realm.Fighter) -> void:
 	b.arm_l = _bpart(b.upper, Vector3(-sho.x, sho.y, 0), B.al, m); b.arm_r = _bpart(b.upper, Vector3(sho.x, sho.y, 0), B.ar, m)
 	if B.has("wing"):   # (the demon's wings, half spread, and its tail)
 		var wa: Vector3 = B.wing_at
-		b.wing_r = _bpart(b.upper, Vector3(wa.x, wa.y, wa.z), B.wing, m); b.wing_l = _bpart(b.upper, Vector3(-wa.x, wa.y, wa.z), B.wing, m); (b.wing_l as Node3D).scale = Vector3(-1, 1, 1)
+		b.wing_r = _bpart(b.upper, Vector3(wa.x, wa.y, wa.z), B.wing, m); b.wing_l = _bpart(b.upper, Vector3(-wa.x, wa.y, wa.z), B.wing_l, m)
 		b.tail = _bpart(b.upper, B.tail_at, B.tail, m)
 	var bar := Node3D.new(); bar.visible = false; _root().add_child(bar)
 	var bg := MeshInstance3D.new(); bg.mesh = en._bar_mesh; bg.material_override = en._bar_bg; bg.scale = Vector3(0.84, 0.08, 1); bar.add_child(bg)

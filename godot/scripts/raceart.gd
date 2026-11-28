@@ -1008,6 +1008,7 @@ static func body(race: String, team: String, skinned := false) -> Dictionary:
 			out.al = built(key + "_al", func(k: ArtKit) -> void: _demon_arm(k, false, P), d)
 			out.ar = built(key + "_ar", func(k: ArtKit) -> void: _demon_arm(k, true, P), d)
 			out.wing = built("body_demon_wing", func(k: ArtKit) -> void: _demon_wing(k), d)
+			out.wing_l = built("body_demon_wing_l", func(k: ArtKit) -> void: k.push(Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), Vector3.ZERO)); _demon_wing(k); k.pop(), d)   # (the left: the same, mirrored in its corners, not by a node's negative scale)
 			out.tail = built("body_demon_tail", func(k: ArtKit) -> void: _demon_tail(k), d)
 	_meshes[key] = out
 	return out
