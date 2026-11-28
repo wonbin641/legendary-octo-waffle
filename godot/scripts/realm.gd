@@ -55,7 +55,7 @@ class Fighter extends RefCounted:
 	func feet_mid() -> Vector3: return pos + Vector3(0, H * 0.55, 0)
 	func eye_at() -> Vector3: return pos + Vector3(0, eye, 0)
 
-var game; var world: World; var wood: ElfWood; var en: Enemies; var player: Player; var guns: Guns; var fx: Fx; var cam: Camera3D
+var game; var world: World; var wood: ElfWood; var altar: Caldera = null; var en: Enemies; var player: Player; var guns: Guns; var fx: Fx; var cam: Camera3D
 var mode: RealmMode; var key := ""
 var kit: RealmKit; var ai: RealmAI; var look: RealmLook
 var all: Array = []                # the ten
@@ -79,9 +79,10 @@ var _id := 0
 var _was_grounded := true
 var log_on := false; var log: Array = []   # the checks read what happened: [what, ...]
 
-static func create(k: String) -> Realm:
+static func create(k: String, caldera := false) -> Realm:
 	var rm := Realm.new(); rm.key = k
-	rm.mode = ModeSiege.new() if k == "siege" else (ModePlain.new() if k == "plain" else (ModeRaid.new() if k == "raid" else ModeSanctum.new()))
+	if caldera: rm.mode = ModeSiegeCaldera.new() if k == "siege" else ModeSanctumCaldera.new()   # (6-B: the same rules on the caldera)
+	else: rm.mode = ModeSiege.new() if k == "siege" else (ModePlain.new() if k == "plain" else (ModeRaid.new() if k == "raid" else ModeSanctum.new()))
 	rm.mode.rm = rm; rm.mode.key = k
 	rm.kit = RealmKit.new(); rm.kit.rm = rm; rm.ai = RealmAI.new(); rm.ai.rm = rm; rm.look = RealmLook.new(); rm.look.rm = rm
 	return rm
@@ -90,6 +91,12 @@ static func create(k: String) -> Realm:
 static func picked() -> String:
 	var k := str(Store.settings.get("realmMode", "solo"))
 	return k if MODES.has(k) else "solo"
+
+## the battle stage 6-B is set to play: alone with your guns (solo), or one of the team battles on the caldera
+const ALTAR_MODES := ["solo", "sanctum", "siege"]
+static func picked_altar() -> String:
+	var k := str(Store.settings.get("altarMode", "solo"))
+	return k if ALTAR_MODES.has(k) else "solo"
 
 static func picked_race() -> String:
 	var k := str(Store.settings.get("realmRace", "elf"))
@@ -107,6 +114,8 @@ func note(what: Array) -> void:
 func setup() -> void:
 	wood = world.wood if world != null else null
 	if wood != null: wood.rm = self
+	altar = world.altar if world != null else null   # (6-B: the caldera)
+	if altar != null: altar.rm = self
 	if player != null: player.realm = true
 	mode.build()
 	ai.build_graph()
@@ -459,12 +468,13 @@ func _you_in() -> void:
 
 func _hands() -> Dictionary:
 	var held: bool = mode.held(me) or player.out or bool(game.ended) if game != null else false
+	var hung := altar != null and altar.climb_on   # (6-B: on a soul chain, nothing in your hands but the dagger)
 	var mv := Vector3.ZERO
 	if player != null:
 		var sy := sin(player.yaw); var cy := cos(player.yaw)
 		mv = Vector3(-sy * player.in_f + cy * player.in_s, 0, -cy * player.in_f - sy * player.in_s)
-	return {"fire": guns.trigger and not held, "alt": guns.ads_held and not held, "reload": press.has("reload"), "skill": press.has("skill") and not held, "bomb": press.has("bomb") and not held,
-		"ult": press.has("ult") and not held, "slash": press.has("slash") and not held, "parry": press.has("parry") and not held, "move": mv}
+	return {"fire": guns.trigger and not held and not hung, "alt": guns.ads_held and not held and not hung, "reload": press.has("reload"), "skill": press.has("skill") and not held and not hung, "bomb": press.has("bomb") and not held and not hung,
+		"ult": press.has("ult") and not held and not hung, "slash": press.has("slash") and not held, "parry": press.has("parry") and not held, "move": mv}
 
 ## your fighter, back into the player: health, speed, the push of a shove, a dash
 func _you_out(dt: float) -> void:
@@ -510,6 +520,7 @@ func _state(f: Fighter, dt: float) -> void:
 
 ## the wood's circles, for everyone: the moonwell mends, the portals carry, the wind path hastens
 func _circles(dt: float) -> void:
+	if altar != null: CalderaField.turn(altar, self, dt); return
 	if wood == null: return
 	var up := resonant != ""
 	for f: Fighter in all:

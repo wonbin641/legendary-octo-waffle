@@ -50,6 +50,9 @@ const AMP_R := 1.5; const AMP_K := 1.2
 const FLOATS := [45.0, 135.0, 225.0, 315.0]                         # the tide's floating slabs, on the diagonals...
 const FLOAT_IN := 13.5; const FLOAT_OUT := 28.5; const FLOAT_W := 5.0   # ...from beside the sanctum out to beside the ring
 const FOUNDRY := {"w": Vector3(-37.0, MID_Y, 0.0), "e": Vector3(37.0, MID_Y, 0.0)}
+const TERRACE := {"w": Vector3(-48.5, MID_Y, 0.0), "e": Vector3(48.5, MID_Y, 0.0)}   # the two sides' bases: behind each foundry, against the wall
+const TER_X := [41.0, 55.2]; const TER_Z := 7.0                     # a terrace's reach out from the middle (x), its half width (z)
+const BASE_R := 6.5                                                 # the ring of runes on it where a side comes back
 const BRAZIER := {"r": 4.0, "t": 5.0, "burn": 18.0, "back": 20.0}  # a brazier knocked over: its fire on the ground, how long, how hot; stood up again after
 const CAP := {"r": 5.0, "t": 4.0, "back": 18.0}                    # an ash-spore cap burst: its cloud, how long; grown again after
 const BRIAR := {"slow": 0.85, "dps": 5.0, "heal": 4.0, "heal_r": 6.0}
@@ -79,7 +82,8 @@ var chains: Array = []        # the soul chains: {at (where you hold it), top, d
 var floats: Array = []        # the tide's slabs: {deg, node, up}
 var amps: Array = []          # {at, n (the ring's face, inward)}
 var stones: Array = []        # the trench's stones: {at, r, top}
-var spires: Array = []        # {c, box (its outline: x0, z0, x1, z1)}
+var spires: Array = []        # {c, box (its outline: x0, z0, x1, z1), sx, sz, cw (the causeway out to it), br (the bridge on to the gallery), lower, upper (its doors)}
+var terraces: Array = []      # the bases' terraces: {side, c, box}
 var openings: Array = []      # where the ring's parapet is open (a causeway out): {x0, z0, x1, z1}
 var lamps_at: Array = []
 var lava_n: MeshInstance3D = null; var _lava_mat: ShaderMaterial = null
@@ -92,6 +96,11 @@ var tide_on := false
 var lava_y := LAVA_Y
 var pulse := 0.0              # how far the fight has gone (0..1): the rune chains beat faster with it
 var _gate_cd := 0.0; var _told := {}; var _climb := false; var _scald := 0.0; var _vine_t := 0.0
+var tide_time := 4.0          # how long the lava takes to rise (a realm battle's is slower: time to climb out of the trench)
+var climb_on := false         # you are on a soul chain (a realm battle: nothing but the dagger meanwhile)
+var graph_state := 0          # (a realm battle: the state the others' ways were last laid out for: CalderaField.key_of)
+var graph_base := {}          # (the part of their ways that never changes, worked out once)
+var sealed := false           # (the siege: the bridges sealed off the sanctum)
 
 # ---------------- building helpers ----------------
 func _k(x: float, z: float) -> ArtKit: return kits[(1 if x > 0.0 else 0) + (2 if z > 0.0 else 0)]
@@ -200,6 +209,7 @@ func build(w: World, group: Node3D) -> void:
 	mat = RaceArt.mat(false, {1: [C_LAVA, 2.2], 2: [C_RUNE, 2.4], 3: [C_LAVA, 0.42], 4: [C_COLD, 1.8], 5: [C_LAVA2, 2.0]})
 	_tune(mat)
 	_spires()   # (first: the ring's parapet and the gallery leave room for them)
+	_terraces()   # (before the ring too: the foundries' outer doors are openings in its parapet)
 	_rim(); _dais(); _bridges(); _ring(); _gallery(); _trench(); _ribs(); _floats(); _lava()
 	_posts()
 	_meshes()
@@ -407,6 +417,41 @@ func _foundry(side: String) -> void:
 	troughs.push_back(tq); lamps_at.push_back(tq - Vector3(s * 1.6, -2.4, 0))   # (its lamp out over the ring, not in the doorway)
 	for zz: float in [z0 - 0.08, z1 + 0.08]: _briar(Vector3(x0 + 0.8, y0 + 0.2, zz), Vector3(x1 - 0.8, y0 + 3.2, zz), 1.2)   # briars up its walls
 
+## the two sides' bases (본진: the realm battles come back here; in the hunt they stand empty): a terrace of obsidian
+## behind each foundry's outer door, against the caldera's wall, the lava on its two other sides under a knee-high wall.
+## The foundry's narrow way is the only way out of it (the paper: the last line a side holds). A ring of runes on its
+## floor where a side comes back, two iron lamps by the wall, ash banners on the wall over it
+func _terraces() -> void:
+	for side: String in TERRACE:
+		var s := 1.0 if side == "e" else -1.0; var c: Vector3 = TERRACE[side]
+		var x0 := minf(s * float(TER_X[0]), s * float(TER_X[1])); var x1 := maxf(s * float(TER_X[0]), s * float(TER_X[1])); var z0 := -TER_Z; var z1 := TER_Z
+		var k := _k(c.x, 0.01)
+		k.paint(C_OBS, 0.2, 0.55, ArtKit.OBSIDIAN, 3, 0.0); k.slab(x0, MID_Y - 1.4, z0, x1, MID_Y, z1, true)
+		k.paint(C_ROCK, 0.1, 0.8, ArtKit.IRON); k.slab(x0 + 0.8, PIT_Y, z0 + 0.8, x1 - 0.8, MID_Y - 1.4, z1 - 0.8)   # (the rock it stands on, down into the lava)
+		Phys.add_collider(x0, PIT_Y, z0, x1, MID_Y, z1, "concrete")
+		k.paint(C_OBS2, 0.2, 0.55, ArtKit.OBSIDIAN, 3, 0.0)
+		for zz: Array in [[z0, z0 + 0.5], [z1 - 0.5, z1]]:   # (its walls on the lava's sides)
+			k.slab(x0, MID_Y, float(zz[0]), x1, MID_Y + 0.85, float(zz[1])); Phys.add_collider(x0, MID_Y, float(zz[0]), x1, MID_Y + 0.85, float(zz[1]), "concrete")
+		# the ring of runes where its side comes back, veins of fire in to it from the wall
+		k.paint(C_RUNE, 0.0, 0.5, ArtKit.PLAIN, 2, 1.0); k.ring_sector(c.x, c.z, BASE_R - 0.22, BASE_R, 0.0, TAU, MID_Y, MID_Y + 0.04, 40, false)
+		for i in 8:
+			var a := i * TAU / 8.0; k.toward(Vector3(c.x + cos(a) * (BASE_R - 0.9), MID_Y + 0.05, c.z + sin(a) * (BASE_R - 0.9)), Vector3.DOWN, Vector3(cos(a), 0, sin(a))); k.rune(480 + i, 0.6, 0.08, 0.0); k.pop()
+		for zz: float in [-3.2, 0.0, 3.2]: glow.strip(Vector3(s * (float(TER_X[1]) - 0.4), MID_Y + 0.02, zz * 1.4), Vector3(c.x + s * BASE_R * 0.2, MID_Y + 0.02, zz * 0.4), 0.16, C_EMBER.darkened(0.15), true)
+		# two iron lamps by the wall
+		for zz: float in [-5.2, 5.2]:
+			var lp := Vector3(s * (float(TER_X[1]) - 1.4), MID_Y, zz)
+			k.paint(C_IRON, 0.85, 0.5, ArtKit.IRON); k.at(lp); k.cyl(0.14, 0.1, 2.4, 6); k.pop(); k.at(lp + Vector3(0, 2.4, 0)); k.cyl(0.45, 0.6, 0.35, 8); k.pop()
+			glow.disc(lp.x, MID_Y + 2.76, lp.z, 0.42, C_LAVA2, 10); lamps_at.push_back(lp + Vector3(0, 3.1, 0))
+		for i in 3:   # ash banners on the wall over it
+			var a := (180.0 if side == "w" else 0.0) + (i - 1) * 9.0; var p := at_deg(a, RIM_R - 0.1, 0.0); var tn := at_deg(a + 90.0, 1.0, 0.0); var inw := -p.normalized()
+			var rows: Array = []
+			for j in 5: var u := j / 4.0; rows.push_back(PackedVector3Array([p - tn * 0.9 + Vector3(0, MID_Y + 9.0 - u * 6.5, 0) + inw * u * 0.3, p + tn * 0.9 + Vector3(0, MID_Y + 9.0 - u * 6.5, 0) + inw * u * 0.3]))
+			k.paint(Color("3a3436"), 0.0, 0.9, ArtKit.CLOTH); k.sheet(rows, inw)
+			k.paint(C_RUNE, 0.0, 0.5, ArtKit.PLAIN, 2, 0.8); k.toward(p + inw * 0.25 + Vector3(0, MID_Y + 6.4, 0), -inw); k.rune(490 + i + (3 if side == "e" else 0), 0.8, 0.09, 0.0); k.pop()
+		# the foundry's outer door, open through the ring's parapet on to it
+		openings.push_back({"x0": minf(s * 40.6, s * 43.0), "z0": -1.4, "x1": maxf(s * 40.6, s * 43.0), "z1": 1.4, "door": true})
+		terraces.push_back({"side": side, "c": c, "box": {"x0": x0, "z0": z0, "x1": x1, "z1": z1}})
+
 ## sanguine briars: thorny red vines along a wall from a to b (touching them slows and cuts; they feed the demons near)
 func _briar(a: Vector3, b: Vector3, reach: float) -> void:
 	var k := _k(a.x, a.z + 0.01); var rng := RandomNumberGenerator.new(); rng.seed = int(absf(a.x) * 13.0 + absf(a.z) * 7.0 + a.y)
@@ -505,6 +550,7 @@ func _spires() -> void:
 		k.paint(C_OBS, 0.2, 0.55, ArtKit.OBSIDIAN, 3, 0.0); k.slab(float(br.x0), GAL_Y - 0.6, float(br.z0), float(br.x1), GAL_Y, float(br.z1), true)
 		Phys.add_collider(float(br.x0), GAL_Y - 0.6, float(br.z0), float(br.x1), GAL_Y, float(br.z1), "concrete")
 		perches.push_back(Vector3(c.x, LOOK_Y, c.z))
+		(spires[spires.size() - 1] as Dictionary).merge({"sx": sx, "sz": sz, "cw": cw, "br": br, "lower": lower, "upper": upper})
 
 ## a wall facing along x at x = wx (wt thick), from z0 to z1 and y0 to y1; door: [za, zb, ya, yb] cut out of it, or empty
 func _wall_x(k: ArtKit, wx: float, wt: float, z0: float, z1: float, y0: float, y1: float, door: Array) -> void:
@@ -720,11 +766,11 @@ func _tell(key: String, text: String) -> void:
 	if _told.has(key) or game == null: return
 	_told[key] = true; game.say_hint(text, 3.5)
 
-## the lava rises (the magma tide): the stones go under, the floating slabs come up on the diagonals
-func rise() -> void:
+## the lava rises (the magma tide): the stones go under, the floating slabs come up on the diagonals (over `dur` seconds)
+func rise(dur := 4.0, quiet := false) -> void:
 	if tide_on: return
-	tide_on = true
-	if game != null: game.say_banner("용암 조석", "지진과 함께 용암이 차오릅니다 · 하층 징검다리가 잠기고 대각선에 흑요석 발판 넷이 떠오릅니다", 3.5)
+	tide_on = true; tide_time = dur
+	if game != null and not quiet: game.say_banner("용암 조석", "지진과 함께 용암이 차오릅니다 · 하층 징검다리가 잠기고 대각선에 흑요석 발판 넷이 떠오릅니다", 3.5)
 	Snd.play("quake", 1.0); Snd.play("rd_lava", 1.0)
 	if player != null: player.shake = maxf(player.shake, 0.8)
 	for f: Dictionary in floats: (f.node as Node3D).visible = true
@@ -734,6 +780,13 @@ func rise() -> void:
 				var g: Vector3 = GATE_TO.n if e.pos.z > 0.0 else GATE_TO.s; var at := g + Vector3(randf_range(-2.0, 2.0), 0, 0)
 				if fx != null: fx.sparks(e.pos + Vector3(0, 1, 0), 12, [1.0, 0.2, 0.15], 3.0)
 				e.pos = at; e.k.post = at; e.vel = Vector3.ZERO
+## the lava back down (a realm battle's new round): the slabs sink, their boxes gone, the stones out again
+func ebb() -> void:
+	tide_on = false; tide = 0.0; lava_y = LAVA_Y
+	if lava_n != null and is_instance_valid(lava_n): lava_n.position.y = 0.0
+	for f: Dictionary in floats:
+		for b in f.get("boxes", []): Phys.remove_collider(b)
+		f.boxes = []; f.up = false; (f.node as Node3D).visible = false; (f.node as Node3D).position.y = -6.0
 ## whether the cooling circle is under p (weapons cool half as fast again)
 func cooling(p: Vector3) -> bool: return absf(p.y - MID_Y) < 1.5 and Vector2(p.x, p.z).length() < COOL_R
 ## a shot from o along d, as far as reach: how much harder it hits for going through a hellfire ring (1: it went through none)
@@ -751,6 +804,28 @@ func hides(p: Player, dist: float) -> bool:
 	for c: Dictionary in clouds:
 		if (c.at as Vector3).distance_to(p.pos + Vector3(0, 1.0, 0)) < float(c.r): return true
 	return false
+## (a realm battle) whether p is in an ash cloud
+func in_cloud(p: Vector3) -> bool:
+	for c: Dictionary in clouds:
+		if (c.at as Vector3).distance_to(p) < float(c.r): return true
+	return false
+## (a realm battle) whether one at p is hidden from one `dist` off: in a cloud, and not within four metres
+func hidden(p: Vector3, dist: float) -> bool: return dist >= 4.0 and in_cloud(p)
+## (a realm battle) whether a cloud hangs between a and b
+func clouded(a: Vector3, b: Vector3) -> bool:
+	for c: Dictionary in clouds:
+		var o: Vector3 = c.at; var ab := b - a; var l2 := ab.length_squared()
+		var tt := 0.0 if l2 < 0.0001 else clampf((o - a).dot(ab) / l2, 0.0, 1.0)
+		if (a + ab * tt).distance_to(o) < float(c.r): return true
+	return false
+## (a realm battle) a missile struck something at p: a brazier there goes over, a cap bursts, a cactus shatters
+func hit_at(p: Vector3, by = null) -> void:
+	for b: Dictionary in braziers:
+		if not bool(b.down) and ((b.at as Vector3) + Vector3(0, 0.6, 0)).distance_to(p) < 1.0: knock(b, by)
+	for c: Dictionary in caps:
+		if float(c.t) <= 0.0 and ((c.at as Vector3) + Vector3(0, 0.35, 0)).distance_to(p) < 0.8: burst(c)
+	for c: Dictionary in cacti:
+		if float(c.t) <= 0.0 and ((c.at as Vector3) + Vector3(0, 0.5, 0)).distance_to(p) < 0.8: shatter(c, by)
 ## a shot that missed the demons: what it struck on its way (a brazier goes over, a cap bursts, a cactus shatters)
 func shot_by(o: Vector3, d: Vector3, reach: float) -> void:
 	for b: Dictionary in braziers:
@@ -762,19 +837,22 @@ func shot_by(o: Vector3, d: Vector3, reach: float) -> void:
 static func _ray_near(o: Vector3, d: Vector3, reach: float, c: Vector3, r: float) -> bool:
 	var tt := clampf((c - o).dot(d), 0.0, reach); return (o + d * tt).distance_to(c) <= r
 ## an explosion at c: what it sets off round it
-func puffed(c: Vector3, r := 3.0) -> void:
+func puffed(c: Vector3, r := 3.0, by = null) -> void:
 	for b: Dictionary in braziers:
-		if not bool(b.down) and (b.at as Vector3).distance_to(c) < r + 1.0: knock(b)
+		if not bool(b.down) and (b.at as Vector3).distance_to(c) < r + 1.0: knock(b, by)
 	for q: Dictionary in caps:
 		if float(q.t) <= 0.0 and (q.at as Vector3).distance_to(c) < r + 0.8: burst(q)
 	for q: Dictionary in cacti:
-		if float(q.t) <= 0.0 and (q.at as Vector3).distance_to(c) < r + 0.6: shatter(q)
+		if float(q.t) <= 0.0 and (q.at as Vector3).distance_to(c) < r + 0.6: shatter(q, by)
 
-## a brazier knocked over: it lies on its side, its fire out on the ground four metres round for five seconds
-func knock(b: Dictionary) -> void:
+## a brazier knocked over: it lies on its side, its fire out on the ground four metres round for five seconds (in a realm
+## battle a fire field laid by whoever knocked it over: it burns his foes, and a demon's kinship with fire feeds on it)
+func knock(b: Dictionary, by = null) -> void:
 	b.down = true; b.t = 0.0; var n: Node3D = b.node; n.rotation = Vector3(0, randf() * TAU, 1.35); n.position.y += 0.25
 	(b.flame as Node3D).visible = false; Phys.remove_collider(b.box)
-	fires.push_back({"at": b.at, "r": float(BRAZIER.r), "t": float(BRAZIER.t)})
+	if rm != null:
+		if by != null: rm.kit.lay("fire", b.at, by, float(BRAZIER.r), float(BRAZIER.t))
+	else: fires.push_back({"at": b.at, "r": float(BRAZIER.r), "t": float(BRAZIER.t)})
 	Snd.play("rm_ignite", 1.0, b.at); Snd.play("metal", 0.8, b.at)
 	if fx != null: fx.sparks((b.at as Vector3) + Vector3(0, 0.6, 0), 14, [1.0, 0.6, 0.2], 5.0)
 func burst(c: Dictionary) -> void:
@@ -783,7 +861,7 @@ func burst(c: Dictionary) -> void:
 	Snd.play("rm_smoke", 0.9, c.at)
 	if fx != null:
 		for i in 26: fx.glow((c.at as Vector3) + Vector3(randf_range(-1, 1), randf_range(0.2, 2.4), randf_range(-1, 1)), Vector3(randf_range(-1.5, 1.5), randf_range(0.3, 1.2), randf_range(-1.5, 1.5)), 3.6, 1.0, 2.2, Color(0.22, 0.2, 0.2, 0.55), 0.0, 1.2)
-func shatter(c: Dictionary) -> void:
+func shatter(c: Dictionary, by = null) -> void:
 	c.t = 999.0; (c.node as Node3D).visible = false
 	Snd.play("rd_shatter", 0.9, c.at)
 	if fx != null: fx.sparks((c.at as Vector3) + Vector3(0, 0.6, 0), 16, [0.6, 0.4, 0.9], 4.0)
@@ -791,11 +869,15 @@ func shatter(c: Dictionary) -> void:
 		for e in enemies.list.duplicate():
 			if e.alive and e.folk and e.pos.distance_to(c.at) < float(CACTUS.r): enemies.damage(e, float(CACTUS.dmg), e.pos + Vector3(0, 1.0, 0), Vector3.UP, false)
 	if player != null and rm == null and player.pos.distance_to(c.at) < float(CACTUS.r): player.hurt(float(CACTUS.dmg), c.at)
+	if rm != null:   # (a realm battle: whoever stands by it, of the other side to the one who sent him into it)
+		for f in rm.all:
+			if f.alive and (by == null or f.team != by.team) and f.pos.distance_to(c.at) < float(CACTUS.r) + f.R:
+				rm.hurt(f, float(CACTUS.dmg), "physical", by, {"fixed": true, "src": "cactus", "from": c.at})
 
 ## the place's own turn: the lava and the tide, the fires and the ash, and what it does to you
 func update(dt: float, p: Player) -> void:
 	t += dt; _gate_cd = maxf(0.0, _gate_cd - dt)
-	if tide_on and tide < 1.0: tide = minf(1.0, tide + dt / 4.0)
+	if tide_on and tide < 1.0: tide = minf(1.0, tide + dt / tide_time)
 	lava_y = lerpf(LAVA_Y, TIDE_Y, smoothstep(0.0, 1.0, tide))
 	if lava_n != null and is_instance_valid(lava_n): lava_n.position.y = lava_y - LAVA_Y + sin(t * 0.6) * 0.06
 	for f: Dictionary in floats:
@@ -804,7 +886,7 @@ func update(dt: float, p: Player) -> void:
 		n.position.y = lerpf(-6.0, MID_Y, smoothstep(0.0, 1.0, tide))
 		if tide >= 1.0:
 			f.up = true; var deg: float = f.deg
-			solid_band(at_deg(deg, FLOAT_IN, 0.0), at_deg(deg, FLOAT_OUT, 0.0), FLOAT_W, MID_Y - 0.8, MID_Y)
+			f.boxes = solid_band(at_deg(deg, FLOAT_IN, 0.0), at_deg(deg, FLOAT_OUT, 0.0), FLOAT_W, MID_Y - 0.8, MID_Y)
 	if rune_mat != null: RaceArt.set_glow(rune_mat, 2, C_RUNE, 1.4 + 1.6 * (0.5 + 0.5 * sin(t * (1.6 + 8.0 * pulse))))
 	for i in range(fires.size() - 1, -1, -1):   # fire on the ground from braziers
 		var f: Dictionary = fires[i]; f.t = float(f.t) - dt
@@ -883,6 +965,7 @@ func _you(dt: float, p: Player) -> void:
 ## whether you can fire (not while you climb a chain)
 func climbing() -> bool: return _climb
 
+func in_briar(p: Vector3) -> bool: return _in_briar(p)
 func _in_briar(p: Vector3) -> bool:
 	for b: Dictionary in briars:
 		var a: Vector3 = b.a; var c: Vector3 = b.b

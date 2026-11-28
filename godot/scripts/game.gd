@@ -125,6 +125,8 @@ func begin(stage_: int) -> void:
 		rm = Realm.create(Realm.picked()); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	elif stage == Store.ST_PLAIN:   # 6-2: you, one of the four peoples, against the other three's landmarks
 		rm = Realm.create("plain"); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
+	elif stage == Store.ST_ALTAR and Realm.picked_altar() != "solo":   # 6-B: a team battle on the caldera (the same rules as the wood's)
+		rm = Realm.create(Realm.picked_altar(), true); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	elif stage == Store.ST_ROAD:   # 6-A: a party of four, one of each people, up the road to the demons' lord
 		rm = Realm.create("raid"); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	world.build_stage(stage); calm = 0; mid = null

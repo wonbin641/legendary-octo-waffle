@@ -95,6 +95,7 @@ func near_own_work(f: Realm.Fighter) -> bool:
 
 ## whether smoke hangs between two places
 func smoked(a: Vector3, b: Vector3) -> bool:
+	if rm.altar != null and rm.altar.clouded(a, b): return true
 	for fd: Dictionary in fields:
 		if fd.kind != "smoke": continue
 		var c: Vector3 = fd.pos + Vector3(0, 1.2, 0); var ab := b - a; var l2 := ab.length_squared()
@@ -103,6 +104,7 @@ func smoked(a: Vector3, b: Vector3) -> bool:
 	return false
 
 func in_smoke(p: Vector3) -> bool:
+	if rm.altar != null and rm.altar.in_cloud(p): return true   # (6-B: an ash cloud blinds the elves' sight as smoke does)
 	for fd: Dictionary in fields:
 		if fd.kind == "smoke" and (fd.pos as Vector3 + Vector3(0, 1.2, 0)).distance_to(p) < float(fd.r): return true
 	return false
@@ -114,6 +116,7 @@ func sees(a: Realm.Fighter, b: Realm.Fighter, sight := -1.0) -> bool:
 	var ea := a.eye_at(); var eb := b.feet_mid(); var d := ea.distance_to(eb)
 	if d > (sight if sight > 0.0 else float(Races.R[a.race].sight)): return false
 	if b.me and rm.wood != null and rm.player != null and rm.wood.hides(rm.player, d): return false
+	if rm.altar != null and rm.altar.hidden(eb, d): return false   # (6-B: in an ash cloud, unseen from four metres off)
 	if smoked(ea, eb): return false
 	return Phys.line_of_sight(ea, eb)
 
@@ -382,7 +385,7 @@ func _staff(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 		if not lit and not over:
 			f.heat += float(W.heat) * (float(Races.RUNE.burst_heat) if burst else 1.0)
 			if f.heat > 100.0: f.heat = 100.0; f.seal_t = float(W.seal); _say(f, "rm_seal"); rm.look.sealed(f)
-	if f.idle_t > float(W.cool_wait) and not lit: f.heat = maxf(0.0, f.heat - float(W.cool) * (float(Races.RUNE.core_cool) if f.rune("dm_core") else 1.0) * dt)
+	if f.idle_t > float(W.cool_wait) and not lit: f.heat = maxf(0.0, f.heat - float(W.cool) * (float(Races.RUNE.core_cool) if f.rune("dm_core") else 1.0) * (Caldera.COOL_K if rm.altar != null and rm.altar.cooling(f.pos) else 1.0) * dt)   # (6-B: the cooling circle)
 
 ## the soul-drain beam: it eats at whoever it rests on, and at the demon's own health while it is held
 func _beam(f: Realm.Fighter, dt: float) -> void:
@@ -402,6 +405,7 @@ func _beam(f: Realm.Fighter, dt: float) -> void:
 	f.beam_end = o + d * tb; f.beam_acc += dt
 	if f.beam_acc >= 0.1:
 		var n := f.beam_acc; f.beam_acc = 0.0
+		if rm.altar != null and who == null and what == null: rm.altar.hit_at(f.beam_end, f)
 		if who != null: rm.hurt(who, float(W.beam) * n, "fire", f, {"ranged": true, "dot": true, "src": "beam", "from": o})
 		elif what != null: hurt_thing(what, float(W.beam) * n, "fire", f)
 		if fmod(rm.clock, 0.45) < 0.1: _say(f, "rm_drain", 0.6)
@@ -528,6 +532,7 @@ func flask_burst(s: Dictionary, at: Vector3) -> void:
 					rm.hurt(e, float(B.dmg), "alchemy", by, {"fixed": true, "aoe": true, "src": "gravity", "from": at})
 			lay("gravity", at, by, float(B.r), float(B.t)); Snd.play("rm_gravity", 1.0, at)
 	rm.mode.bomb_burst(at)
+	if rm.altar != null: rm.altar.puffed(at, float(B.r) * 0.5, by)
 	rm.note(["burst", kind, at])
 
 func ignite(fd: Dictionary, by: Realm.Fighter) -> void:
@@ -543,6 +548,7 @@ func _light_oil(at: Vector3, by: Realm.Fighter) -> void:
 ## a burst: everyone of the other side within r, nothing between
 func boom(at: Vector3, r: float, dmg: float, elem: String, by: Realm.Fighter, o := {}, skip: Realm.Fighter = null) -> int:
 	var n := 0; var q := o.duplicate(); q.aoe = true; q.from = at
+	if rm.altar != null: rm.altar.puffed(at, r, by)   # (6-B: what a burst sets off)
 	for e: Realm.Fighter in rm.all:
 		if not e.alive or e == skip or e.team == by.team or e.feet_mid().distance_to(at) > r + e.R: continue
 		if not Phys.line_of_sight(at + Vector3(0, 0.25, 0), e.feet_mid()): continue
@@ -659,7 +665,7 @@ func _fly(s: Dictionary, dt: float) -> bool:
 	var p0: Vector3 = s.pos; var mv := v * dt; var L := mv.length()
 	if L < 1e-6: return float(s.life) > 0.0
 	var d := mv / L
-	_through(s, p0)
+	_through(s, p0, mv)
 	if _parried(s, p0, d, L): return true
 	var wall := Phys.raycast_static(p0, d, L); var tb := Phys.rh_t if wall else L; var n := Phys.rh_n; var wb = Phys.rh_box if wall else null
 	var who: Realm.Fighter = null; var what = null; var fake = null
@@ -702,7 +708,7 @@ func _fly(s: Dictionary, dt: float) -> bool:
 	return true
 
 ## what a shot passes on its way: the amplifying circle, fog and frost (arcane is the worse for them), oil (an ember lights it)
-func _through(s: Dictionary, p: Vector3) -> void:
+func _through(s: Dictionary, p: Vector3, mv := Vector3.ZERO) -> void:
 	if not s.get("amp", false) and Vector2(p.x - ElfWood.AMP.x, p.z - ElfWood.AMP.z).length() < ElfWood.AMP_R and p.y < 6.0 and rm.wood != null:
 		var own := rm.mode.amp_owner()
 		if own == "" or own == s.team: s.amp = true; s.vel = (s.vel as Vector3) * float(Realm.AMP.speed); Snd.play("rm_amp", 0.7, p); rm.look.amped(p)
@@ -710,6 +716,10 @@ func _through(s: Dictionary, p: Vector3) -> void:
 		for fd: Dictionary in fields:
 			if (fd.kind == "smoke" or fd.kind == "frost") and (fd.pos as Vector3 + Vector3(0, 1.2, 0)).distance_to(p) < float(fd.r): s.fog = true; break
 	if s.kind == "ember": _light_oil(p, s.by)
+	if rm.altar != null and not s.get("hell", false) and mv.length() > 0.001 and rm.altar.amp_ray(p, mv.normalized(), mv.length()) > 1.0:   # (6-B: through a hellfire ring: fire, a fifth faster)
+		var own := rm.mode.amp_owner()
+		if own == "" or own == s.team:
+			s.hell = true; s.elem = "fire"; s.vel = (s.vel as Vector3) * float(Caldera.AMP_K); Snd.play("rm_amp", 0.7, p); rm.look.amped(p)
 
 ## a shot met by someone's dagger held up: it goes back the way he looks, his now
 func _parried(s: Dictionary, p0: Vector3, d: Vector3, L: float) -> bool:
@@ -759,6 +769,7 @@ func _strike(s: Dictionary, who: Realm.Fighter, what, at: Vector3, d: Vector3) -
 ## a shot meets the ground or a wall. true: it flies on (glanced off, or went through)
 func _wall(s: Dictionary, at: Vector3, n: Vector3, d: Vector3) -> bool:
 	var by: Realm.Fighter = s.by
+	if rm.altar != null: rm.altar.hit_at(at, by)   # (6-B: a brazier, a cap, a cactus struck)
 	if n.length_squared() < 0.25: n = -d   # (met from inside a corner: straight back)
 	if s.get("ward", false): _ward_boom(s, at + n * 0.1)
 	match s.kind:

@@ -1175,7 +1175,7 @@ func _pick_mode(k: String) -> void:
 	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("toy_rip"); _torn = k; open_brief(9)
 
 func _brief_gear() -> void:
-	if (sel == Store.ST_ELF and Realm.picked() != "solo") or sel == Store.ST_PLAIN or sel == Store.ST_ROAD:   # (a realm battle: your people's own arms, not the layout)
+	if (sel == Store.ST_ELF and Realm.picked() != "solo") or (sel == Store.ST_ALTAR and Realm.picked_altar() != "solo") or sel == Store.ST_PLAIN or sel == Store.ST_ROAD:   # (a realm battle: your people's own arms, not the layout)
 		var R: Dictionary = Races.R[Realm.picked_race()]
 		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q(또는 G) 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(%s)" % [str(R.name), str(R.weapon), "준비 시간이나 우리 건물 곁" if sel == Store.ST_PLAIN else ("캠프와 탑 꼭대기의 제단 곁" if sel == Store.ST_ROAD else "준비 시간")]
 		if sel == Store.ST_ROAD: br_gear.text = "%s로 시작 · 나머지 세 종족은 인공지능 동료\n" % str(R.name) + br_gear.text.get_slice("\n", 1) + " · Tab(또는 1~4) 동료로 교대"
@@ -1224,7 +1224,7 @@ func _build_map() -> void:
 ## the alchemical bomb you carry
 func _realm_buttons(modes := true) -> void:
 	var box := vbox(8); box.size_flags_horizontal = Control.SIZE_EXPAND_FILL; br_modes.add_child(box)
-	var cur := Realm.picked(); var race := Realm.picked_race(); var bomb := Realm.picked_bomb()
+	var cur := Realm.picked()
 	var row := func(title: String, items: Array, picked: String, cb: Callable) -> void:
 		box.add_child(lbl(title, f_mono, 11, STEEL))
 		var f := _flow(); f.alignment = FlowContainer.ALIGNMENT_BEGIN; f.add_theme_constant_override("h_separation", 8); box.add_child(f)
@@ -1234,6 +1234,11 @@ func _realm_buttons(modes := true) -> void:
 	if modes:
 		row.call("작전", Realm.MODES.map(func(k): return [k, Realm.NAMES[k]]), cur, func(k: String) -> void: _pick_setting("realmMode", k))
 		if cur == "solo": return
+	_realm_rows(box, row)
+
+## your people (its weapon, passive, Shift and ultimate told) and your bomb; 6-A's difficulty
+func _realm_rows(box: VBoxContainer, row: Callable) -> void:
+	var race := Realm.picked_race(); var bomb := Realm.picked_bomb()
 	row.call("종족", Races.ORDER.map(func(r): return [r, Races.R[r].name]), race, func(r: String) -> void: _pick_setting("realmRace", r))
 	var R: Dictionary = Races.R[race]
 	box.add_child(lbl("%s · 체력 %d · 이동 %.1f m/s · 교전 거리 %s\n무기 %s · 패시브 %s · 이동기 %s · 비전 비기 %s" % [str(R.role), int(R.hp), float(R.speed), str(R.range), str(R.weapon), str(R.passive), str(R.skill), str(R.ult)], f_body, 12, INK, true))
@@ -1252,16 +1257,25 @@ func _realm_buttons(modes := true) -> void:
 			b.disabled = not open; b.set_meta("pick", k); f.add_child(b)
 		box.add_child(lbl(ModeRaid.diff_line(dk), f_body, 12, INK, true))
 
-## stage 6-B's choices on the briefing: alone with your guns (the team battles on the caldera come in the next update)
+## stage 6-B's choices on the briefing: alone with your guns, or one of the team battles on the caldera (the same rules as
+## 6-1's: your people and your bomb picked as there); the building summon battle comes in the next update
 const ALTAR_MODES := [["solo", "총을 든 나 혼자"], ["sanctum", "성소 각인전 (5:5)"], ["siege", "비전 핵 공성전 (5:5)"], ["plain", "건물 소환전"]]
 func _altar_buttons() -> void:
 	var box := vbox(8); box.size_flags_horizontal = Control.SIZE_EXPAND_FILL; br_modes.add_child(box)
+	var cur := Realm.picked_altar()
+	var row := func(title: String, items: Array, picked: String, cb: Callable) -> void:
+		box.add_child(lbl(title, f_mono, 11, STEEL))
+		var fl := _flow(); fl.alignment = FlowContainer.ALIGNMENT_BEGIN; fl.add_theme_constant_override("h_separation", 8); box.add_child(fl)
+		for it: Array in items:
+			var b := btn(str(it[1]), "primary" if it[0] == picked else "ghost", func() -> void: cb.call(str(it[0])))
+			b.set_meta("pick", it[0]); fl.add_child(b)
 	box.add_child(lbl("작전", f_mono, 11, STEEL))
 	var f := _flow(); f.alignment = FlowContainer.ALIGNMENT_BEGIN; f.add_theme_constant_override("h_separation", 8); box.add_child(f)
 	for it: Array in ALTAR_MODES:
-		var solo: bool = it[0] == "solo"
-		var b := btn(str(it[1]) + ("" if solo else " · 다음 업데이트"), "primary" if solo else "ghost", func() -> void: pass)
-		b.disabled = not solo; b.set_meta("pick", it[0]); f.add_child(b)
+		var open: bool = Realm.ALTAR_MODES.has(it[0])
+		var b := btn(str(it[1]) + ("" if open else " · 다음 업데이트"), "primary" if it[0] == cur else "ghost", func() -> void: _pick_setting("altarMode", str(it[0])))
+		b.disabled = not open; b.set_meta("pick", it[0]); f.add_child(b)
+	if cur != "solo": _realm_rows(box, row); return
 	box.add_child(lbl("악마 37과 심연의 고문관 · 모두 쓰러뜨리면 클리어 · 절반을 쓰러뜨리면 용암 조석(하층이 잠기고 대각선에 발판 넷)\n혈약의 차원문은 체력 35로 감시 회랑까지 · 쇠사슬은 점프를 누르고 있으면 등반 · 증폭 화로를 지난 총알은 20% 더 세고 불이 붙습니다", f_body, 12, INK, true))
 
 func _pick_setting(key: String, v: String) -> void:
@@ -1329,9 +1343,9 @@ func render_altar() -> void:
 					Snd.play("rd_relic", 0.7); render_altar())
 				b.set_meta("rune", id); line.add_child(b)
 				var t := lbl(str(q.text), f_body, 12, Color("f2c14e"), true); t.size_flags_horizontal = Control.SIZE_EXPAND_FILL; line.add_child(t); al_body.add_child(line)
-	if rm.mode is ModeSiege and (rm.mode as ModeSiege).defenders() == "us":   # your side holds the tower: where its two traps lie
+	if rm.mode is ModeSiege and (rm.mode as ModeSiege).defenders() == "us":   # your side holds the tower (or the caldera's wards): where its two traps lie
 		var sg: ModeSiege = rm.mode
-		row.call("역소환 함정진 자리 (둘)", range(ModeSiege.SLOTS.size()).map(func(i): return [i, ModeSiege.SLOTS[i][0]]), sg.trap_pick, func(i) -> void:
+		row.call("역소환 함정진 자리 (둘)", range(sg.slots.size()).map(func(i): return [i, sg.slots[i][0]]), sg.trap_pick, func(i) -> void:
 			if sg.trap_pick.has(i): return
 			sg.trap_pick = [sg.trap_pick[1], int(i)]; sg._lay_traps())
 

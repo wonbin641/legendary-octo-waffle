@@ -25,7 +25,10 @@ var _tick := 0.0
 var shield_n: Array = []
 
 func base_of(team: String) -> Vector3: return BASE[team]
-func aim_point(_team: String) -> Vector3: return AT
+## the sanctum's middle and its reach (the Silverwood's: the Moonwell's pavilion; ModeSanctumCaldera's: the dais)
+func center() -> Vector3: return AT
+func zone_r() -> float: return ZONE
+func aim_point(_team: String) -> Vector3: return center()
 func back_time(_f: Realm.Fighter) -> float: return BACK
 func brief_line() -> String: return "달샘 정자(성소)를 차지해 각인 게이지 100% · 3판 2선승"
 func brief() -> Array:
@@ -34,7 +37,7 @@ func brief() -> Array:
 func win_title() -> String: return "성소 각인 완료"
 func score(team: String) -> int: return int(wins[team])
 func bonus() -> int: return 30000 * Store.PAY
-func works(team: String) -> Array: return [BASE[team]]
+func works(team: String) -> Array: return [base_of(team)]
 
 func start() -> void:
 	round_n = 1; wins = {"us": 0, "them": 0}; won = ""
@@ -93,14 +96,14 @@ func _next() -> void:
 			if rm.game != null: rm.game.say_banner("출전", "성소는 30초 뒤에 열립니다", 1.8)
 		"wait":
 			set_phase("fight")
-			if rm.game != null: rm.game.say_banner("성소 개방", "정자 안을 차지하세요", 1.8); Snd.play("rm_bell")
+			if rm.game != null: rm.game.say_banner("성소 개방", open_line(), 1.8); Snd.play("rm_bell")
 		"over":
 			if won != "": set_phase("end"); rm.finish(won == "us")
 			else: round_n += 1; _round()
 
 func _keep_in() -> void:
 	for f: Realm.Fighter in rm.all:
-		var b: Vector3 = BASE[f.team]; var gap := Vector2(f.pos.x - b.x, f.pos.z - b.z)
+		var b: Vector3 = base_of(f.team); var gap := Vector2(f.pos.x - b.x, f.pos.z - b.z)
 		if gap.length() > 6.5:
 			var q := b + Vector3(gap.x, 0, gap.y).normalized() * 6.4; f.pos = Vector3(q.x, f.pos.y, q.z)
 			if f.me and rm.player != null: rm.player.pos = f.pos; rm.player.vel = Vector3.ZERO
@@ -108,11 +111,18 @@ func _keep_in() -> void:
 ## 50%: the sanctum's mana resounds
 func _resound(lead: String) -> void:
 	resonated = true; rm.resonant = rm.other(lead)
+	var at := center()
 	for f: Realm.Fighter in rm.all:
-		if f.alive and f.pos.distance_to(AT) < WAVE: rm.shove(f, f.pos - AT if f.pos.distance_to(AT) > 0.3 else Vector3(1, 0, 0), 2.5)
-	Snd.play("rm_resonance", 1.0, AT); rm.look.resonance(AT, WAVE); rm.music_break += 1
-	if rm.game != null: rm.game.say_banner("마력 공명", ("우리" if rm.resonant == "us" else "적") + " 편의 포탈 대기 8초 · 달샘 회복 초당 25", 2.4)
+		if f.alive and f.pos.distance_to(at) < WAVE: rm.shove(f, f.pos - at if f.pos.distance_to(at) > 0.3 else Vector3(1, 0, 0), 2.5)
+	Snd.play("rm_resonance", 1.0, at); rm.look.resonance(at, WAVE); rm.music_break += 1
+	if rm.game != null: rm.game.say_banner(resound_title(), resound_line(), 2.4)
+	on_resound(lead)
 	rm.note(["resonance", lead])
+## what the screen says of the resonance, and what the place does at it
+func resound_title() -> String: return "마력 공명"
+func open_line() -> String: return "정자 안을 차지하세요"
+func resound_line() -> String: return ("우리" if rm.resonant == "us" else "적") + " 편의 포탈 대기 8초 · 달샘 회복 초당 25"
+func on_resound(_lead: String) -> void: pass
 
 func _won_round(team: String) -> void:
 	wins[team] = int(wins[team]) + 1; overtime = false
@@ -151,7 +161,7 @@ func hud() -> Dictionary:
 		"in_zone": rm.me != null and rm.me.alive and in_zone(rm.me.pos)}
 
 func tac() -> Array:
-	return [{"x": AT.x, "z": AT.z, "c": "ffd66b", "r": ZONE, "label": "성소"}, {"x": float(BASE.us.x), "z": float(BASE.us.z), "c": "5f9cff", "r": 6.5, "label": "우리 본진"}, {"x": float(BASE.them.x), "z": float(BASE.them.z), "c": "ff5260", "r": 6.5, "label": "적 본진"}]
+	return [{"x": center().x, "z": center().z, "c": "ffd66b", "r": zone_r(), "label": "성소"}, {"x": base_of("us").x, "z": base_of("us").z, "c": "5f9cff", "r": 6.5, "label": "우리 본진"}, {"x": base_of("them").x, "z": base_of("them").z, "c": "ff5260", "r": 6.5, "label": "적 본진"}]
 
 ## the music: the wood's set; the fight for the sanctum once it has resounded, the climax at 90% or in overtime (a semitone up
 ## each time the hold shortens)
@@ -162,6 +172,6 @@ func music_stage() -> int:
 	return 3 if resonated else 1
 func music_semis() -> int: return mini(3, int(floorf(ot_t / HOLD_STEP)) + 1) if overtime else 0
 
-func marks() -> Array: return [{"at": AT + Vector3(0, 3.2, 0), "c": "ffd66b", "label": "성소"}] if phase != "prep" else []
+func marks() -> Array: return [{"at": center() + Vector3(0, 3.2, 0), "c": "ffd66b", "label": "성소"}] if phase != "prep" else []
 
 func state() -> Dictionary: return {"phase": phase, "round": round_n, "wins": wins, "gauge": gauge, "overtime": overtime, "resonated": resonated, "t": phase_t}

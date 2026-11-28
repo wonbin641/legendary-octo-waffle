@@ -42,6 +42,12 @@ var ports: Array = []        # [from node, to node]: a portal's two ends (a one-
 # ---------------- the wood's ways ----------------
 func build_graph() -> void:
 	nodes = {}; adj = {}; ports = []
+	if rm.altar != null:   # (6-B: the caldera's tiers, its stones, chains and gates)
+		var g := CalderaField.graph(rm.altar); nodes.merge(g.nodes, true); _link(g.edges)
+		for q: Array in g.climbs: (adj[q[0]] as Array).push_back([q[1], 9.0, "climb"])
+		for q: Array in g.slides: (adj[q[0]] as Array).push_back([q[1], 4.0, "slide"])
+		for q: Array in g.ports: (adj[q[0]] as Array).push_back([q[1], 22.0, "port"]); ports.push_back(q)
+		return
 	if rm.mode.own_graph():   # (a mode on a map of its own: only its waypoints and ways)
 		var mine: Array = rm.mode.extra_edges(); nodes.merge(rm.mode.extra_nodes(), true)
 		_link(mine); return
@@ -95,6 +101,7 @@ func nearest_node(p: Vector3) -> String:
 
 func walkable(a: Vector3, b: Vector3) -> bool:
 	if absf(a.y - b.y) > 0.8 or a.distance_to(b) > 22.0: return false
+	if rm.altar != null: return CalderaField.walk_ok(a, b)   # (6-B: ground all along it, no stretch of lava between)
 	if not (Phys.line_of_sight(a + Vector3(0, 0.9, 0), b + Vector3(0, 0.9, 0)) and Phys.line_of_sight(a + Vector3(0, 0.3, 0), b + Vector3(0, 0.3, 0))): return false
 	# no walking off an edge: the ground under the middle of the way is the ground at its ends
 	var m := (a + b) * 0.5
@@ -116,7 +123,7 @@ func route(from: Vector3, to: Vector3, port_ok := true) -> Array:
 		done[c] = true
 		if c == g: break
 		for ed: Array in adj[c]:
-			if ed.size() > 2 and not port_ok: continue
+			if ed.size() > 2 and ed[2] == "port" and not port_ok: continue
 			var nb: String = ed[0]; var nd: float = float(dist[c]) + float(ed[1])
 			if not dist.has(nb) or nd < float(dist[nb]): dist[nb] = nd; prev[nb] = c; open.push_back(nb)
 	if not dist.has(g): return [to]
@@ -159,8 +166,10 @@ func turn(f: Realm.Fighter, dt: float) -> void:
 			if want.length() > 0.1: _aim_to(f, Vector3(want.x, 0, want.y), dt, 6.0)
 			b.cool = false; b.draw = false
 		if float(b.dodge) > 0.0: b.dodge = float(b.dodge) - dt; want = b.dodge_dir
-		if want.length() > 0.1 and rm.mode.deadly(f.pos + Vector3(want.x, 0.0, want.y) * 1.2): want = Vector2.ZERO; b.dodge = 0.0   # (6-A: not a step off the bridge)
+		if want.length() > 0.1 and rm.mode.deadly(f.pos + Vector3(want.x, 0.0, want.y) * 1.2) and not (rm.altar != null and CalderaField.on_way(rm.altar, f, want)): want = Vector2.ZERO; b.dodge = 0.0   # (6-A: not a step off the bridge; 6-B: a gap on his way is leapt)
+	if rm.altar != null and CalderaField.carry(rm.altar, rm, f, dt): f.yaw = atan2(-f.aim.x, -f.aim.z); return   # (6-B: on a soul chain, up or down it)
 	rm.kit.act(f, I, dt)
+	if rm.altar != null and not held and f.stun_t <= 0.0: CalderaField.leap(rm.altar, rm, f)   # (6-B: across a gap to the next stone)
 	if (f.grounded or f.pos.y - Phys.ground_at(f.pos.x, f.pos.y + 0.1, f.pos.z, 0.3) < 0.35) and f.vy <= 0.5 and not f.leaping and f.dash_t <= 0.0 and not held and f.stun_t <= 0.0 and rm.mode.jump(f): f.vy = 7.2; f.pos.y += 0.05; f.grounded = false   # (6-A: over a wave of fire; a step down is no reason not to)
 	# feet
 	var sp := rm.speed_of(f) * pace
@@ -240,6 +249,9 @@ func target(f: Realm.Fighter):
 	return null
 
 func _goal(f: Realm.Fighter) -> Dictionary:
+	if rm.altar != null:   # (6-B: out of the trench, the lava rising)
+		var esc := CalderaField.escape(rm.altar, f)
+		if not esc.is_empty(): return esc
 	var g := rm.mode.goal(f); var b := f.brain; var tg = b.tgt
 	if g.get("hurry", false) or tg == null or (tg is Dictionary and (tg as Dictionary).get("bldg", false)): return g   # (a landmark: where the mode sends him to strike it from)
 	# those who fight close go for whoever they see near by (the others keep to where the mode sends them)
@@ -253,7 +265,7 @@ func _set_goal(f: Realm.Fighter, g: Dictionary) -> void:
 	var at: Vector3 = g.at; b.near = float(g.get("near", 1.2)); b.hurry = bool(g.get("hurry", false)); b.repath = float(b.repath) - 0.35; b.need_y = bool(g.get("y", false))   # (y: he is there only at its height too)
 	var old = b.gat
 	if old == null or (old as Vector3).distance_to(at) > 5.0 or float(b.repath) <= 0.0 or (b.path as Array).is_empty():
-		b.gat = at; b.path = route(f.pos, at, f.port_t <= 0.0); b.pi = 0; b.repath = 5.0
+		b.gat = at; b.path = route(f.pos, at, f.port_t <= 0.0 and (rm.altar == null or f.hp > Caldera.GATE_COST + 15.0)); b.pi = 0; b.repath = 5.0
 	elif (old as Vector3).distance_to(at) > 0.3: b.gat = at; (b.path as Array)[(b.path as Array).size() - 1] = at
 
 func _steer(f: Realm.Fighter) -> Vector2:
@@ -356,9 +368,9 @@ func _shift(f: Realm.Fighter, tg, d: float, to: Vector2, away: Vector2, strafe: 
 		"elf":   # away from whoever comes close with a blade or a cannon
 			if d < 6.5 and (foe.race == "orc" or foe.race == "dwarf") and _free(f, away, 5.0): I.skill = true; I.move = Vector3(away.x, 0, away.y)
 		"dwarf":   # into them
-			if d > 4.5 and d < 8.5 and level and kit_walk(f, foe.pos): I.skill = true; I.move = Vector3(to.x, 0, to.y)
+			if d > 4.5 and d < 8.5 and level and kit_walk(f, foe.pos) and (rm.altar == null or _free(f, to, float(Races.SKILL.dwarf.dist))): I.skill = true; I.move = Vector3(to.x, 0, to.y)
 		"orc":
-			if d > 6.0 and d < 12.5 and level and Phys.line_of_sight(f.eye_at(), foe.feet_mid()) and kit_walk(f, foe.pos): I.skill = true
+			if d > 6.0 and d < 12.5 and level and Phys.line_of_sight(f.eye_at(), foe.feet_mid()) and kit_walk(f, foe.pos) and (rm.altar == null or _free(f, to, float(Races.SKILL.orc.dist))): I.skill = true   # (6-B: where the bound comes down, not the lava)
 		"demon":   # hurt just now, or the staff about to seal
 			if (float(b.hit_t) < 0.25 or f.heat >= 93.0) and _free(f, strafe, 5.0): I.skill = true; I.move = Vector3(strafe.x, 0, strafe.y)
 
@@ -366,4 +378,7 @@ func _shift(f: Realm.Fighter, tg, d: float, to: Vector2, away: Vector2, strafe: 
 func _free(f: Realm.Fighter, dir: Vector2, far: float) -> bool:
 	if dir.length() < 0.01: return false
 	var p := f.pos + Vector3(dir.x, 0, dir.y) * far
+	if rm.altar != null:   # (6-B: not into the lava, where the step really ends either, a blink going farther than the look)
+		for k: float in [far, far + 1.5]:
+			if CalderaField.lava_under(rm.altar, f.pos + Vector3(dir.x, 0, dir.y) * k): return false
 	return absf(Phys.ground_at(p.x, f.pos.y + 0.6, p.z, 0.3) - f.pos.y) < 0.8 and Phys.line_of_sight(f.pos + Vector3(0, 0.9, 0), p + Vector3(0, 0.9, 0))

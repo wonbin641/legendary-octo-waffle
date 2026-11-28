@@ -67,7 +67,7 @@ func relics() -> bool: return false
 ## whether one of the others should jump now (6-A: a wave of fire coming at his feet)
 func jump(_f: Realm.Fighter) -> bool: return false
 ## whether a step to there would be the end of him (6-A: over the lava): the others do not walk off into it
-func deadly(_p: Vector3) -> bool: return false
+func deadly(p: Vector3) -> bool: return rm.altar != null and CalderaField.lava_under(rm.altar, p)   # (6-B: the lava under a step)
 
 # ---------------- fighters the mode moves itself (6-A's demons) ----------------
 func turn(_f: Realm.Fighter, _dt: float) -> void: pass      # its turn, in the realm's frame (for a fighter whose brain has "mon")

@@ -551,6 +551,10 @@ func _draw_caldera(ci, r: Rect2) -> void:
 		var d := Caldera.at_deg(m, 1.0, 0.0); var tn := Vector3(-d.z, 0, d.x) * Caldera.BRIDGE_W * 0.5
 		var a0 := d * (Caldera.DAIS_A - 0.3); var a1 := d * (Caldera.RING_R0 + 0.6)
 		ci.draw_colored_polygon(PackedVector2Array([at.call((a0 - tn).x, (a0 - tn).z), at.call((a1 - tn).x, (a1 - tn).z), at.call((a1 + tn).x, (a1 + tn).z), at.call((a0 + tn).x, (a0 + tn).z)]), Color("55575c"))
+	for side: String in Caldera.TERRACE:   # the bases' terraces behind the foundries, their rings of runes
+		var sg := 1.0 if side == "e" else -1.0; var tx0 := minf(sg * float(Caldera.TER_X[0]), sg * float(Caldera.TER_X[1])); var tx1 := maxf(sg * float(Caldera.TER_X[0]), sg * float(Caldera.TER_X[1]))
+		ci.draw_rect(Rect2(at.call(tx0, -Caldera.TER_Z), Vector2(tx1 - tx0, Caldera.TER_Z * 2.0) * k), mid)
+		ci.draw_arc(at.call((Caldera.TERRACE[side] as Vector3).x, 0.0), Caldera.BASE_R * k, 0, TAU, 32, Color(1.0, 0.32, 0.25, 0.55), 1.2 * u)
 	var R := Caldera.DAIS_A / cos(PI / 8.0); var oct := PackedVector2Array()
 	for j in 8: var a := deg_to_rad(22.5 + j * 45.0); oct.push_back(c0 + Vector2(cos(a), sin(a)) * R * k)
 	ci.draw_colored_polygon(oct, mid); oct.push_back(oct[0]); ci.draw_polyline(oct, Color(1.0, 0.3, 0.2, 0.55), 1.2 * u)
@@ -587,9 +591,18 @@ func _draw_caldera(ci, r: Rect2) -> void:
 	ci.draw_rect(Rect2(sc_x, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP); ci.draw_rect(Rect2(sc_x + bw2 - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
 	_text(ci, f_mono, "%dm" % int(bar), sc_x + bw2 - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
 	if not live: return
+	if game.rm != null:   # a team battle on the caldera: the match's marks, the two sides (blue ours, red theirs)
+		for q: Dictionary in game.rm.mode.tac():
+			var mp := at.call(float(q.x), float(q.z)) as Vector2; var mc := Color(str(q.c)); var mr := maxf(float(q.r) * k, 4.0 * u)
+			ci.draw_circle(mp, mr, Color(mc, 0.18)); ci.draw_arc(mp, mr, 0, TAU, 24, mc, 1.6 * u); _tag(ci, str(q.label), mp.x, mp.y + mr + 7.0 * u, u, mc)
+		for f in game.rm.all:
+			if f.me or not f.alive: continue
+			var fp := at.call(f.pos.x, f.pos.z) as Vector2
+			ci.draw_circle(fp, 3.2 * u, Color("5f9cff") if f.team == "us" else Color("ff5260")); ci.draw_arc(fp, 3.2 * u, 0, TAU, 14, Color(0.05, 0.08, 0.15, 0.9), 1.0 * u)
 	var s0: Dictionary = w.start; var spp := at.call(s0.x, s0.z) as Vector2
-	ci.draw_circle(spp, 9.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(spp, 9.0 * u, 0, TAU, 32, SODIUM, 2.0 * u)
-	_tag(ci, "시작 · 서쪽 용광로", spp.x, spp.y + 16.0 * u, u, SODIUM)
+	if game.rm == null:
+		ci.draw_circle(spp, 9.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(spp, 9.0 * u, 0, TAU, 32, SODIUM, 2.0 * u)
+		_tag(ci, "시작 · 서쪽 용광로", spp.x, spp.y + 16.0 * u, u, SODIUM)
 	for e: Enemies.Foe in game.enemies.list:
 		if not e.alive: continue
 		var ep := at.call(e.pos.x, e.pos.z) as Vector2
@@ -615,6 +628,17 @@ func legend(live: bool) -> Array:
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else (("에어록 · 시작하는 곳" if part == "corr" else "시작하는 곳 · 문 앞 복도") if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
+	if stage == Store.ST_ALTAR and game != null and game.rm != null:   # 6-B's team battles: the two sides, the match's marks, what the place does
+		out.push_back(["en", "우리 편", Color("5f9cff"), ""]); out.push_back(["en", "적", Color("ff5260"), ""])
+		var seen := {}
+		for q: Dictionary in game.rm.mode.tac():
+			var nm := str(q.label).split(" ")[0]
+			if seen.has(str(q.label)) or (nm == "결계" and seen.has("결계")): continue
+			seen[str(q.label)] = true; seen[nm] = true; out.push_back(["en", str(q.label) if nm != "결계" else "결계 제단", Color(str(q.c)), ""])
+		out.push_back(["en", "혈약의 차원문 · 체력 35로 회랑까지", Color("ff2630"), ""]); out.push_back(["en", "영혼 포집 쇠사슬 · 점프 유지로 등반", Color("c9c2b8"), ""])
+		out.push_back(["al", "지옥불 화로 · 통과한 투사체 화염 +20% 탄속", Color("ffb347"), ""]); out.push_back(["en", "냉각진 · 악마 스태프 열 1.5배 빨리 식음", Color(0.42, 0.85, 1.0), ""])
+		out.push_back(["cr", "냉각 수조 · 화상 해제", Color("3ad0ff"), ""])
+		return out
 	if stage == Store.ST_ALTAR:   # 6-B: the demons, the inquisitor, what the place does
 		out.push_back(["lz", "시작하는 곳 · 서쪽 영혼 용광로", SODIUM, ""])
 		for kd: Array in KINDS[16]: out.push_back(["en", kd[2], Color(str(kd[1])), ""])

@@ -737,6 +737,7 @@ func music_ctx(dt: float) -> Dictionary:
 		if game.ended: rc.what = ""
 		return rc
 	if state == "brief" and ui.sel == Store.ST_ELF and Realm.picked() != "solo": return {"warm": "rt" if Realm.picked() == "siege" else "rf"}   # (its stems made ready on the web)
+	if state == "brief" and ui.sel == Store.ST_ALTAR and Realm.picked_altar() != "solo": return {"warm": "rt"}   # (6-B's team battles: the tower's set)
 	if state == "brief" and ui.sel == Store.ST_PLAIN and game.rm != null: return {"warm": game.rm.mode.music_set()}
 	if world.toy == null or (state != "playing" and state != "paused"): return music_for(state, world.toy != null, null, false, Vector3.ZERO, false, 0, 0, 0.0)
 	_near_t -= dt

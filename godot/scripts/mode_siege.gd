@@ -26,6 +26,13 @@ const GATE := Vector3(110.0, 0.0, 0.0)   # the tower's lower entrance: where a t
 const SLOTS := [["결계 A 앞", 127.0, 0.0, -13.6], ["결계 B 앞", 127.4, 0.0, 12.4], ["1층 계단 입구", 124.0, 0.0, 0.0], ["1층 계단 중간", 144.0, 5.0, 0.3],
 	["서고 서쪽", 122.0, 10.0, 0.6], ["서고 남쪽", 134.0, 10.0, 12.0], ["2층 계단 입구", 143.3, 10.2, -1.0], ["천문대 입구", 142.6, 20.0, -1.6]]
 
+# where everything is: the Silverwood's (ModeSiegeCaldera sets the caldera's in its _init)
+var sites: Dictionary = SITES; var nuc := NUC; var gate := GATE; var slots: Array = SLOTS
+var att1 := ATT1; var att2 := ATT2; var def1 := DEF1
+var aim_c := Vector3(TC.x, 0.0, TC.y)   # (the tower's middle: what the stormers face, the bomb laid toward)
+var nuc_y := ElfWood.T_F3                # (the floor the nucleus stands on)
+var amp_at: Array = [ElfWood.AMP]       # (the amplifying circle(s))
+
 var attackers := "us"
 var half := 1
 var stage := 1                 # 1: the wards; 2: the nucleus
@@ -44,9 +51,9 @@ var _fuse_snd := 0.0
 
 func defenders() -> String: return rm.other(attackers)
 func base_of(team: String) -> Vector3:
-	if team == attackers: return ATT1 if stage == 1 else ATT2
-	return DEF1
-func aim_point(team: String) -> Vector3: return Vector3(TC.x, 0, TC.y) if team == attackers else Vector3(100.0, 0, 0)
+	if team == attackers: return att1 if stage == 1 else att2
+	return def1
+func aim_point(team: String) -> Vector3: return aim_c if team == attackers else Vector3(100.0, 0, 0)
 func back_time(f: Realm.Fighter) -> float: return BACK_ATT if f.team == attackers else BACK_DEF
 func altar_ok() -> bool: return phase == "prep" or (phase == "fight" and turn_t > 0.0)   # (the ten seconds before the nucleus too: the new shards)
 func amp_owner() -> String: return attackers if (not wards.a and not wards.b) else defenders()
@@ -61,7 +68,7 @@ func works(team: String) -> Array:
 	var out: Array = [base_of(team)]
 	if team == defenders():
 		for t: Dictionary in traps: out.push_back(t.pos)
-	if team == amp_owner(): out.push_back(ElfWood.AMP)
+	if team == amp_owner(): out.append_array(amp_at)
 	return out
 func prize(f: Realm.Fighter): return nucleus if (stage == 2 and f.team == attackers and not nucleus.is_empty() and float(nucleus.hp) > 0.0) else null
 
@@ -79,9 +86,9 @@ func spawn_at(f: Realm.Fighter) -> Vector3:
 	return p
 
 func build() -> void:
-	for k: String in SITES: nodes["altar_" + k] = rm.look.prop("altar", SITES[k], k.to_upper())
+	for k: String in sites: nodes["altar_" + k] = rm.look.prop("altar", sites[k], k.to_upper())
 	nodes["bomb"] = rm.look.prop("bomb", Vector3.ZERO, "")
-	nodes["nucleus"] = rm.look.prop("nucleus", NUC, "")
+	nodes["nucleus"] = rm.look.prop("nucleus", nuc, "")
 
 func cleanup() -> void:
 	_unseal()
@@ -99,11 +106,11 @@ func start() -> void:
 
 func _half() -> void:
 	stage = 1; time_left = TIME1; elapsed = 0.0; turn_t = 0.0; wards = {"a": true, "b": true}
-	for k: String in SITES: rm.look.prop_state(nodes.get("altar_" + k), "whole")
+	for k: String in sites: rm.look.prop_state(nodes.get("altar_" + k), "whole")
 	_new_bomb(0.0)
 	muster()
 	rm.kit.things.clear()
-	nucleus = rm.kit.add_thing({"kind": "nucleus", "pos": NUC, "r": 1.3, "h": 2.6, "team": defenders(), "by": null, "hp": NUC_HP, "max": NUC_HP, "shield": NUC_SHIELD, "shield_max": NUC_SHIELD, "since": 99.0, "keep": true, "prize": true,
+	nucleus = rm.kit.add_thing({"kind": "nucleus", "pos": nuc, "r": 1.3, "h": 2.6, "team": defenders(), "by": null, "hp": NUC_HP, "max": NUC_HP, "shield": NUC_SHIELD, "shield_max": NUC_SHIELD, "since": 99.0, "keep": true, "prize": true,
 		"open": func() -> bool: return stage == 2, "dead": _nucleus_down, "node": nodes.get("nucleus")})
 	_seal_up()
 	shop_ai(); _lay_traps()
@@ -114,11 +121,14 @@ func _half() -> void:
 
 func _new_bomb(wait: float) -> void:
 	if bomb.by != null: (bomb.by as Realm.Fighter).carrying = false
-	var b0 := base_of(attackers); var fwd := Vector3(TC.x - b0.x, 0, TC.y - b0.z).normalized()   # (five metres out of the base's circle, toward the tower: taken by whoever means to, not by whoever comes back there)
+	var b0 := base_of(attackers); var fwd := Vector3(aim_c.x - b0.x, 0, aim_c.z - b0.z).normalized()   # (five metres out of the base's circle, toward the tower: taken by whoever means to, not by whoever comes back there)
 	var at := b0 + fwd * 5.0
-	if stage == 2: var a := deg_to_rad(40.0); at = Vector3(TC.x + cos(a) * 11.2, ElfWood.T_F2, TC.y + sin(a) * 11.2)   # (in the tower: along the gallery, past the stormers' circle)
+	if stage == 2: at = bomb2_at()
 	bomb = {"state": "none" if wait > 0.0 else "home", "pos": at, "by": null, "site": "", "t": 0.0, "fuse": 0.0, "cut": 0.0, "saved": false, "wait": wait, "plan": "a" if randf() < 0.5 else "b"}
 	if not wards[bomb.plan]: bomb.plan = "b" if bomb.plan == "a" else "a"
+
+## where a new bomb lies once the first ward is down (in the tower: along the gallery, past the stormers' circle)
+func bomb2_at() -> Vector3: var a := deg_to_rad(40.0); return Vector3(TC.x + cos(a) * 11.2, ElfWood.T_F2, TC.y + sin(a) * 11.2)
 
 func _seal_up() -> void:
 	_unseal()
@@ -139,7 +149,7 @@ func _lay_traps() -> void:
 	var team := defenders()
 	var picks: Array = trap_pick.duplicate() if team == "us" else ([0, 1] if stage == 1 else [6, [3, 4, 5, 7][randi() % 4]])
 	for s in picks:
-		var q: Array = SLOTS[clampi(int(s), 0, SLOTS.size() - 1)]; var at := Vector3(q[1], q[2], q[3]); at.y = Phys.ground_at(at.x, at.y + 0.9, at.z, 0.3)
+		var q: Array = slots[clampi(int(s), 0, slots.size() - 1)]; var at := Vector3(q[1], q[2], q[3]); at.y = Phys.ground_at(at.x, at.y + 0.9, at.z, 0.3)
 		var th := rm.kit.add_thing({"kind": "trap", "pos": at, "r": 1.1, "h": 0.5, "team": team, "by": null, "hp": float(TRAP.hp), "max": float(TRAP.hp)})
 		traps.push_back({"slot": int(s), "pos": at, "thing": th, "wait": 0.0, "who": null, "node": rm.look.prop("trap", at, "")})
 
@@ -153,7 +163,7 @@ func update(dt: float) -> void:
 	elapsed += dt
 	if turn_t > 0.0:   # the ten seconds between the wards and the nucleus: the clock waits
 		turn_t -= dt
-		if turn_t <= 0.0 and rm.game != null: rm.game.say_banner("2단계 · 비전 핵 파괴전", "천문대의 비전 핵을 부수세요" if attackers == "us" else "천문대의 비전 핵을 지키세요", 2.2)
+		if turn_t <= 0.0 and rm.game != null: rm.game.say_banner("2단계 · 비전 핵 파괴전", nuc_where() + " 비전 핵을 부수세요" if attackers == "us" else nuc_where() + " 비전 핵을 지키세요", 2.2)
 	else: time_left = maxf(0.0, time_left - dt)
 	_bomb(dt); _traps(dt)
 	if not nucleus.is_empty() and float(nucleus.hp) > 0.0:   # the nucleus' shield comes back when it has not been struck for a while
@@ -199,14 +209,14 @@ func _bomb(dt: float) -> void:
 		var f: Realm.Fighter = bomb.by
 		if f == null or not f.alive: return
 		bomb.pos = f.pos; var site := ""
-		for k: String in SITES:
-			if wards[k] and f.pos.distance_to(SITES[k]) < SET_R + f.R: site = k
+		for k: String in sites:
+			if wards[k] and f.pos.distance_to(sites[k]) < SET_R + f.R: site = k
 		if site == "": bomb.t = 0.0; return
 		if f.delay_t <= 0.0: bomb.t = float(bomb.t) + dt
 		_fuse_snd -= dt
 		if _fuse_snd <= 0.0: _fuse_snd = 0.5; Snd.play("rm_plant", 0.8, f.pos)
 		if float(bomb.t) >= PLANT:
-			bomb.state = "set"; bomb.site = site; bomb.fuse = FUSE; bomb.cut = 0.0; bomb.saved = false; bomb.pos = SITES[site]; bomb.by = null; f.carrying = false
+			bomb.state = "set"; bomb.site = site; bomb.fuse = FUSE; bomb.cut = 0.0; bomb.saved = false; bomb.pos = sites[site]; bomb.by = null; f.carrying = false
 			rm.gain(f, float(Races.GAUGE.bomb)); f.bonus = mini(3, f.bonus + 1)
 			if rm.game != null: rm.game.say_banner("폭탄 설치 · 결계 " + site.to_upper(), "35초 뒤 폭발합니다", 2.0)
 			rm.note(["set", site, f.id])
@@ -215,7 +225,7 @@ func _bomb(dt: float) -> void:
 	bomb.fuse = float(bomb.fuse) - dt
 	_fuse_snd -= dt
 	if _fuse_snd <= 0.0: _fuse_snd = 1.0 if float(bomb.fuse) > 10.0 else 0.4; Snd.play("rm_fuse", 0.9, bomb.pos)
-	var at: Vector3 = SITES[bomb.site]; var who: Realm.Fighter = null; var best := INF
+	var at: Vector3 = sites[bomb.site]; var who: Realm.Fighter = null; var best := INF
 	for f: Realm.Fighter in rm.all:
 		if f.alive and f.team != attackers and f.pos.distance_to(at) < SET_R + f.R and f.pos.distance_to(at) < best: best = f.pos.distance_to(at); who = f
 	if who != null:
@@ -229,19 +239,27 @@ func _bomb(dt: float) -> void:
 	if float(bomb.fuse) <= 0.0: _ward_down(str(bomb.site))
 
 func _ward_down(site: String) -> void:
-	var at: Vector3 = SITES[site]
+	var at: Vector3 = sites[site]
 	wards[site] = false; rm.look.prop_state(nodes.get("altar_" + site), "broken")
 	Snd.play("rm_ward", 1.0, at); rm.look.burst(at, float(BLAST.r), "alchemy")
 	for f: Realm.Fighter in rm.all:
 		if f.alive and f.feet_mid().distance_to(at) < float(BLAST.r): rm.hurt(f, float(BLAST.dmg), "alchemy", null, {"fixed": true, "aoe": true, "src": "bomb", "from": at})
 	rm.note(["ward", site])
 	if stage == 1:   # the first ward down: the observatory unsealed, the stormers' base in the court, more time, new traps
-		stage = 2; turn_t = TURN; time_left += TIME2; _unseal(); rm.music_break += 1   # (the music: a bar's breath, then the drums)
+		stage = 2; turn_t = TURN; time_left += TIME2; _unseal(); on_unseal(); rm.music_break += 1   # (the music: a bar's breath, then the drums)
 		for f: Realm.Fighter in rm.all: f.shards += int(Races.SHARDS.siege_att) if f.team == attackers else int(Races.SHARDS.siege_def)
 		shop_ai(); _lay_traps()
-		if rm.game != null: rm.game.say_banner("결계 " + site.to_upper() + " 파괴", "천문대 봉인 해제 · 제한 시간 +3분 30초", 2.6)
-	elif rm.game != null: rm.game.say_banner("결계 " + site.to_upper() + " 파괴", "비전 증폭 진이 " + ("우리" if attackers == "us" else "적") + " 편 것이 되었습니다", 2.6)
+		if rm.game != null: rm.game.say_banner("결계 " + site.to_upper() + " 파괴", unseal_line(), 2.6)
+	elif rm.game != null: rm.game.say_banner("결계 " + site.to_upper() + " 파괴", Races.josa(amp_name(), "이가") + " " + ("우리" if attackers == "us" else "적") + " 편 것이 되었습니다", 2.6)
 	_new_bomb(BOMB_BACK)
+
+## what the first ward's fall opens, as the screen says it; and what the place does then (the caldera's tide)
+func unseal_line() -> String: return "천문대 봉인 해제 · 제한 시간 +3분 30초"
+## the place's own words: where the nucleus is, what its amplifying circle is called, where a trap sends one
+func nuc_where() -> String: return "천문대의"
+func amp_name() -> String: return "비전 증폭 진"
+func trap_line() -> String: return "역소환 함정진 · 2초 뒤 탑 아래 입구로 보내집니다"
+func on_unseal() -> void: pass
 
 func on_down(v: Realm.Fighter, _by: Realm.Fighter) -> void:
 	if bomb.by == v:   # the bomb falls where its carrier fell
@@ -249,7 +267,7 @@ func on_down(v: Realm.Fighter, _by: Realm.Fighter) -> void:
 		if rm.game != null: rm.game.say_feed("폭탄이 떨어졌습니다")
 
 func _nucleus_down(by) -> void:
-	Snd.play("rm_nucleus", 1.0, NUC); rm.look.burst(NUC, 9.0, "arcane"); rm.look.prop_state(nodes.get("nucleus"), "broken")
+	Snd.play("rm_nucleus", 1.0, nuc); rm.look.burst(nuc, 9.0, "arcane"); rm.look.prop_state(nodes.get("nucleus"), "broken")
 	if by != null: rm.gain(by, float(Races.GAUGE.bomb))
 	_half_over(true)
 
@@ -287,14 +305,14 @@ func _traps(dt: float) -> void:
 			for f: Realm.Fighter in rm.all:
 				if f.alive and f.team == attackers and f.inv <= 0.0 and f.pos.distance_to(t.pos) < float(TRAP.r) + f.R:
 					t.who = f; t.wait = float(TRAP.wait); Snd.play("rm_trap", 1.0, t.pos); rm.note(["trap", f.id, int(t.slot)])
-					if f.me and rm.game != null: rm.game.say_feed("역소환 함정진 · 2초 뒤 탑 아래 입구로 보내집니다")
+					if f.me and rm.game != null: rm.game.say_feed(trap_line())
 					break
 			continue
 		t.wait = float(t.wait) - dt
 		if float(t.wait) > 0.0: continue
 		var f: Realm.Fighter = t.who
 		if f.alive:   # sent back down to the tower's lower entrance
-			var to := GATE + Vector3(randf_range(-1.0, 1.0), 0, randf_range(-1.0, 1.0)); to.y = Phys.ground_at(to.x, 1.0, to.z, 0.3)
+			var to := gate + Vector3(randf_range(-1.0, 1.0), 0, randf_range(-1.0, 1.0)); to.y = Phys.ground_at(to.x, gate.y + 1.0, to.z, 0.3)
 			rm.look.ported(f, f.pos, to); f.pos = to; f.vel = Vector3.ZERO; f.vy = 0.0
 			if f.me and rm.player != null: rm.player.pos = to; rm.player.vel = Vector3.ZERO
 			rm.astray(f)
@@ -309,26 +327,26 @@ func goal(f: Realm.Fighter) -> Dictionary:
 		if bomb.by == f:
 			var k: String = bomb.plan
 			if not wards[k]: k = "b" if k == "a" else "a"
-			return {"at": SITES[k], "near": 1.0, "hurry": true}
+			return {"at": sites[k], "near": 1.0, "hurry": true}
 		if (bomb.state == "home" or bomb.state == "down") and _fetcher() == f: return {"at": bomb.pos, "near": 0.6, "hurry": true}
 		if stage == 2 and bomb.state != "set":
 			var a := i * TAU / 5.0
-			return {"at": Vector3(NUC.x + cos(a) * 4.6, ElfWood.T_F3, NUC.z + sin(a) * 4.6), "near": 1.5}
+			return {"at": Vector3(nuc.x + cos(a) * 4.6, nuc_y, nuc.z + sin(a) * 4.6), "near": 1.5}
 		var site: String = str(bomb.site) if bomb.state == "set" else _site_now()
-		var s: Vector3 = SITES[site]; var a2 := i * TAU / 5.0
+		var s: Vector3 = sites[site]; var a2 := i * TAU / 5.0
 		return {"at": s + Vector3(cos(a2) * 4.5, 0, sin(a2) * 4.5), "near": 2.0}
 	# the holders
 	if bomb.state == "set":
-		var s2: Vector3 = SITES[str(bomb.site)]; var order := team.filter(func(q): return q.alive)
+		var s2: Vector3 = sites[str(bomb.site)]; var order := team.filter(func(q): return q.alive)
 		order.sort_custom(func(p, q): return p.pos.distance_to(s2) < q.pos.distance_to(s2))
 		if order.find(f) < 2: return {"at": s2, "near": 1.0, "hurry": order.find(f) == 0}
 		return {"at": s2 + Vector3(cos(i * 1.3) * 5.0, 0, sin(i * 1.3) * 5.0), "near": 2.0}
 	if stage == 2:
 		var a3 := i * TAU / 5.0 + 0.6
-		return {"at": Vector3(NUC.x + cos(a3) * 5.6, ElfWood.T_F3, NUC.z + sin(a3) * 5.6), "near": 1.5}
+		return {"at": Vector3(nuc.x + cos(a3) * 5.6, nuc_y, nuc.z + sin(a3) * 5.6), "near": 1.5}
 	var k2 := "a" if i % 2 == 0 else "b"
 	if not wards[k2]: k2 = "b" if k2 == "a" else "a"
-	var w: Vector3 = SITES[k2]
+	var w: Vector3 = sites[k2]
 	return {"at": w + Vector3(cos(i * 1.7) * 4.0, 0, sin(i * 1.7) * 4.0), "near": 2.0}
 
 ## the one of the stormers' others who goes for a bomb lying about: the nearest to it (you, if you are nearer, are left to it)
@@ -342,7 +360,7 @@ func _site_now() -> String:
 	if bomb.by != null:   # where its carrier is heading: the nearer standing altar to him (yours, if you carry it)
 		var c: Realm.Fighter = bomb.by
 		if not c.me: return str(bomb.plan) if wards[bomb.plan] else ("b" if bomb.plan == "a" else "a")
-		var k := "a" if c.pos.distance_to(SITES.a) < c.pos.distance_to(SITES.b) else "b"
+		var k := "a" if c.pos.distance_to(sites.a) < c.pos.distance_to(sites.b) else "b"
 		return k if wards[k] else ("b" if k == "a" else "a")
 	return str(bomb.plan) if wards[bomb.plan] else ("b" if bomb.plan == "a" else "a")
 
@@ -364,9 +382,9 @@ func hud() -> Dictionary:
 
 func tac() -> Array:
 	var out: Array = [{"x": base_of("us").x, "z": base_of("us").z, "c": "5f9cff", "r": 6.5, "label": "우리 본진"}, {"x": base_of("them").x, "z": base_of("them").z, "c": "ff5260", "r": 6.5, "label": "적 본진"}]
-	for k: String in SITES:
-		if wards[k]: out.push_back({"x": SITES[k].x, "z": SITES[k].z, "c": "ffd66b", "r": 3.0, "label": "결계 " + k.to_upper()})
-	out.push_back({"x": NUC.x, "z": NUC.z, "c": "b892ff", "r": 2.5, "label": "비전 핵"})
+	for k: String in sites:
+		if wards[k]: out.push_back({"x": sites[k].x, "z": sites[k].z, "c": "ffd66b", "r": 3.0, "label": "결계 " + k.to_upper()})
+	out.push_back({"x": nuc.x, "z": nuc.z, "c": "b892ff", "r": 2.5, "label": "비전 핵"})
 	if bomb.state != "none": out.push_back({"x": (bomb.pos as Vector3).x, "z": (bomb.pos as Vector3).z, "c": "ff9a3a", "r": 1.6, "label": "폭탄"})
 	if defenders() == "us":
 		for t: Dictionary in traps: out.push_back({"x": (t.pos as Vector3).x, "z": (t.pos as Vector3).z, "c": "8ff7ea", "r": 1.5, "label": "함정"})
@@ -384,10 +402,10 @@ func music_semis() -> int: return 0
 func marks() -> Array:
 	var out: Array = []
 	if phase != "fight": return out
-	for k: String in SITES:
-		if wards[k]: out.push_back({"at": SITES[k] + Vector3(0, 3.4, 0), "c": "ffd66b", "label": "결계 " + k.to_upper()})
+	for k: String in sites:
+		if wards[k]: out.push_back({"at": sites[k] + Vector3(0, 3.4, 0), "c": "ffd66b", "label": "결계 " + k.to_upper()})
 	if bomb.state == "home" or bomb.state == "down": out.push_back({"at": (bomb.pos as Vector3) + Vector3(0, 1.4, 0), "c": "ff9a3a", "label": "폭탄"})
-	if stage == 2: out.push_back({"at": NUC + Vector3(0, 3.4, 0), "c": "b892ff", "label": "비전 핵"})
+	if stage == 2: out.push_back({"at": nuc + Vector3(0, 3.4, 0), "c": "b892ff", "label": "비전 핵"})
 	return out
 
 func state() -> Dictionary: return {"phase": phase, "half": half, "stage": stage, "attackers": attackers, "time": time_left, "wards": wards, "bomb": str(bomb.state), "nucleus": float(nucleus.get("hp", 0.0)), "shield": float(nucleus.get("shield", 0.0)), "results": results}
