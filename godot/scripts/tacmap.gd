@@ -577,8 +577,8 @@ func _draw_caldera(ci, r: Rect2) -> void:
 			var gp := at.call((Caldera.GATES[g] as Vector3).x, (Caldera.GATES[g] as Vector3).z) as Vector2; var gt := at.call((Caldera.GATE_TO[g] as Vector3).x, (Caldera.GATE_TO[g] as Vector3).z) as Vector2
 			ci.draw_dashed_line(gp, gt, Color(1.0, 0.2, 0.25, 0.6), 1.4 * u, 4.0 * u)
 			ci.draw_circle(gp, 4.0 * u, Color(1.0, 0.15, 0.2, 0.85)); _tag(ci, "차원문", gp.x + 14.0 * u, gp.y, u, Color("ff8a90"), "left")
-	# the tiers' names; the start
-	_tag(ci, "상층 · 감시 회랑", c0.x, (at.call(0.0, -51.0) as Vector2).y, u, Color("d8d0e4"))
+	# the tiers' names (the gallery's just inside it, clear of the boss on its north end); the start
+	_tag(ci, "상층 · 감시 회랑", c0.x, (at.call(0.0, -45.0) as Vector2).y, u, Color("d8d0e4"))
 	_tag(ci, "중층 · 심연 제단", c0.x, (at.call(0.0, -36.0) as Vector2).y, u, Color("c4bccc"))
 	_tag(ci, "하층 · 유황 협곡" + (" (잠김)" if tide else ""), c0.x, (at.call(0.0, -24.5) as Vector2).y, u, Color("ffb090") if tide else Color("b0a49a"))
 	var edge := PAD * k + 8.0 * u; var bar := 20.0
