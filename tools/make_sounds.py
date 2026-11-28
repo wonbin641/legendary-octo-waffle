@@ -386,6 +386,75 @@ SOUNDS = {
         + [l for m in (72, 76, 79, 84) for l in brass(NOTE(m), 0.22 if m != 84 else 0.16, 0.86, 1.1)]
         + [l for i, m in enumerate((84, 88, 91, 96, 100, 103)) for l in ping(NOTE(m), 0.13, 0.9 + 0.07 * i, 1.4)]
         + [BACK(N(0.5, 'highpass', 5200, 8000, 0.7, 0.16, 0.4)), N(1.6, 'highpass', 6000, 9000, 0.7, 0.2, 0.86), T('sine', 98, 60, 0.5, 0.5, 0.86)],
+    # ---- 6-A, the road to the fallen tower (added last: the sounds before keep their noise) ----
+    # the party: into another's shoes (a quick whoosh, two notes up); a checkpoint reached; the camp's blessing, its crates
+    'rd_switch': lambda: [BACK(N(0.12, 'bandpass', 2400, 900, 1.2, 0.5)), N(0.12, 'bandpass', 1200, 3600, 1.2, 0.4, 0.1)] + ping(NOTE(81), 0.22, 0.12) + ping(NOTE(88), 0.24, 0.2),
+    'rd_checkpoint': lambda: [T('sine', NOTE(76) * r, NOTE(76) * r * 0.998, d, g) for r, g, d in PORTAL] + ping(NOTE(83), 0.14, 0.1, 1.5),
+    'rd_bless': lambda: [T('sine', NOTE(m), NOTE(m) * 1.004, 0.7, 0.16, 0.06 * i) for i, m in enumerate((72, 76, 79, 84, 88))] + [N(0.8, 'highpass', 3600, 7200, 0.7, 0.12, 0.05), BACK(N(0.3, 'bandpass', 800, 3000, 1.5, 0.3))],
+    'rd_supply': lambda: [N(0.06, 'lowpass', 1400, 400, 0.8, 0.8), T('sine', 180, 90, 0.08, 0.5)] + clank(880, 0.35, 0.12) + clank(1170, 0.3, 0.2) + [N(0.04, 'bandpass', 2200, 1500, 2, 0.4, 0.3)],
+    # the lava taking someone: a heavy plunge, the hiss of it
+    'rd_lava': lambda: [T('sine', 140, 40, 0.5, 0.8), N(0.5, 'lowpass', 900, 90, 0.7, 1.0), N(1.0, 'highpass', 3000, 6500, 0.7, 0.5, 0.05), N(0.6, 'bandpass', 1500, 600, 1, 0.4, 0.1)],
+    # a gravity circle throwing you up: a violet whoosh rising
+    'rd_lift': lambda: [H('sine', 90, 460, 0.5, 0.4, 0.0, 0.05, 0.2), H('sawtooth', 45, 230, 0.5, 0.15, 0.0, 0.05, 0.2), N(0.6, 'bandpass', 500, 3600, 1.2, 0.5), T('sine', NOTE(84), NOTE(91), 0.4, 0.12, 0.1)],
+    # the corrupted core taken: a crystal swelling, a dark chord, bells
+    'rd_core': lambda: [BACK(N(0.5, 'bandpass', 600, 3000, 1.5, 0.5)), H('sine', NOTE(50), NOTE(50), 1.2, 0.3, 0.45, 0.05, 0.6), H('sine', NOTE(57), NOTE(57), 1.2, 0.22, 0.45, 0.05, 0.6), H('sine', NOTE(61), NOTE(61), 1.2, 0.18, 0.45, 0.05, 0.6)]
+        + [l for i, m in enumerate((86, 89, 93, 98)) for l in ping(NOTE(m), 0.16, 0.5 + 0.08 * i, 1.6)],
+    # a seal lifting: its red glass breaking, a low boom under it
+    'rd_seal': lambda: [T('sine', 200, 50, 0.6, 0.6), N(0.4, 'lowpass', 1800, 140, 0.7, 0.8)] + shatter(1.4, 0.7, 0.02) + [N(0.8, 'highpass', 3000, 6000, 0.7, 0.14, 0.2)],
+    # a lord appears: a low horn, a drum, fire
+    'rd_boss': lambda: horn(NOTE(38), 0.45, 0.0, 1.2) + [T('sine', 110, 40, 0.4, 0.9, 0.05), N(0.3, 'lowpass', 900, 100, 0.7, 0.9, 0.05), N(1.2, 'bandpass', 900, 400, 0.8, 0.35, 0.2)],
+    # a lord down: a great boom, a long rumble, what he was made of breaking
+    'rd_boss_down': lambda: [T('sine', 220, 30, 1.4, 0.9), T('triangle', 110, 30, 1.2, 0.5), N(1.8, 'lowpass', 1600, 60, 0.7, 1.2)] + shatter(1.6, 0.6, 0.2) + [N(1.6, 'highpass', 2600, 5200, 0.7, 0.2, 0.4)],
+    # a missile turned back into the one who threw it: iron on iron, a bright ring
+    'rd_parry_hit': lambda: clank(660, 0.9) + [T('sine', 2637, 2630, 0.6, 0.3), T('sine', 3951, 3940, 0.4, 0.15)] + [N(0.15, 'lowpass', 900, 160, 0.7, 0.8, 0.02)],
+    # ---- the demons ----
+    'rd_fall': lambda: [N(0.45, 'highpass', 4800, 2600, 0.8, 0.35), H('sine', 520, 110, 0.4, 0.3, 0.1, 0.3, 0.03), T('sine', 150, 55, 0.15, 0.6, 0.35), N(0.15, 'lowpass', 700, 140, 0.7, 0.6, 0.35)],
+    'rd_fall_big': lambda: [T('sine', 120, 32, 0.9, 0.9), N(1.0, 'lowpass', 900, 70, 0.7, 1.1), N(1.0, 'highpass', 4200, 2400, 0.8, 0.35, 0.1), T('sawtooth', 70, 40, 0.8, 0.3, 0.05)],
+    'rd_wake': lambda: [T('sawtooth', 96, 128, 0.3, 0.4), T('sawtooth', 120, 150, 0.3, 0.3), N(0.3, 'bandpass', 700, 420, 2, 0.5)],
+    'rd_swing': lambda: [N(0.22, 'bandpass', 700, 2400, 1.4, 0.7), T('sine', 160, 90, 0.12, 0.25)],
+    'rd_swing_big': lambda: [N(0.4, 'bandpass', 400, 1800, 1.2, 0.9), T('sine', 110, 50, 0.25, 0.4), T('sawtooth', 70, 50, 0.3, 0.15)],
+    'rd_throw': lambda: [N(0.2, 'bandpass', 1200, 3400, 1.5, 0.6), T('sine', 700, 380, 0.15, 0.12)],
+    'rd_aim': lambda: [H('sine', 420, 880, 1.3, 0.12, 0.0, 0.6, 0.05), H('sawtooth', 210, 440, 1.3, 0.05, 0.0, 0.6, 0.05)],
+    'rd_lance': lambda: [T('sawtooth', 1800, 300, 0.14, 0.5), N(0.05, 'highpass', 5200, 3000, 0.8, 0.8), N(0.3, 'bandpass', 3000, 900, 1.2, 0.5, 0.02), T('sine', 200, 70, 0.1, 0.5)],
+    'rd_lob': lambda: [N(0.2, 'lowpass', 1200, 400, 0.8, 0.6), T('sine', 160, 110, 0.12, 0.4), N(0.4, 'bandpass', 900, 500, 1, 0.3, 0.05)],
+    'rd_pot': lambda: [T('sine', 160, 45, 0.35, 0.8), N(0.4, 'lowpass', 2200, 140, 0.7, 1.0)] + [N(0.02, 'highpass', 4500 - 300 * k, 2600, 1, 0.35, 0.08 + 0.07 * k) for k in range(5)],
+    'rd_bolt': lambda: [T('sawtooth', 1400, 500, 0.09, 0.35), T('sine', 2800, 1000, 0.06, 0.15), N(0.04, 'bandpass', 3000, 1500, 1.5, 0.4)],
+    # the beast: its roar, its charge, its blow, its slam
+    'rd_roar': lambda: [H('sawtooth', 80, 120, 0.2, 0.6, 0.0, 0.05, 0.05), H('sawtooth', 120, 64, 0.7, 0.6, 0.15, 0.05, 0.4), H('square', 40, 32, 0.8, 0.3, 0.05, 0.1, 0.4), N(0.8, 'bandpass', 700, 380, 1.5, 1.0, 0.1)],
+    'rd_charge': lambda: [N(0.4, 'bandpass', 500, 900, 1, 0.6)] + [l for k in range(4) for l in [T('sine', 120, 45, 0.12, 0.7, 0.2 + 0.22 * k), N(0.1, 'lowpass', 700, 130, 0.7, 0.7, 0.2 + 0.22 * k)]],
+    'rd_thud': lambda: [T('sine', 170, 50, 0.16, 0.9), N(0.12, 'lowpass', 1200, 150, 0.7, 1.0), N(0.03, 'bandpass', 2200, 1300, 2, 0.4)],
+    'rd_slam': lambda: [T('sine', 150, 35, 0.5, 0.9), N(0.5, 'lowpass', 1500, 80, 0.7, 1.2), N(0.25, 'bandpass', 900, 400, 1, 0.5, 0.02)],
+    'rd_slam_big': lambda: [T('sine', 120, 28, 0.8, 1.0), N(0.8, 'lowpass', 1300, 60, 0.7, 1.3), T('sawtooth', 60, 30, 0.6, 0.3), N(0.6, 'bandpass', 700, 300, 1, 0.5, 0.05)],
+    'rd_land_big': lambda: [T('sine', 140, 30, 0.7, 1.0), N(0.6, 'lowpass', 1100, 70, 0.7, 1.2), N(0.4, 'bandpass', 1500, 600, 1, 0.4, 0.05)] + [N(0.02, 'bandpass', 2400 - 200 * k, 1300, 2, 0.3, 0.12 + 0.08 * k) for k in range(5)],
+    'rd_roar_big': lambda: [H('sawtooth', 62, 98, 0.3, 0.7, 0.0, 0.08, 0.05), H('sawtooth', 98, 48, 1.3, 0.7, 0.25, 0.05, 0.7), H('sawtooth', 74, 58, 1.4, 0.4, 0.1, 0.1, 0.7), H('square', 31, 24, 1.5, 0.35, 0.05, 0.2, 0.7), N(1.4, 'bandpass', 600, 300, 1.4, 1.1, 0.15)],
+    # Karnok: the chain javelin, the chains, the whirlwind, the hook, the axe, his stagger
+    'rd_jav': lambda: [N(0.3, 'bandpass', 900, 2800, 1.5, 0.7)] + clank(520, 0.35, 0.02) + clank(690, 0.3, 0.09) + clank(610, 0.25, 0.16),
+    'rd_chain': lambda: [l for k in range(7) for l in clank(500 + 90 * (k % 3), 0.42 - 0.04 * k, 0.05 * k)],
+    'rd_chain_spin': lambda: [N(0.5, 'bandpass', 600, 1600, 1.2, 0.7), N(0.5, 'bandpass', 1600, 600, 1.2, 0.5, 0.25)] + [l for k in range(5) for l in clank(560 + 70 * (k % 2), 0.25, 0.1 * k)],
+    'rd_hook': lambda: clank(420, 0.9) + [T('sine', 160, 60, 0.2, 0.8), N(0.15, 'lowpass', 900, 150, 0.7, 0.8)] + [l for k in range(4) for l in clank(480 + 60 * k, 0.25, 0.15 + 0.07 * k)],
+    'rd_axe': lambda: [BACK(N(0.35, 'bandpass', 500, 2200, 1.2, 0.9)), T('sine', 140, 35, 0.4, 1.0, 0.35), N(0.35, 'lowpass', 1600, 100, 0.7, 1.2, 0.35)] + clank(380, 0.7, 0.35),
+    'rd_stagger': lambda: [T('sawtooth', 150, 70, 0.6, 0.5), T('sawtooth', 112, 52, 0.6, 0.35), N(0.5, 'bandpass', 800, 350, 1.5, 0.6)] + shatter(0.6, 0.4, 0.05),
+    # what breaks and what puts the fire out
+    'rd_shatter': lambda: shatter(1.0, 0.9) + [T('sine', 300, 80, 0.3, 0.4), N(0.3, 'lowpass', 1500, 200, 0.7, 0.5)],
+    'rd_cool': lambda: [N(0.7, 'highpass', 3000, 7000, 0.8, 0.5), N(0.5, 'bandpass', 2000, 900, 1, 0.25), T('sine', NOTE(88), NOTE(86), 0.4, 0.08, 0.05)],
+    'rd_immune': lambda: [T('sine', 300, 260, 0.08, 0.5), N(0.03, 'bandpass', 800, 500, 2, 0.4), T('square', 150, 140, 0.04, 0.08)],
+    'rd_break': lambda: [N(0.03, 'highpass', 5000, 3000, 1, 0.6), T('sine', 1200, 300, 0.12, 0.3)] + shatter(0.4, 0.3, 0.02),
+    # the fire on the stair and the altar
+    'rd_wave': lambda: [BACK(N(0.4, 'bandpass', 400, 1200, 1, 0.8)), N(1.8, 'bandpass', 900, 300, 0.8, 0.9, 0.35), N(1.8, 'lowpass', 600, 120, 0.7, 0.9, 0.35), T('sawtooth', 60, 44, 1.8, 0.2, 0.35)],
+    'rd_wave_big': lambda: [BACK(N(0.5, 'bandpass', 300, 1500, 1, 1.0)), N(2.2, 'bandpass', 800, 250, 0.8, 1.1, 0.45), N(2.2, 'lowpass', 500, 90, 0.7, 1.1, 0.45), T('sawtooth', 52, 36, 2.0, 0.25, 0.45)],
+    'rd_charge_fire': lambda: [H('sawtooth', 70, 160, 0.7, 0.3, 0.0, 0.5, 0.05), BACK(N(0.7, 'bandpass', 1500, 400, 1, 0.8)), T('sine', 140, 320, 0.6, 0.2)],
+    'rd_fan': lambda: [N(0.5, 'bandpass', 600, 2200, 0.8, 0.9), T('sine', 180, 70, 0.3, 0.5)] + [N(0.02, 'highpass', 5000 - 400 * k, 3000, 1, 0.3, 0.05 + 0.05 * k) for k in range(6)],
+    'rd_crack': lambda: [N(0.04, 'bandpass', 1800 - 120 * k, 900, 2, 0.6 - 0.04 * k, 0.09 * k) for k in range(9)] + [T('sine', 90, 50, 1.2, 0.35), N(1.2, 'lowpass', 500, 100, 0.7, 0.5)],
+    'rd_rift': lambda: [T('sine', 180, 40, 0.45, 0.8), N(0.45, 'lowpass', 2000, 100, 0.7, 1.0), N(0.8, 'highpass', 3500, 6500, 0.7, 0.3, 0.05)],
+    'rd_meteor': lambda: [BACK(N(0.35, 'highpass', 1500, 5000, 0.7, 0.5)), T('sine', 160, 32, 0.6, 1.0, 0.35), N(0.6, 'lowpass', 2200, 80, 0.7, 1.2, 0.35)] + [N(0.02, 'highpass', 4800 - 300 * k, 2800, 1, 0.3, 0.42 + 0.06 * k) for k in range(5)],
+    'rd_collapse': lambda: [N(3.0, 'lowpass', 600, 50, 0.7, 1.1), T('sine', 70, 30, 2.8, 0.9)] + [l for f, g, d in PLATES for l in [N(0.25, 'lowpass', f * 1.4, 150, 0.8, g, 0.2 + d * 3.5), T('sine', f * 0.2, f * 0.1, 0.25, g * 0.6, 0.2 + d * 3.5)]] + shatter(2.0, 0.3, 0.5),
+    # Baal in the air: his drain, his sun charging and falling, his crash; the eclipse of doom
+    'rd_drain': lambda: [H('sine', 220, 230, 1.6, 0.25, 0.0, 0.3, 0.4), H('sine', 233, 221, 1.6, 0.2, 0.0, 0.3, 0.4), H('sawtooth', 110, 116, 1.6, 0.08, 0.0, 0.3, 0.4), N(1.6, 'bandpass', 900, 1400, 4, 0.2)],
+    'rd_sun': lambda: [H('sawtooth', 55, 110, 3.0, 0.3, 0.0, 2.6, 0.3), H('sine', 110, 220, 3.0, 0.3, 0.0, 2.6, 0.3), H('sine', 165, 330, 3.0, 0.2, 0.0, 2.6, 0.3), N(3.0, 'bandpass', 400, 2400, 1, 0.4)],
+    'rd_sun_fall': lambda: [T('sine', 200, 25, 1.8, 1.0), N(2.2, 'lowpass', 3000, 50, 0.7, 1.4), T('sawtooth', 80, 25, 1.6, 0.4), N(1.8, 'highpass', 3000, 6000, 0.7, 0.3, 0.1)],
+    'rd_crash': lambda: [T('sine', 150, 28, 1.0, 1.0), N(1.0, 'lowpass', 1400, 60, 0.7, 1.3), T('sawtooth', 120, 40, 0.8, 0.4)] + shatter(0.8, 0.4, 0.05),
+    'rd_eclipse': lambda: [H('sawtooth', 41, 41, 4.0, 0.35, 0.0, 1.5, 0.8), H('sawtooth', 43.6, 43.6, 4.0, 0.3, 0.0, 1.5, 0.8), H('sine', 82, 77, 4.0, 0.35, 0.0, 1.5, 0.8), H('square', 116.5, 110, 4.0, 0.08, 0.5, 2.0, 0.8),
+                           BACK(N(1.5, 'bandpass', 200, 1200, 1, 0.6)), N(3.0, 'lowpass', 400, 60, 0.7, 0.6, 1.0)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]

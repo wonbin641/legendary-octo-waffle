@@ -13,9 +13,9 @@ extends RefCounted
 
 const KINDS := {
 	"guard": {"name": "악마 경비병", "hp": 420.0, "r": 0.42, "h": 2.15, "head": 0.36, "speed": 4.4, "sight": 36.0, "leash": 16.0, "pay": 2400},
-	"sniper": {"name": "심연 저격병", "hp": 300.0, "r": 0.38, "h": 2.0, "head": 0.32, "speed": 0.0, "sight": 90.0, "leash": 0.0, "pay": 3000},
+	"sniper": {"name": "심연 저격병", "hp": 260.0, "r": 0.38, "h": 2.0, "head": 0.32, "speed": 0.0, "sight": 90.0, "leash": 0.0, "pay": 3000},
 	"beast": {"name": "용암 거수", "hp": 3600.0, "r": 1.25, "h": 3.4, "head": 0.8, "speed": 4.2, "sight": 70.0, "leash": 90.0, "pay": 16000, "elite": true},
-	"defender": {"name": "탑 수비대", "hp": 380.0, "r": 0.4, "h": 2.05, "head": 0.34, "speed": 0.0, "sight": 46.0, "leash": 0.0, "pay": 2600},
+	"defender": {"name": "탑 수비대", "hp": 320.0, "r": 0.4, "h": 2.05, "head": 0.34, "speed": 0.0, "sight": 46.0, "leash": 0.0, "pay": 2600},
 	"imp": {"name": "흑요석 임프", "hp": 170.0, "r": 0.34, "h": 1.15, "head": 0.3, "speed": 7.0, "sight": 50.0, "leash": 40.0, "pay": 1200},
 	"karnok": {"name": "심연의 사슬 집행관 카르녹", "hp": 8000.0, "shield": 2000.0, "r": 0.95, "h": 3.5, "head": 0.6, "speed": 4.6, "sight": 80.0, "leash": 0.0, "pay": 60000, "boss": true},
 	"baal": {"name": "심연의 대군주 바알", "hp": 22000.0, "shield": 3000.0, "r": 1.5, "h": 5.4, "head": 0.9, "speed": 3.6, "sight": 100.0, "leash": 0.0, "pay": 150000, "boss": true},
@@ -23,13 +23,13 @@ const KINDS := {
 # what they throw and swing
 const HALBERD := {"dmg": 32.0, "reach": 2.7, "arc": 0.9, "wind": 0.4, "cd": 1.4}
 const SPEAR := {"dmg": 26.0, "speed": 38.0, "cd": [3.6, 5.0], "near": 7.0, "far": 34.0}
-const LANCE := {"dmg": 72.0, "speed": 130.0, "aim": 1.5, "cd": 3.4, "shove": 3.6}
-const CHARGE := {"dmg": 55.0, "speed": 15.0, "t": 2.8, "warn": 1.0, "cd": 7.5, "shove": 7.0, "near": 9.0, "far": 50.0}
+const LANCE := {"dmg": 55.0, "speed": 130.0, "aim": 1.5, "cd": 3.6, "shove": 3.0}
+const CHARGE := {"dmg": 55.0, "speed": 15.0, "t": 2.8, "warn": 1.0, "cd": 7.5, "shove": 6.0, "side": 0.7, "near": 9.0, "far": 50.0}
 const SLAM := {"dmg": 45.0, "r": 4.2, "wind": 0.8, "cd": 2.8, "shove": 3.2}
-const LOB := {"dmg": 36.0, "r": 2.8, "cd": [2.8, 3.8], "burn": 10.0, "burn_t": 3.0}
-const BOLT := {"dmg": 12.0, "speed": 46.0, "cd": [1.0, 1.5]}
+const LOB := {"dmg": 28.0, "r": 2.4, "cd": [3.8, 4.8], "burn": 4.0, "burn_t": 3.0}
+const BOLT := {"dmg": 9.0, "speed": 46.0, "cd": [1.1, 1.6]}
 # Karnok (the boss paper's numbers where it gives them; ours where it does not)
-const KARNOK := {"jav": 85.0, "jav_speed": 42.0, "jav_cd": 2.6, "jav_back": 450.0, "jav_cut": 1000.0, "jav_shove": 4.0,
+const KARNOK := {"jav": 85.0, "jav_speed": 42.0, "jav_cd": 3.2, "jav_back": 450.0, "jav_cut": 1000.0, "jav_shove": 4.0,
 	"wave": 60.0, "wave_cd": 14.0, "wave_speed": 55.0, "wave_h": 0.75, "wave_wind": 1.2, "wave_burn": 12.0,
 	"anchor_hp": 1100.0, "anchor_regen": 200.0, "phase2": 0.5, "roar": 2.0,
 	"spin_r": 7.0, "spin_dmg": 28.0, "spin_t": 4.0, "spin_cd": 13.0, "spin_speed": 5.5,
@@ -38,12 +38,12 @@ const KARNOK := {"jav": 85.0, "jav_speed": 42.0, "jav_cd": 2.6, "jav_back": 450.
 # Baal
 const BAAL := {"barrier_regen": 80.0, "barrier_wait": 4.0, "turned_cut": 400.0, "phase2": 0.65, "phase3": 0.30, "eclipse_at": 0.10,
 	"fan_cd": 9.0, "fan_n": 7, "fan_arc": 120.0, "fan_speed": 24.0, "fan_dmg": 34.0, "fan_waves": 3, "fan_gap": 0.5,
-	"bind_cd": 22.0, "bind_first": 12.0, "bind_hp": 520.0, "bind_t": 4.0, "bind_slow": 0.6,
-	"rift_cd": 15.0, "rift_n": 7, "rift_r": 4.2, "rift_warn": 1.8, "rift_dmg": 70.0, "rift_burn": 10.0, "rift_burn_t": 6.0,
+	"bind_cd": 22.0, "bind_first": 12.0, "bind_hp": 360.0, "bind_t": 4.0, "bind_slow": 0.6,
+	"rift_cd": 15.0, "rift_n": 7, "rift_r": 4.2, "rift_warn": 1.8, "rift_dmg": 60.0, "rift_burn": 8.0, "rift_burn_t": 6.0,
 	"claw_dmg": 55.0, "claw_reach": 6.0, "claw_arc": 1.05, "claw_wind": 0.6, "claw_cd": 3.0,
-	"hover": 15.0, "meteor_cd": 20.0, "meteor_t": 5.0, "meteor_every": 0.4, "meteor_r": 3.2, "meteor_dmg": 85.0, "meteor_warn": 1.1,
+	"hover": 15.0, "meteor_cd": 20.0, "meteor_t": 5.0, "meteor_every": 0.4, "meteor_r": 3.2, "meteor_dmg": 70.0, "meteor_warn": 1.1,
 	"drain_cd": 16.0, "drain_t": 6.0, "drain_dps": 26.0, "drain_heal": 150.0,
-	"sun_cd": 45.0, "sun_t": 14.0, "sun_dmg": 260.0, "core_hp": 1400.0, "imps": 4, "crash_t": 5.0, "crash_mul": 1.5, "pad_up": 26.0,
+	"sun_cd": 45.0, "sun_t": 16.0, "sun_dmg": 200.0, "core_hp": 900.0, "core_out": 3.6, "imps": 4, "crash_t": 5.0, "crash_mul": 1.5, "pad_up": 26.0,
 	"aura_r": 9.0, "aura_dps": 14.0, "heal_cut": 0.5, "rage": 1.25,
 	"sword_cd": 10.0, "sword_dmg": 60.0, "sword_reach": 7.0, "wave_dmg": 90.0, "wave_speed": 14.0, "wave_h": 0.9, "wave_max": 22.0,
 	"eclipse_t": 12.0, "eclipse_mul": 2.0, "eclipse_bomb": 2.5, "eclipse_bomb_r": 6.0}
@@ -278,6 +278,7 @@ func turn(f: Realm.Fighter, dt: float) -> void:
 		f.vel = Vector3.ZERO
 		if _waken(f): b.awake = true; b.cd = randf_range(0.6, 1.4); Snd.play("rd_wake", 0.7, f.feet_mid())
 		return
+	if bool(KINDS[kind_of(f)].get("boss", false)) or kind_of(f) == "beast": f.stun_t = 0.0   # (a blow's jolt does not hold the great ones; only a stagger does)
 	if f.stun_t > 0.0 or float(b.stagger) > 0.0: f.vel = Vector3.ZERO; b.state = "idle"; return
 	match kind_of(f):
 		"guard": _guard(f, dt)
@@ -291,6 +292,7 @@ func turn(f: Realm.Fighter, dt: float) -> void:
 ## asleep till one of the party is in its section, or near and seen
 func _waken(f: Realm.Fighter) -> bool:
 	if bool(f.brain.get("woken", false)): return true
+	if f.hp < f.max_hp - 0.5 or f.shield < float(KINDS[kind_of(f)].get("shield", 0.0)) - 0.5: return true   # (struck: awake, whoever struck from wherever)
 	var sec := int(f.brain.sec); var k := kind_of(f)
 	for e: Realm.Fighter in rm.all:
 		if not e.alive or e.team == f.team or is_mon(e): continue
@@ -394,7 +396,7 @@ func _beast(f: Realm.Fighter, dt: float) -> void:
 					(b.hit as Dictionary)[e.id] = true
 					rm.hurt(e, float(CHARGE.dmg), "physical", f, {"melee": true, "src": "charge"})
 					var side := Vector3(-d.z, 0, d.x) * (1.0 if (e.pos - f.pos).dot(Vector3(-d.z, 0, d.x)) >= 0.0 else -1.0)
-					rm.shove(e, (d * 0.5 + side).normalized(), float(CHARGE.shove)); Snd.play("rd_thud", 1.0, e.feet_mid())
+					rm.shove(e, (d + side * float(CHARGE.side)).normalized(), float(CHARGE.shove)); Snd.play("rd_thud", 1.0, e.feet_mid())
 			if float(b.st) >= float(CHARGE.t) or before.distance_to(f.pos) < float(CHARGE.speed) * dt * 0.2:
 				b.state = "rest"; b.st = 0.0; b.cd2 = float(CHARGE.cd)
 			return
@@ -656,6 +658,7 @@ func _baal(f: Realm.Fighter, dt: float) -> void:
 		_air(f, dt)
 		b.meteor_t = float(b.meteor_t) - dt; b.drain_t = float(b.drain_t) - dt; b.sun_t = float(b.sun_t) - dt
 		_meteors(f, dt); _drain(f, dt); _sun(f, dt)
+		if b.has("sun"): return   # (the sun takes all of him while it charges: no meteors, no drain)
 		if float(b.meteor_t) <= 0.0 and not b.has("shower"): b.shower = float(B.meteor_t); b.mt = 0.0; b.meteor_t = float(B.meteor_cd); mode.boss_says(f, "연옥의 유성우 · 남은 석주 뒤로!")
 		if float(b.drain_t) <= 0.0 and not b.has("drain"): _drain_start(f)
 		if float(b.sun_t) <= 0.0 and not b.has("sun"): _sun_start(f)
@@ -804,6 +807,7 @@ func _eclipse(f: Realm.Fighter) -> void:
 	b.ecl = true; b.state = "eclipse"; b.cast = float(BAAL.eclipse_t); b.st = 0.0
 	f.pos = Vector3(DemonRoad.AC.x, DemonRoad.A_Y, DemonRoad.AC.y)
 	Snd.play("rd_eclipse", 1.4, f.feet_mid()); mode.boss_says(f, "종말의 일식 · 12초 안에 쓰러뜨리세요! 모든 공격 2배, 연금술 폭탄은 영창을 늦춥니다"); mode.eclipse_start()
+	rm.note(["eclipse", f.id])
 
 ## in the air: a slow circle about the altar's middle, 15 m up
 func _air(f: Realm.Fighter, dt: float) -> void:
@@ -867,9 +871,11 @@ func _drain(f: Realm.Fighter, dt: float) -> void:
 func _sun_start(f: Realm.Fighter) -> void:
 	var b := f.brain; var B := BAAL
 	b.sun = float(B.sun_t); b.suns = int(b.suns) + 1
+	b.erase("shower")
+	if b.has("drain"): ((b.drain as Dictionary).line as Dictionary).t = 0.0; b.erase("drain")
 	var made := []
 	for s: float in [-1.0, 1.0]:
-		var th := rm.kit.add_thing({"kind": "wcore", "team": "them", "pos": f.pos + Vector3(s * 2.6, f.H * 0.7, 0), "r": 0.8, "h": 1.2, "hp": float(B.core_hp), "max": float(B.core_hp), "made": false, "label": "보라색 비전 코어", "side": s, "node": gem("wcore", f.pos)})
+		var th := rm.kit.add_thing({"kind": "wcore", "team": "them", "pos": f.pos + Vector3(s * float(B.core_out), f.H * 0.7, 0), "r": 0.8, "h": 1.2, "hp": float(B.core_hp), "max": float(B.core_hp), "made": false, "label": "보라색 비전 코어", "side": s, "node": gem("wcore", f.pos)})
 		made.push_back(th)
 	b.cores = made
 	for i in int(B.imps):
@@ -884,7 +890,7 @@ func _sun(f: Realm.Fighter, dt: float) -> void:
 	var b := f.brain
 	if not b.has("sun"): return
 	for c: Dictionary in b.cores:   # (the cores ride on his wings)
-		c.pos = f.pos + Vector3(float(c.side) * 2.6, f.H * 0.7, 0)
+		c.pos = f.pos + Vector3(float(c.side) * float(BAAL.core_out), f.H * 0.7, 0)
 	var up := (b.cores as Array).filter(func(c): return float(c.hp) > 0.0).size()
 	if up == 0:   # both broken: he comes down
 		b.erase("sun"); b.cores = []; b.crash = float(BAAL.crash_t)
@@ -1007,10 +1013,10 @@ func wave_near(e: Realm.Fighter) -> bool:
 		if w.kind == "spiral":
 			var st := DemonRoad.on_stair(e.pos)
 			var ahead := float(w.u) - float(st[0]) if not st.is_empty() else -1.0
-			if ahead > 14.0 and ahead < 20.0 and e.pos.y - float(st[1]) < float(KARNOK.wave_h): return true
+			if ahead > 13.0 and ahead < 26.0 and e.pos.y - float(st[1]) < float(KARNOK.wave_h): return true
 		else:
 			var c: Vector3 = w.at; var d := Vector2(e.pos.x - c.x, e.pos.z - c.z).length()
-			if d - float(w.r) > 3.6 and d - float(w.r) < 5.6: return true
+			if d - float(w.r) > 3.4 and d - float(w.r) < 6.2: return true
 	return false
 
 ## a rift or a meteor's circle under someone (for the others' minds: step out)

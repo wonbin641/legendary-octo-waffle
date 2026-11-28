@@ -159,8 +159,9 @@ func turn(f: Realm.Fighter, dt: float) -> void:
 			if want.length() > 0.1: _aim_to(f, Vector3(want.x, 0, want.y), dt, 6.0)
 			b.cool = false; b.draw = false
 		if float(b.dodge) > 0.0: b.dodge = float(b.dodge) - dt; want = b.dodge_dir
+		if want.length() > 0.1 and rm.mode.deadly(f.pos + Vector3(want.x, 0.0, want.y) * 1.2): want = Vector2.ZERO; b.dodge = 0.0   # (6-A: not a step off the bridge)
 	rm.kit.act(f, I, dt)
-	if f.grounded and not f.leaping and f.dash_t <= 0.0 and not held and f.stun_t <= 0.0 and rm.mode.jump(f): f.vy = 7.2; f.pos.y += 0.05; f.grounded = false   # (6-A: over a wave of fire)
+	if (f.grounded or f.pos.y - Phys.ground_at(f.pos.x, f.pos.y + 0.1, f.pos.z, 0.3) < 0.35) and f.vy <= 0.5 and not f.leaping and f.dash_t <= 0.0 and not held and f.stun_t <= 0.0 and rm.mode.jump(f): f.vy = 7.2; f.pos.y += 0.05; f.grounded = false   # (6-A: over a wave of fire; a step down is no reason not to)
 	# feet
 	var sp := rm.speed_of(f) * pace
 	if f.leaping: _fall(f, dt)
@@ -246,7 +247,7 @@ func _goal(f: Realm.Fighter) -> Dictionary:
 func _set_goal(f: Realm.Fighter, g: Dictionary) -> void:
 	var b := f.brain
 	if g.is_empty(): b.path = []; b.gat = null; return
-	var at: Vector3 = g.at; b.near = float(g.get("near", 1.2)); b.hurry = bool(g.get("hurry", false)); b.repath = float(b.repath) - 0.35
+	var at: Vector3 = g.at; b.near = float(g.get("near", 1.2)); b.hurry = bool(g.get("hurry", false)); b.repath = float(b.repath) - 0.35; b.need_y = bool(g.get("y", false))   # (y: he is there only at its height too)
 	var old = b.gat
 	if old == null or (old as Vector3).distance_to(at) > 5.0 or float(b.repath) <= 0.0 or (b.path as Array).is_empty():
 		b.gat = at; b.path = route(f.pos, at, f.port_t <= 0.0); b.pi = 0; b.repath = 5.0
@@ -258,7 +259,7 @@ func _steer(f: Realm.Fighter) -> Vector2:
 		if path.is_empty() or int(b.pi) >= path.size(): return Vector2.ZERO
 		var p: Vector3 = path[b.pi]; var last := int(b.pi) >= path.size() - 1
 		var d := Vector2(p.x - f.pos.x, p.z - f.pos.z)
-		if d.length() < (float(b.near) if last else 0.8) and (last or absf(p.y - f.pos.y) < 1.7):
+		if d.length() < (float(b.near) if last else 0.8) and ((last and not b.get("need_y", false)) or absf(p.y - f.pos.y) < (2.5 if last else 1.7)):
 			if last: return Vector2.ZERO
 			b.pi = int(b.pi) + 1; continue
 		return d.normalized()

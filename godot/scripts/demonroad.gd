@@ -334,10 +334,14 @@ func _tower() -> void:
 		var a0 := deg_to_rad(ST_A0) + j * da; var a1 := a0 + da; var top := T_TOP * (j + 1) / float(STEPS); var solid := top < 3.2
 		ring_piece(k, TC, T_STAIR, T_IN, a0, a1, 0.0 if solid else top - 0.55, top, C_OBS3 if j % 2 == 0 else C_ASH2, C_OBS2)
 		ring_solid(TC, T_STAIR, T_IN, (a0 + a1) * 0.5, 0.0 if solid else top - 0.55, top)
-		# the low wall along its inner edge (the well side): knee high, broken off near the top where the balcony is
-		if j % 2 == 0 and top < T_TOP - 1.0:
-			var am := (a0 + a1) * 0.5; var px := cx + cos(am) * (T_STAIR + 0.18); var pz := cz + sin(am) * (T_STAIR + 0.18)
-			k.box(0.3, 0.55, 1.7, px, top + 0.27, pz, C_OBS2, -am); Phys.add_collider(px - 0.18, top, pz - 0.18, px + 0.18, top + 0.55, pz + 0.18, "concrete")
+		# the low wall along its inner edge (the well side): knee high, broken off near the top where the balcony is; its posts
+		# close enough (two a step) that nobody walks off into the well (a jump takes you over)
+		if not solid and top < T_TOP - 1.0:   # (none by the foot, where the steps are solid: the way on from the hall)
+			if j % 2 == 0:
+				var am := (a0 + a1) * 0.5; k.box(0.3, 0.55, 1.7, cx + cos(am) * (T_STAIR + 0.18), top + 0.27, cz + sin(am) * (T_STAIR + 0.18), C_OBS2, -am)
+			for q in 2:
+				var aq := a0 + (q + 0.5) * da * 0.5; var qx := cx + cos(aq) * (T_STAIR + 0.18); var qz := cz + sin(aq) * (T_STAIR + 0.18)
+				Phys.add_collider(qx - 0.18, top, qz - 0.18, qx + 0.18, top + 0.55, qz + 0.18, "concrete")
 	# the shelves on the outer wall: carved stone sticking out a metre above the steps, every 36 degrees (the fire wave goes
 	# by under whoever stands on one)
 	var u := 18.0
@@ -348,7 +352,7 @@ func _tower() -> void:
 		ledges.push_back({"u": u, "y": sy + 1.02, "at": Vector3(px, sy + 1.02, pz)})
 		u += 36.0
 	# the top floor: round from the balcony's edge to the wall, open over the stair's last stretch (headroom)
-	var gaps := [ST_END - 56.0, ST_END + 1.0]
+	var gaps := [ST_END - 68.0, ST_END + 1.0]   # (wide enough that the last steps under its edge, and under its boxes' corners, leave a head room of 1.9 m)
 	var tn := 60
 	for i in tn:
 		var a0 := i * TAU / tn; var a1 := (i + 1) * TAU / tn; var am := rad_to_deg((a0 + a1) * 0.5)
@@ -598,7 +602,7 @@ func graph_edges() -> Array:
 
 ## where Karnok stands on the balcony, looking down the well at the stair
 func balcony_at(deg := 120.0) -> Vector3:
-	var a := deg_to_rad(deg); return Vector3(TC.x + cos(a) * (T_BAL + 1.2), T_TOP, TC.y + sin(a) * (T_BAL + 1.2))
+	var a := deg_to_rad(deg); return Vector3(TC.x + cos(a) * (T_BAL + 0.6), T_TOP, TC.y + sin(a) * (T_BAL + 0.6))   # (right at the rail: seen from the hall and across the well)
 
 # ---------------- each frame ----------------
 func update(dt: float, _p: Player) -> void:

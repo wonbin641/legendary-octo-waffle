@@ -198,11 +198,15 @@ func _circles(dt: float) -> void:
 		if hall and Vector2(f.pos.x - DemonRoad.CORE_AT.x, f.pos.z - DemonRoad.CORE_AT.z).length() < float(LIFT.r) and f.pos.y < 0.6: _lift(f, float(LIFT.hall))
 		if pads:
 			for p: Vector3 in road.pads:
-				if Vector2(f.pos.x - p.x, f.pos.z - p.z).length() < float(LIFT.r) and absf(f.pos.y - p.y) < 0.6: _lift(f, float(LIFT.pad))
+				if Vector2(f.pos.x - p.x, f.pos.z - p.z).length() < float(LIFT.r) and absf(f.pos.y - p.y) < 0.6: _lift(f, float(LIFT.pad), baal.pos)
 
-func _lift(f: Realm.Fighter, up: float) -> void:
+func _lift(f: Realm.Fighter, up: float, toward = null) -> void:
 	lift_t[f.id] = float(LIFT.cd); Snd.play("rd_lift", 1.0, f.feet_mid())
-	if f.me and rm.player != null: rm.player.launch(Vector3(rm.player.vel.x, up, rm.player.vel.z))
+	var side := Vector3.ZERO   # (toward something: so far across as to be over it at the top of the throw)
+	if toward is Vector3:
+		var gap := Vector3((toward as Vector3).x - f.pos.x, 0, (toward as Vector3).z - f.pos.z)
+		side = gap.normalized() * minf(12.0, gap.length() / (up / 19.0)) if gap.length() > 0.5 else Vector3.ZERO
+	if f.me and rm.player != null: rm.player.launch(Vector3(side.x if toward is Vector3 else rm.player.vel.x, up, side.z if toward is Vector3 else rm.player.vel.z))
 	else: f.vy = up; f.pos.y += 0.06; f.grounded = false
 	if rm.fx != null:
 		for i in 12: rm.fx.glow(f.pos + Vector3(randf_range(-0.6, 0.6), 0.2, randf_range(-0.6, 0.6)), Vector3(0, up * 0.5, 0), 0.6, 0.2, 0.03, Color(0.7, 0.3, 1.0, 0.8))
@@ -226,12 +230,20 @@ func _take_core(by: Realm.Fighter) -> void:
 	if rm.game != null: rm.game.say_banner("타락한 마력 핵", "%s이(가) 챙겼습니다 · 파티 전원 비기 게이지 100%% · 마력 파편 +%d · 곁의 룬 제단이 깨어났습니다 (B)" % [str(Races.R[by.race].name), int(SHARDS.core)], 3.2)
 	rm.note(["core", by.id])
 
+## a section won: whoever of the party stands is whole again, the fire on him out (the comebacks are for the fallen)
+func _breather() -> void:
+	for f: Realm.Fighter in party():
+		if not f.alive: continue
+		f.hp = f.max_hp; f.burn_t = 0.0; f.burn = 0.0; f.slows.clear()
+		if rm.look != null: rm.look.came_back(f)
+
 ## a section's demons all down: its seal lifts (the tower's with Karnok)
 func _seals() -> void:
 	for s in [1, 2]:
 		if cleared.has(s) or left_in(s) > 0: continue
 		cleared[s] = true
 		if road != null: road.open_seal(s)
+		_breather()
 		Snd.play("rd_seal", 1.0); rm.duck_t = maxf(rm.duck_t, 1.0); rm.music_break += 1
 		if rm.game != null: rm.game.say_banner(str(SECTIONS[s]) + " 제압", "봉인이 풀렸습니다 · 다음: " + str(SECTIONS[s + 1]), 2.6)
 		rm.note(["sealed", s])
@@ -336,8 +348,11 @@ func face_at(_f: Realm.Fighter, _p: Vector3) -> float: return -PI / 2.0   # (eas
 func aim_point(_team: String) -> Vector3: return DemonRoad.CHECK[mini(cp + 1, 4)]
 
 func _karnok_down(v: Realm.Fighter) -> void:
+	for f: Realm.Fighter in rm.all:   # (the tower's guard breaks with him)
+		if f.alive and Fiends.is_mon(f) and int(f.brain.get("sec", -1)) == 3: f.inv = 0.0; rm.slay(f, null, {"src": "lord"})
 	cleared[3] = true
 	if road != null: road.open_seal(3)
+	_breather()
 	core = {"pos": ALTAR_B}
 	if rm.en != null:
 		var n := fiends.gem("anchor", ALTAR_B + Vector3(0, 1.2, 0))
@@ -426,6 +441,7 @@ func focus(f: Realm.Fighter):
 	return null
 
 func jump(f: Realm.Fighter) -> bool: return fiends != null and not Fiends.is_mon(f) and fiends.wave_near(f)
+func deadly(p: Vector3) -> bool: return p.x > DemonRoad.CLIFF and Phys.ground_at(p.x, p.y + 0.6, p.z, 0.25) < DemonRoad.LAVA + 2.0
 
 func goal(f: Realm.Fighter) -> Dictionary:
 	if phase != "fight" or Fiends.is_mon(f) or fiends == null: return {}
@@ -435,18 +451,26 @@ func goal(f: Realm.Fighter) -> Dictionary:
 		var away := Vector3(f.pos.x - dz.x, 0, f.pos.z - dz.z)
 		if away.length() < 0.2: away = Vector3(cos(f.id), 0, sin(f.id))
 		return {"at": f.pos + away.normalized() * 6.0, "near": 0.8, "hurry": true}
+	# a sniper's red line on him, about to loose: a quick step aside (along the bridge, never off it)
+	for e: Realm.Fighter in rm.all:
+		if e.alive and Fiends.kind_of(e) == "sniper" and str(e.brain.get("state", "")) == "aim" and e.brain.get("tgt") == f and float(e.brain.get("st", 0.0)) > 0.8:
+			var gap := Vector3(f.pos.x - e.pos.x, 0, f.pos.z - e.pos.z); var side := Vector3(-gap.z, 0, gap.x).normalized() * (1.0 if f.id % 2 == 0 else -1.0)
+			return {"at": f.pos + side * 3.0, "near": 0.5, "hurry": true}
 	var sec := DemonRoad.section_of(f.pos)
 	if sec == 4 and baal != null and baal.alive and baal.brain.get("awake", false): return _at_baal(f)
 	if sec == 3 and karnok != null and karnok.alive and karnok.brain.get("awake", false): return _at_karnok(f)
 	var foe := _foe_for(f)
-	if foe != null: return {"at": foe.pos, "near": float(STAND[f.race]) if not foe.brain.get("perch", false) else maxf(10.0, float(STAND[f.race]))}
+	if foe != null:
+		if Fiends.kind_of(foe) == "sniper": return {"at": foe.pos, "near": maxf(10.0, float(STAND[f.race]))}   # (up on its pillar over the lava: shot at from the bridge)
+		if Fiends.kind_of(foe) == "defender": return {"at": foe.pos, "near": 3.0, "y": true}   # (up the stair: there, at its height)
+		return {"at": foe.pos, "near": float(STAND[f.race])}
 	var lead := leader()
 	if lead == null or lead == f or rm.auto and f.me: return _ahead(f)
 	# with the leader, a little behind him, each at his own place
 	var i := party().find(f); var a := PI + (i - 1.5) * 0.7
 	var p := lead.pos + Vector3(cos(a) * 3.2, 0, sin(a) * 3.2)
 	if lead.pos.distance_to(f.pos) < 5.0: return {}
-	return {"at": p, "near": 2.2}
+	return {"at": p, "near": 2.2, "y": true, "hurry": lead.pos.distance_to(f.pos) > 10.0}
 
 ## the nearest demon still up where the party is (awake, or in a section the party has come into)
 func _foe_for(f: Realm.Fighter) -> Realm.Fighter:
@@ -463,8 +487,10 @@ func _foe_for(f: Realm.Fighter) -> Realm.Fighter:
 ## the way on, for whoever leads by himself (your fighter playing itself): the next section's checkpoint once this one is done
 func _ahead(f: Realm.Fighter) -> Dictionary:
 	var s := DemonRoad.section_of(f.pos)
-	if s == 0 or cleared.has(s): return {"at": DemonRoad.CHECK[mini(s + 1, 4)] + Vector3(4.0, 0, 0), "near": 2.5}
-	if s == 3: return {"at": DemonRoad.stair_point(DemonRoad.SPIRAL - 4.0, 13.0), "near": 2.0}
+	if not core.is_empty() and not core_taken: return {"at": core.pos, "near": 0.8, "y": true, "hurry": true}   # (the corrupted core first)
+	if s == 0 or cleared.has(s): return {"at": DemonRoad.CHECK[mini(s + 1, 4)] + Vector3(4.0, 0, 0), "near": 2.5, "y": true, "hurry": true}
+	if s == 3: return {"at": DemonRoad.stair_point(DemonRoad.SPIRAL - 4.0, 13.0), "near": 2.0, "y": true, "hurry": true}
+	if s == 4: return {"at": DemonRoad.altar_point(180.0, 14.0), "near": 2.5, "y": true, "hurry": true}   # (down onto the altar: Baal wakes)
 	return {}
 
 ## up against Karnok: on the balcony (his first phase) the close fighters go up the stair and round the top to him, the
@@ -473,16 +499,21 @@ func _ahead(f: Realm.Fighter) -> Dictionary:
 func _at_karnok(f: Realm.Fighter) -> Dictionary:
 	var kb := karnok.brain; var close := f.race == "orc" or f.race == "dwarf"
 	if int(kb.get("phase", 1)) == 1:
-		if close: return {"at": karnok.pos, "near": 2.0}
-		var u := 470.0 + (40.0 if f.race == "elf" else 0.0) + (party().find(f) % 2) * 10.0
-		return {"at": DemonRoad.stair_point(u, 13.0), "near": 2.5, "stay": true}
+		if close:   # (up the stair and round the top floor to him)
+			var a := atan2(karnok.pos.z - DemonRoad.TC.y, karnok.pos.x - DemonRoad.TC.x) + (0.12 if party().find(f) % 2 == 0 else -0.12)
+			return {"at": Vector3(DemonRoad.TC.x + cos(a) * 11.8, DemonRoad.T_TOP, DemonRoad.TC.y + sin(a) * 11.8), "near": 1.2, "y": true, "hurry": true}
+		# (across the well from him, on the stair's first turn, where nothing is overhead: he is seen, and so are the crystals)
+		var across := fposmod(rad_to_deg(atan2(karnok.pos.z - DemonRoad.TC.y, karnok.pos.x - DemonRoad.TC.x)) + 180.0 - DemonRoad.ST_A0, 360.0)
+		var u := clampf(across + (12.0 if party().find(f) % 2 == 0 else -12.0), 10.0, 330.0)
+		return {"at": DemonRoad.stair_point(u, 13.0), "near": 2.5, "stay": true, "y": true, "hurry": true}
 	var spin := str(kb.get("state", "")) == "spin"
 	var on := DemonRoad.on_stair(karnok.pos)
-	if close and not spin: return {"at": karnok.pos, "near": 1.8}
+	if close and not spin: return {"at": karnok.pos, "near": 1.8, "y": true}
 	if on.is_empty(): return {"at": karnok.pos, "near": 9.0}
 	var side := -1.0 if party().find(f) % 2 == 0 else 1.0
 	var u2 := clampf(float(on[0]) + side * (70.0 if f.race == "elf" else 52.0), 4.0, DemonRoad.SPIRAL - 4.0)
-	return {"at": DemonRoad.stair_point(u2, 13.0), "near": 2.5, "hurry": spin}
+	var spot := DemonRoad.stair_point(u2, 13.0)
+	return {"at": spot, "near": 2.5, "hurry": spin or spot.distance_to(f.pos) > 6.0, "y": true}
 
 ## up against Baal: the close fighters at him (not inside his furnace once he burns), the others round the ring each at
 ## his own angle; behind a pillar from the meteors and the drain; to a cooling circle when burning hard
@@ -554,7 +585,7 @@ func brief_line() -> String: return "4종족 파티로 마탑을 올라 심연�
 func brief() -> Array:
 	return ["엘프·드워프·오크·악마 넷이 한 파티 · 나는 그중 하나를 맡고 나머지 셋은 인공지능이 싸웁니다 · Tab(또는 1~4, 터치 '교대')으로 언제든 다른 동료로 시점이 바뀝니다",
 		"① 숲속 캠프(룬 제단·축복의 마법진·보급 상자) → ② 무너진 외성문 → ③ 용암 사슬 다리 → ④ 탑 나선 계단의 카르녹 → ⑤ 심연의 제단의 바알",
-		"구간의 마법 결계는 그 구간의 악마를 모두 쓰러뜨려야 풀립니다 · 용암에 떨어지면 즉사",
+		"구간의 마법 결계는 그 구간의 악마를 모두 쓰러뜨려야 풀리고, 그때 살아 있는 동료는 체력이 모두 찹니다 · 용암에 떨어지면 즉사",
 		"파티 공유 부활 %d회: 쓰러지면 %d초 뒤 마지막 거점에서 다시 일어납니다 · 넷이 모두 쓰러지면 실패" % [REVIVES, int(BACK)],
 		"카르녹: 투창 튕겨내기(F) · 나선 화염 파동은 점프 · 결계 수정 · 2페이즈 처형 갈고리는 코어 집중 사격이나 폭탄으로 끊기",
 		"바알: 석주 뒤 엄폐 · 혈약 사슬 4초 안에 끊기 · 냉각진 · 날개 코어 · 종말의 일식은 12초 안에 처치 (폭탄이 영창을 늦춤)",
