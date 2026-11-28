@@ -8,9 +8,12 @@ extends Node
 ## the enemies have hurt it, and the stage's own moments came (MOMENTS: an antidote, a cage opening, the siege).
 ## Last, falling: the fight stands still at once, as the browser game's (no walking, firing or chest in the second before
 ## the result), the view sinks, then the result sheet.
-## Run: godot --headless --path godot res://tests/fight.tscn
+## Each fight is played in a copy of the game of its own (this scene again, with "-- --one=<piece>"; a few at once): a fight
+## comes out the same whatever was played before it. In one game they did not: what the stages before had left (the stride,
+## the textures painted once and kept, which take random numbers only the first time) shifted the seeded numbers, so a
+## change to one stage turned the fights after it out otherwise.
+## Run: godot --headless --path godot res://tests/fight.tscn   (one piece: ... res://tests/fight.tscn -- --one="fight 5")
 
-const STAGES := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10]   # 9: stage 5, the toy room, in its first mode; 10: stage 6-1, the elves' Silverwood
 # the least each fight must come to (about half what the bot does now: a fight that kills next to nothing fails), and the
 # moments a stage is built round that it must reach: bitten and an antidote injected, a cage opening, the siege. The ship's
 # doors and key lie past where the bot falls (about 14 s in, at the start passage), so stage 4 counts its kills only
@@ -27,24 +30,61 @@ func check(name: String, ok: bool, info = "") -> void:
 	print(("ok   " if ok else "FAIL ") + name + ((" " + str(info)) if str(info) != "" else ""))
 	if not ok: fails += 1
 
+# the pieces, each played in a game of its own: a fight in each stage (9: stage 5, the toy room, in its first mode; 10:
+# stage 6-1, the elves' Silverwood), 6-1's two team battles, 6-2 twice, 6-1's battle keys, the toy flamethrower, falling
+const PIECES := ["fight 1", "fight 6", "fight 5", "fight 2", "fight 3", "fight 7", "fight 8", "fight 4", "fight 9", "fight 10",
+	"realm sanctum elf 150", "realm siege orc 200", "plain elf 420 end", "plain dwarf 300 part", "keys", "flame", "death"]
+
 func _ready() -> void:
+	var one := ""
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--one="): one = a.substr(6)
 	Store.ephemeral = true   # (nothing the checks write reaches this machine's own save and settings)
 	Cloud.mute()   # (whoever is signed in on this machine: the checks' saves go to no account)
+	if one == "": _all(); return
 	main = load("res://main.tscn").instantiate(); add_child(main)
 	# a player a few stages in: an AR-7 bought, a helmet and a whole vest. Nothing from developer mode, no invincibility
 	Store.save = Store.save0(); Store.save.owned = ["rifle"]; Store.save.loadout = ["rifle", "pistol", null, null, null, null, null]
 	Store.save.items.helmet = 1; Store.save.items.vest = 10; Store.fix_save()
 	Store.settings.dev = false; Store.settings.god = false
-	for st in STAGES: _fight(st)
-	_realm("sanctum", "elf", 150.0)
-	_realm("siege", "orc", 200.0)
-	_plain("elf", 420.0)
-	_plain("dwarf", 300.0, false)
-	_realm_keys()
-	_toy_flame()
-	_death_stops()
+	var w := one.split(" ")
+	match w[0]:
+		"fight": _fight(int(w[1]))
+		"realm": _realm(w[1], w[2], float(w[3]))
+		"plain": _plain(w[1], float(w[2]), w[3] == "end")
+		"keys": _realm_keys()
+		"flame": _toy_flame()
+		"death": _death_stops()
+		_: check("a piece called " + one, false)
+	get_tree().quit(1 if fails > 0 else 0)
+
+## every piece, a few games at once (one fewer than the computer's cores, at most four), their lines in the pieces' order
+var _out := {}
+var _next := 0
+var _lock := Mutex.new()
+func _all() -> void:
+	var jobs := clampi(OS.get_processor_count() - 1, 1, 4); var th: Array[Thread] = []
+	for j in jobs: var t := Thread.new(); t.start(_worker); th.push_back(t)
+	for t in th: t.wait_to_finish()
+	for p: String in PIECES:
+		var r: Array = _out[p]; var code: int = r[0]; var lines := 0; var failed := 0
+		for line: String in str(r[1]).split("\n"):
+			if line.begins_with("ok   ") or line.begins_with("FAIL "):
+				print(line); lines += 1
+				if line.begins_with("FAIL "): failed += 1
+		fails += failed
+		if lines == 0 or (code != 0 and failed == 0):   # (its game stopped before it said how it went)
+			check("the piece \"%s\" played to its end in its own game (exit %d)" % [p, code], false, str(r[1]).right(600))
 	print("ALL OK" if fails == 0 else "%d FAILED" % fails)
 	get_tree().quit(1 if fails > 0 else 0)
+
+func _worker() -> void:
+	var exe := OS.get_executable_path(); var dir := ProjectSettings.globalize_path("res://")
+	while true:
+		_lock.lock(); var i := _next; _next += 1; _lock.unlock()
+		if i >= PIECES.size(): return
+		var out := []; var code := OS.execute(exe, ["--headless", "--path", dir, "res://tests/fight.tscn", "--", "--one=" + str(PIECES[i])], out, true)
+		_lock.lock(); _out[PIECES[i]] = [code, "\n".join(out)]; _lock.unlock()
 
 # ---- the hands: walking keys through Input (as the keyboard would; the game reads them each frame), the other keys and the
 # mouse through the game's own input handler ----

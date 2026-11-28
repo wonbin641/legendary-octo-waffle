@@ -264,11 +264,11 @@ func _topbox(ci, s: Vector2, c: Vector2, g: Game, f_mono: Font, f_bold: Font, f_
 		y += 4.0; var bt := "출혈 ×%d" % an.bleed_n; var bw := _w(f_bold, bt, 12) + 10.0
 		ci.draw_rect(Rect2(x0, y, bw, 17), Color("c8242f")); _t(ci, f_bold, bt, x0 + 5, y + 1, 12, Color.WHITE, "left", false)
 		_t(ci, f_bold, "%d초 · 초당 %d" % [ceili(an.bleed_t), int(Animals.BLEED_DPS * an.bleed_n)], x0 + bw + 5, y + 1, 12, Color("ff8a8a")); y += 17.0
-	# the boss, once it has noticed you (on the ship, the gold commander while it is the nearer fight)
-	var B: Enemies.Foe = g.boss; var mid := false
-	if g.mid != null and g.mid.alive and g.mid.alert and (B == null or not B.alive or not B.alert or g.mid.dist < B.dist): B = g.mid; mid = true
+	# the boss, once it has noticed you (4-2's, the gold commander: the bee)
+	var B: Enemies.Foe = g.boss
+	if g.mid != null and g.mid.alive and g.mid.alert and (B == null or not B.alive or not B.alert or g.mid.dist < B.dist): B = g.mid
 	if B != null and B.alive and (B.alert or B.angry or B.hp < B.max_hp) and B.dist < 110.0:
-		y += 4.0; var nm := ("중간 보스 · " if mid else "보스 · ") + B.name + (" · %d페이즈" % (int(B.k.phase) + 1) if (B.type == "bdrone" and B.k.has("phase")) else "")
+		y += 4.0; var nm := "보스 · " + B.name + (" · %d페이즈" % (int(B.k.phase) + 1) if (B.type == "bdrone" and B.k.has("phase")) else "")
 		var nw := _t(ci, f_title, nm, x0, y, 13, Color("ffb3a8")); var bx := x0 + nw + 8.0; var bwid := maxf(120.0, x0 + total - bx)
 		ci.draw_rect(Rect2(bx, y + 4, bwid, 7), Color(NIGHT, 0.7)); ci.draw_rect(Rect2(bx, y + 4, bwid * clampf(B.hp / B.max_hp, 0.0, 1.0), 7), ALARM); ci.draw_rect(Rect2(bx, y + 4, bwid, 7), Color(ALARM, 0.5), false, 1.0); y += 18.0
 	for p: Array in pops:   # money from a kill drops out under the box and fades
@@ -334,7 +334,8 @@ func _dmgdir(ci, c: Vector2, pl: Player) -> void:
 		ci.draw_arc(c, 68.0, -PI / 2.0 - PI / 4.0 + rot, -PI / 2.0 + PI / 4.0 + rot, 24, Color(col, col.a * 0.35), 9.0)
 		ci.draw_arc(c, 68.0, -PI / 2.0 - PI / 4.0 + rot, -PI / 2.0 + PI / 4.0 + rot, 24, col, 4.0)
 
-## arrows round the crosshair: to the chest you have to open, or (with ten or fewer left) to the nearest three enemies; never on the ship
+## arrows round the crosshair: to the chest you have to open, or (with ten or fewer left) to the nearest three enemies; on the ship
+## only in 4-1 (cleared when every robot of its corridor is down: the last ones found this way)
 func aims(g: Game) -> Array:
 	var out := []
 	if g.tm != null: return [] if (g.ended or m.player.out) else g.tm.mode.aims()   # stage 5's team modes: batteries, home, the train, traps
@@ -343,7 +344,7 @@ func aims(g: Game) -> Array:
 	if chest != null: out.push_back([Vector2(chest.x, chest.z), 0.95])
 	else:
 		var left := g.goal - g.kills - g.calm
-		if left > 0 and left <= 10 and not g.ended and g.stage != 4:
+		if left > 0 and left <= 10 and not g.ended and Store.ship(g.stage) in ["", "corr"]:
 			var near: Array = m.enemies.list.filter(func(e): return e.alive and not e.tamed and not e.extra)
 			near.sort_custom(func(a, b): return a.dist < b.dist)
 			for i in mini(3, near.size()): out.push_back([Vector2(near[i].pos.x, near[i].pos.z), 0.95 if i == 0 else 0.55])

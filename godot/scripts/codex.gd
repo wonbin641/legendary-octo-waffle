@@ -4,7 +4,7 @@ extends RefCounted
 ## the parts fitted), and every enemy of the eight stages (health, speed, arms, damage, traits, skills, pay). Numbers are read from the
 ## tables the game runs on; the words are the browser game's. An enemy's card opens once a stage it is in has been cleared.
 
-const CHIPS := [["all", "전체"], ["1", "1"], ["1-1", "1-1"], ["1-2", "1-2"], ["2", "2"], ["3", "3"], ["3-1", "3-1"], ["3-2", "3-2"], ["4", "4"]]
+const CHIPS := [["all", "전체"], ["1", "1"], ["1-1", "1-1"], ["1-2", "1-2"], ["2", "2"], ["3", "3"], ["3-1", "3-1"], ["3-2", "3-2"], ["4-1", "4-1"], ["4-2", "4-2"], ["4-3", "4-3"]]
 const INFO_GUN := "DPS는 탄창을 쏘는 동안의 초당 데미지, 재장전 포함은 탄창 하나를 쏘고 다시 넣기까지 평균입니다. 막대는 무기끼리 비교한 값입니다."
 const INFO_FOE := "동물 데미지는 절반으로 줄어든 실제 값입니다 (보스 고릴라와 졸개는 그대로). 탈것 위에서는 동물의 공격을 탈것이 대신 맞습니다. 처치 보상은 기본값이고, 머리로 잡으면 1.5배, 이미 깬 스테이지는 0원입니다."
 
@@ -77,7 +77,7 @@ static func guns() -> Array:
 static func foes() -> Array:
 	var T: Dictionary = Enemies.ETYPES.thug; var Z: Dictionary = Enemies.ETYPES.zombie; var A: Dictionary = Animals.ANIMALS; var R: Dictionary = Robots.ROBOTS; var KB: Dictionary = Animals.KONG.boss; var KM: Dictionary = Animals.KONG.minion
 	var SG: Dictionary = Safari.GORILLA; var K: Dictionary = Enemies.KITS
-	var B1: Dictionary = Game.BOSS[1]; var B5: Dictionary = Game.BOSS[5]; var B2: Dictionary = Game.BOSS[2]; var B3: Dictionary = Game.BOSS[3]; var B4: Dictionary = Game.BOSS[4]
+	var B1: Dictionary = Game.BOSS[1]; var B5: Dictionary = Game.BOSS[5]; var B2: Dictionary = Game.BOSS[2]; var B3: Dictionary = Game.BOSS[3]; var B4: Dictionary = Game.BOSS[15]
 	var thug := ms(T.speed); var slow := ms(float(T.speed) * 0.9)
 	var LAB := ["3", "3-2"]; var ALL3 := ["3", "3-1", "3-2"]
 	var BLEED := "출혈 (초당 " + num(Animals.BLEED_DPS) + ", 10초, 상처마다 쌓임)"
@@ -86,7 +86,7 @@ static func foes() -> Array:
 	var animal := func(t: String, st: Array, o: Dictionary) -> Dictionary:
 		var a: Dictionary = A[t]; var e := {"st": st, "name": a.name, "hp": n(a.hp), "speed": "걷기 " + ms(a.speed) + " · 달리기 " + ms(a.run), "arms": "없음", "pay": a.money}; e.merge(o, true); return e
 	var bot := func(t: String, o: Dictionary) -> Dictionary:
-		var e := {"st": ["4"], "name": R[t].name, "hp": n(R[t].hp), "pay": R[t].money}; e.merge(o, true); return e
+		var e := {"st": ["4-1"], "name": R[t].name, "hp": n(R[t].hp), "pay": R[t].money}; e.merge(o, true); return e
 	var shot := func(S: Array) -> String: return "한 발 " + num(S[3]) + " · " + (num(S[0]) if S[0] == S[1] else num(S[0]) + "~" + num(S[1])) + "발씩, " + num(S[4]) + "~" + num(S[5]) + "초마다"
 	var BPH: Array = Robots.BPH
 	return [
@@ -125,10 +125,10 @@ static func foes() -> Array:
 		{"st": LAB, "boss": 1, "name": B3.name, "hp": n(B3.hp), "speed": "달리기 " + ms(KB.run) + " · 돌진 " + ms(KB.charge), "arms": "없음", "dmg": "주먹 " + n(KB.punch) + " · 돌진 " + n(KB.chargeDmg) + " + " + num(KB.stun) + "초 기절 · 내려찍기 즉사 · 출혈 없음", "trait": "보스 · 방탄유리 우리 (3: 9번 우리가 열리고 15초 뒤 · 3-2: 마지막 차례)", "skill": "번갈아 훅 · 잦은 돌진 · 내가 선 자리로 큰 점프 (빨간 원 " + num(Animals.SLAM_R) + " m 안이면 즉사) · 가슴 치기로 졸개 소환 (최대 " + str(Animals.SUMMON_MAX) + "번)", "pay": int(A.gorilla.money) * 20},
 		# stage 4: the ship's crew
 		bot.call("cctv", {"speed": "고정 (천장)", "arms": "볼트 포", "dmg": shot.call(R.cctv.shot), "trait": "통로와 복도 천장 모서리 · 시야 " + num(R.cctv.sight) + " m", "skill": "없음"}),
-		bot.call("patrol", {"speed": ms(R.patrol.speed), "arms": "전기 곤봉", "dmg": "곤봉 " + num(R.patrol.dmg) + " + 밀쳐냄", "trait": "복도 12대, 메인홀 8대 (메인홀 문이 열려야 깨어남) · 정해진 길을 왕복 순찰 · 머리가 약점", "skill": "없음"}),
+		bot.call("patrol", {"speed": ms(R.patrol.speed), "arms": "전기 곤봉", "dmg": "곤봉 " + num(R.patrol.dmg) + " + 밀쳐냄", "trait": "4-1 복도 12대, 4-3 메인홀 8대 (메인홀 문이 열려야 깨어남) · 정해진 길을 왕복 순찰 · 머리가 약점", "skill": "없음", "st": ["4-1", "4-3"]}),
 		bot.call("droneA", {"name": "드론 A", "speed": ms(R.droneA.speed), "arms": "볼트 포", "dmg": shot.call(R.droneA.shot), "trait": "복도에 많음 · 메인홀엔 없음 · 총 한 방에 터짐", "skill": "없음"}),
-		bot.call("mine", {"speed": "튀어나오면 " + ms(R.mine.speed), "arms": "폭약", "dmg": "폭발 " + num(R.mine.dmg) + " (반경 3.5 m) · 옆 마인도 연쇄 폭발", "trait": "복도와 메인홀 바닥에 묻혀 있음", "skill": num(R.mine.sight) + " m 안에 오면 튀어나와 달려들어 터짐"}),
-		bot.call("gdrone", {"boss": 2, "name": R.gdrone.name, "speed": ms(R.gdrone.speed) + " · 돌진 26 m/s (분노 32)", "arms": "쌍포", "dmg": shot.call(R.gdrone.shot) + " · 돌진 220 + 크게 밀쳐냄", "trait": "중간보스 · 운전실에 혼자 · 황금 꿀벌 모양 · 운전실 문이 열린 뒤에야 나를 알아챔 (들어가면 문이 잠김) · 경보로 75 m 안의 로봇을 깨움 · 체력 50% 이하에서 분노 · 쓰러지면 문이 열리고 세이브 포인트", "skill": "드론 A 6~8대 소환 (동시에 최대 18대, 소환된 드론도 처치 수에 들어감) · 날갯짓 후 돌진", "pay": int(R.gdrone.money) * 10}),
-		{"st": ["4"], "boss": 1, "name": B4.name, "hp": n(B4.hp) + " (3페이즈)", "speed": " → ".join(BPH.map(func(p): return num(p.sp))) + " m/s", "arms": "레이저 · 유도 로켓 · 스파이더 마인", "dmg": "레이저 닿으면 즉사 · 로켓 100 (반경 3 m) · 마인 " + num(R.mine.dmg), "trait": "보스 · 메인홀 (운전실 조종석의 열쇠가 있어야 문이 열리고, 들어가면 잠김) · 문이 열린 뒤에야 나를 알아챔 · 체력 1/3마다 껍데기가 벗겨지며 작고 빨라짐",
+		bot.call("mine", {"speed": "튀어나오면 " + ms(R.mine.speed), "arms": "폭약", "dmg": "폭발 " + num(R.mine.dmg) + " (반경 3.5 m) · 옆 마인도 연쇄 폭발", "st": ["4-1", "4-3"], "trait": "4-1 복도와 4-3 메인홀 바닥에 묻혀 있음", "skill": num(R.mine.sight) + " m 안에 오면 튀어나와 달려들어 터짐"}),
+		bot.call("gdrone", {"boss": 2, "name": R.gdrone.name, "speed": ms(R.gdrone.speed) + " · 돌진 26 m/s (분노 32)", "arms": "쌍포", "dmg": shot.call(R.gdrone.shot) + " · 돌진 220 + 크게 밀쳐냄", "st": ["4-2"], "trait": "4-2의 보스 · 운전실에 혼자 · 황금 꿀벌 모양 · 운전실 문이 열린 뒤에야 나를 알아챔 (들어가면 문이 잠김) · 경보로 75 m 안의 로봇을 깨움 · 체력 50% 이하에서 분노 · 쓰러지면 메인홀 열쇠를 얻고 4-2 클리어 (보물상자 없음)", "skill": "드론 A 6~8대 소환 (동시에 최대 18대, 소환된 드론도 처치 수에 들어감) · 날갯짓 후 돌진", "pay": int(R.gdrone.money) * 10}),
+		{"st": ["4-3"], "boss": 1, "name": B4.name, "hp": n(B4.hp) + " (3페이즈)", "speed": " → ".join(BPH.map(func(p): return num(p.sp))) + " m/s", "arms": "레이저 · 유도 로켓 · 스파이더 마인", "dmg": "레이저 닿으면 즉사 · 로켓 100 (반경 3 m) · 마인 " + num(R.mine.dmg), "trait": "4-3의 보스 · 메인홀 (들어가면 문이 잠김) · 문이 열린 뒤에야 나를 알아챔 · 체력 1/3마다 껍데기가 벗겨지며 작고 빨라짐 · 처치하면 보물상자",
 			"skill": "레이저 (조준 " + "/".join(BPH.map(func(p): return num(p.charge))) + "초) · 로켓 " + "/".join(BPH.map(func(p): return num(p.rockets))) + "발 · 마인 " + "/".join(BPH.map(func(p): return num(p.mines))) + "개를 자기 아래로 떨굼 · 3페이즈에 해치 " + str(Ship.HATCHES.size()) + "곳에서 드론 32대 출격 (처치 수와 돈에 안 들어가고 보스가 죽으면 사라짐)", "pay": int(R.bdrone.money) * 20},
 	]

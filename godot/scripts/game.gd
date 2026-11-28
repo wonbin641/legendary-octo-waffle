@@ -15,7 +15,9 @@ const STAGES := {
 	11: {"name": "네 깃발 평원", "enemy": "realm", "goal": 0, "unit": "명", "label": "종족", "intro": "정사각형 평원의 네 모서리에 엘프·드워프·오크·악마의 상징 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환합니다 · 적 건물 셋과 남은 적을 모두 쓰러뜨리면 끝"},
 	12: {"name": "오크", "enemy": "orc", "goal": 0, "unit": "명", "label": "오크", "intro": "준비 중"},
 	13: {"name": "악마", "enemy": "demon", "goal": 0, "unit": "명", "label": "악마", "intro": "준비 중"},
-	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 보스 드론을 잡으면 끝 · 바닥의 스파이더 마인 조심"},
+	4: {"name": "우주선 복도", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도 · CCTV 포탑, 순찰 로봇, 드론 떼, 바닥에 숨은 스파이더 마인 · 복도의 로봇을 모두 처치하면 클리어 · 운전실과 메인홀 문은 4-2, 4-3에서"},
+	14: {"name": "운전실", "enemy": "robot", "goal": 1, "unit": "대", "label": "로봇", "intro": "복도 서쪽 끝 2층 운전실 · 황금꿀벌드론과의 결전 · 돌진과 부하 드론 소환 · 문을 열고 들어가면 잠김 · 쓰러뜨리면 메인홀 열쇠를 얻고 클리어"},
+	15: {"name": "메인홀", "enemy": "robot", "goal": 1, "unit": "대", "label": "로봇", "intro": "복도 동쪽 끝 넓은 메인홀 · 3페이즈 보스 드론 B-3 · 빨간 조준선을 피해 벽 뒤로(레이저는 즉사) · 바닥 붕괴, 해치의 드론 떼 · 보스를 잡으면 보물상자"},
 }
 const BOSS := {
 	1: {"type": "thug", "name": "조직 두목", "josa": "이", "scale": 1.35, "hp": 1600, "dmgMul": 1.6},
@@ -23,7 +25,7 @@ const BOSS := {
 	2: {"type": "zombie", "name": "거대 좀비", "josa": "가", "scale": 1.7, "hp": 2200, "dmgMul": 1.0},
 	3: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
 	8: {"type": "gorilla", "name": "거대 로랜드고릴라", "josa": "가", "scale": 3.0, "hp": 5200, "dmgMul": 1.0, "kong": true},
-	4: {"type": "bdrone", "name": "최첨단 감시 드론 B-3", "josa": "이", "scale": 1.0, "hp": 9000, "dmgMul": 1.0},
+	15: {"type": "bdrone", "name": "최첨단 감시 드론 B-3", "josa": "이", "scale": 1.0, "hp": 9000, "dmgMul": 1.0},   # (4-3: in the ship's main hall)
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
 	10: {"type": "archmage", "name": "대마법사", "josa": "가", "scale": 1.0, "hp": 6500, "dmgMul": 1.0},   # (stood by ElfWood on top of its tower)
 }
@@ -57,8 +59,7 @@ var _chest_wait := false
 var flow_t := 0.0
 var mid: Enemies.Foe = null   # the gold commander drone
 var flow_budget := 3000   # microseconds of the walking grid's search a frame (the checks: -1, all of it at once, so that a seeded fight is the same on every computer)
-var sp = null                 # stage 4's save point
-var deployed := false         # out of the briefing into the stage (or back at the save point): rented guns go back only then
+var deployed := false         # out of the briefing into the stage: rented guns go back only then
 var spawned := 0
 var clock := 0.0
 var calm := 0   # animals you have ridden: tamed, and counted as dealt with
@@ -107,7 +108,7 @@ func begin(stage_: int) -> void:
 		rm = Realm.create(Realm.picked()); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	elif stage == Store.ST_PLAIN:   # 6-2: you, one of the four peoples, against the other three's landmarks
 		rm = Realm.create("plain"); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
-	world.build_stage(stage); calm = 0; sp = null; mid = null
+	world.build_stage(stage); calm = 0; mid = null
 	if tm != null: tm.room = world.toy
 	if world.toy != null: tf.brk.prepare()   # (the breakages' pictures and materials, made as the room is, not at the first hit)
 	fk.wood = world.wood
@@ -138,7 +139,9 @@ func begin(stage_: int) -> void:
 		var c = open_spot(Phys.HALF - 6.0, Phys.HALF - 6.0)
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
-	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else (" 탑 꼭대기 천문대에 있습니다" if world.wood != null else " 어딘가에 있습니다")) + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
+	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else (" 탑 꼭대기 천문대에 있습니다" if world.wood != null else (" 메인홀에 있습니다" if world.ship != null else " 어딘가에 있습니다"))) + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
+	if Store.ship(stage) == "bridge":   # 4-2: the gold bee is what the stage is about (paying as a commander does: ten times a robot)
+		var bee: Dictionary = Robots.ROBOTS.gdrone; boss_msg = str(bee.name) + "이 운전실에 있습니다" + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(int(bee.get("money", 1000)) * 10 * Store.PAY))
 	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
 	if rm != null: boss_msg = rm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
 	Phys.update_flow(player.pos.x, player.pos.z); flow_t = 0.3
@@ -169,7 +172,7 @@ func set_drop(d: Dictionary) -> void:
 ## the same stage always puts the same enemies in the same places
 func populate() -> void:
 	enemies.helmet_hint = false
-	var SR := World.Rng.new(5150 + stage * 101); var st := world.start; var placed: Array = []; var half := Phys.HALF
+	var SR := World.Rng.new(5150 + Store.map_of(stage) * 101); var st := world.start; var placed: Array = []; var half := Phys.HALF   # (4-2 and 4-3 draw as 4-1: the one ship's)
 	var ok := func(x: float, z: float, min_start: float, gap: float, rad: float) -> bool:
 		if absf(x) > half - 4 or absf(z) > half - 4 or Vector2(x - st.x, z - st.z).length() < min_start or Phys.collide_at(x, 0, z, rad, 2) != null: return false
 		for p in placed:
@@ -191,7 +194,7 @@ func populate() -> void:
 		if (world.wood != null or world.plain != null) and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves; 6-2's landmarks and you)
 		elif world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
 		elif world.lab != null: world.lab.populate(put, SR, BOSS[stage])
-		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
+		elif world.ship != null: world.ship.populate(put, SR, BOSS.get(stage, {}))
 		elif world.toy != null and tm != null: tm.mode.populate()   # (a team mode: the two sides, not the hundred toys)
 		elif world.toy != null: enemies.toys.populate(put, SR)
 		else:
@@ -357,46 +360,6 @@ func laser(_e: Enemies.Foe) -> void:
 	if ended or player.invuln > 0.0 or _god(): return
 	player.hp = 0.0; Snd.play("hurt"); over("laser")
 
-## stage 4's save point, taken when you pull the key out: who is dead by then, the kills and the bag, your ammo, the crates you have
-## broken. dying after it, '다시 도전' puts you back on the bridge with all of that as it was
-func take_save() -> void:
-	var alive := {}
-	for e in enemies.list:
-		if e.alive and e.sid >= 0: alive[e.sid] = true
-	var dead := []
-	for i in spawned:
-		if not alive.has(i): dead.push_back(i)
-	var ammo := []
-	for id in Weapons.ORDER: ammo.push_back([id, guns.wstate[id].mag, guns.wstate[id].reserve])
-	sp = {"stage": stage, "dead": dead, "kills": kills, "goal": goal, "money": Store.save.money, "money0": Store.money_lock, "stats": stats.duplicate(), "ammo": ammo, "cur": guns.cur, "key": world.ship.key,
-		"crates": world.crates.filter(func(c): return c.dead).map(func(c): return c.idx)}
-
-func from_save() -> void:
-	var s = sp
-	if s == null: begin(stage); return
-	begin(s.stage); sp = s; deployed = true; boss_msg = ""
-	for e in enemies.list.duplicate():
-		if e.sid >= 0 and (s.dead as Array).has(e.sid): enemies.vanish(e)
-	for e in enemies.dying: e.g.queue_free(); e.bar.queue_free()
-	enemies.dying.clear()
-	var broke := false
-	for c in world.crates:
-		if not c.dead and (s.crates as Array).has(c.idx):
-			c.dead = true; broke = true; Phys.remove_collider(c.b)
-			world.hide_crate(c)
-	if broke: Phys.build_nav()
-	kills = s.kills; goal = s.goal; stats = (s.stats as Dictionary).duplicate(); guns.shots = int(stats.shots); guns.hits = int(stats.hits)
-	Store.save.money = s.money; Store.money_lock = s.money0; Store.persist()
-	for a in s.ammo: guns.wstate[a[0]].mag = a[1]; guns.wstate[a[0]].reserve = a[2]
-	if guns.slots.has(s.cur): guns.switch_to(s.cur)
-	boss = null; mid = null
-	for e in enemies.list:
-		if e.boss: boss = e
-		if e.T.get("mid", false): mid = e   # (the gold commander drone too, if it was still about: its bar and its end, as before the save)
-	world.ship.restore(s)
-	player.reset(Ship.SAVE.x, Ship.SAVE.z, Ship.SAVE.yaw); player.invuln = 1.5
-	Phys.update_flow(player.pos.x, player.pos.z)
-
 ## the giant gorilla's leap: coming down on you is the end
 func slam(_e: Enemies.Foe) -> void:
 	if ended or player.invuln > 0.0 or _god(): return
@@ -461,10 +424,10 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 				if o.extra: enemies.vanish(o)
 			world.ship.on_down(e)
 		if e.folk: enemies.folk.boss_down(e)
-		if stage == 4 or world.wood != null: finish()   # the ship is won with its boss drone, the Silverwood with its Archmage: open the chest and you are out
+		if Store.ship(stage) == "hall" or world.wood != null: finish()   # 4-3 is won with its boss drone, the Silverwood with its Archmage: open the chest and you are out
 	elif e.T.get("mid", false):
-		_say(feed, ["중간 보스 " + e.name + " 처치", pay, true])
-		_say(banner, ["중간 보스 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "운전실을 장악했습니다", 2.4]); mid = null
+		_say(feed, [e.name + " 처치", pay, true])
+		_say(banner, ["황금꿀벌드론 처치" + (" · +" + Store.won(pay) if pay > 0 else ""), "운전실을 장악했습니다 · 메인홀 열쇠 획득", 2.4]); mid = null
 		# the drones it called fall with it (they count, but pay nothing), the bridge door opens
 		var fell := 0
 		for o in enemies.list.duplicate():
@@ -476,7 +439,7 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	elif e.no_pay and e.animal: _say(feed, ["타고 있던 " + str(e.T.name) + ("이" if Animals.batchim(str(e.T.name)) else "가") + " 쓰러졌습니다", 0, true])
 	else: _say(feed, [(str(e.T.name) if (e.animal or e.folk) else STAGES[stage].label) + (" · 머리 명중" if weak else " 처치"), pay, weak])
 	var left := goal - kills - calm; var S: Dictionary = STAGES[stage]
-	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "화살표가 남은 적 쪽을 가리킵니다" if (left == 10 and stage != 4) else "가방 " + Store.won(Store.save.money), 1.8])
+	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "화살표가 남은 적 쪽을 가리킵니다" if (left == 10 and Store.ship(stage) in ["", "corr"]) else "가방 " + Store.won(Store.save.money), 1.8])
 	if kills + calm >= goal and goal > 0: finish()
 
 ## a broken crate: a health potion (10% of max health); in the zombie village, where there is no health, always an antidote instead
@@ -532,7 +495,7 @@ func open_chest() -> void:
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
-		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if stage == 4 else "상자를 열면 탑을 떠납니다" if world.wood != null else "상자를 열어야 헬기가 옵니다", 3.0])
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if world.ship != null else "상자를 열면 탑을 떠납니다" if world.wood != null else "상자를 열어야 헬기가 옵니다", 3.0])
 		return
 	if party_t > 0.0:   # what the chest gave is still on the screen: the clear comes after it (update)
 		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0
@@ -598,6 +561,6 @@ func over(reason: String) -> void:
 	if ended: return
 	if Store.settings.dev and Store.settings.god: infected = false; infect_t = 0.0; poison_t = 0.0; player.hp = maxf(player.hp, 1.0); return   # developer mode's invincibility
 	ended = true; forfeit(); _leave_animals(); player.jet_end()
-	if sp == null: return_rentals()
+	return_rentals()
 	result = reason; _result_kind = reason; _result_t = 1.0
 	_say(on_down, [reason])   # (main stops the fight there and then, as the browser game's: no walking, shooting, chest or key in that second)

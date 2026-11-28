@@ -23,7 +23,7 @@ static func spec(stage: int) -> Dictionary:
 		5: return {"all": _all_but(["jet", "rocket", "shotgun", "pistol"]), "any": []}
 		3: return {"all": _all_but(["jet", "shotgun", "pistol"]), "any": []}
 		7, 8: return {"all": _all_but(["pistol"]), "any": []}
-		4: return {"all": _all_but(["pistol", "jet", "shotgun"]), "any": []}
+		4, 14, 15: return {"all": _all_but(["pistol", "jet", "shotgun"]), "any": []}   # (the ship's three parts alike)
 		9: return {"all": [], "any": []}
 		10: return {"all": ["sniper", "vest"], "any": [["rifle", "smg", "lmg"]]}   # (6-1: bows in the boughs to answer, no potions on the way)
 	return {"all": [], "any": []}

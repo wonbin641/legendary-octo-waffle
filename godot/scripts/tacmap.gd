@@ -26,7 +26,7 @@ const KINDS := {
 	1: [["thug", "ff5260", "조직원"]],
 	5: [["thug", "ff5260", "총 · 수류탄 · 화염"], ["dagger", "ff9a3a", "단검"], ["saber", "4f8cff", "파란 광선검"], ["saber2", "ff5ad8", "쌍광선검"], ["bat", "cfd4dc", "야구방망이"], ["bomber", "ffd23a", "자폭맨"]],
 	2: [["zombie", "9be88f", "좀비"]],
-	4: [["cctv", "ffd23a", "CCTV 포탑"], ["patrol", "b8ff4a", "순찰 로봇"], ["droneA", "c58bff", "드론"], ["mine", "ff5a3a", "스파이더 마인 (움직일 때만)"], ["midboss", "ffb020", "황금 지휘 드론 · 중간 보스"]],
+	4: [["cctv", "ffd23a", "CCTV 포탑"], ["patrol", "b8ff4a", "순찰 로봇"], ["droneA", "c58bff", "드론"], ["mine", "ff5a3a", "스파이더 마인 (움직일 때만)"], ["midboss", "ffb020", "황금꿀벌드론 · 4-2의 상대"]],
 	6: [["thug", "ff5260", "오토바이 헬멧 조직원"]],
 	3: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "고릴라 졸개"], ["tame", "5ed6b0", "길들인 동물"]],
 	8: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "고릴라 졸개"], ["tame", "5ed6b0", "길들인 동물"]],
@@ -44,7 +44,8 @@ static var COLOR := {}
 var game: Game
 var cam: Camera3D
 var f_mono: Font; var f_bold: Font
-var stage := 1
+var stage := 1                 # the place's stage (Store.map_of: 4-2 and 4-3 are drawn as 4-1's ship)
+var part := ""                 # on the ship, the part played (Store.SHIP): what is on board, where you start
 var H := 68.0; var CX := 0.0; var CZ := 0.0
 
 static func _colors() -> Dictionary:
@@ -59,7 +60,19 @@ static func half_of(st: int) -> float:
 	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == Store.ST_TOY else 68.0)))
 
 func setup(st: int) -> void:
+	part = Store.ship(st); st = Store.map_of(st)
 	stage = st; H = half_of(st); CX = 19.0 if st == 4 else 0.0; CZ = 0.0   # the ship runs east of 0
+
+## where you start on the ship: 4-1 in the airlock, 4-2 and 4-3 in the corridor by their door
+func _lz_letter(lab: bool) -> String: return "문" if lab else (("A" if part == "corr" else "S") if stage == 4 else "H")
+func _lz_tag(lab: bool) -> String: return "출입문" if lab else ((("에어록" if part == "corr" else "시작하는 곳")) if stage == 4 else "내리는 곳")
+## the kinds of enemy this stage has: on the ship only those of the part played
+func _kinds() -> Array:
+	var ks: Array = KINDS[stage]
+	if part == "corr": return ks.filter(func(k): return k[0] != "midboss")
+	if part == "bridge": return ks.filter(func(k): return k[0] == "midboss")
+	if part == "hall": return ks.filter(func(k): return k[0] == "patrol" or k[0] == "mine")
+	return ks
 
 func title() -> String: return THEME[stage].label
 
@@ -92,7 +105,7 @@ func draw(ci, size: Vector2) -> void:
 	var T: Dictionary = THEME[stage]; var w: World = game.world
 	# the world built is this map's own stage: otherwise nothing of another stage (its tower, its pit, its enemies, its walls)
 	# is drawn on it, only the ground's grid
-	var live: bool = w != null and game.stage == stage
+	var live: bool = w != null and Store.map_of(game.stage) == stage
 	ci.draw_rect(r, Color(str(T.bg)))
 	# the ground: the safari's waterhole and tracks, the yard's painted lines, a grid
 	if live and stage == 7 and w.safari != null:
@@ -203,9 +216,9 @@ func draw(ci, size: Vector2) -> void:
 		# the drop point: a helipad mark (the lab's door, the ship's airlock)
 		var s0: Dictionary = w.start; var lab := stage == 3 or stage == 8; var sp := Vector2(X.call(s0.x), Z.call(s0.z))
 		ci.draw_circle(sp, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sp, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
-		if not toy: _text(ci, f_bold if lab else f_mono, "문" if lab else ("A" if stage == 4 else "H"), sp.x, sp.y + 0.5 * u, roundi((11.0 if lab else 12.0) * u), SODIUM)
+		if not toy: _text(ci, f_bold if lab else f_mono, _lz_letter(lab), sp.x, sp.y + 0.5 * u, roundi((11.0 if lab else 12.0) * u), SODIUM)
 		var lz_left := sp.x > o.x + S * 0.6   # (a drop point at the right edge, as 1-2's: its name on its left, inside the map)
-		_tag(ci, "출입문" if lab else ("에어록" if stage == 4 else "내리는 곳"), sp.x + (-15.0 if lz_left else 15.0) * u, sp.y + 0.5 * u, u, SODIUM, "right" if lz_left else "left")
+		_tag(ci, _lz_tag(lab), sp.x + (-15.0 if lz_left else 15.0) * u, sp.y + 0.5 * u, u, SODIUM, "right" if lz_left else "left")
 	for e: Enemies.Foe in game.enemies.list:
 		if not e.alive or e.ridden: continue   # the one you ride is under your arrow
 		if e.type == "mine" and (e.bs == "hidden" or e.bs == ""): continue   # buried mines stay hidden, even here
@@ -291,7 +304,7 @@ func _strip_line(ci, o: Vector2, k: float, a: Vector2, b: Vector2, col: Color, w
 func _draw_strip(ci, r: Rect2) -> void:
 	var S := r.size.x; var o := r.position; var k := S / (STRIP_W + 2.0 * PAD); var kb := S / 1024.0; var u := S / 600.0
 	var T: Dictionary = THEME[stage]; var w: World = game.world
-	var live: bool = w != null and game.stage == stage and w.wood != null
+	var live: bool = w != null and Store.map_of(game.stage) == stage and w.wood != null
 	var at := func(x: float, z: float) -> Vector2: return strip_at(o, k, x, z)
 	ci.draw_rect(r, Color(str(T.bg)))
 	# the ground of each band: moss, the ravine and its stream, the tower's court of stone; a grid line every 20 m
@@ -395,9 +408,9 @@ func _draw_strip(ci, r: Rect2) -> void:
 func legend(live: bool) -> Array:
 	var lab := stage == 3 or stage == 8; var out := []
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
-	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
+	var lz := "출입문 · 시작하는 곳" if lab else (("에어록 · 시작하는 곳" if part == "corr" else "시작하는 곳 · 문 앞 복도") if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
-	if not ((stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null): out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])   # (a realm battle has no one place to start)
+	if not ((stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null): out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else _lz_letter(lab)])   # (a realm battle has no one place to start)
 	if (stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null:   # a realm battle: the two sides and the match's marks
 		out.push_back(["en", "우리 편", Color("5f9cff"), ""]); out.push_back(["en", "적", Color("ff5260"), ""])
 		var seen := {}
@@ -410,9 +423,9 @@ func legend(live: bool) -> Array:
 		for it: Array in game.tm.mode.legend(): out.push_back(["en", it[2], Color(str(it[1])), ""])
 		out.push_back(["cr", "나무 상자", Color("a7804e"), ""])
 		return out
-	for kd: Array in KINDS[stage]: out.push_back(["en", kd[2], Color(str(kd[1])), ""])
+	for kd: Array in _kinds(): out.push_back(["en", kd[2], Color(str(kd[1])), ""])
 	if stage == 7: out.push_back(["tw", "감시탑 · 체력", Color("8a6440"), ""])
-	elif stage != Store.ST_TOY: out.push_back(["bo", "보스 · 대마법사" if stage == Store.ST_ELF else "보스", Color("ff2d3d"), ""])
+	elif stage != Store.ST_TOY and part != "corr" and part != "bridge": out.push_back(["bo", "보스 · 대마법사" if stage == Store.ST_ELF else "보스", Color("ff2d3d"), ""])
 	if stage == Store.ST_ELF:   # (no crates here: what the place does instead)
 		out.push_back(["en", "달샘 · 체력 회복", Color("8ff7ea"), ""]); out.push_back(["al", "포탈 · 점선 끝으로 이동", Color("b892ff"), ""]); out.push_back(["en", "포자 버섯 · 쏘면 상승 기류", Color("a56bff"), ""])
 		out.push_back(["cr", "나무 위 발판과 다리", Color(0.62, 0.42, 0.25), ""])

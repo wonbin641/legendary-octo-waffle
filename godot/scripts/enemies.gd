@@ -445,7 +445,7 @@ func kill(e: Foe, weak: bool, dir) -> void:
 	if e.boss: Snd.play("boom_small", 1.0, e.pos)
 	if on_kill.is_valid(): on_kill.call(e, weak)
 
-## gone without a kill: the boss's leftover mines and drones when it dies, or whoever was already dead at the save point
+## gone without a kill: the boss's leftover mines and drones when it dies
 func vanish(e: Foe) -> void:
 	if not e.alive: return
 	e.alive = false; e.vanish = true; e.dead_t = 0.0; e.bar.visible = false; list.erase(e); dying.push_back(e)
@@ -453,7 +453,7 @@ func vanish(e: Foe) -> void:
 	if fx: fx.puff(e.pos, 3, 0.3, 0.4)
 
 ## a sniper's laser goes with him (it hangs under this node, not his body: freed with the body later, a red line lit as he fell
-## stayed in the air, and one that went with a save point's clearing was never freed at all)
+## stayed in the air, and one that went without a kill was never freed at all)
 func _drop_laser(e: Foe) -> void:
 	if e.laser != null and is_instance_valid(e.laser): e.laser.queue_free()
 	e.laser = null
@@ -804,7 +804,7 @@ func _keep_out(e: Foe) -> void:
 
 ## how far off an enemy is drawn at all (a phone's screen three quarters as far; a boss half as far again, see update)
 func sight_r() -> float:
-	return (vis_r if vis_r > 0.0 else VIS_R.get(stage, 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
+	return (vis_r if vis_r > 0.0 else VIS_R.get(Store.map_of(stage), 90.0)) * (0.75 if DisplayServer.is_touchscreen_available() else 1.0)
 
 ## what a guided rocket may lock on to: as there, not the beast you ride, nor one in a cage (glass or bars), nor one too far
 ## off to be drawn, nor a spider mine lying buried (or not yet woken); and in stage 5 not a toy soldier gone in its blink, nor
@@ -863,7 +863,7 @@ func update(dt: float, _time: float) -> void:
 		e.lod -= dt
 		if e.lod <= 0.0:
 			e.lod = 0.3 + randf() * 0.2; e.dist = Vector2(player.pos.x - e.pos.x, player.pos.z - e.pos.z).length()
-			e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0); e.awake = e.alert or e.angry or e.dist < ACT_R.get(stage, 60.0)
+			e.g.visible = e.dist < vis * (1.6 if e.boss else 1.0); e.awake = e.alert or e.angry or e.dist < ACT_R.get(Store.map_of(stage), 60.0)
 			if not e.g.visible: e.bar.visible = false
 			if not e.toy:   # as there: past 28 m (a beast 45, in the lab 46, or 18 on a phone; a boss half as far again) the baked mesh; the shadow only near
 				var far := e.dist > far_line(e.animal, e.boss, lab, phone)

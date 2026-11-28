@@ -345,7 +345,7 @@ func _build_backdrop() -> void:
 
 ## which kind of place a stage is built as (each kind keeps the textures it paints, to be built again quickly)
 static func stage_kind(stage: int) -> String:
-	var S: Dictionary = STAGE_STYLE[stage]
+	var S: Dictionary = STAGE_STYLE[Store.map_of(stage)]
 	if S.get("ship", false): return "ship"
 	if S.get("lab", false): return "lab"
 	if S.get("savanna", false): return "safari"
@@ -369,7 +369,7 @@ func dispose() -> void:
 
 func build_stage(stage: int) -> void:
 	dispose()
-	var S: Dictionary = STAGE_STYLE[stage]; style = S
+	var S: Dictionary = STAGE_STYLE[Store.map_of(stage)]; style = S   # (4-2 and 4-3: 4-1's ship)
 	forget_textures(stage_kind(stage))
 	if grade: grade.tune(S)
 	var R := Rng.new(S.seed)
@@ -427,7 +427,7 @@ func build_stage(stage: int) -> void:
 	if not is_yard(stage): blink.clear()
 	if S.get("wood", false): wood = ElfWood.new(); wood.build(self, G); return   # (stage 6-1: no crates there, as in all of stage 6)
 	if S.get("plain", false): plain = BannerPlain.new(); plain.build(self, G, Realm.picked_race()); return   # (6-2: you start at your own people's landmark)
-	if S.get("ship", false): Phys.set_world_size(166.0); Phys.set_nav(334, 1.0); ship = Ship.new(); ship.build(self, G, S, R); return
+	if S.get("ship", false): Phys.set_world_size(166.0); Phys.set_nav(334, 1.0); ship = Ship.new(); ship.part = Store.ship(stage); ship.build(self, G, S, R); return
 	if S.get("lab", false): Phys.set_world_size(Lab.HALF + 1); Phys.set_nav(int(2 * Lab.HALF + 8), 1.0); lab = Lab.new(); lab.build(self, G, S, R); return
 	if S.get("savanna", false): Phys.set_world_size(178.0); Phys.set_nav(180, 2.0); safari = Safari.new(); safari.build(self, G, S, R); return
 	Phys.set_world_size(66.0); Phys.set_nav(140, 1.0)

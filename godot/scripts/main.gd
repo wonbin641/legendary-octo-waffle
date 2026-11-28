@@ -96,8 +96,6 @@ func _ready() -> void:
 	ui.do_deploy = func() -> void: enter_play(true)
 	ui.do_resume = resume_game; ui.do_quit = func() -> void: game.forfeit(); game.return_rentals(); to_menu()
 	ui.do_menu = to_menu; ui.do_again = func(stage: int) -> void:
-		if game.sp != null and game.result != "clear" and stage == game.stage:   # back to the save point, as things were when you took it
-			game.from_save(); ui.show_screen(""); enter_play(); banner("세이브 포인트에서 다시", "처치 %d · 열쇠를 가진 채 운전실에서 시작합니다" % game.kills, 3.0); return
 		state = "brief"; ui.in_stage = false; ui.open_brief(stage)
 	ui.on_settings = apply_settings; ui.do_map = open_map; ui.do_map_close = close_map; ui.do_altar_close = close_altar
 	hud.get_parent().add_child(ui); ui.build(); ui.tac.cam = cam
@@ -108,7 +106,7 @@ func _ready() -> void:
 
 ## a check of a built copy of the game (... --headless -- --smoke): every stage started and played two seconds, then out
 func _smoke() -> void:
-	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "9", "10"]:
+	for st in ["1", "6", "5", "2", "3", "8", "7", "4", "14", "15", "9", "10"]:
 		command("start " + st); command("sim 2")
 		print("smoke: stage %s %s, %d enemies" % [Store.STAGE_TAG.get(int(st), st), state, enemies.list.size()])
 	var was := ToyMatch.picked()
@@ -331,9 +329,8 @@ func _draw_hud() -> void:
 	hudd.draw(hud)
 	if reward.on(): reward.draw(hud)   # a boss's chest's new gun: its card over everything of the fight's screen
 
-## what the keys would do now, for the hint under the crosshair: pick up the hall's key, get on, change over, get off
+## what the keys would do now, for the hint under the crosshair: get on, change over, get off
 func key_hint() -> String:
-	if world.ship != null and world.ship.key_near(): return "E 키로 메인홀 열쇠 줍기"
 	if int(guns.st().mag) <= 0 or not world.style.get("ride", false): return ""
 	var an := enemies.animals; var act := _ride_act()
 	if act == "": return ""
@@ -400,7 +397,7 @@ func _touch_pills(all := false) -> Dictionary:
 		return Rect2(16.0 + safe_in[0], tall_y, w, h) if tall else Rect2((s.x + safe_in[0] - safe_in[2]) / 2.0 - w / 2.0, s.y - bottom - safe_in[3] - h, w, h)
 	if all or ((game.infected or game.poison_t > 0.0) and not game.inject_on):
 		var at := "해독약 사용 (%d)" % game.antidotes if game.antidotes > 0 or all else "해독약 없음"; p["anti"] = [pill.call(at, 150, 54, 24, 15, row), at]
-	var key := world.ship != null and world.ship.key_near(); var act := "메인홀 열쇠 줍기" if key or all else _ride_act()
+	var act := "코끼리로 옮겨 타기" if all else _ride_act()   # (all: every pill at once, the longest of its words)
 	if act != "": p["car"] = [pill.call(act, 16, 50, 26, 15, row + 116.0), act]
 	if all or (enemies.animals.m != null and enemies.animals.target != null): p["off"] = [pill.call("내리기", 76, 40, 18, 13, row + 64.0), "내리기"]
 	if game.tm != null and game.tm.key == "freeze" and not all:   # bedtime: the soda cans left
@@ -455,7 +452,6 @@ func _set_state(s: String) -> void:
 	if view: view.visible = s == "playing" or s == "paused" or s == "down"
 
 func to_menu() -> void:
-	game.sp = null   # leaving for the menu ends the run, save point and all
 	if game.tm != null: game.tm.clear()
 	if not game.ended and game.stats.time > 0.0: game.forfeit()
 	game.return_rentals(); Store.money_lock = null; Store.ivory_lock = null; Store.own_lock = null
@@ -570,7 +566,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode == KEY_G and game.tm != null and game.tm.key == "freeze": game.tm.mode.throw_can()   # (bedtime: a soda can)
 			elif e.physical_keycode == KEY_G and game.has_flask(): game.throw_flask()   # (stage 6: the alchemist's bomb)
 			elif (e.physical_keycode == KEY_E and look_mode != "drag") or e.physical_keycode == KEY_G:
-				if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
+				enemies.animals.ride_toggle()
 			if e.physical_keycode == KEY_X and enemies.animals.m != null: enemies.animals.ride_off(false)
 			if e.physical_keycode >= KEY_1 and e.physical_keycode <= KEY_9: guns.switch_slot(e.physical_keycode - KEY_1)
 			if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_P: pause_game()
@@ -628,8 +624,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					if game.rm != null: game.rm.press[hit] = true
 				"altar": open_altar()
 				"anti": game.use_antidote()
-				"car":
-					if not (world.ship != null and world.ship.take_key()): enemies.animals.ride_toggle()
+				"car": enemies.animals.ride_toggle()
 				"off": enemies.animals.ride_off(false)
 				"swap":
 					if game.rm != null: game.rm.press["parry"] = true
@@ -935,7 +930,6 @@ func command(line: String) -> Dictionary:
 		"wall":   # stage 5: the brick figure in the lineup puts up a wall
 			var bl: Array = enemies.list.filter(func(e): return e.type == "brick")
 			enemies.toys._build_wall(bl[0], Vector2(0, 1))
-		"takekey": world.ship.take_key()
 		"music":   # stage 5's music: how it stands ('music blast': a blast right by you)
 			if a.size() > 1 and a[1] == "blast": Music.blast(Snd.listener)
 			return Music.status()
@@ -1059,4 +1053,4 @@ func command(line: String) -> Dictionary:
 	return {"state": state, "screen": ui.cur, "cut": cut.kind(), "link": ui.last_link, "dlgmsg": ui.dlg_msg.text, "clip": DisplayServer.clipboard_get() if a[0] == "mail" else "", "fade": cut.fade.color.a if cut.fade != null else 0.0, "look": look_mode, "pos": [player.pos.x, player.pos.y, player.pos.z], "yaw": player.yaw, "grounded": player.grounded,
 		"colliders": Phys.colliders.size(), "specks": fx.live(), "crates": world.crates.filter(func(c): return not c.dead).size(), "enemies": enemies.list.size(), "kills": game.kills, "goal": game.goal, "ended": game.ended, "result": game.result,
 		"gun": guns.cur, "slots": guns.slots, "mag": guns.st().mag, "hp": player.hp, "ads": guns.ads, "fov": cam.fov, "money": Store.save.money, "cleared": Store.save.cleared, "owned": Store.save.owned,
-		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "key": world.ship.key if world.ship != null else false, "doors": world.ship.doors.map(func(d): return d.mode) if world.ship != null else [], "phase": int(game.boss.k.get("phase", -1)) if game.boss != null else -1, "pit": Phys.PIT != null, "sp": game.sp != null, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}
+		"calm": game.calm, "riding": enemies.animals.m.type if enemies.animals.m != null else "", "bleed": enemies.animals.bleed_n, "tower": world.safari.hp if world.safari != null else -1.0, "cages": world.lab.cages.filter(func(c): return c.open).size() if world.lab != null else -1, "key": world.ship.key if world.ship != null else false, "part": world.ship.part if world.ship != null else "", "doors": world.ship.doors.map(func(d): return d.mode) if world.ship != null else [], "phase": int(game.boss.k.get("phase", -1)) if game.boss != null else -1, "pit": Phys.PIT != null, "infected": game.infected, "poison": game.poison_t, "antidotes": game.antidotes, "inject": game.inject_on, "stun": player.stun_t, "chest": loot.chests.size(), "boss": [game.boss.pos.x, game.boss.pos.z] if game.boss != null else [], "fit": Meta.fits(ui.sel), "ui": [ui.size.x, ui.size.y, ui._mode(), ui.detail.position.x, ui.detail.size.x, ui.board.size.x, ui.rail.size.x], "fps": Engine.get_frames_per_second(), "size": [hud.size.x, hud.size.y], "dpr": dpr}

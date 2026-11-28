@@ -138,6 +138,11 @@ func _ready() -> void:
 		for i in roundi(run.sec * 30): p.update(1.0 / 30.0, null, 0.0)
 		var e := Vector3(run.end[0], run.end[1], run.end[2])
 		check("move: " + run.name, p.pos.distance_to(e) < 1e-4 and p.grounded == run.grounded, "%s (browser %s)" % [str(p.pos), str(e)])
+	# a stage (and coming back in a team battle) starts the stride afresh. It ran on from the stage before: the first footstep,
+	# and the random number its sound takes, came sooner or later after how far you had walked there
+	var sp_p := Player.new(); sp_p.step_phase = 37.0; sp_p.step_dist = 1.7; sp_p.sprint_blend = 0.8; sp_p.reset(0, 0, 0)
+	check("a start puts the stride back to its beginning: no step phase, step distance or sprint lean carried over", sp_p.step_phase == 0.0 and sp_p.step_dist == 0.0 and sp_p.sprint_blend == 0.0, [sp_p.step_phase, sp_p.step_dist, sp_p.sprint_blend])
+	sp_p.free()
 	# ---------------- weapons ----------------
 	var nbad := 0; var which := ""
 	# [price, rental] the owner of this port set apart from the browser game's: tests/balance_overrides.json (with the browser game's own beside them)
@@ -269,7 +274,7 @@ func _ready() -> void:
 		and absf(fb.foot.x1 - ref.foot.boss.x1) < 1e-6 and absf(fb.foot.z1 - ref.foot.boss.z1) < 1e-6 and absf(fb.foot_r - ref.foot.boss.R) < 1e-6 and absf(fb.mass - ref.foot.boss.mass) < 1e-9)
 	check("the pistol is all you carry on a new save", g.slots == ["pistol"])
 	check("all income is twice the browser game's (the owner's rule): the boss's pay on the briefing is what it really pays, 20,000 doubled",
-		Store.PAY == 2 and gm.boss_msg.ends_with(Store.won(40000)) and Game.boss_pay(Game.BOSS[3]) == 2500 * 20 * 2 and Game.boss_pay(Game.BOSS[4]) == 2000 * 20 * 2, gm.boss_msg)
+		Store.PAY == 2 and gm.boss_msg.ends_with(Store.won(40000)) and Game.boss_pay(Game.BOSS[3]) == 2500 * 20 * 2 and Game.boss_pay(Game.BOSS[15]) == 2000 * 20 * 2, gm.boss_msg)
 	# hits: body 34, head 85; three body shots or two head shots kill a man (100)
 	var t0 = ft; var hd: Vector3 = en.part_centre(t0, t0.parts[0]); var bd: Vector3 = en.part_centre(t0, t0.parts[1])
 	var rh = en.raycast(hd + Vector3(0, 0, 5), Vector3(0, 0, -1), 20.0); var rb = en.raycast(bd + Vector3(0, 0, 5), Vector3(0, 0, -1), 20.0)
@@ -311,8 +316,13 @@ func _ready() -> void:
 	Store.save.cleared = [3]; var ul_3 := [Store.stage_open(7), Store.stage_open(8)]; Store.save.cleared = [3, 7]; ul_3.push_back(Store.stage_open(8))
 	Store.save.cleared = [5, 8]; var ul_kept := [Store.stage_open(5), Store.stage_open(8), Store.stage_open(6), Store.stage_open(7)]; Store.save.cleared = []
 	Store.save.cleared = [10]; var ul_6 := [Store.stage_open(10), Store.stage_open(11), Store.stage_open(12), Store.stage_open(13)]; var ul_6n := [Store.next_stages(9), Store.next_stages(10)]; Store.save.cleared = []
+	Store.save.cleared = [4]; var ul_4 := [Store.stage_open(14), Store.stage_open(15)]; Store.save.cleared = [4, 14]; ul_4.push_back(Store.stage_open(15)); var ul_4n := [Store.next_stages(4), Store.next_stages(14), Store.next_stages(15)]; Store.save.cleared = []
 	check("the five main stages (1 to 5) and stage 6's first place (6-1) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
-		Store.STAGE_ORDER.size() == 13 and Store.playable().size() == 11 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(14), [ul_open, ul_1, ul_3, ul_kept])
+		Store.STAGE_ORDER.size() == 15 and Store.playable().size() == 13 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(16), [ul_open, ul_1, ul_3, ul_kept])
+	check("stage 4 is three parts on the one ship (4-1 the corridor, 4-2 the bridge, 4-3 the main hall): 4-1 is open as a main stage is (it keeps stage 4's own number: a stage 4 cleared before is 4-1's), 4-2 opens once 4-1 is cleared, 4-3 once 4-2 is; after 4-3 comes stage 5",
+		[4, 14, 15].map(func(s4): return Store.STAGE_TAG[s4]) == ["4-1", "4-2", "4-3"] and [4, 14, 15].map(func(s4): return Store.ship(s4)) == ["corr", "bridge", "hall"] and [4, 14, 15].all(func(s4): return Store.map_of(s4) == 4)
+		and Store.map_of(9) == 9 and Store.ship(9) == "" and not Store.NEEDS.has(4) and Store.NEEDS[14] == 4 and Store.NEEDS[15] == 14 and ul_4 == [true, false, true] and ul_4n == [[14], [15], [9]]
+		and Store.STAGE_ORDER.slice(7, 10) == [4, 14, 15] and Game.STAGES[14].enemy == "robot" and Game.STAGES[15].enemy == "robot" and Game.BOSS.has(15) and not Game.BOSS.has(4) and not Game.BOSS.has(14), [ul_4, ul_4n])
 	check("stage 6 is four places (6-1 the elves' wood, 6-2 the plain where all four peoples meet, 6-3 the orcs', 6-4 the demons'): each after the first waits for the one before it (6-2 opens once 6-1 is cleared); those not made yet (6-3, 6-4) are named on the board and do not open",
 		[10, 11, 12, 13].map(func(s6): return Store.STAGE_TAG[s6]) == ["6-1", "6-2", "6-3", "6-4"] and [10, 11, 12, 13].map(func(s6): return Store.realm(s6)) == ["elf", "plain", "orc", "demon"] and Store.realm(9) == ""
 		and not Store.NEEDS.has(10) and Store.NEEDS[11] == 10 and Store.NEEDS[12] == 11 and Store.NEEDS[13] == 12 and Store.SOON == [12, 13] and ul_6 == [true, true, false, false] and ul_6n == [[10], [11]]
@@ -335,7 +345,7 @@ func _ready() -> void:
 	check("a grenade passing a man knee high bursts on him: his body found by its height and girth, not a ball round his middle",
 		gn_e != null and pr.list.is_empty() and absf(gn_last.x - gn_e.pos.x) < gn_e.R + 0.6 and gn_last.y < gn_e.pos.y + 0.6, [gn_last, gn_e.pos if gn_e != null else null])
 	pr.list.clear()
-	# a sniper's red laser goes with him, killed or gone at a save point (it hung on in the air after him)
+	# a sniper's red laser goes with him, killed or gone without a kill (it hung on in the air after him)
 	gm.begin(1); var lz_a = en.list[1]; var lz_b = en.list[2]
 	for lz_e in [lz_a, lz_b]: lz_e.laser = MeshInstance3D.new(); en.add_child(lz_e.laser); lz_e.laser.visible = true
 	var lz_na: MeshInstance3D = lz_a.laser; var lz_nb: MeshInstance3D = lz_b.laser
@@ -508,6 +518,11 @@ func _ready() -> void:
 		check("stage %s: the docks are laid out as in the browser game" % Store.STAGE_TAG[stn], ncol9 == int(R9.colliders) and cb == 0 and nb == int(R9.navBlocked) and nh == int(R9.navHash) and w.crates.size() + gh9.size() == R9.crates.size(), "%d colliders" % ncol9)
 		# (stages 3, 3-1 and 3-2: the lions are fewer and bigger, the owner's rule: the lab keeps six of its twelve in a checkerboard, the savanna every other of its fourteen)
 		var E9: Array = R9.enemies
+		# (stage 4: 4-1 has the passage's and the corridor's robots of the browser game's ship, in its order; 4-2 its gold bee, 4-3 its
+		# boss with the hall's patrols and mines, checked below. The browser game puts them on board in this order: the boss, the bee,
+		# six and twelve cameras, twelve corridor patrols, eight in the hall, twenty-four drones, sixteen corridor mines, twenty in the hall)
+		var SHIP9 := {4: range(2, 32) + range(40, 80), 14: [1], 15: [0] + range(32, 40) + range(80, 100)}
+		if stn == 4: E9 = (SHIP9[4] as Array).map(func(k): return R9.enemies[k])
 		if stn == 3 or stn == 7 or stn == 8:
 			var lion0: int = 73 if stn == 7 else 75; var keep9: Array = [0, 2, 4, 6, 8, 10, 12] if stn == 7 else [0, 2, 5, 7, 8, 10]; E9 = []
 			for i in R9.enemies.size():
@@ -527,7 +542,19 @@ func _ready() -> void:
 			if (still9 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or moved9 or e9.type != q9[7] or (absf(e9.pos.y - q9[2]) > 1e-3 and (stn != 4 or e9.type == "mine")) or e9.kit != q9[3] or (1 if e9.boss else 0) != int(q9[4]) or e9.max_hp != q9[5] or (1 if e9.helmet else 0) != int(q9[6]):
 				eb += 1
 				if efirst == "": efirst = "#%d %s %s vs %s" % [i, str(e9.pos), e9.kit, str(q9)]
-		check("stage %s: all 100 stand where the browser game puts them, with the same weapons" % Store.STAGE_TAG[stn], en.list.size() == E9.size() and eb == 0 and gm.goal == int(R9.goal) - (R9.enemies.size() - E9.size()), efirst)
+		check("stage %s: all %d stand where the browser game puts them, with the same weapons" % [Store.STAGE_TAG[stn], E9.size()], en.list.size() == E9.size() and eb == 0 and gm.goal == int(R9.goal) - (R9.enemies.size() - E9.size()), efirst)
+		if stn == 4:   # 4-2 and 4-3: theirs too, where the browser game's ship has them
+			var part_bad := []
+			for st9: int in [14, 15]:
+				gm.begin(st9); var ids9: Array = SHIP9[st9]
+				if en.list.size() != ids9.size(): part_bad.push_back("%d: %d robots" % [st9, en.list.size()]); continue
+				for k9 in ids9.size():
+					var e9 = en.list[k9]; var q9: Array = R9.enemies[ids9[k9]]
+					var still9: bool = e9.type in ["mine", "gdrone", "bdrone"]
+					if (still9 and (absf(e9.pos.x - q9[0]) > 1e-4 or absf(e9.pos.z - q9[1]) > 1e-4)) or e9.type != q9[7] or (absf(e9.pos.y - q9[2]) > 1e-3 and e9.type == "mine") or e9.max_hp != q9[5] or (1 if e9.boss else 0) != int(q9[4]):
+						part_bad.push_back("%d #%d %s vs %s" % [st9, k9, str(e9.pos), str(q9)]); break
+			check("stage 4-2 and 4-3: the gold bee, and the boss with the hall's patrols and mines, stand where the browser game's ship has them", part_bad.is_empty(), part_bad)
+			gm.begin(4)
 		var cb9 := 0
 		for i in mini(w.crates.size(), R9.crates.size()):
 			if absf(w.crates[i].x - R9.crates[i][0]) > 1e-4 or absf(w.crates[i].z - R9.crates[i][1]) > 1e-4: cb9 += 1
@@ -846,54 +873,64 @@ func _ready() -> void:
 	check("stage 3-1: with you on the tower a buffalo rams the tower: 20 a blow", sf.hp == 9980.0, sf.hp)
 	var col7: int = Phys.colliders.size(); sf.hurt(9990.0, Vector3.ZERO)
 	check("stage 3-1: at zero the tower comes down and you fall with it", not sf.standing and Phys.colliders.size() == col7 - 16 and pl.stun_t >= 1.0 and not sf.holds())
-	# ---------------- stage 4: the spaceship ----------------
+	# ---------------- stage 4: the spaceship, in three parts on the one ship (4-1 the corridor, 4-2 the bridge, 4-3 the hall) ----------------
 	gm.begin(4); var s4_sh: Ship = w.ship; var s4_rb: Robots = en.robots; pl.invuln = 0.0
-	var bee4 = gm.mid; var boss4 = gm.boss
-	check("stage 4: the boss drone (9,000) sealed in the hall, the gold bee (5,000) on the bridge", boss4 != null and boss4.max_hp == 9000.0 and boss4.sealed and bee4 != null and bee4.max_hp == 5000.0 and bee4.sealed and bee4.scale == 1.25)
-	check("stage 4: both doors are shut and stop bullets", Phys.raycast_static(Vector3(-85, 1.5, -7.5), Vector3(-1, 0, 0), 20.0) and absf(Phys.rh_t - 6.5) < 0.01, Phys.rh_t)
-	en.damage(bee4, 100, bee4.pos, Vector3(0, 0, 1), false)
-	# the hall's door wants the key
+	var s4_kinds := {}
+	for e in en.list: s4_kinds[e.type] = int(s4_kinds.get(e.type, 0)) + 1
+	check("4-1: from the airlock, the passage's and the corridor's robots alone (18 cameras, 12 patrols, 24 drones, 16 buried mines), no bee and no boss",
+		s4_sh.part == "corr" and s4_kinds == {"cctv": 18, "patrol": 12, "droneA": 24, "mine": 16} and gm.goal == 70 and gm.boss == null and gm.mid == null
+		and Vector2(pl.pos.x - Ship.START.x, pl.pos.z - Ship.START.z).length() < 0.01 and not s4_sh.key_obj.visible, s4_kinds)
+	check("4-1: both doors are shut and stop bullets", Phys.raycast_static(Vector3(-85, 1.5, -7.5), Vector3(-1, 0, 0), 20.0) and absf(Phys.rh_t - 6.5) < 0.01, Phys.rh_t)
+	pl.pos = Vector3(-91.0, 0, -7.5); s4_sh.update(0.02, 0.0); var s4_d0: String = s4_sh.doors[0].mode; s4_sh.key_hint_t = 0.0
 	pl.pos = Vector3(67.0, 0, -7.5); s4_sh.update(0.02, 0.0)
-	check("stage 4: without the key the hall's door stays shut", s4_sh.doors[1].mode == "shut")
-	# the bridge: step up to the door and you are put inside, locked in with the bee
+	check("4-1: neither door opens in 4-1 (the bridge is 4-2's, the hall 4-3's)", s4_d0 == "shut" and s4_sh.doors[1].mode == "shut", [s4_d0, s4_sh.doors[1].mode])
+	pl.invuln = 1e9; var s4_last = null
+	for e in en.list.duplicate():
+		if not e.alive: continue
+		if s4_last == null: s4_last = e; continue
+		en.damage(e, 1e6, e.pos, Vector3(0, 0, 1), false)
+	var s4_hold: bool = not gm.ended and gm.goal - gm.kills == 1
+	en.damage(s4_last, 1e6, s4_last.pos, Vector3(0, 0, 1), false)
+	check("4-1 is cleared when the last of its seventy robots is down, mines and all (not before)", s4_hold and gm.ended and gm.result == "clear" and Store.save.cleared.has(4) and not Store.save.cleared.has(14), [s4_hold, gm.kills, gm.ended])
+	gm.begin(14); s4_sh = w.ship; var bee4 = gm.mid
+	check("4-2: the gold bee (5,000) alone, sealed on the bridge; you start in the corridor by the bridge's door, facing it; the hall's key in the commander's console",
+		s4_sh.part == "bridge" and en.list.size() == 1 and bee4 != null and bee4.max_hp == 5000.0 and bee4.sealed and bee4.scale == 1.25 and gm.boss == null and gm.goal == 1
+		and absf(pl.pos.x - float(Ship.STARTS.bridge.x)) < 0.01 and absf(pl.yaw - PI / 2) < 0.01 and s4_sh.key_obj.visible and not s4_sh.key, [en.list.size(), pl.pos])
+	en.damage(bee4, 100, bee4.pos, Vector3(0, 0, 1), false)
+	pl.pos = Vector3(67.0, 0, -7.5); s4_sh.update(0.02, 0.0)
+	check("4-2: the hall's door stays shut", s4_sh.doors[1].mode == "shut")
 	pl.pos = Vector3(-91.0, 0, -7.5); s4_sh.update(0.02, 0.0)
-	check("stage 4: at the bridge door you are let in and locked in with the bee, which wakes", s4_sh.doors[0].mode == "locked" and pl.pos.x < -93.0 and not bee4.sealed and bee4.alert)
-	check("stage 4: the key cannot be pulled while the bee lives", not s4_sh.take_key())
+	check("4-2: at the bridge door you are let in and locked in with the bee, which wakes", s4_sh.doors[0].mode == "locked" and pl.pos.x < -93.0 and not bee4.sealed and bee4.alert)
 	var s4_m4: int = Store.save.money; pl.invuln = 1e9
 	en.damage(bee4, 1e6, bee4.pos, Vector3(0, 0, 1), false)
-	check("stage 4: the bee pays ten times its price, doubled, and its door opens for good", Store.save.money == s4_m4 + 15000 * Store.PAY and s4_sh.doors[0].mode == "open" and gm.mid == null, Store.save.money - s4_m4)
-	pl.pos = Vector3(Ship.KEY.x + 1.0, 0.45, Ship.KEY.z)
-	check("stage 4: pulling the key out is the save point", s4_sh.take_key() and s4_sh.key and gm.sp != null and gm.sp.kills == 1 and gm.sp.key)
-	# dying after it: back on the bridge with the key, the kills and the bag as they were
-	var s4_k4: int = gm.kills; var s4_bag4: int = Store.save.money
-	en.damage(en.list[5], 1e6, en.list[5].pos, Vector3(0, 0, 1), false); pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); gm.update(0.02)
-	check("stage 4: you fall after the save point", gm.ended and gm.result == "dead" and gm.sp != null)
-	gm.from_save()
-	check("stage 4: back at the save point you are in the stage again (a rental goes back when it ends)", gm.deployed)
-	check("stage 4: back at the save point: on the bridge, the key in your pocket, the bee still dead, kills and bag as they were", not gm.ended and gm.kills == s4_k4 and Store.save.money == s4_bag4 and w.ship.key and w.ship.doors[0].mode == "open"
-		and absf(pl.pos.x - Ship.SAVE.x) < 1e-4 and en.list.filter(func(e): return e.type == "gdrone").is_empty() and en.list.size() == 99 and pl.hp == Player.MAX_HP, en.list.size())
-	s4_sh = w.ship; boss4 = gm.boss
-	# with the key the hall's door lets you in
-	for i in 30: s4_sh.update(0.02, 0.0)
+	check("4-2: the bee pays ten times its price, doubled; its door opens for good, the hall's key comes off the console with it, and 4-2 is cleared (no chest)",
+		Store.save.money == s4_m4 + 15000 * Store.PAY and s4_sh.doors[0].mode == "open" and gm.mid == null and s4_sh.key and not s4_sh.key_obj.visible and gm.ended and gm.result == "clear"
+		and Store.save.cleared.has(14) and lt.pending() == null, Store.save.money - s4_m4)
+	gm.begin(15); s4_sh = w.ship; var boss4 = gm.boss
+	check("4-3: the boss drone (9,000) sealed in the hall with its eight patrols and twenty buried mines; you start in the corridor by the hall's door, facing it",
+		s4_sh.part == "hall" and boss4 != null and boss4.max_hp == 9000.0 and boss4.sealed and gm.mid == null and en.list.filter(func(e): return e.type == "patrol").size() == 8
+		and en.list.filter(func(e): return e.type == "mine").size() == 20 and en.list.size() == 29 and absf(pl.pos.x - float(Ship.STARTS.hall.x)) < 0.01 and absf(pl.yaw + PI / 2) < 0.01 and not s4_sh.key_obj.visible, en.list.size())
+	pl.pos = Vector3(-91.0, 0, -7.5); s4_sh.update(0.02, 0.0)
+	check("4-3: the bridge's door stays shut", s4_sh.doors[0].mode == "shut")
 	pl.pos = Vector3(67.0, 0, -7.5); s4_sh.update(0.02, 0.0)
-	check("stage 4: with the key the hall's door lets you in and locks; the boss and its patrols wake", s4_sh.doors[1].mode == "locked" and pl.pos.x > 69.0 and not boss4.sealed and en.list.filter(func(e): return e.sealed).is_empty())
+	check("4-3: the hall's door lets you in (no key to find: 4-2 took it) and locks; the boss and its patrols wake", s4_sh.doors[1].mode == "locked" and pl.pos.x > 69.0 and not boss4.sealed and en.list.filter(func(e): return e.sealed).is_empty())
 	# the boss: three shells, a third of its health each
 	pl.invuln = 1e9; boss4.lod = 0.0; en.update(0.02, 0.0)
 	en.damage(boss4, 5000, boss4.pos, Vector3(0, 0, 1), false)
-	check("stage 4: no blow takes the boss past a third of its health: the outer shell bursts and phase 2 begins", boss4.hp == 6000.0 and boss4.k.phase == 1 and boss4.R == 1.5 and s4_sh.break_t > 0.0, boss4.hp)
+	check("4-3: no blow takes the boss past a third of its health: the outer shell bursts and phase 2 begins", boss4.hp == 6000.0 and boss4.k.phase == 1 and boss4.R == 1.5 and s4_sh.break_t > 0.0, boss4.hp)
 	en.damage(boss4, 500, boss4.pos, Vector3(0, 0, 1), false)
-	check("stage 4: while the shell comes apart nothing gets through", boss4.hp == 6000.0)
+	check("4-3: while the shell comes apart nothing gets through", boss4.hp == 6000.0)
 	var s4_col4: int = Phys.colliders.size()
 	for i in 100: s4_sh.update(0.02, 0.0)
-	check("stage 4: 1.8 s later the hall's floor falls into the stepped pit, 9 m down", s4_sh.broken and Phys.PIT != null and Phys.PIT.y == -9.0 and Phys.colliders.size() == s4_col4 - 3 and Phys.ground_at(100.0, 1.0, -6.0, 0.3) < -0.3, Phys.ground_at(100.0, 1.0, -6.0, 0.3))
+	check("4-3: 1.8 s later the hall's floor falls into the stepped pit, 9 m down", s4_sh.broken and Phys.PIT != null and Phys.PIT.y == -9.0 and Phys.colliders.size() == s4_col4 - 3 and Phys.ground_at(100.0, 1.0, -6.0, 0.3) < -0.3, Phys.ground_at(100.0, 1.0, -6.0, 0.3))
 	boss4.k.cd = 50.0   # (a long wait left over from the shell before: the shell coming off starts the new one afresh)
 	for i in 80: en.update(0.02, 0.0)
-	check("stage 4: once the shell is off (1.4 s) the next attack waits the browser game's 1.2 s, not what was left from the shell before",
+	check("4-3: once the shell is off (1.4 s) the next attack waits the browser game's 1.2 s, not what was left from the shell before",
 		boss4.k.mode != "shed" and boss4.k.cd <= 1.2 - 0.15 and boss4.k.cd > 0.0, [boss4.k.mode, boss4.k.cd])
 	en.damage(boss4, 5000, boss4.pos, Vector3(0, 0, 1), false)
-	check("stage 4: at a third left the second shell goes: phase 3, and the hatches are about to open", boss4.hp == 3000.0 and boss4.k.phase == 2 and boss4.R == 0.75 and s4_sh.hatch_wait > 0.0)
+	check("4-3: at a third left the second shell goes: phase 3, and the hatches are about to open", boss4.hp == 3000.0 and boss4.k.phase == 2 and boss4.R == 0.75 and s4_sh.hatch_wait > 0.0)
 	for i in 140: en.update(0.02, 0.0)
-	check("stage 4: the hatches open and drones start coming up", s4_sh.hatches[0].open and s4_sh.hatch_q.size() > 0)
+	check("4-3: the hatches open and drones start coming up", s4_sh.hatches[0].open and s4_sh.hatch_q.size() > 0)
 	# its mines: thrown out of its belly in a wide ring round the spot under it (the owner's rule), not dropped in a heap under it
 	var s4_was: Array = en.list.duplicate(); var s4_at: Vector3 = boss4.pos
 	s4_rb._drop_mines(boss4, 10)
@@ -902,16 +939,16 @@ func _ready() -> void:
 	var s4_d: Array = s4_mines.map(func(m): return Vector2(m.pos.x - s4_at.x, m.pos.z - s4_at.z).length()); var s4_q := {}
 	for m in s4_mines: s4_q[int(fposmod(atan2(m.pos.z - s4_at.z, m.pos.x - s4_at.x), TAU) / (TAU / 4.0))] = true
 	var s4_mean: float = (s4_d.reduce(func(a, b): return a + b, 0.0) / s4_d.size()) if not s4_d.is_empty() else 0.0
-	check("stage 4: ten mines from the boss drone land in a wide ring all round it (2.5 to 8.5 m out), and lie arming",
+	check("4-3: ten mines from the boss drone land in a wide ring all round it (2.5 to 8.5 m out), and lie arming",
 		s4_mines.size() == 10 and s4_mines.all(func(m): return m.bs == "arm") and s4_d.min() >= 1.0 and s4_d.max() <= Robots.MINE_R[1] + 10 * Robots.MINE_R[2] + 0.5 and s4_mean >= 3.5 and s4_q.size() == 4, [s4_d, s4_q.keys()])
 	# the boss drone down is the ship won, robots left or not: open its chest and you are out (the owner's rule)
 	var s4_left: int = en.list.filter(func(e): return e.alive and not e.extra and e != boss4).size()
 	en.damage(boss4, 1e6, boss4.pos, Vector3(0, 0, 1), false)
-	check("stage 4: the boss drone down, the stage waits only for its chest, though robots are left", not boss4.alive and s4_left > 0 and lt.pending() != null and not gm.ended and gm._chest_wait, s4_left)
+	check("4-3: the boss drone down, the stage waits only for its chest, though robots are left", not boss4.alive and s4_left > 0 and lt.pending() != null and not gm.ended and gm._chest_wait, s4_left)
 	var s4_ch: Dictionary = lt.pending(); pl.pos = Vector3(float(s4_ch.x), float(s4_ch.y), float(s4_ch.z) + 1.0); lt.update(0.02); gm.update(0.02)
 	var s4_wait: bool = not gm.ended and gm.party_t > Game.PARTY - 0.1
 	for i in roundi(Game.PARTY / 0.1) + 1: gm.update(0.1)
-	check("stage 4: its chest opened: what it gave is shown first (the new gun's card, as long as it is on), then the ship is cleared", s4_wait and gm.ended and gm.result == "clear" and Store.save.cleared.has(4), [s4_wait, gm.ended, gm.result])
+	check("4-3: its chest opened: what it gave is shown first (the new gun's card, as long as it is on), then the ship is cleared", s4_wait and gm.ended and gm.result == "clear" and Store.save.cleared.has(15), [s4_wait, gm.ended, gm.result])
 	# the laser: touching the beam is the end
 	check("stage 4: the beam's reach is measured along its whole length", absf(Robots.seg_dist(Vector3(0, 1, 0), Vector3(10, 1, 0), Vector3(5, 0, 0.4), Vector3(5, 1.7, 0.4)) - 0.4) < 1e-5)
 	# a mine: buried, wakes when you come close, and goes off for 100
@@ -930,18 +967,15 @@ func _ready() -> void:
 		s4_rb.tick(0.02)
 		if s4_rb.rockets.is_empty(): break
 	check("stage 4: a homing rocket finds you: 100 at the centre of the blast", s4_rb.rockets.is_empty() and pl.hp <= Player.MAX_HP - 50.0, pl.hp)
-	gm.sp = null
 	gm.begin(4); var s4_cam = null
 	for e in en.list:
 		if e.type == "cctv": s4_cam = e; break
 	check("stage 4: a ceiling camera shoots from its own lens, not from where a man's gun would be", en.muzzle_of(s4_cam).distance_to(s4_cam.pos) < 0.5, en.muzzle_of(s4_cam) - s4_cam.pos)
-	# the save point taken with the gold drone still about: back from it, the drone is the stage's commander again (its bar, its end)
-	# (the key can only be taken once the bee is down, so in play it is never about at a save point: a save point made here by hand)
-	gm.begin(4); gm.take_save(); var md_took: bool = gm.sp != null; gm.ended = true; gm.from_save()
-	var md_bee = null
-	for e9 in en.list:
-		if e9.alive and e9.T.get("mid", false): md_bee = e9
-	check("stage 4: back from a save point with the gold drone still about, it is the stage's commander again (its bar, and its end when it falls)", md_took and md_bee != null and gm.mid == md_bee, [md_took, md_bee != null, gm.mid != null])
+	# no save point any more: each part is a stage of its own, and trying 4-3 again starts you at the hall's door
+	gm.begin(15); pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); gm.update(0.02); var s4_fell: bool = gm.ended and gm.result == "dead"
+	gm.begin(15)
+	check("4-3 lost and tried again: back at the hall's door with everything as it was (no save point: the bridge and the corridor are stages of their own)",
+		s4_fell and not gm.ended and absf(pl.pos.x - float(Ship.STARTS.hall.x)) < 0.01 and gm.boss != null and gm.boss.hp == gm.boss.max_hp and not gm.has_method("take_save"), [s4_fell, pl.pos])
 	# ---------------- stage 5: the toy room ----------------
 	gm.begin(9); var s5_tf: ToyFoes = en.toys; pl.invuln = 1e9
 	var s5_kinds := {}
@@ -1321,11 +1355,11 @@ func _ready() -> void:
 	var shown_of := func() -> int:
 		return en.list.filter(func(e): return e.alive and not e.ridden and not (e.type == "mine" and (e.bs == "hidden" or e.bs == ""))).size()
 	var map_bad := []
-	for st9 in [1, 6, 5, 2, 3, 7, 8, 4, 9, 10]:
+	for st9 in [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10]:
 		gm.begin(st9); var rc9: MapRec = map_of.call(st9)
-		var where9: String = {3: "출입문", 8: "출입문", 4: "에어록", 10: "시작하는 곳"}.get(st9, "내리는 곳")
+		var where9: String = {3: "출입문", 8: "출입문", 4: "에어록", 14: "시작하는 곳", 15: "시작하는 곳", 10: "시작하는 곳"}.get(st9, "내리는 곳")
 		if rc9.dots() != shown_of.call() or not rc9.texts.has("N ↑") or not rc9.texts.has(where9): map_bad.push_back("%d: %d dots / %d, %s" % [st9, rc9.dots(), shown_of.call(), str(rc9.texts.slice(0, 4))])
-	check("the tactical map opens on all ten stages: a mark for every enemy, north, the scale and the drop point", map_bad.is_empty(), map_bad)
+	check("the tactical map opens on all twelve stages there are to fight alone: a mark for every enemy, north, the scale and the drop point (4-2 and 4-3 start by their door)", map_bad.is_empty(), map_bad)
 	gm.begin(9); var nm_rc: MapRec = map_of.call(9); var nm_bad := []
 	var nm_h := {"책장": ToyRoom.SHELF_Y, "옷장": ToyRoom.WARD_Y, "책상": ToyRoom.DESK_Y, "2층침대": ToyRoom.BUNK_Y}
 	for nm: Array in ToyRoom.NAMES:
@@ -1412,7 +1446,7 @@ func _ready() -> void:
 	check("out of the ship: back through the airlock, and it shuts", c_done[0] == 1 and S4.door_open == 0.0 and ct.fade_to == 1.0)
 	# a sealed door: a look at the bee, its name, then you are inside and it locks
 	for c_skip in [false, true]:
-		gm.begin(4); S4 = w.ship; var D4: Dictionary = S4.doors[0]; var bee = S4.drone(D4)
+		gm.begin(14); S4 = w.ship; var D4: Dictionary = S4.doors[0]; var bee = S4.drone(D4)
 		S4.on_cut = func(D: Dictionary, e: Enemies.Foe, done: Callable) -> void: ct.start_boss_intro(D, e, done)
 		bee.bar.visible = true   # (as if it had been hit before: its health bar showing)
 		S4.enter(D4); var c_mid: String = D4.mode; var c_kind := ct.kind(); var c_bar_hid: bool = not bee.bar.visible
@@ -1422,6 +1456,16 @@ func _ready() -> void:
 			c_kind == "boss" and c_mid == "cut" and D4.mode == "locked" and not bee.sealed and absf(pl.pos.x - (D4.x + D4.inward * 2.4)) < 1e-4 and not ct.active(), [c_kind, c_mid, D4.mode, pl.pos])
 		check("the bee's health bar is out of the picture while it is shown, and back as it was once that is over (%s)" % ("skipped" if c_skip else "watched"), c_bar_hid and bee.bar.visible)
 	S4.on_cut = Callable(); Snd.keep_log = false
+	# 4-2 and 4-3 start in the corridor: their opening comes down it behind you to your eyes, the airlock left shut; out through the airlock all the same
+	for c_part in [14, 15]:
+		gm.begin(c_part); S4 = w.ship; c_done[0] = 0; ct.start_intro(c_part, c_end); var c_k := ct.kind(); var c_back := 0.0
+		for i in 200:
+			ct.update(1.0 / 30.0); S4.anim_door(1.0 / 30.0); c_back = maxf(c_back, cam.global_position.distance_to(Vector3(w.start.x, Player.EYE, w.start.z)))
+			if not ct.active(): break
+		check("%s's opening: down the corridor behind you to your eyes, its door ahead; the airlock stays shut" % Store.STAGE_TAG[c_part],
+			c_k == "shipdoor" and c_done[0] == 1 and c_back > 10.0 and S4.door_open == 0.0 and cam.global_position.distance_to(Vector3(w.start.x, Player.EYE, w.start.z)) < 0.3, [c_k, c_back, cam.global_position])
+	c_done[0] = 0; ct.start_outro(c_end); c_run.call(7.5)
+	check("out of 4-3 too through the airlock, and it shuts", c_done[0] == 1 and S4.door_open == 0.0 and ct.fade_to == 1.0)
 	# ---------------- the save code by mail ----------------
 	var ms := Store.save0(); ms.cleared = [1, 6]; ms.money = 119000; var mcode := SaveCode.encode(ms)
 	var mt := SaveCode.mail_text(ms, mcode, "2026-11-16 09:30"); var mlines: PackedStringArray = str(mt.body).split("\r\n")
@@ -1462,8 +1506,10 @@ func _ready() -> void:
 		if en.list.size() > 10 and not e.boss: en.vanish(e); gm.kills += 1
 	var h_three := hud9.aims(gm).size(); gm.begin(4); for e in en.list.duplicate():
 		if en.list.size() > 10: en.vanish(e); gm.kills += 1
-	var h_ship := hud9.aims(gm).size()
-	check("arrows: none while many are left, the nearest three once ten or fewer are, never on the ship", h_none == 0 and h_three == 3 and h_ship == 0, [h_none, h_three, h_ship])
+	var h_corr := hud9.aims(gm).size(); gm.begin(15); for e in en.list.duplicate():
+		if en.list.size() > 10: en.vanish(e); gm.kills += 1
+	var h_hall := hud9.aims(gm).size()
+	check("arrows: none while many are left, the nearest three once ten or fewer are (4-1's last robots too, to be found: it is cleared with them all); never in 4-2 or 4-3", h_none == 0 and h_three == 3 and h_corr == 3 and h_hall == 0, [h_none, h_three, h_corr, h_hall])
 	gm.begin(2); Snd.keep_log = true; Snd.played.clear(); gm.infected = true; gm.infect_t = 5.0
 	for i in 60: hud9.update(1.0 / 30.0)
 	var h_beats := Snd.played.filter(func(n): return n == "heart").size(); gm.infected = false; Snd.keep_log = false
@@ -1783,10 +1829,12 @@ func _ready() -> void:
 	e4_sh.open_hatches(); e4_sh.update(1.0, 2.0); var e4_h0: Dictionary = e4_sh.hatches[0]
 	check("4: the pit's steps, landings, their lights and its floor show only when the hall's floor breaks (the dais and its lights go); open hatches stand up a column of red light",
 		e4_hide and e4_show and (e4_h0.shaft as Node3D).visible and (e4_h0.shaft as Node3D).scale.y > 0.5 and ((e4_h0.shaft as MeshInstance3D).mesh as CylinderMesh).cap_top == false and e4_sh.hatches.size() == 8)
-	# the crew
+	# the crew (4-1's corridor has neither the bee nor the boss: those two are put on board here to be looked at, as 4-2 and 4-3 put them)
 	var q4_t := {}
 	for q4_e in en.list:
 		if not q4_t.has(q4_e.type): q4_t[q4_e.type] = q4_e
+	if not q4_t.has("gdrone"): q4_t.gdrone = en.spawn("gdrone", -108.0, -7.5, {"y": 9.5, "scale": 1.25, "yaw": PI / 2})
+	if not q4_t.has("bdrone"): var q4_bo: Dictionary = Game.BOSS[15].duplicate(); q4_bo.merge({"boss": true, "yaw": -PI / 2, "y": 9.5}, true); q4_t.bdrone = en.spawn("bdrone", 106.0, 22.0, q4_bo)
 	var q4_body := 0; var q4_kit_ok := true
 	for q4_n in (q4_t.patrol.g as Node3D).find_children("*", "MeshInstance3D", true, false):
 		if q4_n == q4_t.patrol.far: continue   # (the whole baked for far away, which D10 checks below)
@@ -2558,14 +2606,11 @@ func _fixes_154(gm: Game, en: Enemies, pl: Player, w: World) -> void:
 	check("bug 11: falling tells the game's frame at once (as the browser game's, the fight stops there and then) and ends the jetpack; a chest opened after takes nothing",
 		downs == ["dead"] and not pl.jet_on and Store.save.owned == c_owned, [downs, pl.jet_on, Store.save.owned])
 	gm.on_down = keep_down
-	gm.begin(4); var shp: Ship = w.ship
-	for o in en.list:
-		if o.type == "gdrone": o.alive = false   # (the key lies there only once the gold bee is down)
-	pl.pos = Vector3(Ship.KEY.x + 1.0, Phys.ground_at(Ship.KEY.x + 1.0, 1.0, Ship.KEY.z, Player.R), Ship.KEY.z)
-	gm.ended = true; var k_over: bool = shp.take_key(); var k_had: bool = shp.key
-	gm.ended = false; var k_live: bool = shp.take_key()
-	check("bug 11: stage 4's key is not taken once the run is over (no save point without a bag to go back to); in the fight it is",
-		not k_over and not k_had and k_live and shp.key, [k_over, k_had, k_live])
+	gm.begin(14); var shp: Ship = w.ship; var k_bee = gm.mid
+	pl.invuln = 0.0; pl.hp = 1.0; pl.hurt(50, Vector3.ZERO); gm.update(0.02); var k_over: bool = gm.ended
+	en.damage(k_bee, 1e6, k_bee.pos, Vector3(0, 0, 1), false)
+	check("bug 11: in 4-2 the hall's key comes only with the gold bee, and not once the run is over (fallen, the bee shot after gets you nothing)",
+		k_over and not shp.key and not Store.save.cleared.has(14), [k_over, shp.key])
 	var mn = load("res://scripts/main.gd")
 	check("bug 11: in the second after you fall the phone's back button does nothing (the result is on its way)", mn.back_action("down", "", false) == "none", mn.back_action("down", "", false))
 	# 12: a stage cleared in the air: the jetpack off and down on the floor for the way out
@@ -3917,8 +3962,8 @@ func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, c
 	check("the Archmage down: 80,000 (a hit to the head half as much again), the great sphere runs down and stops, his chest stands where he fell on top of the tower, and the stage is won when you open it (6-1 cleared, a gun for good: its card shown first)",
 		fall == [true, true, true, 120000, false, false] and am_card and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(10) and (Store.save.owned as Array).size() == owned0 + 1 and Store.save.best.has("t10"), [fall, gm.ended, gm.result, Store.save.cleared])
 	# ---- its screens ----
-	check("the stage board: 6-1 hangs under stage 5 and can be played, and 6-2 (the plain of the four banners) under it; 6-3 and 6-4 are named on it (the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
-		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][0] == Ui.NODE_AT[9][0] and Ui.NODE_AT[10][1] > Ui.NODE_AT[9][1] and Ui.BUILT.has(10) and Ui.BUILT.has(11) and not Ui.BUILT.has(12)
+	check("the stage board: 6-1 stands at the end of the top row after stage 5 and can be played, and 6-2 (the plain of the four banners) under it; 6-3 and 6-4 are named on it (the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
+		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][1] == Ui.NODE_AT[9][1] and Ui.NODE_AT[10][0] > Ui.NODE_AT[9][0] and Ui.NODE_AT[11][0] == Ui.NODE_AT[10][0] and Ui.NODE_AT[11][1] > Ui.NODE_AT[10][1] and Ui.BUILT.has(10) and Ui.BUILT.has(11) and not Ui.BUILT.has(12)
 		and [[9, 10], [10, 11], [11, 12], [12, 13]].all(func(t6): return Ui.TRACKS.has(t6)) and Meta.spec(10) == {"all": ["sniper", "vest"], "any": [["rifle", "smg", "lmg"]]} and Game.STAGES[10].name == "은빛 경계림")
 	gm.begin(10); W = w.wood
 	var tm6 := TacMap.new(); tm6.game = gm; tm6.cam = cam; tm6.f_mono = SystemFont.new(); tm6.f_bold = SystemFont.new(); tm6.setup(10)

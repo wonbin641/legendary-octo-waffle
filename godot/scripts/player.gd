@@ -121,6 +121,7 @@ func reset(x: float, z: float, yaw_: float) -> void:
 	jump_mul = 1.0; slow_mul = 1.0; launched = false; chute = false; since_zip = 9.0
 	hp = max_hp; air_n = 0; dash_t = 0.0; _dash_done = false; invuln = 0.0; stun_t = 0.0; fear_t = 0.0; toss_on = false; ads = 0.0; jet_on = false; jet_t = 0.0; jet_last_tap = -9.0; Snd.jet(0.0)
 	out = false; carry_mul = 1.0; held = false
+	step_phase = 0.0; step_dist = 0.0; sprint_blend = 0.0   # (the stride starts afresh: the first step's sound comes as far in as on a first start)
 
 func update(dt: float, cam: Camera3D, time: float) -> void:
 	if stun_t > 0.0:

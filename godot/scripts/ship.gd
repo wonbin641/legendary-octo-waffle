@@ -3,26 +3,31 @@ extends RefCounted
 ## Stage 4: inside a spaceship. From the airlock a narrow dog-leg passage climbs north into a long corridor (160 m). The bridge is at
 ## its west end (two storeys, a gallery at 7 m), the main hall at its east end with the reactor in the middle. Both have sliding doors.
 ## Ported from src/04f_ship.js: the same walls, the same colliders in the same order, the same crates.
+## The ship is played in three parts (Store.SHIP), the whole ship built for each: 4-1 (part "corr") from the airlock along the
+## corridor, its robots to clear, both doors shut; 4-2 ("bridge") from the corridor's west end into the bridge and its gold bee;
+## 4-3 ("hall") from its east end into the main hall and the boss drone. Only that part's robots are on board, and only its door opens.
 
 const ROOMS := [   # x0, z0, x1, z1, ceiling height, kind
 	[-123.0, -28.0, -92.0, 13.0, 16.0, "bridge"], [-92.0, -12.5, 68.0, -2.5, 6.0, "corr"], [68.0, -48.0, 162.0, 45.0, 16.0, "hall"],
 	[-26.5, -2.5, -22.0, 7.0, 4.5, "pass"], [-44.0, 7.0, -22.0, 13.0, 4.5, "pass"], [-44.0, 13.0, -39.5, 25.0, 4.5, "pass"], [-44.0, 25.0, -39.5, 29.5, 4.5, "lock"]]
 const START := {"x": -41.75, "z": 22.6, "yaw": 0.0}
+## where each part starts: 4-1 in the airlock; 4-2 and 4-3 in the corridor a few steps from their door, facing it
+const STARTS := {"corr": START, "bridge": {"x": -84.0, "z": -7.5, "yaw": PI / 2}, "hall": {"x": 60.0, "z": -7.5, "yaw": -PI / 2}}
 const DOOR_Z := 25.0
 const REACTOR := {"x": 120.0, "z": -6.0, "r": 1.7}
 const DAIS := [[96.0, -28.0, 144.0, 16.0, 0.45], [105.0, -20.0, 135.0, 8.0, 0.9], [112.0, -14.0, 128.0, 2.0, 1.35]]
 const PILLARS := [[80.0, -34.0], [80.0, 30.0], [154.0, -36.0], [154.0, 32.0]]   # 1.2 m half-width, floor to ceiling
 const BRIDGE := {"gy": 7.0, "x0": -123.0, "x1": -92.0, "z0": -28.0, "z1": 13.0, "stairX0": -117.0, "stairX1": -107.4, "eastX": -97.0, "steps": 16}
-const DOORS := [{"x": -91.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "운전실", "inward": -1.0, "room": "bridge", "who": "gdrone", "title": "황금꿀벌드론", "tone": "bee", "needKey": false},
-	{"x": 67.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "메인홀", "inward": 1.0, "room": "hall", "who": "bdrone", "title": "최첨단 감시 드론 보스 B-3", "tone": "boss", "needKey": true}]
+const DOORS := [{"x": -91.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "운전실", "inward": -1.0, "room": "bridge", "who": "gdrone", "title": "황금꿀벌드론", "tone": "bee", "part": "bridge"},
+	{"x": 67.7, "z0": -12.5, "z1": -2.5, "h": 6.0, "name": "메인홀", "inward": 1.0, "room": "hall", "who": "bdrone", "title": "최첨단 감시 드론 보스 B-3", "tone": "boss", "part": "hall"}]
 const KEY := Vector3(-105, 1.6, -7.5)   # the main hall's key, stuck upright in the commander's console on the bridge
-const SAVE := {"x": -98.5, "z": -7.5, "yaw": -PI / 2}   # where the save point puts you back
 const HATCHES := [[75.2, -16.0], [75.2, 22.0], [90.0, 40.0], [118.0, 40.8], [150.0, 20.0], [150.0, -28.0], [118.0, -42.8], [86.0, -38.0]]
 # under the hall's floor, round the reactor, an upside-down stepped pyramid: three flights of eight 37.5 cm steps, two landings, 9 m down
 const PYR_OX := 27.0
 const PYR_OZ := 25.0
 const PYR_BOTTOM := -9.0
 
+var part := "corr"         # which of the three parts is played (Store.SHIP): set before build
 var steps: Array = []     # {k, ax, az, y, w, land}
 var air_door: Node3D      # the airlock's inner door: it rolls up as the stage starts and shuts behind you
 var door_open := 0.0
@@ -33,10 +38,9 @@ var doors: Array = []
 var hatches: Array = []
 var hatch_q: Array = []
 var hatch_wait := 0.0
-var key := false
+var key := false           # the main hall's key, taken off the console as the gold bee falls (4-2)
 var key_obj: Node3D
 var key_hint_t := 0.0
-var save_t := 0.0
 var pit := {}
 var broken := false
 var break_t := 0.0
@@ -433,7 +437,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 	box.call(-108.0, 0.0, -11.0, -102.0, 0.45, -4.0, "2a2f3a"); glow.push_back([6.04, 0.04, 0.04, -105.0, 0.46, -11.0, "e8b040"]); glow.push_back([6.04, 0.04, 0.04, -105.0, 0.46, -4.0, "e8b040"])
 	box.call(-105.5, 0.45, -8.1, -104.5, 1.6, -6.9, "3b4252"); solid.push_back([1.1, 0.12, 1.1, -105.0, 0.95, -7.5, "5a6378"])
 	# the main hall's key, stuck upright in the commander's console: a gold bow and collar over a short shaft, glowing so you can find it
-	key_obj = Node3D.new(); key_obj.position = KEY; G.add_child(key_obj)
+	key_obj = Node3D.new(); key_obj.position = KEY; key_obj.visible = part == "bridge"; G.add_child(key_obj)
 	var kmat := Gfx.std(World.lin("ffc83a"), 0.25, 0.85); kmat.emission_enabled = true; kmat.emission = World.lin("7a4c00"); kmat.emission_energy_multiplier = 0.9
 	var bow := MeshInstance3D.new(); var bt := TorusMesh.new(); bt.inner_radius = 0.12; bt.outer_radius = 0.22; bt.rings = 24; bt.ring_segments = 10; bow.mesh = bt
 	bow.rotation.x = PI / 2; bow.position.y = 0.5; bow.material_override = kmat; key_obj.add_child(bow)   # (three.js's torus stands upright)
@@ -569,7 +573,7 @@ func build(w: World, G: Node3D, S: Dictionary, R: World.Rng) -> void:
 				if Vector2(hq[0] - px, hq[1] - pz).length() < 2.6: return false
 			return true)
 	Phys.index_colliders(); Phys.build_nav()
-	w.start = START.duplicate(); w.spawns.clear()
+	w.start = (STARTS[part] as Dictionary).duplicate(); w.spawns.clear()
 
 func _wall(pass_: int, d: int, a: int, c: Dictionary, GX: float, GZ: float, CS: float, T: float) -> Array:
 	if pass_ == 0:
@@ -580,52 +584,62 @@ func _wall(pass_: int, d: int, a: int, c: Dictionary, GX: float, GZ: float, CS: 
 
 ## stage 4's hundred: the boss over the hall, the gold bee alone on the bridge, cameras up the passage and along the corridor,
 ## patrols and little drones along the corridor, and mines in the floor of the corridor and the hall
+## who is on board for the part played: 4-1 the passage's and the corridor's robots, 4-2 the gold bee on the bridge, 4-3 the boss
+## drone, its eight patrols and the hall's mines. Every part takes the same random draws in the same order as the whole ship always
+## did (the browser game's), and puts on board only its own robots: each stands where it always stood
 func populate(put: Callable, SR: World.Rng, boss_opts: Dictionary) -> void:
+	var p := func(area: String, type: String, at: Dictionary, opts: Dictionary):
+		if area == part: return put.call(type, at, opts)
+		SR.rng(0, TAU); return null   # (another part's robot: put's own draw for its facing, taken all the same)
 	var bo := {"boss": true, "yaw": -PI / 2}; bo.merge(boss_opts, true)
-	var boss = put.call("bdrone", {"x": 106.0, "z": 22.0, "y": 9.5}, bo)
+	var boss = p.call("hall", "bdrone", {"x": 106.0, "z": 22.0, "y": 9.5}, bo)
 	if boss != null: boss.sealed = true
-	var bee = put.call("gdrone", {"x": -108.0, "z": -7.5, "y": 9.5}, {"scale": 1.25, "yaw": PI / 2})
+	var bee = p.call("bridge", "gdrone", {"x": -108.0, "z": -7.5, "y": 9.5}, {"scale": 1.25, "yaw": PI / 2})
 	if bee != null: bee.sealed = true
-	for q in [[-43.4, 18.0, PI / 2], [-39.9, 14.2, -PI / 2], [-35.0, 7.45, 0.0], [-28.0, 12.55, PI], [-26.1, 4.0, PI / 2], [-22.4, 0.0, -PI / 2]]: put.call("cctv", {"x": q[0], "z": q[1], "y": 4.05}, {"yaw": q[2]})
-	for i in 12: var north := i % 2 == 0; put.call("cctv", {"x": -86.0 + i * 13.3, "z": -12.05 if north else -2.95, "y": 5.55}, {"yaw": 0.0 if north else PI})
+	for q in [[-43.4, 18.0, PI / 2], [-39.9, 14.2, -PI / 2], [-35.0, 7.45, 0.0], [-28.0, 12.55, PI], [-26.1, 4.0, PI / 2], [-22.4, 0.0, -PI / 2]]: p.call("corr", "cctv", {"x": q[0], "z": q[1], "y": 4.05}, {"yaw": q[2]})
+	for i in 12: var north := i % 2 == 0; p.call("corr", "cctv", {"x": -86.0 + i * 13.3, "z": -12.05 if north else -2.95, "y": 5.55}, {"yaw": 0.0 if north else PI})
 	# patrols: twelve walking beats along the corridor in two lanes
 	for i in 12:
 		var z: float = -5.2 if i % 2 else -9.8; var x0 := -86.0 + i * 12.5; var x1 := minf(64.0, x0 + SR.rng(7, 10)); var px := x0 + SR.rng(0.5, 2)
-		var e = put.call("patrol", {"x": px, "z": z}, {"yaw": PI / 2})
-		if e != null: e.k.wp = [Vector2(x0, z), Vector2(x1, z)]; e.k.wi = 1; e.k.waitT = SR.rng(0, 2)
+		var e = p.call("corr", "patrol", {"x": px, "z": z}, {"yaw": PI / 2}); var wt := SR.rng(0, 2)
+		if e != null: e.k.wp = [Vector2(x0, z), Vector2(x1, z)]; e.k.wi = 1; e.k.waitT = wt
 	# and eight in the main hall, round the dais, sealed in with the boss
 	for q in [[88.0, -45.5, 140.0, -45.5], [88.0, 43.3, 140.0, 43.3], [87.0, -22.0, 87.0, 18.0], [152.0, -22.0, 152.0, 18.0], [100.0, -33.2, 140.0, -33.2], [100.0, 21.2, 140.0, 21.2], [91.0, -26.0, 91.0, 10.0], [148.4, -26.0, 148.4, 10.0]]:
-		var e2 = put.call("patrol", {"x": q[0], "z": q[1]}, {"yaw": atan2(q[2] - q[0], q[3] - q[1])})
-		if e2 != null: e2.k.wp = [Vector2(q[0], q[1]), Vector2(q[2], q[3])]; e2.k.wi = 1; e2.k.waitT = SR.rng(0, 2); e2.sealed = true
+		var e2 = p.call("hall", "patrol", {"x": q[0], "z": q[1]}, {"yaw": atan2(q[2] - q[0], q[3] - q[1])}); var wt2 := SR.rng(0, 2)
+		if e2 != null: e2.k.wp = [Vector2(q[0], q[1]), Vector2(q[2], q[3])]; e2.k.wi = 1; e2.k.waitT = wt2; e2.sealed = true
 	# little drones: two dozen along the corridor
 	for i in 24:
 		var dx := -86.0 + i * 6.3 + SR.rng(-1.5, 1.5); var dz := SR.rng(-11, -4); var dy := SR.rng(3, 4.6); var dyaw := SR.rng(0, TAU)
-		put.call("droneA", {"x": dx, "z": dz, "y": dy}, {"yaw": dyaw})
+		p.call("corr", "droneA", {"x": dx, "z": dz, "y": dy}, {"yaw": dyaw})
 	# spider mines, buried: sixteen in the corridor, twenty in the hall, a few metres apart, only on flat floor
 	var mines := []
-	var lay := func(n: int, x0: float, x1: float, z0: float, z1: float) -> void:
-		var i := 0; var tries := 0
-		while i < n and tries < 900:
-			tries += 1; var x := SR.rng(x0, x1); var z := SR.rng(z0, z1); var y := Phys.ground_at(x, 1, z, 0.05); var flat := true
-			for o in [[0.8, 0.0], [-0.8, 0.0], [0.0, 0.8], [0.0, -0.8]]:
-				if absf(Phys.ground_at(x + o[0], 1, z + o[1], 0.05) - y) > 0.01: flat = false; break
-			if not flat or Phys.collide_at(x, y + 0.05, z, 0.5, 0.6) != null or Vector2(x + 24.25, z + 2.5).length() < 6.0: continue
-			var near := false
-			for mq: Vector2 in mines:
-				if Vector2(mq.x - x, mq.y - z).length() < 3.0: near = true; break
-			if near: continue
-			if x > DAIS[0][0] - 0.8 and x < DAIS[0][2] + 0.8 and z > DAIS[0][1] - 0.8 and z < DAIS[0][3] + 0.8: continue
-			var bad := false
-			for hq in HATCHES:
-				if Vector2(hq[0] - x, hq[1] - z).length() < 2.2: bad = true
-			for D in DOORS:
-				if absf(D.x - x) < 4.0: bad = true
-			if bad: continue
-			var myaw := SR.rng(0, TAU)
-			var e3 = put.call("mine", {"x": x, "z": z, "y": y - 0.16}, {"yaw": myaw})
-			if e3 != null: e3.bs = "hidden"; e3.k.baseY = y; mines.push_back(Vector2(x, z)); i += 1
-	lay.call(16, -88.0, 64.0, -11.6, -3.4)
-	lay.call(20, ROOMS[2][0] + 1.5, ROOMS[2][2] - 1.5, ROOMS[2][1] + 1.5, ROOMS[2][3] - 1.5)
+	_mines(p, SR, mines, "corr", 16, -88.0, 64.0, -11.6, -3.4)
+	_mines(p, SR, mines, "hall", 20, ROOMS[2][0] + 1.5, ROOMS[2][2] - 1.5, ROOMS[2][1] + 1.5, ROOMS[2][3] - 1.5)
+
+## spider mines, buried: n of them in that stretch, a few metres apart (from all laid before), only on flat floor, none by a door,
+## a hatch or the dais. Those of another part are laid all the same (where they would lie), just not put on board
+func _mines(p: Callable, SR: World.Rng, mines: Array, area: String, n: int, x0: float, x1: float, z0: float, z1: float) -> void:
+	var i := 0; var tries := 0
+	while i < n and tries < 900:
+		tries += 1; var x := SR.rng(x0, x1); var z := SR.rng(z0, z1); var y := Phys.ground_at(x, 1, z, 0.05); var flat := true
+		for o in [[0.8, 0.0], [-0.8, 0.0], [0.0, 0.8], [0.0, -0.8]]:
+			if absf(Phys.ground_at(x + o[0], 1, z + o[1], 0.05) - y) > 0.01: flat = false; break
+		if not flat or Phys.collide_at(x, y + 0.05, z, 0.5, 0.6) != null or Vector2(x + 24.25, z + 2.5).length() < 6.0: continue
+		var near := false
+		for mq: Vector2 in mines:
+			if Vector2(mq.x - x, mq.y - z).length() < 3.0: near = true; break
+		if near: continue
+		if x > DAIS[0][0] - 0.8 and x < DAIS[0][2] + 0.8 and z > DAIS[0][1] - 0.8 and z < DAIS[0][3] + 0.8: continue
+		var bad := false
+		for hq in HATCHES:
+			if Vector2(hq[0] - x, hq[1] - z).length() < 2.2: bad = true
+		for D in DOORS:
+			if absf(D.x - x) < 4.0: bad = true
+		if bad: continue
+		var myaw := SR.rng(0, TAU)
+		var e3 = p.call(area, "mine", {"x": x, "z": z, "y": y - 0.16}, {"yaw": myaw})
+		if e3 != null: e3.bs = "hidden"; e3.k.baseY = y
+		mines.push_back(Vector2(x, z)); i += 1
 
 func drone(D: Dictionary):
 	for o in enemies.list:
@@ -658,32 +672,14 @@ func lock_in(D: Dictionary) -> void:
 		if o.alive and o.sealed and room_at(o.pos.x, o.pos.z) == here: o.sealed = false   # the hall's patrols too
 	game.say_banner("문이 잠겼습니다", "황금꿀벌드론을 쓰러뜨려야 문이 열립니다" if D.room == "bridge" else "눈이 빨개지고 3초 뒤 빨간 조준선이 쫓아옵니다 · 레이저에 맞으면 즉사 · 벽 뒤로 숨으세요", 2.6)
 
-## the thing behind a door is dead: that door opens for good
+## the thing behind a door is dead: that door opens for good. The gold bee down, the main hall's key comes off the console with it
+## (and 4-2 is cleared: Game.on_kill)
 func on_down(e) -> void:
 	for D in doors:
 		if D.who == e.type:
 			D.mode = "open"; Snd.play("clank", 1.0, Vector3(D.x, 2, (D.z0 + D.z1) / 2))
-			if D.room == "bridge": save_t = 2.4   # the 'go and get the key' banner, once the kill banner has had its moment
-
-func key_near() -> bool:   # only once the bee is down
-	if key or key_obj == null: return false
-	for o in enemies.list:
-		if o.alive and o.type == "gdrone": return false
-	return Vector2(player.pos.x - KEY.x, player.pos.z - KEY.z).length() < 2.6 and player.pos.y < 2.5
-
-func take_key() -> bool:
-	if (game != null and game.ended) or not key_near(): return false   # (a run already over takes no key: no save point without a bag to go back to)
-	key = true; key_obj.visible = false; Snd.play("pickup_ammo"); Snd.play("buy")
-	game.take_save()   # the save point: from here on, with the key in your pocket
-	game.say_banner("세이브 포인트", "메인홀 열쇠 획득 · 이제 쓰러져도 열쇠를 가진 채 여기서 다시 시작합니다", 3.6); game.say_feed("메인홀 열쇠 획득 · 세이브 포인트")
-	return true
-
-## back from the save point: the bridge door stands open and the key is in your pocket
-func restore(sp: Dictionary) -> void:
-	var D: Dictionary = doors[0]; D.mode = "open"; D.open = 1.0
-	if D.col != null: Phys.remove_collider(D.col); D.col = null
-	_slide(D)
-	if sp.key: key = true; key_obj.visible = false
+			if D.room == "bridge" and not key:
+				key = true; key_obj.visible = false; Snd.play("pickup_ammo"); game.say_feed("메인홀 열쇠 획득 · 스테이지 4-3의 문이 열립니다")
 
 func _slide(D: Dictionary) -> void:
 	var w: float = (D.z1 - D.z0) / 2; var k: float = D.open * D.open * (3.0 - 2.0 * D.open); var zc: float = (D.z0 + D.z1) / 2
@@ -734,14 +730,15 @@ func update(dt: float, time: float) -> void:
 			if t.d > 0.0: n.position.y = -0.068 + sin(t.d * 60.0) * 0.03; continue
 			t.vy -= 18.0 * dt; n.position.y += t.vy * dt; n.rotation.x += t.sx * dt; n.rotation.z += t.sz * dt
 			if n.position.y < PYR_BOTTOM - 2.0: n.visible = false
-	# the two doors: shut until you stand right against one from the corridor side (the hall's also wants the key); shut, they stop bullets
+	# the two doors: shut until you stand right against one from the corridor side, and only the door of the part played opens
+	# (the bridge's in 4-2, the hall's in 4-3; in 4-1 neither); shut, they stop bullets
 	key_hint_t -= dt
 	for D in doors:
 		if D.mode == "shut" and not game.ended:
 			var out: float = (player.pos.x - D.x) * -D.inward   # how far out in the corridor
 			if out > 0.0 and out < 1.3 and player.pos.z > D.z0 + 0.3 and player.pos.z < D.z1 - 0.3 and player.pos.y < 2.5:
-				if D.needKey and not key:
-					if key_hint_t <= 0.0: key_hint_t = 3.5; game.say_hint("메인홀 문이 잠겨 있습니다 · 운전실 조종석에 꽂힌 열쇠가 필요합니다", 3.0); Snd.play("clank", 1.0, Vector3(D.x, 2, (D.z0 + D.z1) / 2))
+				if D.part != part:
+					if key_hint_t <= 0.0: key_hint_t = 3.5; game.say_hint("%s 문은 잠겨 있습니다 · 스테이지 %s에서 들어갑니다" % [D.name, "4-2" if D.part == "bridge" else "4-3"], 3.0); Snd.play("clank", 1.0, Vector3(D.x, 2, (D.z0 + D.z1) / 2))
 				else: enter(D)
 		var want: bool = D.mode == "open"; var o0: float = D.open
 		D.open = clampf(D.open + (dt * 2.6 if want else -dt * 2.4), 0.0, 1.0)
@@ -758,6 +755,3 @@ func update(dt: float, time: float) -> void:
 	if ring: ring.rotation.y += dt * 0.35
 	if screens_mat: var sk := 0.85 + 0.15 * sin(time * 4.3); screens_mat.albedo_color = World.lin(Color(sk, sk, sk))
 	if key_obj != null and key_obj.visible: key_obj.rotation.y += dt * 1.2; Gfx.set_alpha(key_glow.material_override, 0.55 + 0.3 * sin(time * 4.0))
-	if save_t > 0.0:
-		save_t -= dt
-		if save_t <= 0.0 and not key: game.say_banner("운전실 문이 열렸습니다", "조종석에 꽂힌 메인홀 열쇠를 뽑으세요 · 뽑으면 세이브 포인트", 3.4)

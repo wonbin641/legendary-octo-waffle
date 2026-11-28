@@ -240,6 +240,7 @@ func _lab_outro(_dt: float, t: float) -> void:
 
 # ---------------- the ship ----------------
 func _start_ship_intro(stage: int, on_done: Callable) -> void:
+	if world.ship.part != "corr": _start_door_intro(stage, on_done); return
 	C = {"kind": "ship", "t": 0.0, "dur": 6.4, "done": on_done, "beat": 0}
 	heli.visible = false; rope.visible = false; fig.visible = false; pool.visible = false
 	world.ship.door_open = 0.0; world.ship.closing = false
@@ -259,14 +260,28 @@ func _ship_intro(_dt: float, t: float) -> void:
 		_look_from(Vector3(lerpf(st.x + 0.5, st.x, k), lerpf(1.72, Player.EYE, k), lerpf(28.2, st.z, k)), Vector3(st.x, lerpf(2.1, Player.EYE, k), st.z - 20.0))
 		if t >= C.dur: finish()
 
+## 4-2 and 4-3: you start in the corridor a few steps from the door of your part: the view comes down the corridor behind you and
+## settles at your eyes, the door ahead with its sign
+func _start_door_intro(stage: int, on_done: Callable) -> void:
+	C = {"kind": "shipdoor", "t": 0.0, "dur": 3.8, "done": on_done, "beat": 0}
+	heli.visible = false; rope.visible = false; fig.visible = false; pool.visible = false
+	_show(_title(stage), Game.STAGES[stage].intro); set_fade(1.0, 0.0)
+
+func _door_intro(_dt: float, t: float) -> void:
+	var st: Dictionary = world.start; var fx := -sin(float(st.yaw)); var fz := -cos(float(st.yaw)); var k := ease_(clampf(t / C.dur, 0, 1))
+	var back := lerpf(16.0, 0.0, k)
+	_look_from(Vector3(st.x - fx * back, lerpf(4.4, Player.EYE, k), st.z - fz * back), Vector3(st.x + fx * 20.0, lerpf(2.6, Player.EYE, k), st.z + fz * 20.0))
+	if C.beat == 0 and t > 1.4: C.beat = 1; Snd.play("press")
+	if t >= C.dur: finish()
+
 func _start_ship_outro(on_done: Callable) -> void:
-	var st: Dictionary = world.start
+	var st: Dictionary = Ship.START   # (out through the airlock, whichever part you cleared)
 	C = {"kind": "shipout", "t": 0.0, "dur": 7.0, "done": on_done, "cam": Vector3(st.x + 1.5, 2.6, 15.2), "hiss": false, "faded": false}
 	heli.visible = false; fig.visible = true; fig.position = Vector3(st.x, 0, 18.5); fig.rotation = Vector3.ZERO
 	_show("탈출", "스테이지 %s 클리어 · 에어록으로 빠져나갑니다" % Store.STAGE_TAG[game.stage]); Snd.play("press")
 
 func _ship_outro(_dt: float, t: float) -> void:
-	var st: Dictionary = world.start; var S: Ship = world.ship
+	var st: Dictionary = Ship.START; var S: Ship = world.ship
 	S.door_open = ease_(clampf((t - 0.3) / 1.6, 0, 1)) if t < 5.2 else ease_(clampf(1.0 - (t - 5.2) / 1.2, 0, 1))
 	if t > 0.3 and not C.hiss: C.hiss = true; Snd.play("swoosh", 1.0, Vector3(st.x, 2, Ship.DOOR_Z))
 	var k := clampf((t - 1.2) / 3.8, 0, 1); var walk := t > 1.2 and k < 1.0
@@ -319,6 +334,7 @@ func update(dt: float) -> void:
 		"lab": _lab_intro(dt, t); if not C.is_empty(): enemies.update(dt, clock)
 		"labout": _lab_outro(dt, t)
 		"ship": _ship_intro(dt, t)
+		"shipdoor": _door_intro(dt, t)
 		"shipout": _ship_outro(dt, t)
 		"in": _heli_in(dt, t)
 		"out": _heli_out(dt, t)
@@ -405,7 +421,7 @@ func finish() -> void:
 	C = {}; heli.visible = false; rope.visible = false; fig.visible = false; pool.visible = false
 	if overlay != null: overlay.visible = false; card.visible = false
 	Snd.loop("rotor", 0.0)
-	if k == "in" or k == "lab" or k == "ship": fade_to = 0.0
+	if k == "in" or k == "lab" or k == "ship" or k == "shipdoor": fade_to = 0.0
 	if k == "ship": world.ship.door_open = maxf(world.ship.door_open, 1.0); world.ship.closing = true   # the airlock shuts behind you
 	if k == "lab":
 		if not world.lab.pressed: world.lab.press(); Snd.play("siren")

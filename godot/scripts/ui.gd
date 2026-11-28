@@ -8,14 +8,18 @@ const ALARM := Color("ff5260"); const VITAL := Color("5ed6b0"); const LINE := Co
 const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵니다", 6: "오토바이 헬멧 쓴 조직원 100명 · 헬멧은 헤드샷 한 번에 벗겨짐", 5: "단검 20 · 파란 광선검 10 · 쌍광선검 · 야구방망이 · 자폭맨 · 저격 · 보스는 기관총 · 오른쪽 아래 구석에서 시작",
 	2: "불타는 오두막 마을 · 좀비 100마리 · 체력 없이 감염과 중독만 · 해독약 상자는 오두막 안에만", 7: "넓은 사파리 · 5분 뒤 동물 93마리가 가운데 감시탑으로 습격 · 탑 체력 10,000", 8: "우리를 하나씩 · 앞 우리 동물을 다 잡아야 원숭이 박사가 다음 우리를 엶 · 모든 우리 방탄유리",
 	9: "아이 방 전체가 싸움터 · 장난감 100개 · 플라스틱 군인, 액션 피규어, 태엽·RC 유닛, 조립 블록 피규어",
-	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 (잡으면 끝) · 숨은 스파이더 마인",
+	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에",
+	4: "우주선 에어록과 160 m 복도 · CCTV 포탑, 순찰 로봇, 드론 떼, 숨은 스파이더 마인 · 복도의 로봇을 모두 처치하면 클리어",
+	14: "복도 서쪽 끝 2층 운전실 · 황금꿀벌드론 · 돌진과 부하 드론 · 쓰러뜨리면 메인홀 열쇠와 함께 클리어",
+	15: "복도 동쪽 끝 메인홀 · 3페이즈 보스 드론 B-3 · 레이저는 즉사 · 바닥 붕괴와 해치의 드론 떼 · 처치하면 보물상자",
 	10: "엘프의 숲 · 서쪽 경계에서 동쪽 대마법사의 탑까지 · 엘프 60명과 대마법사 · 회복 물약 상자 없음 · 달샘 연못이 체력을 채워 줍니다",
 	11: "정사각형 평원 · 네 모서리의 엘프·드워프·오크·악마 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환 · 적 건물과 남은 적을 모두 쓰러뜨리면 클리어", 12: "오크의 땅 · 준비 중", 13: "악마의 땅 · 준비 중"}
-# (stage 6's four places hang under stage 5: 6-1 below it, 6-2 below that, then back to the left with 6-3 and up to 6-4)
-const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82],
-	10: [0.91, 0.50], 11: [0.91, 0.82], 12: [0.705, 0.82], 13: [0.705, 0.50]}
-const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8], [9, 10], [10, 11], [11, 12], [12, 13]]
-const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10, 11]   # stages the Godot version can play so far
+# (six columns: the main stages along the top, 1, 2, 3, 4-1, 5 and 6-1; each stage's later parts hang under it, 1-1 and 1-2 under 1,
+# 3-1 and 3-2 under 3, 4-2 and 4-3 under 4-1, 6-2 and 6-3 under 6-1, then back to the left with 6-4)
+const NODE_AT := {1: [0.08, 0.17], 2: [0.248, 0.17], 3: [0.416, 0.17], 4: [0.584, 0.17], 9: [0.752, 0.17], 10: [0.92, 0.17],
+	6: [0.08, 0.50], 5: [0.08, 0.82], 7: [0.416, 0.50], 8: [0.416, 0.82], 14: [0.584, 0.50], 15: [0.584, 0.82], 11: [0.92, 0.50], 12: [0.92, 0.82], 13: [0.752, 0.82]}
+const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [9, 10], [1, 6], [6, 5], [3, 7], [7, 8], [4, 14], [14, 15], [10, 11], [11, 12], [12, 13]]
+const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11]   # stages the Godot version can play so far
 const RACE_SHORT := {"elf": "엘", "dwarf": "드", "orc": "오", "demon": "악"}
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
@@ -267,7 +271,8 @@ func _node_pos(s: int) -> Vector2:
 	return Vector2(12.0 + a[0] * inner.x, top + a[1] * inner.y)
 
 func _place_nodes() -> void:
-	var m := _mode(); var w := 124.0 if m == "pc" else minf(80.0, board.size.x * 0.195); var h := 46.0 + (58.0 if m == "pc" else 46.0)   # the dot, then the label box
+	var gap: float = board.size.x * (float(NODE_AT[2][0]) - float(NODE_AT[1][0]))   # (one column to the next: no label box wider, less a little)
+	var m := _mode(); var w := minf(124.0 if m == "pc" else 80.0, gap - 6.0); var h := 46.0 + (58.0 if m == "pc" else 46.0)   # the dot, then the label box
 	for s in stage_btns:
 		var p := _node_pos(s); (stage_btns[s] as Button).position = Vector2(clampf(p.x - w / 2, 2, board.size.x - w - 2), p.y - 22.0); (stage_btns[s] as Button).size = Vector2(w, h)
 
@@ -314,7 +319,9 @@ func _draw_board() -> void:
 		var fs := 14 if pc else 10; var y := box.position.y + (14 if pc else 11)
 		board.draw_string(f_mono, Vector2(box.position.x, y), Store.STAGE_TAG[s], HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, STEEL)
 		board.draw_string(f_title, Vector2(box.position.x, y + fs + 3), Game.STAGES[s].name, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, fs, STEEL if (st[0] == "locked" or st[0] == "soon") else INK)
-		board.draw_string(f_mono, Vector2(box.position.x, y + fs + (18 if pc else 14)), st[1], HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, VITAL if st[0] == "done" else (SODIUM if st[0] == "open" else STEEL))
+		var line: String = st[1]   # (a narrow box: '잠김 · 4-2 후' for '잠김 · 4-2 클리어 후')
+		if f_mono.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 10 if pc else 9).x > box.size.x - 4.0: line = line.replace(" 클리어 후", " 후")
+		board.draw_string(f_mono, Vector2(box.position.x, y + fs + (18 if pc else 14)), line, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 10 if pc else 9, VITAL if st[0] == "done" else (SODIUM if st[0] == "open" else STEEL))
 	if pc:   # legend
 		var y := board.size.y - 14.0
 		board.draw_circle(Vector2(22, y - 4), 5, VITAL); board.draw_string(f_mono, Vector2(34, y), "클리어", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, STEEL)
@@ -1020,7 +1027,7 @@ func open_brief(stage: int) -> void:
 	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); show_screen("brief"); _legend(br_leg_h, br_leg_v, false)
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name + (" · " + ToyMatch.SHORT[game.tm.key] if game.tm != null else (" · " + str(Realm.NAMES[game.rm.key]) if game.rm != null else ""))
 	if game.rm != null and game.rm.key == "plain": br_title.text = Game.STAGES[stage].name + " · " + str(Races.R[Realm.picked_race()].name) + "로 출전"
-	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else "")
+	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n" + game.boss_msg if Store.ship(stage) == "bridge" else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1)))) if game.goal > 0 else "")   # (4-2: the gold bee alone)
 	if game.tm != null: br_note.text = game.tm.mode.brief() + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.tm.mode.bonus()))
 	if game.rm != null: br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.rm.mode.bonus()))
 	if game.rm != null and game.rm.key == "plain": br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + ("\n이 종족으로 이미 깼습니다 · 다시 하기 보상은 없습니다" if game.replay else "\n이 종족으로 처음 깨면 보너스 " + Store.won(game.rm.mode.bonus()))
