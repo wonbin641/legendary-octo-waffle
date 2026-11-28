@@ -299,8 +299,9 @@ func _ready() -> void:
 	var bp: Vector3 = bossy.pos
 	en.damage(bossy, 5000, bossy.pos, Vector3(0, 0, -1), false)
 	check("the boss pays 20,000 doubled and leaves a chest; the stage waits for it", Store.save.money == 119000 * Store.PAY and lt.chests.size() == 1 and not gm.ended)
-	pl.pos = Vector3(bp.x, 0, bp.z + 1.0); sim.call(0.2)
-	check("opening the chest gives a gun for good and ends the stage", Store.save.owned.size() == 1 and gm.ended and gm.result == "clear")
+	pl.pos = Vector3(bp.x, 0, bp.z + 1.0); sim.call(0.2); var ch_card: bool = Store.save.owned.size() == 1 and not gm.ended and gm.party_t > 0.0
+	sim.call(Game.PARTY)
+	check("opening the chest gives a gun for good; its card is shown (Game.PARTY), then the stage ends", ch_card and Store.save.owned.size() == 1 and gm.ended and gm.result == "clear", [ch_card, gm.ended])
 	sim.call(2.0)
 	check("cleared: recorded, best time kept, money and gun stay, 2 and 1-1 offered next", shown == ["clear"] and Store.save.cleared == [1] and Store.save.best.has("t1") and Store.save.money == 119000 * Store.PAY and Store.save.owned.size() == 1 \
 		and Store.next_stages(1) == [2, 6], str(Store.next_stages(1)))
@@ -908,7 +909,9 @@ func _ready() -> void:
 	en.damage(boss4, 1e6, boss4.pos, Vector3(0, 0, 1), false)
 	check("stage 4: the boss drone down, the stage waits only for its chest, though robots are left", not boss4.alive and s4_left > 0 and lt.pending() != null and not gm.ended and gm._chest_wait, s4_left)
 	var s4_ch: Dictionary = lt.pending(); pl.pos = Vector3(float(s4_ch.x), float(s4_ch.y), float(s4_ch.z) + 1.0); lt.update(0.02); gm.update(0.02)
-	check("stage 4: its chest opened, the ship is cleared", gm.ended and gm.result == "clear" and Store.save.cleared.has(4), [gm.ended, gm.result])
+	var s4_wait: bool = not gm.ended and gm.party_t > Game.PARTY - 0.1
+	for i in roundi(Game.PARTY / 0.1) + 1: gm.update(0.1)
+	check("stage 4: its chest opened: what it gave is shown first (the new gun's card, as long as it is on), then the ship is cleared", s4_wait and gm.ended and gm.result == "clear" and Store.save.cleared.has(4), [s4_wait, gm.ended, gm.result])
 	# the laser: touching the beam is the end
 	check("stage 4: the beam's reach is measured along its whole length", absf(Robots.seg_dist(Vector3(0, 1, 0), Vector3(10, 1, 0), Vector3(5, 0, 0.4), Vector3(5, 1.7, 0.4)) - 0.4) < 1e-5)
 	# a mine: buried, wakes when you come close, and goes off for 100
@@ -1085,6 +1088,7 @@ func _ready() -> void:
 	_elf_wood(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_realm_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_plain_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
+	_reward_card(gm, en, pl)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -1171,6 +1175,15 @@ func _ready() -> void:
 	var to_moved := Meta.move_gun("rocket", -1, true); var to_lay: Array = gm.layout(); var to_first := Meta.move_gun("pistol", -1, true)
 	check("the toy room's nine toy guns change order too (keys 1-9), and keep it", to_moved and not to_first and to_lay[6] == "rocket" and to_lay[7] == "lmg" and to_lay.size() == 9 and Store.save.toy_order == to_lay, to_lay)
 	Store.save.toy_order = Toys.ORDER.duplicate(); g.reset(gm.layout())
+	# the toy room follows the weapon layout (무기 편성): its guns' toys first, in its order (an empty slot takes no key), then the rest
+	var lo_keep: Array = (Store.save.loadout as Array).duplicate(); Store.save.loadout = ["sniper", null, "rifle", null, "lmg", null, null]
+	gm.begin(9); var lo_toys: Array = g.loadout.duplicate(); var lo_cur := g.cur; g.switch_slot(1)
+	check("stage 5 follows the weapon layout: the toys of the guns in it come first in its order (keys 1-3 here), the rest after; you start with the first",
+		lo_toys == ["sniper", "rifle", "lmg", "pistol", "shotgun", "smg", "gl", "rocket", "flame"] and lo_cur == "sniper" and g.pending == "rifle", [lo_toys, lo_cur, g.pending])
+	var lo_sw := Meta.move_gun("rifle", -1, true); var lo_cross := Meta.move_gun("lmg", 1, true); var lo_rest := Meta.move_gun("rocket", -1, true)
+	check("moving one of those toys moves its gun in the weapon layout itself (two of them swap slots); the others keep their own order after them, and neither passes the other",
+		lo_sw and not lo_cross and lo_rest and Store.save.loadout == ["rifle", null, "sniper", null, "lmg", null, null] and gm.layout() == ["rifle", "sniper", "lmg", "pistol", "shotgun", "smg", "rocket", "gl", "flame"], [Store.save.loadout, gm.layout()])
+	Store.save.loadout = lo_keep; Store.save.toy_order = Toys.ORDER.duplicate(); gm.begin(9); toy = w.toy
 	var simt := func(sec: float) -> void:
 		for i in roundi(sec * 30): pl.update(1.0 / 30.0, cam, 0.0); toy.update(1.0 / 30.0, pl); g.update(1.0 / 30.0)
 	pl.in_f = 0.0; pl.in_s = 0.0; pl.in_run = false; simt.call(4.0)
@@ -1188,22 +1201,29 @@ func _ready() -> void:
 	check("up the lamp's neck to the top of the bookshelf", absf(q1.y - ToyRoom.SHELF_Y) < 0.05 and q1.z < -56.0, q1)
 	q1 = walk.call(-5.0, ToyRoom.SHELF_Y, -61.5, -PI / 2, 3.0)
 	check("from the bookshelf up the books to the wardrobe's top", absf(q1.y - ToyRoom.WARD_Y) < 0.05 and q1.x > 8.0, q1)
-	q1 = walk.call(60.5, ToyRoom.BED_Y, 31.7, PI / 2, 3.45); q1 = walk.call(q1.x, q1.y, 31.7, 0.0, 0.8)
-	check("up the ladder to the upper bunk", absf(q1.y - ToyRoom.BUNK_Y) < 0.05, q1)
+	check("the upper bunk is the room's highest ground, above the wardrobe's top", ToyRoom.BUNK_Y > ToyRoom.WARD_Y + 2.0 and ToyRoom.WARD_Y > ToyRoom.SHELF_Y, ToyRoom.BUNK_Y)
+	q1 = walk.call(60.5, ToyRoom.BED_Y, 31.7, PI / 2, ToyRoom.STAIRS * ToyRoom.STAIR_RUN / 5.4 + 2.0); var q1top := q1; q1 = walk.call(q1.x, q1.y, 31.7, 0.0, 1.0)
+	check("up the long stairs along the bed's south side to the landing, then in onto the upper bunk", absf(q1top.y - ToyRoom.BUNK_Y) < 0.05 and q1top.x < 21.0 and absf(q1.y - ToyRoom.BUNK_Y) < 0.05 and q1.z < 28.5, [q1top, q1])
 	# springs
 	pl.reset(6.0, -22.0, -PI / 2); pl.pos.y = 0.45; simt.call(0.1); var up0 := pl.vel.y; pl.in_f = 1.0; simt.call(2.2); pl.in_f = 0.0
 	check("the spring by the bed throws you onto the mattress", up0 > 15.0 and absf(pl.pos.y - ToyRoom.BED_Y) < 0.05, "%s %s" % [str(up0), str(pl.pos)])
 	pl.reset(9.0, -32.5, 0.0); pl.pos.y = ToyRoom.BED_Y + 0.45; simt.call(0.1); var peak := 0.0
 	for i in 40: simt.call(0.05); peak = maxf(peak, pl.pos.y)
-	check("the spring on the mattress reaches the upper bunk's height", peak > ToyRoom.BUNK_Y + 0.5, peak)
+	check("the spring on the stool by the mattress reaches the upper bunk's height, over its rail", peak > ToyRoom.BUNK_Y + 2.5, peak)
+	pl.reset(9.0, -32.5, -PI * 0.75); pl.pos.y = ToyRoom.BED_Y + 0.45; pl.in_f = 1.0; simt.call(3.0); pl.in_f = 0.0
+	check("and holding forward from it toward the bed (past the corner post) puts you down on the upper bunk", absf(pl.pos.y - ToyRoom.BUNK_Y) < 0.05 and pl.grounded and pl.pos.z > -29.0 and pl.pos.x > 10.6, pl.pos)
 	# catapults
 	pl.reset(-14.0, 30.0, 0.0); pl.pos.y = 0.45; simt.call(4.0)
 	check("the catapult lands you on top of the bookshelf", absf(pl.pos.y - ToyRoom.SHELF_Y) < 0.6 and pl.pos.z < -56.0 and pl.grounded, pl.pos)
 	pl.reset(52.0, 41.0, 0.0); pl.pos.y = 0.45; simt.call(4.0)
 	check("the other catapult lands you on the upper bunk", absf(pl.pos.y - ToyRoom.BUNK_Y) < 0.6 and pl.grounded, pl.pos)
 	# the tape measure
-	pl.reset(42.0, -57.0, PI); pl.pos.y = ToyRoom.WARD_Y; pl.in_f = 1.0; simt.call(0.6); pl.in_f = 0.0; var onzip: bool = toy.riding != null; simt.call(5.0)
-	check("the tape measure carries you from the wardrobe down to the upper bunk", onzip and toy.riding == null and absf(pl.pos.y - ToyRoom.BUNK_Y) < 0.6 and pl.pos.z > -10.0, pl.pos)
+	var tape: Dictionary = toy.ziplines.filter(func(L): return (L.a as Vector3).y > ToyRoom.BUNK_Y)[0] if toy.ziplines.any(func(L): return (L.a as Vector3).y > ToyRoom.BUNK_Y) else {}
+	check("the tape measure runs the other way now: from the upper bunk (the high end) down to the wardrobe", not tape.is_empty() and (tape.b as Vector3).y < (tape.a as Vector3).y and (tape.b as Vector3).z < -56.0, tape)
+	pl.reset(40.0, -26.5, 0.0); pl.pos.y = ToyRoom.BUNK_Y; pl.in_f = 1.0; simt.call(0.6); pl.in_f = 0.0; var onzip: bool = toy.riding != null; simt.call(5.0)
+	check("walk to its end by the upper bunk's north rail and it carries you down onto the wardrobe's top", onzip and toy.riding == null and absf(pl.pos.y - ToyRoom.WARD_Y) < 0.6 and pl.pos.z < -56.0 and pl.grounded, pl.pos)
+	pl.reset(28.0, -61.0, PI); pl.pos.y = ToyRoom.WARD_Y; pl.in_f = 1.0; simt.call(1.0); pl.in_f = 0.0
+	check("and its hooked end on the wardrobe takes nobody back up", toy.riding == null and absf(pl.pos.y - ToyRoom.WARD_Y) < 0.05, pl.pos)
 	# mattress, tacks, train
 	pl.reset(30.0, 0.0, 0.0); pl.pos.y = ToyRoom.BED_Y; simt.call(0.1); var jm := pl.jump_mul; pl.reset(0.0, 56.0, 0.0); simt.call(0.1)
 	check("a springier jump on the mattress, an ordinary one on the floor", jm > 1.1 and pl.jump_mul == 1.0)
@@ -3150,13 +3170,18 @@ func _toy_screen(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World,
 		order == ToyMatch.MODES and packs.all(func(c): return (c as Control).custom_minimum_size == ps_pc) and ps_pc.x == 160.0 and 4.0 * ps_ph.x + 30.0 <= 914.0 - 48.0 - 24.0 - 285.0 and ps_ph.x >= 120.0 and ps_tall.x >= 150.0
 		and rp.has(ToyMatch.NAMES.escort) and rp.has("다시 하기") and rp.has("선택") and rp.spr_of("star") == 1 and rp.spr_of("tag") == 2 and rp.tex_of(ToyKit.kraft_tex()) == 1 and ToyKit.two_lines("취침 시간 술래잡기", 15, 60.0) == ["취침 시간", "술래잡기"] and shapes_ok,
 		[order, ps_pc, ps_ph, ps_tall, rp.texts.map(func(q): return q[0]), shapes_ok])
-	var vb := VBoxContainer.new(); bu.add_child(vb); Store.save.toy_order = Toys.ORDER.duplicate(); var again := [0]; bu._toy_shelf(vb, func() -> void: again[0] += 1)
-	var cells: Array = vb.get_child(1).get_children(); var toys_in: Array = cells.map(func(c): return (c as Node).get_child(0).get_meta("toy"))
-	var first_arrows: Array = (cells[0] as Node).get_child(1).get_children(); var last_arrows: Array = (cells[8] as Node).get_child(1).get_children()
-	(first_arrows[1] as Button).pressed.emit()
-	check("the nine toys are on the shelf too, each in its package in key order, with arrows to move it a place (the first cannot go forward, the last cannot go back)",
-		cells.size() == 9 and toys_in == Toys.ORDER and (first_arrows[0] as Button).disabled and not (first_arrows[1] as Button).disabled and (last_arrows[1] as Button).disabled
-		and Store.save.toy_order[0] == "shotgun" and Store.save.toy_order[1] == "pistol" and again[0] == 1, [toys_in, Store.save.toy_order, again])
+	var vb := VBoxContainer.new(); bu.add_child(vb); Store.save.toy_order = Toys.ORDER.duplicate(); var again := [0]; var sh_lo: Array = (Store.save.loadout as Array).duplicate()
+	Store.save.loadout = ["sniper", null, "rifle", null, null, null, null]; bu._toy_shelf(vb, func() -> void: again[0] += 1)
+	var flows: Array = vb.get_children().filter(func(c): return c is HFlowContainer); var cells: Array = []
+	for fl in flows: cells.append_array((fl as Node).get_children())
+	var toys_in: Array = cells.map(func(c): return (c as Node).get_child(0).get_meta("toy")); var arr := func(i: int, k: int) -> Button: return (cells[i] as Node).get_child(1).get_child(k)
+	var sh_dis: Array = [arr.call(0, 0).disabled, arr.call(0, 1).disabled, arr.call(1, 1).disabled, arr.call(2, 0).disabled, arr.call(2, 1).disabled, arr.call(8, 1).disabled]
+	arr.call(0, 1).pressed.emit(); var sh_lo1: Array = (Store.save.loadout as Array).duplicate(); arr.call(2, 1).pressed.emit()
+	check("the nine toys are on the shelf too, each in its package in key order: the weapon layout's toys on a shelf of their own first, then the rest; arrows move one a place within its own shelf (the first cannot go forward, the last cannot go back, none across)",
+		flows.size() == 2 and (flows[0] as Node).get_child_count() == 2 and cells.size() == 9 and toys_in == ["sniper", "rifle", "pistol", "shotgun", "smg", "gl", "lmg", "rocket", "flame"]
+		and sh_dis == [true, false, true, true, false, true] and sh_lo1 == ["rifle", null, "sniper", null, null, null, null] and Store.save.toy_order.find("shotgun") < Store.save.toy_order.find("pistol") and again[0] == 2,
+		[toys_in, sh_dis, sh_lo1, Store.save.toy_order, again])
+	Store.save.loadout = sh_lo; Store.save.toy_order = Toys.ORDER.duplicate()
 	bu.free()
 	# ---- under Main's HUD each piece is a control of its own, drawn again only when what it shows has changed ----
 	var holder := Control.new(); add_child(holder); holder.size = Vector2(1280, 720); M.hud = holder
@@ -3887,9 +3912,10 @@ func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, c
 	fk.clear(); pl.pos = top_at + Vector3(0, 0, 3.0); pl.hp = Player.MAX_HP; var am_at := am.pos; Store.save.money = 0; var owned0: int = (Store.save.owned as Array).size()
 	en.damage(am, 99999.0, am.pos, Vector3(1, 0, 0), true)
 	var fall := [gm.boss == null, lt.pending() != null, W.spin == 0.0, int(Store.save.money), gm.ended, fk.beam_on]
-	pl.pos = Vector3(am_at.x + 0.8, ElfWood.T_F3, am_at.z); _wood_tick(gm, en, pl, g, pr, w, cam, 0.3, lt)
-	check("the Archmage down: 80,000 (a hit to the head half as much again), the great sphere runs down and stops, his chest stands where he fell on top of the tower, and the stage is won when you open it (6-1 cleared, a gun for good)",
-		fall == [true, true, true, 120000, false, false] and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(10) and (Store.save.owned as Array).size() == owned0 + 1 and Store.save.best.has("t10"), [fall, gm.ended, gm.result, Store.save.cleared])
+	pl.pos = Vector3(am_at.x + 0.8, ElfWood.T_F3, am_at.z); _wood_tick(gm, en, pl, g, pr, w, cam, 0.3, lt); var am_card: bool = not gm.ended and gm.party_t > 0.0
+	_wood_tick(gm, en, pl, g, pr, w, cam, Game.PARTY, lt)
+	check("the Archmage down: 80,000 (a hit to the head half as much again), the great sphere runs down and stops, his chest stands where he fell on top of the tower, and the stage is won when you open it (6-1 cleared, a gun for good: its card shown first)",
+		fall == [true, true, true, 120000, false, false] and am_card and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(10) and (Store.save.owned as Array).size() == owned0 + 1 and Store.save.best.has("t10"), [fall, gm.ended, gm.result, Store.save.cleared])
 	# ---- its screens ----
 	check("the stage board: 6-1 hangs under stage 5 and can be played, and 6-2 (the plain of the four banners) under it; 6-3 and 6-4 are named on it (the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
 		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][0] == Ui.NODE_AT[9][0] and Ui.NODE_AT[10][1] > Ui.NODE_AT[9][1] and Ui.BUILT.has(10) and Ui.BUILT.has(11) and not Ui.BUILT.has(12)
@@ -4424,6 +4450,38 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 	Store.settings.realmMode = "solo"; gm.begin(1); Store.save = save0; randomize()
 
 # ---------------- 6-2, the plain of the four banners ----------------
+# ---------------- a boss's chest giving you a new gun: shown big (scripts/reward.gd) ----------------
+func _reward_card(gm: Game, en: Enemies, pl: Player) -> void:
+	var keep: Dictionary = (Store.save as Dictionary).duplicate(true); var keep_feed: Callable = gm.feed
+	var M := HudMain.new(); M.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); M.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); M.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
+	var R := Reward.new(); R.m = M; add_child(R); Snd.keep_log = true; Snd.played.clear()
+	R.start("sniper", Vector2(1280, 720)); R.update(0.8); var rec := DrawRec.new(); R.draw(rec)
+	var W: Dictionary = Weapons.LIST.sniper
+	check("a boss's chest's new gun is shown big: a card with 새 총 획득! on its ribbon, the gun's name in large letters and its model and kind, the gun itself turning in it (only that one, without the hands), confetti and fireworks, and a fanfare",
+		R.on() and rec.has("새 총 획득!") and rec.has(str(W.name)) and rec.has("%s · %s" % [W.model, W.cls]) and rec.tex_of(R.vp.get_texture()) == 1 and rec.texts.any(func(q): return q[0] == W.name and int(q[2]) >= 60)
+		and (R.models.models.sniper.g as Node3D).visible and not (R.models.models.rifle.g as Node3D).visible and not R.models.models.sniper.hands.any(func(h): return (h as Node3D).visible)
+		and R.bits.size() == 180 and R.booms.size() == 7 and rec.polys > 120 and rec.lines > 30 and Snd.played.has("reward_fanfare") and ResourceLoader.exists("res://sounds/reward_fanfare.wav"),
+		[rec.texts.map(func(q): return q[0]).slice(0, 8), R.bits.size(), R.booms.size(), rec.polys, rec.lines])
+	var crs: Array = [Vector2(1280, 720), Vector2(2400, 1080), Vector2(960, 432), Vector2(1920, 1080)].map(func(sz: Vector2) -> Array: return [sz, Reward.card_rect(sz)])
+	check("its card lies across the upper middle of any screen, above the crosshair (the middle stays clear to shoot), as big for the screen's height on a computer as on a phone",
+		crs.all(func(q: Array) -> bool: var sz: Vector2 = q[0]; var cr: Rect2 = q[1]; return cr.position.y > 0.0 and cr.end.y < sz.y * 0.5 and cr.position.x >= 0.0 and cr.end.x <= sz.x and cr.size.y >= sz.y * 0.4 and absf(cr.get_center().x - sz.x / 2.0) < 1.0), crs)
+	R.update(Reward.LONG); check("and it is gone after its time (Reward.LONG, which the game waits for: Game.PARTY)", not R.on() and R.bits.is_empty() and Reward.LONG == Game.PARTY)
+	R.queue_free()
+	# the game: it tells the screen, says it in the kill lines and on the result sheet, and the stage waits for it
+	Store.save = Store.save0(); gm.begin(1); var told := []; var lines := []
+	gm.on_reward = func(id: String) -> void: told.push_back(id)
+	gm.feed = func(t: String, _p := 0, _r := false) -> void: lines.push_back(t)
+	gm.open_chest(); var won: String = told[0] if told.size() == 1 else ""
+	check("the chest's gun: the game hands it to the screen to show big (not the old banner), says it in the kill lines, and keeps it for the result sheet",
+		won != "" and Store.save.owned.has(won) and str(gm.stats.get("prize", "")) == won and gm.party_t == Game.PARTY and lines.any(func(t): return str(t).contains("새 총") and str(t).contains(str(Weapons.LIST[won].name))), [told, lines])
+	for e in en.list: e.alive = false
+	gm.finish(); var held: bool = not gm.ended and gm._chest_wait
+	for i in roundi(Game.PARTY / 0.1) - 3: gm.update(0.1)
+	var still: bool = not gm.ended
+	for i in 6: gm.update(0.1)
+	check("the last enemy down while the card is on: the clear (its banner, the helicopter) waits until it has been seen", held and still and gm.ended and gm.result == "clear", [held, still, gm.ended])
+	gm.on_reward = Callable(); gm.feed = keep_feed; Snd.keep_log = false; Store.save = keep; gm.begin(1)
+
 func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: World, cam: Camera3D, _fxn: Fx, _lt) -> void:
 	reset_test_state(); seed(621)
 	Store.settings.realmRace = "orc"; Store.settings.realmBomb = "oil"

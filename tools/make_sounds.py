@@ -75,6 +75,10 @@ def horn(f, gain, d, dur):
 def shatter(k, gain, d=0.0):
     """crystal breaking, its pieces k times as far apart"""
     return [N(0.02, 'highpass', f * 1.3, f * 0.8, 1, g * gain, d + t * k) for f, g, t in SHARDS] + [T('sine', f, f * 0.985, 0.09, g * gain * 0.25, d + t * k) for f, g, t in SHARDS]
+def brass(f, gain, d, dur):
+    """a trumpet's note: bright from the start (its buzz on top), a little swell, let go quickly"""
+    return [H('sawtooth', f, f, dur, gain * 0.55, d, 0.015, 0.06), H('square', f * 2.0, f * 2.0, dur, gain * 0.12, d, 0.02, 0.06), H('sine', f, f * 1.002, dur, gain * 0.6, d, 0.01, 0.06),
+            H('sine', f * 3.0, f * 3.0, dur, gain * 0.1, d, 0.03, 0.05)]
 def ember():
     """the hellfire staff's ember: a dry spit, a crackle"""
     return [N(0.07, 'bandpass', 1500, 650, 1.2, 0.7), T('sine', 340, 170, 0.045, 0.3), N(0.012, 'highpass', 4600, 3000, 1, 0.3, 0.008)]
@@ -376,6 +380,12 @@ SOUNDS = {
         + shatter(1.8, 0.25, 0.4) + [N(1.4, 'highpass', 2400, 5000, 0.7, 0.14, 1.4)],
     # your landmark under attack: a warning horn, twice
     'rm_hall_alarm': lambda: horn(196, 0.32, 0.0, 0.32) + horn(196, 0.32, 0.42, 0.32) + horn(147, 0.38, 0.84, 0.55),
+    # ---- a boss's chest giving you a new gun (added last: the sounds before keep their noise) ----
+    # a fanfare: three quick brass notes up to a held major chord, a run of bells over it, a cymbal swelling and let ring
+    'reward_fanfare': lambda: [l for d in (0.0, 0.14, 0.28) for l in brass(NOTE(67), 0.3, d, 0.11)] + brass(NOTE(72), 0.34, 0.42, 0.2) + brass(NOTE(76), 0.34, 0.64, 0.2)
+        + [l for m in (72, 76, 79, 84) for l in brass(NOTE(m), 0.22 if m != 84 else 0.16, 0.86, 1.1)]
+        + [l for i, m in enumerate((84, 88, 91, 96, 100, 103)) for l in ping(NOTE(m), 0.13, 0.9 + 0.07 * i, 1.4)]
+        + [BACK(N(0.5, 'highpass', 5200, 8000, 0.7, 0.16, 0.4)), N(1.6, 'highpass', 6000, 9000, 0.7, 0.2, 0.86), T('sine', 98, 60, 0.5, 0.5, 0.86)],
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]

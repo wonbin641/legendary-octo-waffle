@@ -3,7 +3,8 @@ extends RefCounted
 ## Stage 5: a child's bedroom seen at toy size. You are about 5 cm tall, so the bed is a plateau, the desk a cliff and the
 ## bookshelf a mountain. West: the desk. East: the bunk bed. Between them a bridge of building blocks. South: the carpet,
 ## the toy bins and the train. North: the bookshelf and the wardrobe, the highest ground.
-## Heights: floor 0, mattress 6, desk 9, upper bunk 15, bookshelf 20, wardrobe 24.
+## Heights: floor 0, mattress 6, desk 9, bookshelf 20, wardrobe 24, upper bunk 28 (the top of the room: the tape measure runs
+## from it down to the wardrobe).
 
 const HALF := 70.0
 const BED_Y := 6.0
@@ -19,9 +20,14 @@ static func rug(x: float, z: float) -> float:
 	if x <= RUG[0] or x >= RUG[2] or z <= RUG[1] or z >= RUG[3]: return 0.0
 	return 0.1 if (x > RUG[0] + 3.0 and x < RUG[2] - 3.0 and z > RUG[1] + 2.0 and z < RUG[3] - 2.0) else 0.08
 const DESK_Y := 9.0
-const BUNK_Y := 15.0
+const BUNK_Y := 28.0
 const SHELF_Y := 20.0
 const WARD_Y := 24.0
+## the stairs from the mattress up to the upper bunk: so many steps, each this deep (each rise under the half metre you step up)
+const STAIRS := 46
+const STAIR_RUN := 0.8
+## the tape measure's two ends: its case on the upper bunk (you touch it there), its hook on the wardrobe's top
+const TAPE := [Vector3(40.2, BUNK_Y + 2.4, -29.7), Vector3(28.0, WARD_Y + 2.2, -63.0)]
 
 var world: World
 var G: Node3D
@@ -104,7 +110,7 @@ func _crates() -> void:
 			if absf(x) > 62.0 or z > 63.5 or absf(z - 36.5) < 2.6 or near.call(0.0, 56.0, 10.0): return true   # the train, and where you come down
 		elif y == BED_Y: return (x < 19.0 and absf(z) < 6.0) or near.call(30.0, 0.0, 3.0)
 		elif y == DESK_Y: return (x > -30.0 and absf(z) < 6.0) or (x > -38.0 and x < -30.0 and z > -28.0 and z < -20.0) or (x > -42.0 and z > 16.0) or near.call(-30.0, -6.0, 4.0)
-		else: return near.call(30.0, 0.0, 4.0) or near.call(45.9, 10.3, 4.0) or (x > 38.0 and z > 24.0)   # where the tape and the catapult put you down, the ladder's top
+		else: return near.call(TAPE[0].x, TAPE[0].z + 1.0, 4.0) or near.call(46.0, 18.0, 4.0) or (x > 16.0 and x < 26.0 and z > 23.0)   # where the tape starts, where the catapult puts you down, the stairs' top
 		return false
 	world._place_crates(G, CRATES, func() -> Array:
 			var k := R.next(); var L: Array = levels[3]
@@ -123,10 +129,10 @@ func _crates() -> void:
 ## east: the bunk bed. the lower mattress is the main battlefield; under it, a dark crawl space
 func _bed() -> void:
 	var x0 := 10.0; var x1 := 62.0; var z0 := -30.0; var z1 := 30.0
-	for p in [[x0, z0], [x1 - 2.4, z0], [x0, z1 - 2.4], [x1 - 2.4, z1 - 2.4]]: box(p[0], 0, p[1], p[0] + 2.4, 26.0, p[1] + 2.4, "a6d96a", "wood")   # the four posts, floor to top
+	for p in [[x0, z0], [x1 - 2.4, z0], [x0, z1 - 2.4], [x1 - 2.4, z1 - 2.4]]: box(p[0], 0, p[1], p[0] + 2.4, BUNK_Y + 2.0, p[1] + 2.4, "a6d96a", "wood")   # the four posts, floor to top
 	box(x0, 4.4, z0, x1, 5.2, z1, "8cc456", "wood"); box(x0 + 0.6, 5.2, z0 + 0.6, x1 - 0.6, BED_Y, z1 - 0.6, "d2efb0", "bed")   # frame and mattress (walk under it: 4.4 m clear)
 	beds.push_back([x0, z0, x1, z1, BED_Y])
-	box(x1, 0, z0, x1 + 1.6, 26.0, z1, "a6d96a", "wood")   # the headboard, against the east wall
+	box(x1, 0, z0, x1 + 1.6, BUNK_Y + 2.0, z1, "a6d96a", "wood")   # the headboard, against the east wall
 	# pillows and the teddy bear at the head of the bed: bunkers
 	box(49.0, BED_Y, -26.0, 59.0, BED_Y + 2.6, -8.0, "fdfdfd", "bed"); box(49.0, BED_Y, 8.0, 59.0, BED_Y + 2.6, 26.0, "ffe9a8", "bed")
 	box(51.5, BED_Y, -4.5, 58.5, BED_Y + 5.0, 4.5, "a9743f", "bed"); ball(Vector3(55.0, BED_Y + 7.2, 0), 2.6, "b98146", false)
@@ -140,12 +146,21 @@ func _bed() -> void:
 	stairs(x0 - 14 * 0.75, 0, 20.0, "+x", 14, BED_Y / 14.0, 0.75, 9.0, "6aa3d6", "7fb4e0")   # lowest step out on the floor, the top one against the bed
 	# the upper bunk: its slab, a rail to hide behind, and the ladder up from the mattress
 	box(x0, BUNK_Y - 1.0, z0, x1, BUNK_Y - 0.4, z1, "8cc456", "wood"); box(x0 + 0.6, BUNK_Y - 0.4, z0 + 0.6, x1 - 0.6, BUNK_Y, z1 - 0.6, "ffd9e2", "bed"); beds.push_back([x0, z0, x1, z1, BUNK_Y])
-	for r in [[x0, z0, x1, z0 + 0.6], [x0, z1 - 0.6, x0 + 30.0, z1], [x0, z0, x0 + 0.6, -6.0], [x0, 6.0, x0 + 0.6, z1]]: box(r[0], BUNK_Y, r[1], r[2], BUNK_Y + 1.3, r[3], "a6d96a", "wood")
-	stairs(x1 - 3.0, BED_Y, z1 + 1.7, "-x", 20, (BUNK_Y - BED_Y) / 20.0, 0.9, 3.4, "a6d96a", "8cc456")   # outside the frame on the south side; the rail is open where it arrives
+	for r in [[x0, z0, x1, z0 + 0.6], [x0, z1 - 0.6, 18.4, z1], [23.0, z1 - 0.6, x1, z1], [x0, z0, x0 + 0.6, -6.0], [x0, 6.0, x0 + 0.6, z1]]: box(r[0], BUNK_Y, r[1], r[2], BUNK_Y + 1.3, r[3], "a6d96a", "wood")
+	# the stairs up: outside the frame on the south side, from the bedside shelf along nearly the whole bed to a landing by its
+	# west end, where the rail is open. open planks on two side boards (not a wall: you still see in under them)
+	var n := STAIRS; var rise := (BUNK_Y - BED_Y) / n; var sx := x1 - 3.0; var sz := z1 + 1.7
+	for i in n: var top := BED_Y + (i + 1) * rise; box(sx - (i + 1) * STAIR_RUN, top - 0.5, sz - 1.7, sx - i * STAIR_RUN, top, sz + 1.7, "8cc456" if i % 2 else "a6d96a", "wood")
+	var lx := sx - n * STAIR_RUN   # the landing, level with the upper bunk, and a post at its end to stop you walking off
+	box(lx - 3.2, BUNK_Y - 0.6, sz - 1.7, lx, BUNK_Y, sz + 1.7, "a6d96a", "wood"); box(lx - 3.8, BUNK_Y - 0.6, sz - 1.7, lx - 3.2, BUNK_Y + 1.3, sz + 1.7, "8cc456", "wood")
+	for e in [-1.0, 1.0]:
+		var p0 := Vector3(sx + 0.3, BED_Y - 0.35, sz + e * 1.55); var p1 := Vector3(lx, BUNK_Y - 0.95, sz + e * 1.55)
+		var sb := MeshInstance3D.new(); var bm := BoxMesh.new(); bm.size = Vector3(0.3, 0.8, p0.distance_to(p1)); sb.mesh = bm; sb.material_override = Gfx.std(Color("8cc456"), 0.7)
+		G.add_child(sb); sb.look_at_from_position((p0 + p1) / 2, p1, Vector3.UP)
 	box(48.0, BUNK_Y, -24.0, 58.0, BUNK_Y + 2.4, -10.0, "fdfdfd", "bed"); box(20.0, BUNK_Y, 4.0, 22.6, BUNK_Y + 1.8, 22.0, "f7a8bd", "bed"); box(34.0, BUNK_Y, -22.0, 36.6, BUNK_Y + 1.8, -2.0, "f7a8bd", "bed")
 	# springs: by the bed's west corners on the floor (up to the mattress and the desk), and on the mattress (up to the upper bunk)
 	_spring(6.0, -22.0, 0.0, 21.0); _spring(6.0, 10.0, 0.0, 21.0)
-	box(6.0, 0, -35.0, 14.0, BED_Y, -30.0, "f77f00", "wood"); _spring(9.0, -32.5, BED_Y, 21.5)   # a stool at the bed's corner, level with the mattress, with the spring for the upper bunk
+	box(6.0, 0, -35.0, 14.0, BED_Y, -30.0, "f77f00", "wood"); _spring(9.0, -32.5, BED_Y, 32.0)   # a stool at the bed's corner, level with the mattress, with the spring for the upper bunk
 	box(58.0, 4.4, z1, x1, BED_Y, z1 + 3.4, "8cc456", "wood")                                    # a bedside shelf: the foot of the ladder
 	# under the bed: socks, a slipper, lost balls. dark and close
 	for s in [[18.0, -20.0, 7.0, 2.6, "e85d75"], [30.0, 4.0, 2.6, 8.0, "f2f2f2"], [44.0, -12.0, 8.0, 2.4, "5fbf8f"], [24.0, 18.0, 6.0, 2.4, "f2c14e"], [50.0, 14.0, 2.6, 7.0, "9b7fd1"], [38.0, -24.0, 2.4, 6.0, "f2f2f2"]]:
@@ -202,7 +217,7 @@ func _south() -> void:
 		if not _skip("block_%d_%d" % [int(b[0]), int(b[1])]): box(b[0], 0, b[1], b[0] + b[2], b[3], b[1] + b[4], cols[i % 6])
 	ball(Vector3(-12.0, 2.4, 44.0), 2.4, "f77f00"); ball(Vector3(20.0, 1.5, 60.0), 1.5, "5fbf8f"); ball(Vector3(-36.0, 1.2, 42.0), 1.2, "9b7fd1")
 	_catapult(-14.0, 30.0, Vector3(-5.6, 34.0, -32.2))   # to the top of the bookshelf
-	_catapult(52.0, 41.0, Vector3(-2.4, 30.0, -12.0))     # from the south-east corner onto the upper bunk
+	_catapult(52.0, 41.0, Vector3(-2.1, 36.75, -8.06))    # from the south-east corner up onto the upper bunk
 	if not _skip("tacks_mid"): tacks.push_back({"x": -4.0, "z": 46.0, "r": 5.0})
 	if not _skip("tacks_east"): tacks.push_back({"x": 30.0, "z": 43.0, "r": 3.5})
 	for t in tacks:
@@ -236,9 +251,11 @@ func _north() -> void:
 	# a ruler laid from the bookshelf to the wardrobe, and a few steps of books up to the wardrobe's top
 	box(-8.0, SHELF_Y - 0.4, -63.0, 6.0, SHELF_Y, -60.0, "ffe066", "wood")
 	stairs(-3.0, SHELF_Y, -61.5, "+x", 9, (WARD_Y - SHELF_Y) / 9.0, 1.0, 3.0, "3d7dca", "e63946")
-	# the tape measure: hooked on the wardrobe's top, its tape pulled out across the room down to the upper bunk. a zipline
-	box(40.0, WARD_Y, -60.0, 44.0, WARD_Y + 3.0, -57.6, "f4d35e")
-	_zip(Vector3(42.0, WARD_Y + 2.2, -54.4), Vector3(30.0, BUNK_Y + 2.6, 0.0))   # down onto the upper bunk
+	# the tape measure: its case on the upper bunk by the north rail, the tape pulled out across the room down to a block on the
+	# wardrobe's top, hooked over it. a zipline: the upper bunk is the higher end now
+	box(40.8, BUNK_Y, -29.4, 43.6, BUNK_Y + 2.8, -27.2, "f4d35e"); box(41.4, BUNK_Y + 1.0, -27.25, 43.0, BUNK_Y + 2.2, -27.1, "2b2d42", "concrete", false)
+	box(26.6, WARD_Y, -65.0, 29.4, WARD_Y + 2.2, -63.4, "3d7dca")
+	_zip(TAPE[0], TAPE[1])   # down onto the wardrobe
 	_zip(Vector3(-20.0, SHELF_Y + 1.8, -55.4), Vector3(-30.0, DESK_Y + 2.0, -6.0))   # a shoelace from the bookshelf down to the desk
 
 # ---------- gimmicks ----------

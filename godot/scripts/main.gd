@@ -28,6 +28,7 @@ var cut: Cut   # the cutscenes: in by helicopter, out by helicopter, the lab, th
 var view: Node3D; var view_lens: Node3D; var gun_models := {}; var flash: MeshInstance3D; var flash_light: OmniLight3D
 var hud: Control; var touch_ui: Control; var fps_label: Label
 var hudd: Hud   # the fight's screen (scripts/hud.gd)
+var reward: Reward   # a boss's chest's new gun, shown big over it (scripts/reward.gd)
 var heat_k := -1.0
 var cu_ang := 0.6
 var cu_light: OmniLight3D = null   # the menu scene is dark: the gun being fitted out gets a lamp of its own
@@ -76,6 +77,7 @@ func _ready() -> void:
 	enemies.player = player; enemies.cam = cam; enemies.proj = proj; loot.player = player; loot.fx = fx; enemies.fx = fx; enemies.hitmark = guns.hitmark; enemies.say = func(t: String) -> void: feed(t, 0)
 	game.world = world; game.player = player; game.enemies = enemies; game.guns = guns; game.proj = proj; game.loot = loot; game.fx = fx
 	game.banner = banner; game.feed = feed; game.on_result = _on_result; game.on_down = _on_down
+	game.on_reward = func(id: String) -> void: reward.start(id, hud.size)
 	enemies.on_bite = game.bitten; enemies.on_poison = game.poison; enemies.on_stun = game.stun; enemies.banner = banner; game.hint = hint
 	game.on_flash = func(a: float, from: Vector3) -> void: hudd.hurt(a, from)
 	game.on_pay = func(n: int) -> void: if look_mode != "touch": hudd.money_pop(n)
@@ -254,6 +256,7 @@ func _build_hud() -> void:
 	var root := Control.new(); root.set_anchors_preset(Control.PRESET_FULL_RECT); root.mouse_filter = Control.MOUSE_FILTER_IGNORE; layer.add_child(root)
 	hud = Control.new(); hud.set_anchors_preset(Control.PRESET_FULL_RECT); hud.mouse_filter = Control.MOUSE_FILTER_IGNORE; root.add_child(hud); hud.draw.connect(_draw_hud)
 	hudd = Hud.new(); hudd.m = self
+	reward = Reward.new(); reward.m = self; add_child(reward)
 	touch_ui = Control.new(); touch_ui.set_anchors_preset(Control.PRESET_FULL_RECT); touch_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE; touch_ui.visible = false; root.add_child(touch_ui); touch_ui.draw.connect(_draw_touch)
 	# the browser game's FPS readout (#perf): bottom left on a dark plate with a green edge, four lines
 	perf_box = PanelContainer.new(); var pst := StyleBoxFlat.new(); pst.bg_color = Color(8 / 255.0, 12 / 255.0, 22 / 255.0, 0.78)
@@ -326,6 +329,7 @@ static func perf_format(fps: float, ms: float, worst_ms: float, cpu_ms: float, p
 
 func _draw_hud() -> void:
 	hudd.draw(hud)
+	if reward.on(): reward.draw(hud)   # a boss's chest's new gun: its card over everything of the fight's screen
 
 ## what the keys would do now, for the hint under the crosshair: pick up the hall's key, get on, change over, get off
 func key_hint() -> String:
@@ -461,7 +465,7 @@ func to_menu() -> void:
 func enter_play(intro := false) -> void:
 	for gid in Weapons.ORDER: gm_models.show_hands(gid, true)
 	if cu_light != null: cu_light.visible = false
-	guns.look_mode = look_mode; apply_settings(); hudd.reset(); ui.in_stage = true
+	guns.look_mode = look_mode; apply_settings(); hudd.reset(); reward.stop(); ui.in_stage = true
 	if world.ship != null: world.ship.on_cut = _boss_cut
 	if intro and world.toy == null and world.wood == null and world.plain == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
@@ -764,7 +768,7 @@ func _process(delta: float) -> void:
 			elif ever_locked and lock_wait < 0.0: pause_game()  # Esc let the pointer go
 		if state == "playing" and not hold:
 			tick(dt); _pose_gun(dt); Snd.listener = cam.global_position; Snd.listener_yaw = cam.rotation.y
-			hudd.update(dt); hud.queue_redraw()
+			hudd.update(dt); reward.update(dt); hud.queue_redraw()
 			if touch_ui.visible: touch_ui.queue_redraw()   # the pills come and go with what is happening
 	elif state == "cutscene":
 		_cut_step(dt)

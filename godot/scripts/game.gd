@@ -31,6 +31,12 @@ const BOSS := {
 var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var proj: Proj; var loot: Loot; var fx: Fx
 var banner: Callable = Callable(); var feed: Callable = Callable(); var on_result: Callable = Callable()   # on_result(kind) shows the result sheet
 var on_down: Callable = Callable()   # on_down(kind): you have fallen (not in a team mode): the fight stops there and then
+var on_reward: Callable = Callable()   # on_reward(gun): a boss's chest gave you a gun you did not have: shown big (Reward)
+## what a chest's opening is given to be seen before the stage can end: the new gun's card (Reward.LONG), or the banner saying
+## you have every gun already
+const PARTY := 4.8
+const PARTY_ALL := 2.2
+var party_t := 0.0
 var stage := 1
 var goal := 100
 var kills := 0
@@ -80,7 +86,7 @@ func say_feed(text: String) -> void: _say(feed, [text, 0])
 func say_hint(text: String, sec: float) -> void: _say(hint, [text, sec])
 
 func layout() -> Array:
-	if stage == Store.ST_TOY: return (Store.save.toy_order as Array).duplicate()   # every toy gun in hand (keys 1-9), in the order you put them
+	if stage == Store.ST_TOY: return Toys.order_for(Store.save.loadout, Store.save.toy_order)   # every toy gun in hand (keys 1-9): your weapon layout's first, in its order
 	return (Store.save.loadout as Array).map(func(id): return id if (id != null and Store.gun_available(id, bonus_guns)) else null)
 
 func begin(stage_: int) -> void:
@@ -119,7 +125,7 @@ func begin(stage_: int) -> void:
 	if stage == Store.ST_TOY: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	if world.start.has("y"): player.pos.y = float(world.start.y)   # (a start that is not on the ground: 6-1's terrace)
 	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
-	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false
+	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false; party_t = 0.0
 	flask_cd = 0.0; flasks = 0
 	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
 	# down in the corner at the bottom right of the map (the east and south ends), facing in
@@ -286,7 +292,8 @@ func update(dt: float) -> void:
 		if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
 		if Phys.flow_busy: Phys.flow_step(flow_budget)
 	stats.shots = guns.shots; stats.hits = guns.hits
-	if _chest_wait and loot.pending() == null: _chest_wait = false; finish()
+	party_t = maxf(0.0, party_t - dt)
+	if _chest_wait and loot.pending() == null and party_t <= 0.0: _chest_wait = false; finish()   # (once what the chest gave has been seen)
 	result_tick(dt)
 	if not ended and player.hp <= 0.0:
 		if tm != null: tm.player_down()   # (a team mode: you are back at your base in a few seconds)
@@ -506,7 +513,7 @@ func open_chest() -> void:
 	for id in guns.slots: guns.wstate[id].mag = Weapons.LIST[id].mag; guns.wstate[id].reserve = Weapons.LIST[id].reserve
 	var pool: Array = Weapons.ORDER.filter(func(id): return id != "pistol" and not Store.save.owned.has(id))
 	if pool.is_empty():
-		Snd.play("pickup_ammo"); _say(banner, ["보물상자", "모든 총을 이미 가지고 있습니다 · 모든 총 탄약 가득", 3.2]); return
+		Snd.play("pickup_ammo"); _say(banner, ["보물상자", "모든 총을 이미 가지고 있습니다 · 모든 총 탄약 가득", 3.2]); party_t = PARTY_ALL; return
 	var id: String = pool[randi() % pool.size()]; var W: Dictionary = Weapons.LIST[id]
 	Store.save.owned.push_back(id)
 	if not Store.save.loadout.has(id):
@@ -515,13 +522,20 @@ func open_chest() -> void:
 	Store.persist()
 	guns.wstate[id].mag = W.mag; guns.wstate[id].reserve = W.reserve
 	guns.loadout = layout(); guns.slots = guns.loadout.filter(func(x): return x != null); guns.none = guns.slots.is_empty(); guns.switch_to(id)
-	Snd.play("buy"); Snd.play("pickup_ammo")
-	_say(banner, ["보물상자 · " + W.name, W.model + " " + W.name + " 획득 · 이제 영구히 내 총입니다(살아서 나가면) · 모든 총 탄약 가득", 3.6])
+	Snd.play("buy"); Snd.play("pickup_ammo"); stats.prize = id
+	# shown big: the gun's card in the middle of the screen, confetti and fireworks, a fanfare (Reward); the stage waits for it
+	party_t = PARTY
+	if on_reward.is_valid(): on_reward.call(id)
+	else: _say(banner, ["보물상자 · " + W.name, W.model + " " + W.name + " 획득 · 이제 영구히 내 총입니다(살아서 나가면) · 모든 총 탄약 가득", 3.6])
+	_say(feed, ["보물상자 · 새 총 " + W.model + " " + W.name + " 획득", 0, true])
 
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
 		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if stage == 4 else "상자를 열면 탑을 떠납니다" if world.wood != null else "상자를 열어야 헬기가 옵니다", 3.0])
+		return
+	if party_t > 0.0:   # what the chest gave is still on the screen: the clear comes after it (update)
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0
 		return
 	_leave_animals()
 	if player.jet_on:   # still in the air when the last one falls: the jetpack off and down for the way out, as there

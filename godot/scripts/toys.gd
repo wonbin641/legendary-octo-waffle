@@ -6,6 +6,19 @@ const NAMES := {"pistol": "다트 권총", "shotgun": "펌프 물총", "rifle": 
 	"lmg": "고무줄 개틀링건", "rocket": "병로켓 발사기", "flame": "스프레이 화염방사기", "ruler": "30cm 자"}
 const LENGTH := {"pistol": 0.3, "shotgun": 0.56, "rifle": 0.62, "smg": 0.38, "sniper": 0.72, "gl": 0.32, "lmg": 0.74, "rocket": 0.78, "flame": 0.46, "ruler": 0.5}
 const ORDER := ["pistol", "shotgun", "rifle", "smg", "sniper", "gl", "lmg", "rocket", "flame"]
+## the nine toy guns in key order (1-9): the guns in your weapon layout (lo: 무기 편성) first, in its order (an empty slot takes
+## no number), then the others in the order you put them in (rest: Store.save.toy_order), any it lacks last
+static func order_for(lo: Array, rest: Array) -> Array:
+	var out: Array = []
+	for id in lo + rest + ORDER:
+		if id != null and ORDER.has(id) and not out.has(id): out.push_back(id)
+	return out
+## how many of those come from the weapon layout: they keep its order, and the others come after them
+static func lead(lo: Array) -> int:
+	var seen: Array = []
+	for id in lo:
+		if id != null and ORDER.has(id) and not seen.has(id): seen.push_back(id)
+	return seen.size()
 
 # each part: ["b", sx, sy, sz, x, y, z, colour, rough, metal, alpha]  a box
 #            ["c", radius, length, x, y, z, colour, axis, top radius (-1: same), rough, metal, alpha]  a cylinder along x, y or z

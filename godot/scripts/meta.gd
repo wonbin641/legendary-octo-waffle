@@ -130,15 +130,29 @@ static func buy_ammo(id: String, guns: Guns) -> String:
 
 ## put a gun in a slot (or empty it); a gun sits in one slot only
 ## the weapon order, changed in the middle of a stage too: a gun swaps places with the next gun before it (step -1) or after it
-## (step 1) in your hands, keeping the empty slots where they are. In the toy room the toy guns' own order (keys 1-9)
+## (step 1) in your hands, keeping the empty slots where they are. In the toy room the toy guns' order (keys 1-9): the toys of
+## your weapon layout come first in its order, so two of them swap their slots in the layout itself; the others keep their own
+## order after them (Store.save.toy_order); one of each kind never passes the other
 static func move_gun(id: String, step: int, toys := false) -> bool:
-	var lo: Array = Store.save.toy_order if toys else Store.save.loadout
+	if toys:
+		if not can_move_toy(id, step): return false
+		var cur := Toys.order_for(Store.save.loadout, Store.save.toy_order); var i := cur.find(id); var other: String = cur[i + step]
+		if i < Toys.lead(Store.save.loadout):
+			var lo2: Array = Store.save.loadout; var a := lo2.find(id); var b := lo2.find(other); lo2[a] = other; lo2[b] = id
+		else:
+			cur[i] = other; cur[i + step] = id; Store.save.toy_order = cur
+		Store.persist(); return true
+	var lo: Array = Store.save.loadout
 	var i := lo.find(id)
 	if i < 0: return false
 	var j := i + step
-	while j >= 0 and j < lo.size() and (lo[j] == null or not (toys or Store.gun_available(lo[j]))): j += step
+	while j >= 0 and j < lo.size() and (lo[j] == null or not Store.gun_available(lo[j])): j += step
 	if j < 0 or j >= lo.size(): return false
 	lo[i] = lo[j]; lo[j] = id; Store.persist(); return true
+## whether a toy gun can make that move: within your layout's own toys or within the others (see move_gun)
+static func can_move_toy(id: String, step: int) -> bool:
+	var cur := Toys.order_for(Store.save.loadout, Store.save.toy_order); var i := cur.find(id); var j := i + step; var n := Toys.lead(Store.save.loadout)
+	return i >= 0 and j >= 0 and j < cur.size() and (i < n) == (j < n)
 ## the loadout screen's arrows: a slot swaps with the slot next to it, empty or not
 static func swap_slots(i: int, j: int) -> void:
 	var lo: Array = Store.save.loadout
