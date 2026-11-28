@@ -352,7 +352,7 @@ func thing_hit(th: Dictionary, elem: String, at: Vector3) -> void:
 	if float(th.get("shield", 0.0)) > 0.0:
 		for i in 6: var a := i * TAU / 6.0; rm.fx.glow(at, Vector3(cos(a), sin(a), 0.0) * 2.4, 0.3, 0.1, 0.02, Color(0.6, 0.75, 1.0, 0.9))   # (six ways: the shield's own mark)
 	else: rm.fx.sparks(at, 4, [c.r, c.g, c.b], 3.0)
-	if randf() < 0.3: Snd.play("rm_shield_hit" if float(th.get("shield", 0.0)) > 0.0 else "metal", 0.5, at)
+	if randf() < 0.3: Snd.play("rm_shield_hit" if float(th.get("shield", 0.0)) > 0.0 else str(th.get("snd", "metal")), 0.5, at)
 
 func prop(kind: String, at: Vector3, label: String) -> Node3D:
 	if rm.en == null: return null
@@ -549,6 +549,21 @@ func fell(v: Realm.Fighter, _by, _o: Dictionary) -> void:
 			if rm.en != null:
 				var d := _flat(0.9, "rift", Color(0.05, 0.0, 0.08, 0.9)); d.position = v.pos + Vector3(0, 0.05, 0); _ghosts.push_back({"n": d, "t": 0.9, "shrink": true})
 	if top.y > 0.0 and v.me and rm.player != null: rm.player.shake = maxf(rm.player.shake, 0.4)
+
+## someone off the field for good: his body and his bar
+func drop(f: Realm.Fighter) -> void:
+	for k in ["g", "bar"]:
+		if f.body.has(k) and is_instance_valid(f.body[k]): (f.body[k] as Node).queue_free()
+	f.body = {}
+
+## a landmark summons (6-2): a circle of its people's colour on the ground before it, and light going up from it
+func summoned(at: Vector3, race: String) -> void:
+	var col := Color(str(Races.R[race].col))
+	if rm.en != null: var d := _flat(3.2, "summon_" + race, Color(col, 0.42)); d.position = at + Vector3(0, 0.06, 0); _ghosts.push_back({"n": d, "t": 1.2})
+	if rm.fx == null: return
+	for i in 36:
+		var a := i * TAU / 36.0
+		rm.fx.glow(at + Vector3(cos(a) * 3.0, 0.1, sin(a) * 3.0), Vector3(0, randf_range(2.0, 5.0), 0), randf_range(0.6, 1.1), 0.22, 0.04, Color(col.lightened(0.3), 0.9))
 
 func came_back(f: Realm.Fighter) -> void:
 	if rm.fx == null: return

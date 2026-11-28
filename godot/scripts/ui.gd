@@ -10,12 +10,13 @@ const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵�
 	9: "아이 방 전체가 싸움터 · 장난감 100개 · 플라스틱 군인, 액션 피규어, 태엽·RC 유닛, 조립 블록 피규어",
 	3: "우리 10개가 차례로 열리는 연구소 · 얼룩말·기린·코끼리를 타고 싸움 · 보스 고릴라는 방탄유리 우리에", 4: "우주선 복도 · 운전실의 황금 드론 · 메인홀의 3페이즈 보스 드론 (잡으면 끝) · 숨은 스파이더 마인",
 	10: "엘프의 숲 · 서쪽 경계에서 동쪽 대마법사의 탑까지 · 엘프 60명과 대마법사 · 회복 물약 상자 없음 · 달샘 연못이 체력을 채워 줍니다",
-	11: "드워프의 땅 · 준비 중", 12: "오크의 땅 · 준비 중", 13: "악마의 땅 · 준비 중"}
+	11: "정사각형 평원 · 네 모서리의 엘프·드워프·오크·악마 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환 · 적 건물과 남은 적을 모두 쓰러뜨리면 클리어", 12: "오크의 땅 · 준비 중", 13: "악마의 땅 · 준비 중"}
 # (stage 6's four places hang under stage 5: 6-1 below it, 6-2 below that, then back to the left with 6-3 and up to 6-4)
 const NODE_AT := {1: [0.09, 0.17], 2: [0.295, 0.17], 3: [0.50, 0.17], 4: [0.705, 0.17], 9: [0.91, 0.17], 6: [0.09, 0.50], 5: [0.09, 0.82], 7: [0.50, 0.50], 8: [0.50, 0.82],
 	10: [0.91, 0.50], 11: [0.91, 0.82], 12: [0.705, 0.82], 13: [0.705, 0.50]}
 const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [1, 6], [6, 5], [3, 7], [7, 8], [9, 10], [10, 11], [11, 12], [12, 13]]
-const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10]   # stages the Godot version can play so far
+const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10, 11]   # stages the Godot version can play so far
+const RACE_SHORT := {"elf": "엘", "dwarf": "드", "orc": "오", "demon": "악"}
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
 var game: Game; var guns: Guns
@@ -274,6 +275,7 @@ func _status(s: int) -> Array:   # [state, line]
 	if Store.SOON.has(s): return ["soon", "준비 중"]   # (named on the board, not made yet)
 	var open := Store.stage_open(s); var done: bool = Store.save.cleared.has(s); var best := int(Store.save.best.get("t%d" % s, 0))
 	if not open: return ["locked", "잠김 · %s 클리어 후" % Store.STAGE_TAG[Store.NEEDS[s]]] if Store.NEEDS.has(s) else ["locked", "잠김"]
+	if done and s == Store.ST_PLAIN: return ["done", "클리어 · 종족 %d/4" % ModePlain.cleared_by().size()]
 	if done: return ["done", "클리어" + (" " + Store.fmt_time(best) if best > 0 else "")]
 	return ["open", "도전 가능"]
 
@@ -301,6 +303,11 @@ func _draw_board() -> void:
 			if st[0] == "soon":
 				for k in 3: board.draw_circle(p + Vector2((k - 1) * r * 0.42, 0), r * 0.11, STEEL)
 			else: board.draw_rect(Rect2(p + Vector2(-r * 0.32, -r * 0.05), Vector2(r * 0.64, r * 0.45)), STEEL); board.draw_arc(p + Vector2(0, -r * 0.05), r * 0.24, PI, TAU, 10, STEEL, 2.0)
+		if s == Store.ST_PLAIN and st[0] != "soon":   # 6-2: which peoples have taken it, as four small marks beside its dot
+			var by := ModePlain.cleared_by(); var dr := 3.6 if pc else 2.6
+			for i in 4:
+				var race: String = Races.ORDER[i]; var q := p + Vector2(r + 7.0 + dr, (i - 1.5) * (dr * 2.0 + 2.0))
+				board.draw_circle(q, dr, Color(str(Races.R[race].col)) if by.has(race) else Color(NIGHT, 0.9)); board.draw_arc(q, dr, 0, TAU, 12, Color(str(Races.R[race].col)), 1.2)
 		# the label under the dot
 		var b: Button = stage_btns[s]; var box := Rect2(b.position + Vector2(0, 22.0 + r + 4), Vector2(b.size.x, 58.0 if pc else 46.0))
 		board.draw_rect(box, Color(0.055, 0.075, 0.13, 0.9) if picked else Color(NIGHT, 0.7)); board.draw_rect(box, SODIUM if picked else LINE, false, 1.0)
@@ -325,8 +332,15 @@ func refresh_menu() -> void:
 	var open := Store.stage_open(sel); var st: Array = _status(sel); var best := int(Store.save.best.get("t%d" % sel, 0)); var done: bool = Store.save.cleared.has(sel)
 	d_code.text = "스테이지 " + Store.STAGE_TAG[sel] + "  ·  " + st[1]
 	d_name.text = Game.STAGES[sel].name
-	d_note.text = NOTE[sel] + (" · 다시 하면 보상 없음" if done else "")
+	d_note.text = NOTE[sel] + (" · 다시 하면 보상 없음" if done and sel != Store.ST_PLAIN else "")
 	d_best.text = Store.fmt_time(best) if best > 0 else "—"
+	if sel == Store.ST_PLAIN:   # 6-2: the peoples that have taken it, each with its best time (a first win with each pays)
+		var by := ModePlain.cleared_by(); var parts: Array = []
+		for r: String in Races.ORDER: parts.push_back(str(Races.R[r].name) + " " + (Store.fmt_time(float(by[r])) if by.has(r) else "—"))
+		d_note.text += "\n깬 종족 · " + " · ".join(parts)
+		var bt := 0
+		for r: String in by: bt = int(by[r]) if bt == 0 else mini(bt, int(by[r]))
+		d_best.text = Store.fmt_time(bt) if bt > 0 else "—"
 	var fit := Meta.fits(sel); var miss := Meta.missing(sel)
 	var no_spec: bool = Meta.spec(sel).all.is_empty() and Meta.spec(sel).any.is_empty()
 	d_spec.text = "—" if no_spec else ("적합" if fit else "부적합"); d_spec.add_theme_color_override("font_color", INK if no_spec else (VITAL if fit else ALARM))
@@ -996,9 +1010,11 @@ func _build_brief() -> void:
 func open_brief(stage: int) -> void:
 	sel = stage; game.begin(stage); tac.setup(stage); back_stack.clear(); show_screen("brief"); _legend(br_leg_h, br_leg_v, false)
 	br_code.text = "스테이지 " + Store.STAGE_TAG[stage]; br_title.text = Game.STAGES[stage].name + (" · " + ToyMatch.SHORT[game.tm.key] if game.tm != null else (" · " + str(Realm.NAMES[game.rm.key]) if game.rm != null else ""))
+	if game.rm != null and game.rm.key == "plain": br_title.text = Game.STAGES[stage].name + " · " + str(Races.R[Realm.picked_race()].name) + "로 출전"
 	br_note.text = Game.STAGES[stage].intro + (("\n동물 %d마리 · 감시탑 체력 10,000" % game.goal if stage == 7 else ("\n적 %d%s" % [game.goal, Game.STAGES[stage].unit] if game.boss == null else "\n" + game.boss_msg + "\n적 %d · 보스 1" % (game.goal - 1))) if game.goal > 0 else "")
 	if game.tm != null: br_note.text = game.tm.mode.brief() + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.tm.mode.bonus()))
 	if game.rm != null: br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + ("\n이미 이긴 모드라 다시 하기 보상은 없습니다" if game.replay else "\n첫 승리 보너스 " + Store.won(game.rm.mode.bonus()))
+	if game.rm != null and game.rm.key == "plain": br_note.text = "\n".join(PackedStringArray(game.rm.mode.brief())) + ("\n이 종족으로 이미 깼습니다 · 다시 하기 보상은 없습니다" if game.replay else "\n이 종족으로 처음 깨면 보너스 " + Store.won(game.rm.mode.bonus()))
 	_mode_buttons(stage); br_map.queue_redraw()
 
 ## a button that is a picture: `paint` draws it (it is handed the button), a press calls `cb`
@@ -1022,8 +1038,9 @@ func _pack_size() -> Vector2:
 ## what is inside springs out) and builds the room for it
 var _torn := ""
 func _mode_buttons(stage: int) -> void:
-	clear(br_modes); br_modes.visible = stage == Store.ST_TOY or stage == Store.ST_ELF
+	clear(br_modes); br_modes.visible = stage == Store.ST_TOY or stage == Store.ST_ELF or stage == Store.ST_PLAIN
 	if stage == Store.ST_ELF: _realm_buttons(); return
+	if stage == Store.ST_PLAIN: _realm_buttons(false); return   # (6-2: no modes, only your people and your bomb)
 	if stage != Store.ST_TOY: return
 	var cur_mode := ToyMatch.picked(); var ps := _pack_size()
 	for k: String in ToyMatch.MODES:
@@ -1043,9 +1060,9 @@ func _pick_mode(k: String) -> void:
 	Store.settings.toyMode = k; Store.persist_settings(); Snd.play("toy_rip"); _torn = k; open_brief(9)
 
 func _brief_gear() -> void:
-	if sel == Store.ST_ELF and Realm.picked() != "solo":   # (a realm battle: your people's own arms, not the layout)
+	if (sel == Store.ST_ELF and Realm.picked() != "solo") or sel == Store.ST_PLAIN:   # (a realm battle: your people's own arms, not the layout)
 		var R: Dictionary = Races.R[Realm.picked_race()]
-		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q(또는 G) 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(준비 시간)" % [str(R.name), str(R.weapon)]
+		br_gear.text = "%s · %s · 룬 단검 · 연금술 폭탄\n좌클릭 공격 · 우클릭 특수 · Shift 이동기 · Q(또는 G) 폭탄 · V 단검 · F 튕겨내기 · X 비전 비기 · B 룬 제단(%s)" % [str(R.name), str(R.weapon), "준비 시간이나 우리 건물 곁" if sel == Store.ST_PLAIN else "준비 시간"]
 		br_gear.add_theme_color_override("font_color", SODIUM); br_go.disabled = false; return
 	if sel == Store.ST_TOY:   # (first: the toy room's nine toy guns are not the layout, and its spray can is no gun of Weapons.LIST)
 		var k := ToyMatch.picked()
@@ -1089,7 +1106,7 @@ func _build_map() -> void:
 ## the map screen, over the paused fight
 ## stage 6-1's choices on the briefing: the wood on your own, or one of the two team battles; for a battle, your people and
 ## the alchemical bomb you carry
-func _realm_buttons() -> void:
+func _realm_buttons(modes := true) -> void:
 	var box := vbox(8); box.size_flags_horizontal = Control.SIZE_EXPAND_FILL; br_modes.add_child(box)
 	var cur := Realm.picked(); var race := Realm.picked_race(); var bomb := Realm.picked_bomb()
 	var row := func(title: String, items: Array, picked: String, cb: Callable) -> void:
@@ -1098,8 +1115,9 @@ func _realm_buttons() -> void:
 		for it: Array in items:
 			var b := btn(str(it[1]), "primary" if it[0] == picked else "ghost", func() -> void: cb.call(str(it[0])))
 			b.set_meta("pick", it[0]); f.add_child(b)
-	row.call("작전", Realm.MODES.map(func(k): return [k, Realm.NAMES[k]]), cur, func(k: String) -> void: _pick_setting("realmMode", k))
-	if cur == "solo": return
+	if modes:
+		row.call("작전", Realm.MODES.map(func(k): return [k, Realm.NAMES[k]]), cur, func(k: String) -> void: _pick_setting("realmMode", k))
+		if cur == "solo": return
 	row.call("종족", Races.ORDER.map(func(r): return [r, Races.R[r].name]), race, func(r: String) -> void: _pick_setting("realmRace", r))
 	var R: Dictionary = Races.R[race]
 	box.add_child(lbl("%s · 체력 %d · 이동 %.1f m/s · 교전 거리 %s\n무기 %s · 패시브 %s · 이동기 %s · 비전 비기 %s" % [str(R.role), int(R.hp), float(R.speed), str(R.range), str(R.weapon), str(R.passive), str(R.skill), str(R.ult)], f_body, 12, INK, true))
@@ -1108,7 +1126,7 @@ func _realm_buttons() -> void:
 
 func _pick_setting(key: String, v: String) -> void:
 	if str(Store.settings.get(key, "")) == v: return
-	Store.settings[key] = v; Store.persist_settings(); Snd.play("reload0"); open_brief(Store.ST_ELF)
+	Store.settings[key] = v; Store.persist_settings(); Snd.play("reload0"); open_brief(sel)
 
 # ================= the rune altar =================
 ## a realm battle's preparation: your people and your bombs changed, runes cut into the three slots for shards (and, when

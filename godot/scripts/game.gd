@@ -12,7 +12,7 @@ const STAGES := {
 	8: {"name": "차례 연구소", "enemy": "animal", "goal": 84, "unit": "마리", "label": "동물", "intro": "우리 10개를 하나씩 · 앞 우리의 동물을 다 잡아야 원숭이 박사가 다음 우리를 엽니다 · 모든 우리가 방탄유리 · 마지막은 거대 고릴라"},
 	9: {"name": "장난감 방", "enemy": "toy", "goal": 100, "unit": "개", "label": "장난감", "intro": "아이 방 전체가 싸움터 · 침대, 책상, 블록 다리, 책장 꼭대기 · 플라스틱 군인 30, 액션 피규어 22, 태엽·RC 유닛 24, 조립 블록 피규어 24"},
 	10: {"name": "은빛 경계림", "enemy": "elf", "goal": 61, "unit": "명", "label": "엘프", "intro": "서쪽 숲 경계에서 동쪽 끝 대마법사의 나선형 탑까지 · 지하 수로, 뿌리 길, 수관 다리 세 층 · 회복은 달샘에서만 · 탑 꼭대기의 대마법사를 쓰러뜨리면 끝"},
-	11: {"name": "드워프", "enemy": "dwarf", "goal": 0, "unit": "명", "label": "드워프", "intro": "준비 중"},
+	11: {"name": "네 깃발 평원", "enemy": "realm", "goal": 0, "unit": "명", "label": "종족", "intro": "정사각형 평원의 네 모서리에 엘프·드워프·오크·악마의 상징 건물 · 고른 종족의 건물은 아군을, 나머지 셋은 적을 소환합니다 · 적 건물 셋과 남은 적을 모두 쓰러뜨리면 끝"},
 	12: {"name": "오크", "enemy": "orc", "goal": 0, "unit": "명", "label": "오크", "intro": "준비 중"},
 	13: {"name": "악마", "enemy": "demon", "goal": 0, "unit": "명", "label": "악마", "intro": "준비 중"},
 	4: {"name": "우주선", "enemy": "robot", "goal": 100, "unit": "대", "label": "로봇", "intro": "에어록 → 통로 → 160 m 복도의 드론 떼 · 서쪽 2층 운전실에 황금 꿀벌 드론 · 동쪽 넓은 메인홀에 3페이즈 보스 드론 · 보스 드론을 잡으면 끝 · 바닥의 스파이더 마인 조심"},
@@ -99,11 +99,14 @@ func begin(stage_: int) -> void:
 	world.toy_tm = tm; tf.tm = tm; proj.tm = tm; enemies.vis_r = 160.0 if tm != null else 0.0
 	if stage == Store.ST_ELF and Realm.picked() != "solo":   # a team battle on the Silverwood
 		rm = Realm.create(Realm.picked()); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
+	elif stage == Store.ST_PLAIN:   # 6-2: you, one of the four peoples, against the other three's landmarks
+		rm = Realm.create("plain"); rm.game = self; rm.world = world; rm.en = enemies; rm.player = player; rm.guns = guns; rm.fx = fx
 	world.build_stage(stage); calm = 0; sp = null; mid = null
 	if tm != null: tm.room = world.toy
 	if world.toy != null: tf.brk.prepare()   # (the breakages' pictures and materials, made as the room is, not at the first hit)
 	fk.wood = world.wood
 	if world.wood != null: world.wood.player = player; world.wood.game = self; world.wood.enemies = enemies; world.wood.fx = fx; world.wood.proj = proj; world.wood.rm = rm
+	if world.plain != null: world.plain.fx = fx; world.plain.rm = rm
 	if world.ship != null: world.ship.player = player; world.ship.game = self; world.ship.enemies = enemies; world.ship.fx = fx
 	player.toss_ceil = Lab.CEIL if world.lab != null else INF
 	if world.lab != null: world.lab.player = player; world.lab.game = self
@@ -178,8 +181,8 @@ func populate() -> void:
 			var o := {"yaw": SR.rng(0, TAU), "y": p.get("y", 0.0)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
-	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null:
-		if world.wood != null and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves)
+	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null or world.plain != null:
+		if (world.wood != null or world.plain != null) and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves; 6-2's landmarks and you)
 		elif world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
 		elif world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS[stage])
@@ -278,7 +281,7 @@ func update(dt: float) -> void:
 	flask_cd = maxf(0.0, flask_cd - dt)
 	# the enemies' way to you, every 0.3 s as the browser game's: at most 3 ms of the search a frame (a fast computer does it
 	# all at once, as there; a slow one over a few frames, the enemies keeping the last way meanwhile), the next once it is done
-	if world.toy == null and world.wood == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
+	if world.toy == null and world.wood == null and world.plain == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
 		flow_t -= dt
 		if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
 		if Phys.flow_busy: Phys.flow_step(flow_budget)
@@ -539,6 +542,7 @@ func win_match() -> void:
 	var md = tm.mode if tm != null else rm.mode
 	var key: String = md.record_key(); var first: bool = not Store.save.best.has(key); var t := int(stats.time)
 	var extra: int = md.bonus() if first else 0
+	if md is RealmMode and (md as RealmMode).clears() and not Store.save.cleared.has(stage): Store.save.cleared.push_back(stage); Store.save.cleared.sort()   # (6-2: the stage cleared, and the next opens)
 	Store.save.money += extra; stats.earned += extra
 	if first or t < int(Store.save.best[key]): Store.save.best[key] = t
 	return_rentals(); Store.persist(); Snd.play("clear"); player.jet_end()

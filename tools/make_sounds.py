@@ -360,6 +360,22 @@ SOUNDS = {
     'rm_die_orc': lambda: [T('sawtooth', 132, 62, 0.5, 0.5), T('sawtooth', 160, 76, 0.5, 0.4), N(0.4, 'bandpass', 820, 360, 2, 0.6), T('sine', 170, 50, 0.22, 0.9, 0.45), N(0.15, 'lowpass', 800, 150, 0.7, 1.1, 0.45)],
     # a demon turning to ash: a dry hiss, the ash sucked down
     'rm_die_demon': lambda: [N(0.5, 'highpass', 5200, 3000, 0.8, 0.4), N(0.4, 'bandpass', 3000, 1200, 1.5, 0.3), H('sine', 700, 140, 0.45, 0.35, 0.15, 0.4, 0.03), BACK(N(0.45, 'bandpass', 300, 2400, 2, 0.6, 0.15)), T('sine', 130, 52, 0.1, 0.5, 0.6)],
+    # ---- 6-2, the plain of the four banners (added last: the sounds before keep their noise) ----
+    # the moon spire summons: a harp's run up and a chime from its crystal
+    'rm_summon_elf': lambda: [l for i, m in enumerate(GLISS[:8]) for l in pluck(NOTE(m), 0.22, 0.045 * i, 0.4)] + ping(NOTE(98), 0.3, 0.4, 1.6) + [N(0.6, 'highpass', 4800, 8000, 0.7, 0.1, 0.1)],
+    # the rune forge summons: three blows on the anvil, a low horn, the steam let out
+    'rm_summon_dwarf': lambda: clank(330, 0.8) + clank(330, 0.7, 0.28) + clank(392, 0.9, 0.56) + horn(98, 0.35, 0.62, 0.7) + [N(0.6, 'highpass', 3200, 5600, 0.7, 0.35, 0.7)],
+    # the war totem summons: the war horn and two drum beats
+    'rm_summon_orc': lambda: horn(87, 0.55, 0.0, 1.0) + [T('sine', 120, 48, 0.25, 0.9, 1.0), N(0.18, 'lowpass', 900, 120, 0.7, 0.8, 1.0), T('sine', 120, 48, 0.25, 0.9, 1.3), N(0.18, 'lowpass', 900, 120, 0.7, 0.8, 1.3)],
+    # the rift gate summons: a roar drawn in, a low growl, the crackle of fire
+    'rm_summon_demon': lambda: [BACK(N(0.7, 'bandpass', 220, 1800, 1.4, 0.8)), T('sawtooth', 70, 52, 0.9, 0.4, 0.55), T('sawtooth', 104, 78, 0.9, 0.28, 0.55), N(0.5, 'bandpass', 1500, 600, 1.2, 0.4, 0.7)] + [l for k in range(4) for l in [N(0.03, 'highpass', 4000, 2500, 1, 0.3, 0.75 + k * 0.09)]],
+    # a landmark struck: a heavy knock on stone or timber, grit falling
+    'rm_hall_hit': lambda: [N(0.12, 'lowpass', 1400, 200, 0.8, 0.9), T('sine', 140, 60, 0.12, 0.7), N(0.25, 'highpass', 2600, 4200, 0.7, 0.12, 0.05)],
+    # a landmark falling: a long rumble, its walls coming down blow after blow, the last of it settling
+    'rm_hall_fall': lambda: [N(2.6, 'lowpass', 500, 60, 0.7, 1.0), T('sine', 62, 36, 2.4, 0.8)] + [l for i, (f, g, d) in enumerate(PLATES) for l in [N(0.2, 'lowpass', f * 1.6, 180, 0.8, g * 0.9, 0.15 + d * 3.0), T('sine', f * 0.25, f * 0.12, 0.2, g * 0.6, 0.15 + d * 3.0)]]
+        + shatter(1.8, 0.25, 0.4) + [N(1.4, 'highpass', 2400, 5000, 0.7, 0.14, 1.4)],
+    # your landmark under attack: a warning horn, twice
+    'rm_hall_alarm': lambda: horn(196, 0.32, 0.0, 0.32) + horn(196, 0.32, 0.42, 0.32) + horn(147, 0.38, 0.84, 0.55),
 }
 out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'godot', 'sounds'); os.makedirs(out_dir, exist_ok=True)
 only = sys.argv[1:]

@@ -5,13 +5,14 @@ extends Node
 const ST_ARMED := 5   # the inner number of stage 1-2 (the armed docks)
 const ST_TOY := 9     # the inner number of stage 5 (the toy room)
 const ST_ELF := 10    # the inner number of stage 6-1 (the elves' Silverwood); 6-2, 6-3 and 6-4 are 11, 12 and 13
+const ST_PLAIN := 11  # the inner number of stage 6-2 (the plain of the four banners)
 const STAGE_ORDER := [1, 6, 5, 2, 3, 7, 8, 4, 9, 10, 11, 12, 13]   # 9 is stage 5, the toy room; 10 to 13 are stage 6 (6-1 to 6-4)
 const STAGE_TAG := {1: "1", 6: "1-1", 5: "1-2", 2: "2", 3: "3", 7: "3-1", 8: "3-2", 4: "4", 9: "5", 10: "6-1", 11: "6-2", 12: "6-3", 13: "6-4"}
 const NEXT := {1: [2, 6], 6: [5], 5: [2], 2: [3], 3: [4, 7], 7: [8], 8: [4], 4: [9], 9: [10], 10: [11], 11: [12], 12: [13], 13: []}
-## stage 6 is four places, each held by one people of its world: the elves (6-1), the dwarves (6-2), the orcs (6-3), the
-## demons (6-4). "Stage 6" means all four. No crate there holds a health potion
-const REALM := {10: "elf", 11: "dwarf", 12: "orc", 13: "demon"}
-const SOON := [11, 12, 13]   # named on the stage board, not made yet (their maps are to come)
+## stage 6 is four places of the peoples' world: the elves' wood (6-1), the plain where all four peoples meet (6-2), the orcs'
+## (6-3) and the demons' (6-4), those two to come. "Stage 6" means all four. No crate there holds a health potion
+const REALM := {10: "elf", 11: "plain", 12: "orc", 13: "demon"}
+const SOON := [12, 13]   # named on the stage board, not made yet (their maps are to come)
 static func realm(n: int) -> String: return str(REALM.get(n, ""))
 ## the stages there are to play (those only named so far are left out)
 static func playable() -> Array: return STAGE_ORDER.filter(func(s): return not SOON.has(s))

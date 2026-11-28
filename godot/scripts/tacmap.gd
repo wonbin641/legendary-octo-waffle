@@ -18,6 +18,8 @@ const THEME := {
 	9: {"bg": "2e261f", "grid": [255, 235, 205, 0.06], "block": "6f5d49", "blockHi": "9b8466", "wall": "c9b48f", "label": "장난감 방"},
 	# stage 6-1, the elves' wood: moss, pale marble and silver bark (drawn as two bands, see _draw_strip)
 	10: {"bg": "16211f", "grid": [200, 255, 240, 0.06], "block": "6f7f7a", "blockHi": "a9b6b2", "wall": "cfd8d4", "label": "은빛 경계림"},
+	# stage 6-2, the plain of the four banners: grass, its stones and walls, the cliffs about it
+	11: {"bg": "26331f", "grid": [230, 240, 200, 0.06], "block": "777366", "blockHi": "9a968a", "wall": "8a7f6a", "label": "네 깃발 평원"},
 }
 ## what each dot colour means, per stage; the legend under the map is built from the same table
 const KINDS := {
@@ -31,6 +33,7 @@ const KINDS := {
 	7: [["cat", "ff7a3a", "치타 · 호랑이 · 숫사자"], ["big", "ffc061", "물소 · 하마 · 코뿔소 · 기린 · 코끼리"], ["prey", "f0ede4", "얼룩말"], ["gorilla", "c58bff", "로랜드고릴라"], ["tame", "5ed6b0", "길들인 동물"]],
 	9: [["soldier", "7fc96b", "플라스틱 군인"], ["figure", "ff7a3a", "액션 피규어"], ["rc", "4f8cff", "태엽·RC 유닛"], ["brick", "ffd23a", "조립 블록 피규어"]],
 	10: [["elf_ranger", "ff5260", "석궁병"], ["elf_blade", "ff9a3a", "바람검사"], ["elf_sniper", "ffd23a", "저격수 · 나무 위"], ["elf_mage", "ff7ad9", "비전술사"]],
+	11: [],   # (6-2 has no foes of the old kinds: its legend is the battle's)
 }
 const MAP_KIND := {"cctv": "cctv", "patrol": "patrol", "droneA": "droneA", "mine": "mine", "gdrone": "midboss", "bdrone": "boss"}
 const MELEE_KITS := ["saber", "saber2", "bat", "bomber", "dagger"]
@@ -52,6 +55,7 @@ static func _colors() -> Dictionary:
 
 static func half_of(st: int) -> float:
 	if st == Store.ST_ELF: return ElfWood.HALF   # (its map is folded in two: see _draw_strip)
+	if st == Store.ST_PLAIN: return BannerPlain.HALF
 	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == Store.ST_TOY else 68.0)))
 
 func setup(st: int) -> void:
@@ -185,12 +189,23 @@ func draw(ci, size: Vector2) -> void:
 		_tag(ci, ("감시탑 %d%%" % roundi(100.0 * sf.hp / Safari.TOWER.hp)) if sf.standing else "감시탑 무너짐", X.call(0.0), z0 - 9.0 * u, u, Color("f2e6c8") if sf.standing else Color("ff8a7a"))
 	for c: Dictionary in w.crates:
 		if not c.dead and not c.get("wall", false): ci.draw_rect(Rect2(X.call(c.x) - 2.2 * u, Z.call(c.z) - 2.2 * u, 4.4 * u, 4.4 * u), Color("a7804e"))
-	# the drop point: a helipad mark (the lab's door, the ship's airlock)
-	var s0: Dictionary = w.start; var lab := stage == 3 or stage == 8; var sp := Vector2(X.call(s0.x), Z.call(s0.z))
-	ci.draw_circle(sp, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sp, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
-	if not toy: _text(ci, f_bold if lab else f_mono, "문" if lab else ("A" if stage == 4 else "H"), sp.x, sp.y + 0.5 * u, roundi((11.0 if lab else 12.0) * u), SODIUM)
-	var lz_left := sp.x > o.x + S * 0.6   # (a drop point at the right edge, as 1-2's: its name on its left, inside the map)
-	_tag(ci, "출입문" if lab else ("에어록" if stage == 4 else "내리는 곳"), sp.x + (-15.0 if lz_left else 15.0) * u, sp.y + 0.5 * u, u, SODIUM, "right" if lz_left else "left")
+	if stage == Store.ST_PLAIN and w.plain != null:   # 6-2: its groves, and the four landmarks (yours blue-edged), and everyone of both sides
+		for q: Array in w.plain.trees: ci.draw_circle(Vector2(X.call(q[0]), Z.call(q[1])), float(q[2]) * k * 0.8, Color(58 / 255.0, 84 / 255.0, 40 / 255.0, 0.85))
+		if game.rm != null:
+			for q: Dictionary in game.rm.mode.tac():
+				var mp := Vector2(X.call(float(q.x)), Z.call(float(q.z))); var mc := Color(str(q.c)); var mr := maxf(float(q.r) * k, 5.0 * u)
+				ci.draw_circle(mp, mr, Color(mc, 0.3)); ci.draw_arc(mp, mr, 0, TAU, 28, mc, 2.2 * u); _tag(ci, str(q.label), mp.x, mp.y - mr - 7.0 * u, u, mc)
+			for f in game.rm.all:
+				if f.me or not f.alive: continue
+				var fp := Vector2(X.call(f.pos.x), Z.call(f.pos.z))
+				ci.draw_circle(fp, 3.4 * u, Color("5f9cff") if f.team == "us" else Color("ff5260")); ci.draw_arc(fp, 3.4 * u, 0, TAU, 16, Color(0.05, 0.08, 0.15, 0.9), 1.0 * u)
+	else:
+		# the drop point: a helipad mark (the lab's door, the ship's airlock)
+		var s0: Dictionary = w.start; var lab := stage == 3 or stage == 8; var sp := Vector2(X.call(s0.x), Z.call(s0.z))
+		ci.draw_circle(sp, 11.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(sp, 11.0 * u, 0, TAU, 40, SODIUM, 2.0 * u)
+		if not toy: _text(ci, f_bold if lab else f_mono, "문" if lab else ("A" if stage == 4 else "H"), sp.x, sp.y + 0.5 * u, roundi((11.0 if lab else 12.0) * u), SODIUM)
+		var lz_left := sp.x > o.x + S * 0.6   # (a drop point at the right edge, as 1-2's: its name on its left, inside the map)
+		_tag(ci, "출입문" if lab else ("에어록" if stage == 4 else "내리는 곳"), sp.x + (-15.0 if lz_left else 15.0) * u, sp.y + 0.5 * u, u, SODIUM, "right" if lz_left else "left")
 	for e: Enemies.Foe in game.enemies.list:
 		if not e.alive or e.ridden: continue   # the one you ride is under your arrow
 		if e.type == "mine" and (e.bs == "hidden" or e.bs == ""): continue   # buried mines stay hidden, even here
@@ -382,8 +397,8 @@ func legend(live: bool) -> Array:
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else ("에어록 · 시작하는 곳" if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
-	if not (stage == Store.ST_ELF and game != null and game.rm != null): out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])   # (a realm battle has no one place to start)
-	if stage == Store.ST_ELF and game != null and game.rm != null:   # a realm battle: the two sides and the match's marks
+	if not ((stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null): out.push_back(["lz", lz, SODIUM, "" if (stage == Store.ST_TOY or stage == Store.ST_ELF) else ("문" if lab else ("A" if stage == 4 else "H"))])   # (a realm battle has no one place to start)
+	if (stage == Store.ST_ELF or stage == Store.ST_PLAIN) and game != null and game.rm != null:   # a realm battle: the two sides and the match's marks
 		out.push_back(["en", "우리 편", Color("5f9cff"), ""]); out.push_back(["en", "적", Color("ff5260"), ""])
 		var seen := {}
 		for q: Dictionary in game.rm.mode.tac():

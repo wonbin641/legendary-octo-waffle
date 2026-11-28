@@ -23,8 +23,20 @@ func fighting() -> bool: return phase == "wait" or phase == "fight"
 func held(_f: Realm.Fighter) -> bool: return phase == "prep" or phase == "over" or phase == "end"
 ## whether the held stand still as well (a round just over), or may walk about inside the base's shield (the preparation)
 func rooted() -> bool: return phase == "over" or phase == "end"
-## whether the rune altar can be opened now
+## whether the rune altar can be opened now, and what you are told when it cannot
 func altar_ok() -> bool: return phase == "prep"
+func altar_why() -> String: return "룬 제단은 준비 시간에만 열 수 있습니다"
+## whether the match is five a side from the start (6-2 has you alone and what its landmarks summon)
+func lineup() -> bool: return true
+## whether the mode brings its own waypoints only (RealmAI: not the Silverwood's)
+func own_graph() -> bool: return false
+## whether a win is the stage cleared too (6-2; 6-1's battles are its own records beside the stage)
+func clears() -> bool: return false
+## what a blow is worth, by who strikes whom (6-2: the summoned against you, its hero, a little less)
+func dmg_mul(_by: Realm.Fighter, _v: Realm.Fighter) -> float: return 1.0
+## what you are told when you fall, and where you come back
+func down_line(f: Realm.Fighter) -> String: return "%d초 뒤 본진 마법진에서 다시 일어납니다" % ceili(f.back_t)
+func back_line() -> String: return "본진 마법진"
 func base_of(_team: String) -> Vector3: return Vector3.ZERO
 func spawn_at(f: Realm.Fighter) -> Vector3:
 	var b := base_of(f.team); var i := rm.team_of(f.team).find(f); var a := i * TAU / 5.0

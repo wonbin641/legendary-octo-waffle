@@ -128,6 +128,23 @@ func arc(f: Realm.Fighter, reach: float, half: float) -> Array:
 	out.sort_custom(func(p, q): return float(p[0]) < float(q[0]))
 	return out.map(func(p): return p[1])
 
+## the landmark a box belongs to, if it is a landmark of the other side still standing (6-2: its boxes are its body, and
+## what meets them meets it)
+func bldg_of(b, team: String):
+	if b == null or not ((b as Phys.Box).ref is Dictionary): return null
+	var th: Dictionary = (b as Phys.Box).ref
+	if not th.get("bldg", false) or th.team == team or float(th.hp) <= 0.0: return null
+	return th
+
+## whether someone has a clear shot at a made thing within so far: nothing in the way but the thing's own boxes
+func sees_thing(f: Realm.Fighter, th: Dictionary, far := 40.0) -> bool:
+	var eye := f.eye_at(); var at: Vector3 = (th.pos as Vector3) + Vector3(0, minf(float(th.h) * 0.4, 3.5), 0)
+	var to := at - eye; var d := to.length()
+	if d < 0.01: return true
+	if d > far + float(th.r) or smoked(eye, at): return false
+	if not Phys.raycast_static(eye, to / d, d): return true
+	return Phys.rh_box != null and is_same(Phys.rh_box.ref, th)
+
 func arc_things(f: Realm.Fighter, reach: float, half: float) -> Array:
 	var out: Array = []; var fw := Vector2(f.aim.x, f.aim.z).normalized()
 	for th: Dictionary in things:
@@ -231,8 +248,8 @@ func blast(f: Realm.Fighter) -> Dictionary:
 	var W: Dictionary = Races.CANNON; var o := muzzle(f); var got := {}; var obj := {}; var ends: Array = []
 	f.ammo -= 1; f.fire_t += 1.0 / float(W.rate); f.fired_t = 0.0
 	for i in int(W.pellets):
-		var d := cone(f.aim, float(W.spread)); var far := float(W.far)
-		if Phys.raycast_static(o, d, far): far = Phys.rh_t
+		var d := cone(f.aim, float(W.spread)); var far := float(W.far); var wb = null
+		if Phys.raycast_static(o, d, far): far = Phys.rh_t; wb = Phys.rh_box
 		var who: Realm.Fighter = null; var what = null; var tb := far
 		for e: Realm.Fighter in rm.all:
 			if not e.alive or e.team == f.team or e.inv > 0.0: continue
@@ -242,6 +259,7 @@ func blast(f: Realm.Fighter) -> Dictionary:
 			if th.team == f.team or float(th.hp) <= 0.0: continue
 			var t := ray_cyl(o, d, tb, th.pos, float(th.r), float(th.h))
 			if t >= 0.0 and t < tb: tb = t; what = th; who = null
+		if who == null and what == null: what = bldg_of(wb, f.team)
 		var at := o + d * tb; ends.push_back(at)
 		_light_oil(at, f)   # (steam shards set oil alight)
 		var fall := 1.0 if tb <= float(W.full) else lerpf(1.0, float(W.far_mul), (tb - float(W.full)) / (float(W.far) - float(W.full)))
@@ -341,8 +359,8 @@ func _staff(f: Realm.Fighter, I: Dictionary, dt: float) -> void:
 ## the soul-drain beam: it eats at whoever it rests on, and at the demon's own health while it is held
 func _beam(f: Realm.Fighter, dt: float) -> void:
 	var W: Dictionary = Races.STAFF; var o := muzzle(f); var d := f.aim; var far := float(W.beam_range)
-	f.hp = maxf(1.0, f.hp - float(W.beam_cost) * dt); f.fired_t = 0.0
-	if Phys.raycast_static(o, d, far): far = Phys.rh_t
+	f.hp = maxf(1.0, f.hp - float(W.beam_cost) * dt); f.fired_t = 0.0; var wb = null
+	if Phys.raycast_static(o, d, far): far = Phys.rh_t; wb = Phys.rh_box
 	var who: Realm.Fighter = null; var what = null; var tb := far
 	for e: Realm.Fighter in rm.all:
 		if not e.alive or e.team == f.team or e.inv > 0.0: continue
@@ -352,6 +370,7 @@ func _beam(f: Realm.Fighter, dt: float) -> void:
 		if th.team == f.team or float(th.hp) <= 0.0: continue
 		var t := ray_cyl(o, d, tb, th.pos, float(th.r) + 0.15, float(th.h))
 		if t >= 0.0 and t < tb: tb = t; what = th; who = null
+	if who == null and what == null: what = bldg_of(wb, f.team)
 	f.beam_end = o + d * tb; f.beam_acc += dt
 	if f.beam_acc >= 0.1:
 		var n := f.beam_acc; f.beam_acc = 0.0
@@ -552,6 +571,7 @@ func add_thing(th: Dictionary) -> Dictionary:
 func hurt_thing(th: Dictionary, dmg: float, elem: String, by: Realm.Fighter, at = null) -> float:
 	if float(th.hp) <= 0.0 or dmg <= 0.0 or (by != null and by.team == th.team) or not rm.mode.fighting(): return 0.0
 	if th.has("open") and not (th.open as Callable).call(): return 0.0
+	if by != null and not by.me: dmg *= float(th.get("troops", 1.0))   # (6-2's landmarks: walls the summoned barely dent)
 	var left := dmg; var done := 0.0
 	if float(th.get("shield", 0.0)) > 0.0:
 		var m := Races.SHIELD_ARCANE if elem == "arcane" else 1.0
@@ -609,7 +629,7 @@ func _fly(s: Dictionary, dt: float) -> bool:
 	var d := mv / L
 	_through(s, p0)
 	if _parried(s, p0, d, L): return true
-	var wall := Phys.raycast_static(p0, d, L); var tb := Phys.rh_t if wall else L; var n := Phys.rh_n
+	var wall := Phys.raycast_static(p0, d, L); var tb := Phys.rh_t if wall else L; var n := Phys.rh_n; var wb = Phys.rh_box if wall else null
 	var who: Realm.Fighter = null; var what = null; var fake = null
 	for e: Realm.Fighter in rm.all:
 		if not e.alive or e.team == s.team or s.hit.has(e.id) or e.inv > 0.0: continue
@@ -623,6 +643,9 @@ func _fly(s: Dictionary, dt: float) -> bool:
 		if dc.team == s.team: continue
 		var t := ray_cyl(p0, d, tb, dc.pos, float(dc.R) + float(s.r), float(dc.H))
 		if t >= 0.0 and t < tb: tb = t; fake = dc; who = null; what = null
+	if who == null and what == null and fake == null:
+		var hb = bldg_of(wb, s.team)
+		if hb != null and not s.hit.has(int(hb.id)): what = hb   # (a landmark's wall: the landmark)
 	var at := p0 + d * tb
 	if fake != null:   # an elf's echo: whoever shot it is shown to the elf's side
 		var by: Realm.Fighter = s.by

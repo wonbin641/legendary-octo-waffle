@@ -119,6 +119,8 @@ func _smoke() -> void:
 		Store.settings.realmMode = k; command("start 10"); command("sim 2")
 		print("smoke: stage 6-1 %s %s, %d fighters" % [k, state, game.rm.all.size() if game.rm != null else -1])
 	Store.settings.realmMode = was_r
+	command("start 11"); command("sim 2")   # 6-2: the plain of the four banners
+	print("smoke: stage 6-2 %s, %d fighters, %d landmarks" % [state, game.rm.all.size() if game.rm != null else -1, game.rm.mode.halls.size() if game.rm != null else -1])
 	to_menu(); print("smoke: ok"); get_tree().quit(0)
 
 func apply_settings() -> void:
@@ -461,7 +463,7 @@ func enter_play(intro := false) -> void:
 	if cu_light != null: cu_light.visible = false
 	guns.look_mode = look_mode; apply_settings(); hudd.reset(); ui.in_stage = true
 	if world.ship != null: world.ship.on_cut = _boss_cut
-	if intro and world.toy == null and world.wood == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
+	if intro and world.toy == null and world.wood == null and world.plain == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
 	else: _go_play()
 
@@ -481,7 +483,7 @@ func _back_to_play() -> void:
 	_set_state("playing"); player.invuln = maxf(player.invuln, 1.0); request_lock()
 
 func _on_result(kind: String) -> void:
-	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
+	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null and world.plain == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_outro(func() -> void: _show_result("clear")); return
 	_show_result(kind)
 
@@ -516,7 +518,7 @@ func open_map(from: String) -> void:
 ## the rune altar, over the paused fight (a realm battle's preparation only)
 func open_altar() -> void:
 	if state != "playing" or game.rm == null: return
-	if not game.rm.mode.altar_ok(): hint("룬 제단은 준비 시간에만 열 수 있습니다", 1.6); return
+	if not game.rm.mode.altar_ok(): hint(game.rm.mode.altar_why(), 1.6); return
 	guns.trigger = false; _set_state("paused"); ui.back_stack.clear(); ui.open_altar()
 
 func close_altar() -> void:
@@ -678,6 +680,7 @@ func _tick(dt: float) -> void:
 	_read_keys(); player.update(dt, cam, time)
 	if world.toy: world.toy.update(dt, player)
 	if world.wood: world.wood.update(dt, player)   # (stage 6-1: the wind path, the moonwell, the portals and the rest)
+	if world.plain: world.plain.update(dt)   # (6-2: the landmarks' fires, smoke, turning crystals and falls)
 	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 	if world.lab != null: world.lab.anim(dt, time)
@@ -723,6 +726,7 @@ func music_ctx(dt: float) -> Dictionary:
 		if game.ended: rc.what = ""
 		return rc
 	if state == "brief" and ui.sel == Store.ST_ELF and Realm.picked() != "solo": return {"warm": "rt" if Realm.picked() == "siege" else "rf"}   # (its stems made ready on the web)
+	if state == "brief" and ui.sel == Store.ST_PLAIN and game.rm != null: return {"warm": game.rm.mode.music_set()}
 	if world.toy == null or (state != "playing" and state != "paused"): return music_for(state, world.toy != null, null, false, Vector3.ZERO, false, 0, 0, 0.0)
 	_near_t -= dt
 	if _near_t <= 0.0:

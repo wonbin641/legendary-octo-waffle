@@ -41,7 +41,10 @@ var ports: Array = []        # [from node, to node]: a portal's two ends (a one-
 
 # ---------------- the wood's ways ----------------
 func build_graph() -> void:
-	nodes = {}; adj = {}
+	nodes = {}; adj = {}; ports = []
+	if rm.mode.own_graph():   # (a mode on a map of its own: only its waypoints and ways)
+		var mine: Array = rm.mode.extra_edges(); nodes.merge(rm.mode.extra_nodes(), true)
+		_link(mine); return
 	for k: String in NODES: nodes[k] = Vector3(NODES[k][0], NODES[k][1], NODES[k][2])
 	var edges: Array = EDGES.duplicate()
 	# the tower's first flight (round from the west foot to the gallery), the gallery, the second flight, the observatory
@@ -63,6 +66,12 @@ func build_graph() -> void:
 	for k: String in tops: nodes[k] = Vector3(TC.x + float(tops[k][0]), ElfWood.T_F3, TC.y + float(tops[k][1]))
 	edges.append_array([["f2_%d" % (f1 - 1), "top_e"], ["top_e", "top_n"], ["top_n", "top_w"], ["top_w", "top_s"], ["top_s", "top_e"]])
 	edges.append_array(rm.mode.extra_edges()); nodes.merge(rm.mode.extra_nodes(), true)
+	_link(edges)
+	ports = [["bast", "lib_port"]]
+	for q: Array in ports: (adj[q[0]] as Array).push_back([q[1], 3.0, "port"])
+
+## the waypoints set on the ground under them, and the ways between them both ways (one way, where an edge says so)
+func _link(edges: Array) -> void:
 	for k: String in nodes:
 		var p: Vector3 = nodes[k]; p.y = Phys.ground_at(p.x, p.y + 0.45, p.z, 0.3); nodes[k] = p; adj[k] = []
 	for e: Array in edges:
@@ -71,8 +80,6 @@ func build_graph() -> void:
 		var d: float = (nodes[a] as Vector3).distance_to(nodes[b])
 		(adj[a] as Array).push_back([b, d])
 		if not (e.size() > 2 and e[2]): (adj[b] as Array).push_back([a, d])
-	ports = [["bast", "lib_port"]]
-	for q: Array in ports: (adj[q[0]] as Array).push_back([q[1], 3.0, "port"])
 
 func nearest_node(p: Vector3) -> String:
 	var any := ""; var ad := INF; var near: Array = []
@@ -221,12 +228,13 @@ func target(f: Realm.Fighter):
 	for th: Dictionary in rm.kit.things:
 		if th.team != f.team and float(th.hp) > 0.0 and not th.get("prize", false) and eye.distance_to(th.pos) < 30.0 and Phys.line_of_sight(eye, (th.pos as Vector3) + Vector3(0, float(th.h) * 0.6, 0)): return th
 	var pz = rm.mode.prize(f)
+	if pz != null and (pz as Dictionary).get("bldg", false): return pz if rm.kit.sees_thing(f, pz, 40.0) else null   # (a landmark: its own boxes are what a shot at it meets)
 	if pz != null and eye.distance_to((pz as Dictionary).pos) < 40.0 and Phys.line_of_sight(eye, ((pz as Dictionary).pos as Vector3) + Vector3(0, float((pz as Dictionary).h) * 0.6, 0)): return pz
 	return null
 
 func _goal(f: Realm.Fighter) -> Dictionary:
 	var g := rm.mode.goal(f); var b := f.brain; var tg = b.tgt
-	if g.get("hurry", false) or tg == null: return g
+	if g.get("hurry", false) or tg == null or (tg is Dictionary and (tg as Dictionary).get("bldg", false)): return g   # (a landmark: where the mode sends him to strike it from)
 	# those who fight close go for whoever they see near by (the others keep to where the mode sends them)
 	if (f.race == "orc" or f.race == "dwarf") and f.pos.distance_to(_at(tg)) < (26.0 if f.race == "orc" else 16.0) and absf(f.pos.y - _at(tg).y) < 5.0 and not g.get("stay", false):
 		return {"at": _at(tg), "near": 1.6 if f.race == "orc" else 4.0}

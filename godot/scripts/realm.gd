@@ -8,7 +8,7 @@ extends RefCounted
 ## wood; RealmLook is what is seen of it all; the mode (ModeSanctum, ModeSiege) is the rules of the match.
 
 const MODES := ["solo", "sanctum", "siege"]
-const NAMES := {"solo": "은빛 경계림 돌파", "sanctum": "성소 각인전", "siege": "비전 핵 공성전"}
+const NAMES := {"solo": "은빛 경계림 돌파", "sanctum": "성소 각인전", "siege": "비전 핵 공성전", "plain": "네 깃발 평원"}
 const SIDE := 5
 const SPAWN_SAFE := 2.0            # ours: nothing hurts someone this long after he is back
 const SPAWN_HASTE := 1.25          # ours: the base circle's speed for the first four seconds (the papers give the seconds)
@@ -79,7 +79,7 @@ var log_on := false; var log: Array = []   # the checks read what happened: [wha
 
 static func create(k: String) -> Realm:
 	var rm := Realm.new(); rm.key = k
-	rm.mode = ModeSiege.new() if k == "siege" else ModeSanctum.new()
+	rm.mode = ModeSiege.new() if k == "siege" else (ModePlain.new() if k == "plain" else ModeSanctum.new())
 	rm.mode.rm = rm; rm.mode.key = k
 	rm.kit = RealmKit.new(); rm.kit.rm = rm; rm.ai = RealmAI.new(); rm.ai.rm = rm; rm.look = RealmLook.new(); rm.look.rm = rm
 	return rm
@@ -109,9 +109,10 @@ func setup() -> void:
 	mode.build()
 	ai.build_graph()
 	add("us", picked_race(), true)
-	for r: String in Races.ORDER: add("us", r)
-	for r: String in Races.ORDER: add("them", r)
-	add("them", Races.ORDER[randi() % Races.ORDER.size()])
+	if mode.lineup():
+		for r: String in Races.ORDER: add("us", r)
+		for r: String in Races.ORDER: add("them", r)
+		add("them", Races.ORDER[randi() % Races.ORDER.size()])
 	me.bomb_kinds = [picked_bomb()]
 	for f: Fighter in all:
 		if not f.me: f.bomb_kinds = [Races.BOMBS[randi() % 3]]
@@ -133,6 +134,12 @@ func add(team: String, race: String, is_me := false) -> Fighter:
 	f.name = ("" if is_me else ("아군 " if team == "us" else "적 ")) + str(Races.R[race].name)
 	if not is_me: look.build(f)
 	return f
+
+## someone off the field for good (6-2's summoned, a while after they fall): his body and his bar go too
+func drop(f: Fighter) -> void:
+	if f == null or f.me: return
+	if f.ult_t > 0.0: kit.ult_end(f)
+	look.drop(f); all.erase(f)
 
 ## someone takes a people's shape (at the start, or changing between rounds): its body, its health, its weapon full
 func become(f: Fighter, race: String) -> void:
@@ -193,7 +200,7 @@ func hurt(v: Fighter, dmg: float, elem: String, by: Fighter, o := {}) -> float:
 		if v.race == "dwarf" and bool(o.get("aoe", false)) and (elem == "fire" or bool(o.get("blast", false))): m *= float(Races.THICK.aoe)
 		if front: m *= 1.0 - float(Races.LUST.front) * v.stacks
 		if bool(o.get("ranged", false)) and kit.domed(v, from): m *= float(Races.ULT.dwarf.cut)
-		d = dmg * m
+		d = dmg * m * mode.dmg_mul(by, v)
 	# the shield first, then the warlord's extra health, then his own
 	var left := d
 	if v.shield > 0.0:
@@ -322,7 +329,7 @@ func down(v: Fighter, by: Fighter, o := {}) -> void:
 		elif by != null: game.say_feed(by.name + " → " + v.name)
 	if v.me and player != null:
 		player.out = true; player.hp = 0.0; player.vel = Vector3.ZERO; player.dash_t = 0.0; guns.trigger = false; guns.ads_held = false
-		if game != null: game.say_banner("쓰러졌습니다", "%d초 뒤 본진 마법진에서 다시 일어납니다" % ceili(v.back_t), 2.0); Snd.play("thud")
+		if game != null: game.say_banner("쓰러졌습니다", mode.down_line(v), 2.0); Snd.play("thud")
 
 ## moved by something other than his own feet (a portal, a hook, a trap): the way he was walking is no good now
 func astray(f: Fighter) -> void:
@@ -349,7 +356,7 @@ func back(f: Fighter) -> void:
 	var face := mode.face_at(f, p); f.yaw = face; f.aim = Vector3(-sin(face), 0, -cos(face))
 	if f.me and player != null:
 		player.reset(p.x, p.z, face); player.pos.y = p.y; player.out = false; player.hp = f.hp; Snd.play("rm_spawn")
-		if game != null: game.say_banner("다시 출전", "본진 마법진", 1.2)
+		if game != null: game.say_banner("다시 출전", mode.back_line(), 1.2)
 	else: Snd.play("rm_spawn", 0.6, p)
 	look.came_back(f)
 	mode.on_back(f)

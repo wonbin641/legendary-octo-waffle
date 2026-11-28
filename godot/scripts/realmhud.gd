@@ -133,6 +133,16 @@ func _top(ci, s: Vector2, c: Vector2, rm: Realm) -> void:
 			ci.draw_line(Vector2(bx + bw * float(H.mark) / 100.0, by - 1), Vector2(bx + bw * float(H.mark) / 100.0, by + 10), Color(1, 1, 1, 0.6), 1.0)
 			h._t(ci, fm, "%d%%" % int(float(H[team])), bx + bw + 6, by - 3, 11, Hud.INK, "left", false)
 			for k in 2: ci.draw_circle(Vector2(x0 + w - 22.0 + k * 11.0, by + 4.5), 3.5, col if int(H.wins[team]) > k else Color(1, 1, 1, 0.16))
+	elif H.has("halls"):   # 6-2: the four landmarks, each its people's initial and what it has left (yours edged blue, one just struck edged white); a broken one crossed out
+		var hs: Array = H.halls; var tw := (w - 24.0 - 3.0 * 8.0) / 4.0
+		for i in hs.size():
+			var q: Dictionary = hs[i]; var tx := x0 + 12.0 + i * (tw + 8.0); var ty := y0 + 21.0
+			var col := Color(str(Races.R[q.race].col)); var up := float(q.q) > 0.0; var mine: bool = q.mine
+			ci.draw_rect(Rect2(tx, ty, tw, 26), Color(col, 0.24 if up else 0.06))
+			ci.draw_rect(Rect2(tx, ty, tw, 26), (BLUE if mine else (Color.WHITE if bool(q.hit) else Color(col, 0.75))) if up else Color(1, 1, 1, 0.15), false, 2.0 if mine else 1.0)
+			h._t(ci, fb, str(INITIAL[q.race]) + (" 우리" if mine else ""), tx + 6, ty + 2, 12, Hud.INK if up else Hud.STEEL, "left", false)
+			if up: ci.draw_rect(Rect2(tx + 4, ty + 19, (tw - 8.0) * clampf(float(q.q), 0.0, 1.0), 4), BLUE if mine else RED)
+			else: ci.draw_line(Vector2(tx + 3, ty + 3), Vector2(tx + tw - 3, ty + 23), Color(1, 1, 1, 0.35), 1.5); ci.draw_line(Vector2(tx + tw - 3, ty + 3), Vector2(tx + 3, ty + 23), Color(1, 1, 1, 0.35), 1.5)
 	else:   # the siege: the clock, the two wards, and once it is open the nucleus under its shield
 		var tl := float(H.get("clock", 0.0)); h._t(ci, fm, "%d:%02d" % [int(tl) / 60, int(tl) % 60], x0 + 12, y0 + 22, 20, Hud.ALARM if tl < 30.0 else Hud.INK, "left", false)
 		var wd: Dictionary = H.get("wards", {})
@@ -149,8 +159,8 @@ func _top(ci, s: Vector2, c: Vector2, rm: Realm) -> void:
 			ci.draw_rect(Rect2(bx, y0 + 28, bw, 9), Color(1, 1, 1, 0.1)); ci.draw_rect(Rect2(bx, y0 + 28, bw * float(H.fuse) / ModeSiege.FUSE, 9), Color("ff9a3a"))
 			if float(H.get("cut", 0.0)) > 0.0: ci.draw_rect(Rect2(bx, y0 + 40, bw * clampf(float(H.cut), 0.0, 1.0), 5), CYAN)
 	h._t(ci, fm, str(H.get("sub", "")), c.x, y0 + hh - 17, 12, Hud.SODIUM, "center", false)
-	# the two sides: each one's people, dimmed while he is down (with the seconds till he is back)
-	for i in 2:
+	# the two sides: each one's people, dimmed while he is down (with the seconds till he is back); not on 6-2, where they come and go
+	for i in (2 if H.get("roster", true) else 0):
 		var team := "us" if i == 0 else "them"; var list := rm.team_of(team); var col := BLUE if i == 0 else RED
 		for k in list.size():
 			var o: Realm.Fighter = list[k]; var bx := (x0 - 8.0 - (k + 1) * 26.0) if i == 0 else (x0 + w + 8.0 + k * 26.0)

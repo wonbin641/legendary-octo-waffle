@@ -311,11 +311,11 @@ func _ready() -> void:
 	Store.save.cleared = [5, 8]; var ul_kept := [Store.stage_open(5), Store.stage_open(8), Store.stage_open(6), Store.stage_open(7)]; Store.save.cleared = []
 	Store.save.cleared = [10]; var ul_6 := [Store.stage_open(10), Store.stage_open(11), Store.stage_open(12), Store.stage_open(13)]; var ul_6n := [Store.next_stages(9), Store.next_stages(10)]; Store.save.cleared = []
 	check("the five main stages (1 to 5) and stage 6's first place (6-1) are open from the start; a side stage opens when the one before it is cleared (1-1 after 1, 1-2 after 1-1, 3-1 after 3, 3-2 after 3-1), and a stage once cleared stays open",
-		Store.STAGE_ORDER.size() == 13 and Store.playable().size() == 10 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(14), [ul_open, ul_1, ul_3, ul_kept])
-	check("stage 6 is four places, each held by one people (6-1 the elves, 6-2 the dwarves, 6-3 the orcs, 6-4 the demons): each after the first waits for the one before it; those not made yet (6-2 to 6-4) are named on the board and do not open",
-		[10, 11, 12, 13].map(func(s6): return Store.STAGE_TAG[s6]) == ["6-1", "6-2", "6-3", "6-4"] and [10, 11, 12, 13].map(func(s6): return Store.realm(s6)) == ["elf", "dwarf", "orc", "demon"] and Store.realm(9) == ""
-		and not Store.NEEDS.has(10) and Store.NEEDS[11] == 10 and Store.NEEDS[12] == 11 and Store.NEEDS[13] == 12 and Store.SOON == [11, 12, 13] and ul_6 == [true, false, false, false] and ul_6n == [[10], []]
-		and Game.STAGES[10].enemy == "elf" and Game.STAGES[11].enemy == "dwarf" and Game.STAGES[12].enemy == "orc" and Game.STAGES[13].enemy == "demon", [ul_6, ul_6n])
+		Store.STAGE_ORDER.size() == 13 and Store.playable().size() == 11 and ul_open == [1, 2, 3, 4, 9, 10] and ul_1 == [true, false, true] and ul_3 == [true, false, true] and ul_kept == [true, true, false, false] and not Store.stage_open(14), [ul_open, ul_1, ul_3, ul_kept])
+	check("stage 6 is four places (6-1 the elves' wood, 6-2 the plain where all four peoples meet, 6-3 the orcs', 6-4 the demons'): each after the first waits for the one before it (6-2 opens once 6-1 is cleared); those not made yet (6-3, 6-4) are named on the board and do not open",
+		[10, 11, 12, 13].map(func(s6): return Store.STAGE_TAG[s6]) == ["6-1", "6-2", "6-3", "6-4"] and [10, 11, 12, 13].map(func(s6): return Store.realm(s6)) == ["elf", "plain", "orc", "demon"] and Store.realm(9) == ""
+		and not Store.NEEDS.has(10) and Store.NEEDS[11] == 10 and Store.NEEDS[12] == 11 and Store.NEEDS[13] == 12 and Store.SOON == [12, 13] and ul_6 == [true, true, false, false] and ul_6n == [[10], [11]]
+		and Game.STAGES[10].enemy == "elf" and Game.STAGES[11].enemy == "realm" and Game.STAGES[12].enemy == "orc" and Game.STAGES[13].enemy == "demon", [ul_6, ul_6n])
 	Store.save = keep_save; Store.settings.dev = keep_dev
 	# a grenade passing low by a man (knee high) bursts on him: his body found by its height and girth (it was a ball round his
 	# middle, and a grenade at his knees flew on to burst on the ground behind him)
@@ -460,7 +460,7 @@ func _ready() -> void:
 	check("the guided rocket launcher rents for 45,000 (half the browser game's 90,000)", Weapons.rent("rocket") == 45000 and Weapons.LIST.rocket.price == 150000)
 	Store.settings.dev = true
 	var dv_cl: Array = Store.save.cleared.duplicate(); Store.save.cleared = []
-	check("developer mode: every stage there is to play is open (the side stages too, nothing cleared; not those only named so far), every gun free to carry", Store.playable().all(func(s9): return Store.stage_open(s9)) and not Store.stage_open(11) and Store.gun_available("rocket"))
+	check("developer mode: every stage there is to play is open (the side stages too, nothing cleared; not those only named so far), every gun free to carry", Store.playable().all(func(s9): return Store.stage_open(s9)) and not Store.stage_open(12) and Store.gun_available("rocket"))
 	Store.settings.god = true; var dv_chips: Array = Hud.new()._items(false); Store.settings.god = false; var dv_off: Array = Hud.new()._items(false)
 	var hg_hud := Hud.new(); var hg_ok := true
 	for hg_k: String in Hud.GLOW_STOPS:
@@ -1084,6 +1084,7 @@ func _ready() -> void:
 	_toy_far(gm, en, pl, g, pr, w, cam)
 	_elf_wood(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_realm_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
+	_plain_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
 	gm.begin(6); var hm = en.list[3]; var hd9: Vector3 = en.part_centre(hm, hm.parts[0])
@@ -3890,8 +3891,8 @@ func _elf_wood(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, c
 	check("the Archmage down: 80,000 (a hit to the head half as much again), the great sphere runs down and stops, his chest stands where he fell on top of the tower, and the stage is won when you open it (6-1 cleared, a gun for good)",
 		fall == [true, true, true, 120000, false, false] and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(10) and (Store.save.owned as Array).size() == owned0 + 1 and Store.save.best.has("t10"), [fall, gm.ended, gm.result, Store.save.cleared])
 	# ---- its screens ----
-	check("the stage board: 6-1 hangs under stage 5 and can be played; 6-2, 6-3 and 6-4 are named on it (the dwarves, the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
-		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][0] == Ui.NODE_AT[9][0] and Ui.NODE_AT[10][1] > Ui.NODE_AT[9][1] and Ui.BUILT.has(10) and not Ui.BUILT.has(11)
+	check("the stage board: 6-1 hangs under stage 5 and can be played, and 6-2 (the plain of the four banners) under it; 6-3 and 6-4 are named on it (the orcs, the demons) and wait to be made; the recommended kit for 6-1 is a sniper rifle, a vest and an automatic",
+		[10, 11, 12, 13].all(func(s6): return Ui.NODE_AT.has(s6) and Ui.NOTE.has(s6)) and Ui.NODE_AT[10][0] == Ui.NODE_AT[9][0] and Ui.NODE_AT[10][1] > Ui.NODE_AT[9][1] and Ui.BUILT.has(10) and Ui.BUILT.has(11) and not Ui.BUILT.has(12)
 		and [[9, 10], [10, 11], [11, 12], [12, 13]].all(func(t6): return Ui.TRACKS.has(t6)) and Meta.spec(10) == {"all": ["sniper", "vest"], "any": [["rifle", "smg", "lmg"]]} and Game.STAGES[10].name == "은빛 경계림")
 	gm.begin(10); W = w.wood
 	var tm6 := TacMap.new(); tm6.game = gm; tm6.cam = cam; tm6.f_mono = SystemFont.new(); tm6.f_bold = SystemFont.new(); tm6.setup(10)
@@ -4421,3 +4422,161 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 	check("a match tells the music its set and how far it has come: the wood's for the sanctum; the objective's stem from the resonance on (one break asked for), the climax at 90% and in overtime (two semitones up once the hold has halved)",
 		c1.set == "rf" and c1.stage == 1 and c2.stage == 3 and c2.breaks == 1 and c3.stage == 4 and c4.stage == 4 and c4.semis == 2, [c1, c2, c3, c4])
 	Store.settings.realmMode = "solo"; gm.begin(1); Store.save = save0; randomize()
+
+# ---------------- 6-2, the plain of the four banners ----------------
+func _plain_fights(gm: Game, _en: Enemies, pl: Player, _g: Guns, _pr: Proj, w: World, cam: Camera3D, _fxn: Fx, _lt) -> void:
+	reset_test_state(); seed(621)
+	Store.settings.realmRace = "orc"; Store.settings.realmBomb = "oil"
+	gm.begin(11); var rm: Realm = gm.rm; var md: ModePlain = rm.mode; var kit: RealmKit = rm.kit; var me: Realm.Fighter = rm.me; var P: BannerPlain = w.plain
+	rm.log_on = true
+	var step := func(secs: float, dt := 1.0 / 60.0) -> void:   # (the battle as it is now: a lambda keeps what it was given, so it asks the game)
+		var t := 0.0
+		while t < secs - 1e-9: pl.update(dt, cam, 0.0); gm.rm.update(dt); w.plain.update(dt); t += dt
+	var near_hall := func(p: Vector3, race: String, extra: float) -> bool: return Vector2(p.x - BannerPlain.at(race).x, p.z - BannerPlain.at(race).z).length() < float(BannerPlain.BODY[race][0]) + extra
+	# ---- the map ----
+	var corners_ok := true
+	for r: String in Races.ORDER:
+		var c := BannerPlain.at(r)
+		if absf(absf(c.x) - 50.0) > 0.01 or absf(absf(c.z) - 50.0) > 0.01: corners_ok = false
+	var spots_ok := BannerPlain.at("elf").x < 0 and BannerPlain.at("elf").z < 0 and BannerPlain.at("dwarf").x > 0 and BannerPlain.at("dwarf").z < 0 and BannerPlain.at("orc").x < 0 and BannerPlain.at("orc").z > 0 and BannerPlain.at("demon").x > 0 and BannerPlain.at("demon").z > 0
+	var walled := Phys.collide_at(73.0, 0.05, 0.0, 0.4, 1.8) != null and Phys.collide_at(0.0, 0.05, -73.0, 0.4, 1.8) != null and Phys.collide_at(0.0, 0.05, -30.0, 0.4, 1.8) == null
+	var boxed := true
+	for r: String in Races.ORDER:
+		var bx: Array = P.halls[r].boxes
+		if bx.is_empty() or not bx.all(func(b): return is_same((b as Phys.Box).ref, md.halls[r])): boxed = false
+	var way: Array = rm.ai.route(BannerPlain.spots("orc")[1], BannerPlain.spots("dwarf")[1])
+	check("6-2's map: a square of grass 144 m a side inside cliffs (you are stopped at 72 m), a landmark in each corner 50 m out both ways (the elves' north-west, the dwarves' north-east, the orcs' south-west, the demons' south-east), each landmark's boxes carrying it, groves and boulders for cover, and waypoints over the open ground with a way across",
+		corners_ok and spots_ok and walled and boxed and rm.ai.nodes.size() > 150 and way.size() >= 2 and P.trees.size() > 20 and P.rocks.size() >= 20, [corners_ok, spots_ok, walled, boxed, rm.ai.nodes.size(), way.size(), P.trees.size(), P.rocks.size()])
+	# ---- who stands on it first ----
+	var lone: bool = rm.all.size() == 1 and me.race == "orc" and md.mine == "orc" and md.halls.orc.team == "us" and ["elf", "dwarf", "demon"].all(func(r): return md.halls[r].team == "them")
+	var at_home: bool = near_hall.call(me.pos, "orc", 12.0)
+	var prep0 := md.phase == "prep" and absf(md.phase_t - ModePlain.PREP) < 0.5 and md.altar_ok() and md.held(me)
+	step.call(ModePlain.PREP + 0.2)
+	var fighting := md.phase == "fight"
+	step.call(8.0)
+	var first := {}
+	for r: String in Races.ORDER: first[r] = md.of(r).size()
+	var roles_first: Array = md.of("elf").map(func(f): return md.role[f.id])
+	var hardy: bool = md.of("dwarf").all(func(f): return absf(f.max_hp - float(Races.R.dwarf.hp) * ModePlain.HARDY) < 0.01)
+	var teams: bool = md.of("orc").all(func(f): return f.team == "us") and md.of("demon").all(func(f): return f.team == "them")
+	check("6-2 begins with you alone at your own people's landmark with ten seconds to get ready (the rune altar open, no blows), then each landmark summons one of its people before its door: yours an ally, the other three foes, each the first of his to keep watch at home; the summoned three quarters as hardy as in a battle of five",
+		lone and at_home and prep0 and fighting and first == {"elf": 1, "dwarf": 1, "orc": 1, "demon": 1} and roles_first == ["guard"] and hardy and teams and rm.all.size() == 5, [lone, at_home, prep0, fighting, first, roles_first, hardy, teams, rm.all.size()])
+	# ---- the caps and the parts they play ----
+	for i in 5:
+		for r: String in Races.ORDER: md.summon(r)
+	var capped: bool = Races.ORDER.all(func(r): return md.of(r).size() == 3)
+	var their_roles: Array = md.of("dwarf").map(func(f): return md.role[f.id]); their_roles.sort()
+	var our_roles: Array = md.of("orc").map(func(f): return md.role[f.id]); our_roles.sort()
+	check("each landmark has no more than three of its own standing at once: of theirs two keep watch at home and the third raids; of yours one keeps watch and the other two go out",
+		capped and their_roles == ["guard", "guard", "raid"] and our_roles == ["guard", "raid", "raid"], [their_roles, our_roles])
+	rm.ai_off = true   # (from here the others stand still: the checks move them)
+	for r: String in Races.ORDER: md.next[r] = 999.0
+	var raider: Realm.Fighter = md.of("dwarf").filter(func(f): return md.role[f.id] == "raid")[0]
+	var gr := md.goal(raider)
+	var pusher: Realm.Fighter = md.of("orc").filter(func(f): return md.role[f.id] == "raid")[0]
+	var keep_me := me.pos; me.pos = BannerPlain.at("elf") + Vector3(20, 0, 30)   # (you nearest the elves' spire)
+	var gp := md.goal(pusher); me.pos = keep_me
+	var guard: Realm.Fighter = md.of("demon").filter(func(f): return md.role[f.id] == "guard")[0]
+	var gg := md.goal(guard)
+	var raider_at := raider.pos; raider.pos = BannerPlain.at("dwarf") + Vector3(-30, 0, 20); md._hit_t["dwarf"] = 0.5
+	var gb := md.goal(raider); md._hit_t["dwarf"] = 99.0; raider.pos = raider_at
+	check("where they go: a raider of theirs to your landmark (it is his prize), yours to theirs nearest you, a guard about his own; a raider within 55 m of home goes back to it when it is struck",
+		near_hall.call(gr.at, "orc", 16.0) and is_same(md.prize(raider), md.halls.orc) and near_hall.call(gp.at, "elf", 16.0) and is_same(md.prize(pusher), md.halls.elf) and near_hall.call(gg.at, "demon", 8.0) and md.prize(guard) == null and near_hall.call(gb.at, "dwarf", 8.0),
+		[gr.at, gp.at, gg.at, gb.at])
+	# ---- blows on a landmark, and on you ----
+	var dw: Dictionary = md.halls.dwarf; dw.hp = ModePlain.HP; md._last_hp.dwarf = ModePlain.HP
+	var a0 := kit.hurt_thing(dw, 100.0, "physical", me); var a1 := kit.hurt_thing(dw, 100.0, "physical", pusher)
+	var fixed_inv := me.inv; me.inv = 0.0; var hero := rm.hurt(me, 100.0, "physical", raider); me.hp = me.max_hp; me.inv = fixed_inv
+	# a bolt at the forge's west wall: what meets its boxes meets it
+	rm.become(me, "elf"); rm.mend(me); dw.hp = ModePlain.HP
+	me.pos = Vector3(BannerPlain.at("dwarf").x - 6.0 - 18.0, 0.0, BannerPlain.at("dwarf").z); me.aim = Vector3(1, 0, 0); me.yaw = -PI / 2.0
+	var bolt_t := 0.0
+	while bolt_t < 0.6: kit.act(me, {"fire": true}, 1.0 / 60.0); kit.step(1.0 / 60.0); bolt_t += 1.0 / 60.0
+	while bolt_t < 1.2: kit.act(me, {}, 1.0 / 60.0); kit.step(1.0 / 60.0); bolt_t += 1.0 / 60.0   # (the last bolts land)
+	var by_bolt := ModePlain.HP - float(dw.hp)
+	rm.become(me, "orc"); rm.mend(me)
+	check("a blow on a landmark: yours counts in full, one of the summoned's a fifth (walls, not flesh); no element bites it the harder; a bolt that meets its walls strikes it (its boxes are its body); the summoned strike you, the plain's hero, 55% as hard",
+		is_equal_approx(a0, 100.0) and is_equal_approx(a1, 100.0 * ModePlain.TROOPS) and is_equal_approx(hero, 100.0 * ModePlain.HERO) and by_bolt > 30.0, [a0, a1, hero, by_bolt])
+	# ---- a landmark left alone mends ----
+	dw.hp = 3000.0; md._last_hp.dwarf = 3000.0; md._hit_t.dwarf = 0.0
+	step.call(ModePlain.MEND_WAIT - 1.0); var still := float(dw.hp)
+	step.call(3.0); var mended := float(dw.hp)
+	check("a landmark unstruck for eight seconds mends 10 a second (not before)", absf(still - 3000.0) < 0.01 and mended > 3005.0 and mended < 3025.0, [still, mended])
+	# ---- a landmark broken ----
+	var n_boxes := Phys.colliders.size(); var dwarf_men: Array = md.of("dwarf"); var sh0 := me.shards; dw.hp = 1.0
+	kit.hurt_thing(dw, 50.0, "physical", me)
+	var fell: bool = P.halls.dwarf.fallen and not md.standing("dwarf") and Phys.colliders.size() < n_boxes and (P.halls.dwarf.ruin_boxes as Array).size() > 0
+	var hunting: bool = dwarf_men.all(func(f): return md.role[f.id] == "hunt")
+	var paid := me.shards - sh0 == int(ModePlain.SHARDS.hall)
+	md.next.dwarf = 0.01; var w0: int = md.waves.dwarf; step.call(0.5); var no_more: bool = md.waves.dwarf == w0
+	step.call(3.0); var sunk: bool = not (P.halls.dwarf.node as Node3D).visible and (P.halls.dwarf.ruin as Node3D).visible
+	var stage3 := md.music_stage() == 3 and md.music_set() == "rt"
+	check("a landmark broken: its boxes go and its ruin's come, it sinks into its dust and its ruin is left; it summons no more, what it had summoned comes for you, you have 250 shards for it, and the music climbs a step",
+		fell and hunting and paid and no_more and sunk and stage3, [fell, hunting, paid, no_more, sunk, md.music_stage()])
+	# ---- the fallen summoned leave the field ----
+	var foe: Realm.Fighter = md.of("elf")[0]; var n0 := rm.all.size(); var sh1 := me.shards
+	rm.slay(foe, me); var stays := rm.all.size() == n0 and rm.all.has(foe)
+	step.call(ModePlain.GONE + 0.2); var gone_later: bool = rm.all.size() == n0 - 1 and not rm.all.has(foe) and foe.body.is_empty()
+	check("one of the summoned fallen is taken off the field (his body too) once he has gone to dust, two and a half seconds after; and you have 50 shards for him",
+		stays and gone_later and me.shards - sh1 == int(ModePlain.SHARDS.kill), [stays, gone_later, me.shards - sh1])
+	# ---- the screens ----
+	var H := md.hud()
+	var hud_ok: bool = (H.halls as Array).size() == 4 and not bool(H.roster) and (H.halls as Array).filter(func(q): return bool(q.mine)).size() == 1 and str(H.title).begins_with("네 깃발 평원")
+	check("6-2's screen: the four landmarks at the top (yours marked, a broken one crossed out) with no rosters; the map's four marks (yours blue), the view's marks on theirs still standing; the battle's own music",
+		hud_ok and md.tac().size() == 4 and str(md.tac()[2].c) == "5f9cff" and md.marks().size() == 2 and TacMap.half_of(11) == BannerPlain.HALF, [H, md.marks().size()])
+	# ---- falling, coming back, and the end of it ----
+	reset_test_state(); Store.settings.realmRace = "demon"; gm.begin(11); rm = gm.rm; md = rm.mode; kit = rm.kit; me = rm.me; P = w.plain; rm.ai_off = true; md.set_phase("fight")
+	for r: String in Races.ORDER: md.next[r] = 999.0
+	md.summon("orc"); var orc_foe: Realm.Fighter = md.of("orc")[0]
+	me.inv = 0.0; rm.slay(me, orc_foe); var will_back := me.back_t > ModePlain.BACK - 0.1
+	step.call(ModePlain.BACK + 0.3); var came_back: bool = me.alive and near_hall.call(me.pos, "demon", 12.0)
+	var mh: Dictionary = md.halls.demon; mh.hp = 1.0; kit.hurt_thing(mh, 10.0, "physical", orc_foe)
+	var alive_still := md.outcome == "" and me.alive and not md.standing("demon")
+	me.inv = 0.0; rm.slay(me, orc_foe); var no_back := me.back_t < 0.0
+	step.call(0.2); var lost := md.outcome == "lost"; step.call(ModePlain.OVER + 0.2)
+	check("falling while your landmark stands, you are back before it in 8 s; once it is down you fight on, but a fall is the end: the battle lost, nothing cleared",
+		will_back and came_back and alive_still and no_back and lost and gm.ended and gm.result == "lost" and not Store.save.cleared.has(11), [will_back, came_back, alive_still, no_back, lost, gm.ended, gm.result])
+	# ---- the plain taken, and who took it ----
+	reset_test_state(); Store.settings.realmRace = "elf"; Store.save.cleared = [10]
+	var take := func() -> Array:
+		gm.begin(11); rm = gm.rm; md = rm.mode; kit = rm.kit; me = rm.me; P = w.plain; rm.ai_off = true; md.set_phase("fight")
+		for r: String in Races.ORDER: md.next[r] = 999.0
+		var theirs: Array = Races.ORDER.filter(func(r): return r != md.mine)
+		for r: String in theirs: md.summon(r)
+		var m0: int = Store.save.money
+		for r: String in theirs: var th: Dictionary = md.halls[r]; th.hp = 1.0; kit.hurt_thing(th, 10.0, "physical", me)
+		var waiting := md.outcome == "" and md.foes_left() > 0
+		for f: Realm.Fighter in rm.all.duplicate():
+			if f.team == "them" and f.alive: f.inv = 0.0; rm.slay(f, me)   # (past the two seconds no blow touches one just summoned)
+		step.call(0.2); var decided := md.outcome == "won" and md.phase == "over"
+		step.call(ModePlain.OVER + 0.2)
+		return [waiting, decided, gm.ended and gm.result == "clear", Store.save.money - m0]
+	var t1: Array = take.call(); var first_elf: bool = Store.save.cleared.has(11) and Store.save.best.has("t11elf") and Store.next_stages(11) == []
+	var t2: Array = take.call()
+	Store.settings.realmRace = "orc"; var t3: Array = take.call()
+	var by := ModePlain.cleared_by()
+	check("the plain is taken when every landmark of theirs is broken and every one of theirs has fallen: the stage cleared and the record kept for the people you took it with; a first win with each people pays 100,000 (again with the same people, nothing), and the menu knows which peoples have taken it",
+		t1[0] and t1[1] and t1[2] and int(t1[3]) == 50000 * Store.PAY and first_elf and t2[2] and int(t2[3]) == 0 and t3[2] and int(t3[3]) == 50000 * Store.PAY and by.keys() == ["elf", "orc"], [t1, t2, t3, by])
+	# ---- the menu and the briefing ----
+	var fu := Ui.new(); fu.game = gm
+	fu.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); fu.f_body = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-Regular.ttf")
+	fu.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); fu.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")
+	add_child(fu); fu._build_brief(); fu._build_loadout(); fu._build_shop(); fu._build_over(); fu._build_dialog()
+	fu.tac = TacMap.new(); fu.tac.game = gm; fu.tac.f_mono = fu.f_mono; fu.tac.f_bold = fu.f_bold
+	var status: Array = fu._status(11)
+	Store.settings.realmRace = "dwarf"; fu.open_brief(11)
+	var picks: Array = []; var stack: Array = [fu.br_modes]
+	while not stack.is_empty():
+		var nd: Node = stack.pop_back()
+		if nd.has_meta("pick"): picks.push_back(str(nd.get_meta("pick")))
+		stack.append_array(nd.get_children())
+	var title: String = fu.br_title.text; var gear: String = fu.br_gear.text
+	fu.queue_free()
+	check("the stage board counts the peoples that have taken 6-2 (클리어 · 종족 2/4); its briefing has your people and your bomb to pick, no modes, and says which people you go out as",
+		status == ["done", "클리어 · 종족 2/4"] and Races.ORDER.all(func(r): return picks.has(r)) and Races.BOMBS.all(func(b): return picks.has(b)) and not picks.has("sanctum") and not picks.has("solo")
+		and title == "네 깃발 평원 · 드워프로 출전" and gear.contains("우리 건물 곁"), [status, picks, title])
+	var snd_ok := true
+	for nm: String in ["rm_summon_elf", "rm_summon_dwarf", "rm_summon_orc", "rm_summon_demon", "rm_hall_hit", "rm_hall_fall", "rm_hall_alarm"]:
+		if not ResourceLoader.exists("res://sounds/%s.wav" % nm): snd_ok = false
+	check("6-2's own sounds are there: each landmark's summoning (a harp's run, the anvil, the war horn, the rift's roar), a landmark struck, falling, and yours under attack", snd_ok)
+	gm.begin(1)
