@@ -403,6 +403,39 @@ func sheet(rows: Array, face: Vector3) -> void:
 	grid(rows, false, true, [], PackedFloat32Array(), false, face)
 	grid(rows, false, true, [], PackedFloat32Array(), false, -face)
 
+
+# ---------------- plain solids (a map's: big, flat-sided) ----------------
+## four corners as a face (in order round it), its normal n
+func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, n: Vector3) -> void:
+	var i0 := _v(a, n); var i1 := _v(b, n); var i2 := _v(c, n); var i3 := _v(d, n); _tri(i0, i1, i2); _tri(i0, i2, i3)
+
+## a box by its corners, flat-sided (the bottom left off when it is sunk in something)
+func slab(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, bottom := false) -> void:
+	quad(Vector3(x0, y1, z0), Vector3(x1, y1, z0), Vector3(x1, y1, z1), Vector3(x0, y1, z1), Vector3.UP)
+	if bottom: quad(Vector3(x0, y0, z0), Vector3(x1, y0, z0), Vector3(x1, y0, z1), Vector3(x0, y0, z1), Vector3.DOWN)
+	quad(Vector3(x0, y0, z1), Vector3(x1, y0, z1), Vector3(x1, y1, z1), Vector3(x0, y1, z1), Vector3.BACK)
+	quad(Vector3(x0, y0, z0), Vector3(x1, y0, z0), Vector3(x1, y1, z0), Vector3(x0, y1, z0), Vector3.FORWARD)
+	quad(Vector3(x1, y0, z0), Vector3(x1, y0, z1), Vector3(x1, y1, z1), Vector3(x1, y1, z0), Vector3.RIGHT)
+	quad(Vector3(x0, y0, z0), Vector3(x0, y0, z1), Vector3(x0, y1, z1), Vector3(x0, y1, z0), Vector3.LEFT)
+
+## a piece of a ring round (cx, cz): between radii r0 and r1, angles a0 and a1 (radians), its top at y1, its foot at y0;
+## its top in n pieces round. ends: its two end faces too. under: its underside too
+func ring_sector(cx: float, cz: float, r0: float, r1: float, a0: float, a1: float, y0: float, y1: float, n := 16, ends := true, under := false) -> void:
+	var m := maxi(1, int(round(n * detail)))
+	for i in m:
+		var b0 := lerpf(a0, a1, float(i) / m); var b1 := lerpf(a0, a1, float(i + 1) / m)
+		var d0 := Vector3(cos(b0), 0, sin(b0)); var d1 := Vector3(cos(b1), 0, sin(b1)); var c := Vector3(cx, 0, cz)
+		var t0 := c + d0 * r0; var t1 := c + d0 * r1; var t2 := c + d1 * r1; var t3 := c + d1 * r0
+		quad(t0 + Vector3(0, y1, 0), t1 + Vector3(0, y1, 0), t2 + Vector3(0, y1, 0), t3 + Vector3(0, y1, 0), Vector3.UP)
+		if under: quad(t0 + Vector3(0, y0, 0), t1 + Vector3(0, y0, 0), t2 + Vector3(0, y0, 0), t3 + Vector3(0, y0, 0), Vector3.DOWN)
+		var nm := (d0 + d1).normalized()
+		quad(t1 + Vector3(0, y0, 0), t2 + Vector3(0, y0, 0), t2 + Vector3(0, y1, 0), t1 + Vector3(0, y1, 0), nm)
+		if r0 > 0.01: quad(t3 + Vector3(0, y0, 0), t0 + Vector3(0, y0, 0), t0 + Vector3(0, y1, 0), t3 + Vector3(0, y1, 0), -nm)
+	if ends:
+		for e: Array in [[a0, -1.0], [a1, 1.0]]:
+			var a: float = e[0]; var d := Vector3(cos(a), 0, sin(a)); var tn := Vector3(-d.z, 0, d.x) * float(e[1]); var c := Vector3(cx, 0, cz)
+			quad(c + d * r0 + Vector3(0, y0, 0), c + d * r1 + Vector3(0, y0, 0), c + d * r1 + Vector3(0, y1, 0), c + d * r0 + Vector3(0, y1, 0), tn)
+
 # ---------------- the mesh ----------------
 func mesh() -> ArrayMesh:
 	if vs.is_empty(): return null

@@ -1128,6 +1128,7 @@ func _ready() -> void:
 	_raid_fights(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_raid_spoils(gm, pl, w, cam)
 	_realm_art(gm, pl, w, cam)
+	_caldera(gm, en, pl, g, pr, w, cam, fxn, lt)
 	_reward_card(gm, en, pl)
 	await _accounts()
 	# 1-1: the helmet takes the first shot to the head
@@ -4503,6 +4504,192 @@ func _realm_fights(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: Worl
 
 # ---------------- 6-2, the plain of the four banners ----------------
 # ---------------- a boss's chest giving you a new gun: shown big (scripts/reward.gd) ----------------
+## stage 6-B, the obsidian altar of the abyss (scripts/caldera.gd, hellfolk.gd): the caldera's three tiers and their ways,
+## what the place does, the six kinds of demon and the inquisitor, the magma tide, the clear, its screens
+func _altar_tick(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, sec: float, lt = null) -> void:
+	for i in roundi(sec * 30.0):
+		pl.update(1.0 / 30.0, cam, 0.0); w.altar.update(1.0 / 30.0, pl); g.update(1.0 / 30.0); en.update(1.0 / 30.0, 0.0); pr.update(1.0 / 30.0)
+		if lt != null: lt.update(1.0 / 30.0)
+		gm.update(1.0 / 30.0)
+
+func _altar_demon(en: Enemies, type: String, at: Vector3, yaw := 0.0) -> Enemies.Foe:
+	var o := {"y": at.y, "yaw": yaw, "scale": Hellfolk.size_of(type), "post": {"x": at.x, "y": at.y, "z": at.z, "fly": type == "dm_imp"}}
+	var e := en.spawn(type, at.x, at.z, o); e.lod = 0.0; e.los_t = 0.0; return e
+
+func _caldera(gm: Game, en: Enemies, pl: Player, g: Guns, pr: Proj, w: World, cam: Camera3D, _fxn: Fx, lt) -> void:
+	reset_test_state(); seed(616)
+	var save0: Dictionary = Store.save
+	gm.begin(16); var A: Caldera = w.altar; var fk: Folk = en.folk
+	# ---- the stage and its map ----
+	var kinds := {}
+	for e in en.list: kinds[e.type] = int(kinds.get(e.type, 0)) + 1
+	check("stage 6-B is the obsidian altar of the abyss: a round caldera of lava in three rings one above another (the gallery 14 m up, the sanctum and the middle ring 7 m, the trench's stones 1.2 m), the lava under it all; you start in the west soul foundry facing east; 37 demons at their posts (8 imps, 11 guards, 6 adepts, 10 snipers, 2 wardens) and the inquisitor on the north gallery; no crates",
+		World.stage_kind(16) == "altar" and A != null and Phys.HALF == Caldera.HALF and Phys.floor_y(0.0, 26.0) == Caldera.PIT_Y and absf(pl.pos.y - Caldera.MID_Y) < 0.01 and absf(-sin(pl.yaw) - 1.0) < 1e-6
+		and absf(Phys.ground_at(0.0, 15.0, 50.0, 0.3) - Caldera.GAL_Y) < 0.01 and absf(Phys.ground_at(0.0, 8.0, 36.0, 0.3) - Caldera.MID_Y) < 0.01 and absf(Phys.ground_at(1.0, 8.0, 1.0, 0.3) - Caldera.MID_Y) < 0.01
+		and kinds == {"dm_imp": 8, "dm_guard": 11, "dm_adept": 6, "dm_sniper": 10, "dm_warden": 2, "inquisitor": 1} and gm.goal == 38 and gm.boss != null and gm.boss.type == "inquisitor"
+		and absf(gm.boss.pos.y - Caldera.GAL_Y) < 0.01 and gm.boss.pos.z > 45.0 and w.crates.is_empty() and lt.list.is_empty(), [kinds, pl.pos, gm.goal])
+	var routes := [["the west foundry's narrow way and the west bridge to the sanctum", Vector3(-39, 7, 0), [[-31, 0], [-12.5, 0], [-2, 0.5]], 7.0]]
+	for side: String in ["e", "n", "s"]:
+		var d := Caldera.at_deg(float(Caldera.ARCS[side]), 1.0, 0.0); routes.push_back(["the %s bridge out to its arc" % side, Vector3(d.x * 3.0, 7, d.z * 3.0), [[d.x * 35.0, d.z * 35.0]], 7.0])
+	for deg: float in Caldera.SPIRES:
+		var c := Caldera.at_deg(deg, Caldera.SPIRE_R, 0.0); var sx := signf(c.x); var sz := signf(c.z); var zc := c.z + sz * 2.85; var xr := sx * sqrt(Caldera.RING_R1 * Caldera.RING_R1 - zc * zc)
+		var corners := [Vector2(-sx, sz), Vector2(sx, sz), Vector2(sx, -sz), Vector2(-sx, -sz)]; var up := [[c.x - sx * 2.85, zc]]
+		for f in 8: var b: Vector2 = corners[(f + 1) % 4]; up.push_back([c.x + b.x * 2.85, c.z + b.y * 2.85])
+		routes.push_back(["the causeway to the %d° spire, its stair round its column to the lookout" % int(deg), Vector3(xr - sx * 3.0, 7, zc), up, Caldera.LOOK_Y])
+		var gal: Array = up.slice(0, 5); gal.push_back([c.x - sx * 2.85, c.z + sz * 7.5]); gal.push_back([Caldera.at_deg(90.0 if sz > 0 else 270.0, 51.0, 0.0).x, Caldera.at_deg(90.0 if sz > 0 else 270.0, 51.0, 0.0).z])
+		routes.push_back(["the %d° spire's stair to the gallery's door and on along the gallery" % int(deg), Vector3(xr - sx * 3.0, 7, zc), gal, Caldera.GAL_Y])
+	routes.push_back(["the north arc's stair down into the trench", Vector3(-9.0, 7, 31.0), [[-9.0, 22.0]], Caldera.LOW_Y])
+	routes.push_back(["the south arc's stair down into the trench", Vector3(9.0, 7, -31.0), [[9.0, -22.0]], Caldera.LOW_Y])
+	var walk_bad := []
+	for r: Array in routes:
+		var res := _wood_walk(r[1], r[2]); var at: Vector3 = res[1]
+		if not res[0] or absf(at.y - float(r[3])) > 0.35: walk_bad.push_back("%s: ended (%.1f, %.2f, %.1f)" % [r[0], at.x, at.y, at.z])
+	check("every way of the caldera can be walked with your own size and step: through the west foundry and over the west bridge to the sanctum, the other three bridges out to their arcs, each of the four spires' causeways and its stair two turns round its column to the lookout (22 m), and off it at the gallery's door (14 m) along the gallery, the two stairs down into the trench (14 ways)",
+		walk_bad.is_empty() and routes.size() == 14, walk_bad)
+	var post_bad := []
+	for e in en.list:
+		if e.fly:
+			if e.pos.y < A.lava_y + 1.0: post_bad.push_back("%s low" % e.type)
+		elif absf(Phys.ground_at(e.pos.x, e.pos.y + 0.3, e.pos.z, e.R) - e.pos.y) > 0.3 or Phys.collide_at(e.pos.x, e.pos.y + 0.05, e.pos.z, e.R, e.H) != null: post_bad.push_back("%s (%.1f, %.1f, %.1f)" % [e.type, e.pos.x, e.pos.y, e.pos.z])
+	var on_gal := en.list.filter(func(e): return e.type == "dm_sniper" and absf(e.pos.y - Caldera.GAL_Y) < 0.1).size(); var on_look := en.list.filter(func(e): return e.type == "dm_sniper" and absf(e.pos.y - Caldera.LOOK_Y) < 0.1).size()
+	check("every demon stands on something and inside nothing, the imps in the air over it; six snipers along the gallery and one on each spire's lookout", post_bad.is_empty() and on_gal == 6 and on_look == 4, [post_bad, on_gal, on_look])
+	check("the sanctum hangs from four great chains up to the dead lord's spine across the sky; four horned pillars, four scrying slabs of black glass and eight braziers on it; the cooling circle in its middle; four bridges 3.5 m wide out to the ring, nothing under them but the lava",
+		A.slabs.size() == 4 and A.braziers.size() == 8 and Phys.collide_at(Caldera.at_deg(45.0, 9.6, 0.0).x, 7.5, Caldera.at_deg(45.0, 9.6, 0.0).z, 0.2, 1.0) != null
+		and absf(Phys.ground_at(20.0, 8.0, 1.6, 0.1) - Caldera.MID_Y) < 0.01 and Phys.ground_at(20.0, 8.0, 2.3, 0.1) < 1.0 and Phys.ground_at(20.0, 6.5, 0.0, 0.1) < 1.0)
+	# ---- what the place does ----
+	var all_off := func() -> void:
+		for e in en.list.duplicate(): en.vanish(e)
+		fk.dealt.clear(); fk.sent.clear(); fk.clear(); gm.burn_t = 0.0
+	all_off.call(); pl.reset(-4.5, 25.6, 0.0); pl.pos.y = Caldera.PIT_Y; pl.invuln = 0.0; pl.hp = Player.MAX_HP
+	A._scald = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0 / 30.0); var lava_got := [Player.MAX_HP - pl.hp, pl.vel.y > 5.0, gm.burn_t > 0.0]
+	check("the lava: whoever is in it is scalded (90 a touch, set alight) and thrown up out of it, toward the stones", absf(float(lava_got[0]) - Caldera.LAVA.hit) < 1.0 and lava_got[1] and lava_got[2], lava_got)
+	var gate: Vector3 = Caldera.GATES.n
+	pl.reset(gate.x, gate.z, 0.0); pl.pos.y = gate.y; pl.hp = 500.0; A._gate_cd = 0.0; gm.burn_t = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 0.1); var gate_got := [pl.pos.distance_to(Caldera.GATE_TO.n) < 0.5, pl.hp]
+	pl.reset(gate.x, gate.z, 0.0); pl.pos.y = gate.y; pl.hp = 30.0; A._gate_cd = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 0.1); var gate_poor := pl.pos.distance_to(gate) < 0.5
+	check("a blood-pact gate in the trench: step into it and give 35 of your health, and you stand on the gallery above it (14 m up); with 35 or less to give it does not open",
+		gate_got[0] and absf(float(gate_got[1]) - 465.0) < 0.01 and gate_poor and pl.hp == 30.0, [gate_got, gate_poor])
+	var ch: Dictionary = A.chains[0]; var ch_at: Vector3 = ch.at
+	pl.reset(ch_at.x, ch_at.z, 0.0); pl.pos.y = Caldera.LOW_Y; pl.hp = Player.MAX_HP; g.reset(["pistol"]); g.cur = "pistol"; g.cooldown = 0.0; var mag0: int = int(g.st().mag)
+	pl.in_up = true; _altar_tick(gm, en, pl, g, pr, w, cam, 0.5); var climbing := A.climbing(); g.fire(Vector3(1, 0, 0)); var fired := int(g.st().mag) != mag0
+	_altar_tick(gm, en, pl, g, pr, w, cam, 1.4); pl.in_up = false; _altar_tick(gm, en, pl, g, pr, w, cam, 0.3)
+	check("a soul chain: hold jump by it and you climb it out of the trench on to the ring (7 m); while you climb nothing in your hands fires", climbing and not fired and absf(pl.pos.y - Caldera.MID_Y) < 0.2 and Vector2(pl.pos.x, pl.pos.z).length() > Caldera.RING_R0, [climbing, fired, pl.pos])
+	g.reset(["lmg"]); g.cur = "lmg"; var ls: Dictionary = g.wstate.lmg
+	pl.reset(0.5, 0.5, 0.0); pl.pos.y = Caldera.MID_Y; ls.heat = 0.8; ls.cool_t = 0.0; ls.hot = false; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var cool_on: float = 0.8 - float(ls.heat)
+	pl.reset(0.0, 8.0, 0.0); pl.pos.y = Caldera.MID_Y; ls.heat = 0.8; ls.cool_t = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var cool_off: float = 0.8 - float(ls.heat)
+	check("the cooling circle in the sanctum's middle: on it the machine gun's heat goes half as fast again", absf(cool_off - 0.2) < 0.02 and absf(cool_on - 0.3) < 0.02, [cool_on, cool_off])
+	# a shot through a hellfire ring: a fifth harder, and its target burns
+	var amp: Dictionary = A.amps[1]; var ac: Vector3 = amp.at; var an: Vector3 = amp.n
+	var eye := ac - an * 1.6 - Vector3(0, 0.25, 0); var dir := (ac - eye).normalized()
+	var imp1 := _altar_demon(en, "dm_imp", eye + dir * 14.0); imp1.T = imp1.T.duplicate(); imp1.T.sight = 0.0
+	pl.reset(eye.x, eye.z, 0.0); pl.pos.y = eye.y - Player.EYE; pl.update(0.0, cam, 0.0); g.reset(["pistol"]); g.cur = "pistol"; g.cooldown = 0.0
+	var hp0 := imp1.hp; g.fire((en.part_centre(imp1, imp1.parts[1]) - cam.global_position).normalized()); var amp_hit: float = hp0 - imp1.hp; var amp_burn: bool = imp1.burn_t > 0.0
+	var ray_through := A.amp_ray(eye, dir, 30.0); var ray_by := A.amp_ray(eye + Vector3(0, 2.0, 0), dir, 30.0)
+	check("a hellfire brazier's ring on the gallery's edge (four): a shot fired through it hits a fifth harder (a pistol's 34: 40.8) and sets what it hits alight; one that passes beside it does neither",
+		A.amps.size() == 4 and absf(ray_through - 1.2) < 1e-6 and ray_by == 1.0 and absf(amp_hit - 40.8) < 0.6 and amp_burn, [amp_hit, amp_burn, ray_through, ray_by])
+	all_off.call()
+	var br: Dictionary = A.braziers[0]; var bat: Vector3 = br.at
+	A.shot_by(bat + Vector3(-10.0, 0.9, 0.0), Vector3(1, 0, 0), 30.0); var br_down := [bool(br.down), A.fires.size(), Phys.colliders.has(br.box)]
+	pl.reset(bat.x + 1.0, bat.z, 0.0); pl.pos.y = bat.y; pl.hp = Player.MAX_HP; pl.invuln = 0.0; gm.burn_t = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var br_burn := [Player.MAX_HP - pl.hp, gm.burn_t > 0.0]
+	pl.pos = Vector3(-39, 7, 0); gm.burn_t = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 20.5); var br_back := [bool(br.down), A.fires.size(), Phys.collide_at(bat.x, bat.y + 0.3, bat.z, 0.2, 0.5) != null]
+	check("an unstable brimstone brazier: shot, it goes over and its fire spills 4 m round it for five seconds (it burns you there, and sets you alight); twenty seconds on it stands again",
+		br_down == [true, 1, false] and float(br_burn[0]) > 10.0 and br_burn[1] and br_back == [false, 0, true], [br_down, br_burn, br_back])
+	var cap: Dictionary = A.caps[A.caps.size() - 1]; var cat: Vector3 = cap.at
+	A.burst(cap); pl.reset(cat.x, cat.z, 0.0); pl.pos.y = cat.y; var cap_got := [A.hides(pl, 20.0), A.hides(pl, 3.0), (cap.node as Node3D).visible]
+	_altar_tick(gm, en, pl, g, pr, w, cam, 4.2); var cap_after := A.hides(pl, 20.0); pl.pos = cat + Vector3(6.0, 0, 0); _altar_tick(gm, en, pl, g, pr, w, cam, 14.0); var cap_back := (cap.node as Node3D).visible
+	check("an ash-spore cap: burst (shot, trodden on, a blast), it fills 5 m round with ash for four seconds, in which no demon farther off than 4 m sees you; it grows back", cap_got == [true, false, false] and not cap_after and cap_back, [cap_got, cap_after, cap_back])
+	var bri: Dictionary = A.briars[0]; var ba: Vector3 = bri.a; var bb: Vector3 = bri.b
+	pl.reset((ba.x + bb.x) * 0.5, ba.z - signf(ba.z) * 0.6, 0.0); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP; pl.invuln = 0.0; A._vine_t = 0.0
+	_altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var bri_got := [pl.slow_mul, Player.MAX_HP - pl.hp]
+	var fed := _altar_demon(en, "dm_guard", Vector3((ba.x + bb.x) * 0.5, Caldera.MID_Y, ba.z - signf(ba.z) * 1.5)); fed.T = fed.T.duplicate(); fed.T.sight = 0.0; fed.hp = 100.0
+	pl.reset(-39, 0, 0); pl.pos.y = Caldera.MID_Y; _altar_tick(gm, en, pl, g, pr, w, cam, 2.0); var fed_hp := fed.hp
+	check("sanguine briars on the foundries' walls: brush them and you are slowed (85%) and cut (5 a second); a demon by them is fed (4 a second)", absf(float(bri_got[0]) - 0.85) < 1e-6 and float(bri_got[1]) >= 4.0 and float(bri_got[1]) <= 7.0 and absf(fed_hp - 108.0) < 1.5, [bri_got, fed_hp])
+	all_off.call()
+	var cac: Dictionary = A.cacti[A.cacti.size() - 1]; var cact: Vector3 = cac.at
+	var cut := _altar_demon(en, "dm_guard", cact + Vector3(1.0, 0, 0)); cut.T = cut.T.duplicate(); cut.T.sight = 0.0; var cut0 := cut.hp
+	A.shot_by(cact + Vector3(0, 0.5, -10.0), Vector3(0, 0, 1), 30.0); var cac_got := [cut0 - cut.hp, (cac.node as Node3D).visible]
+	check("a vitrified glass-cactus: shattered (by a shot, a blast, or whoever is thrown into it), its shards cut whoever stands by it for 40", absf(float(cac_got[0]) - 40.0) < 0.01 and not cac_got[1], cac_got)
+	all_off.call()
+	var tq: Vector3 = A.troughs[0]; gm.set_burn(5.0); var lit := gm.burn_t
+	pl.reset(tq.x, tq.z, 0.0); pl.pos.y = tq.y; _altar_tick(gm, en, pl, g, pr, w, cam, 0.1)
+	check("a quench trough at each foundry's inner door: through it, and what burns on you is out", absf(lit - 5.0) < 0.01 and gm.burn_t == 0.0 and A.troughs.size() == 2, [lit, gm.burn_t])
+	# ---- the demons ----
+	all_off.call(); pl.reset(0.0, -6.0, PI); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP; pl.invuln = 0.0
+	var imp := _altar_demon(en, "dm_imp", Vector3(0.0, Caldera.MID_Y + 3.0, 6.0)); en.alarm(imp)
+	_altar_tick(gm, en, pl, g, pr, w, cam, 6.0); var imp_got := [float(fk.dealt.get("fire", 0.0)) > 0.0, imp.pos.y > A.lava_y + 1.0, imp.fly]
+	all_off.call(); pl.hp = Player.MAX_HP
+	var gd := _altar_demon(en, "dm_guard", Vector3(0.0, Caldera.MID_Y, -3.6), 0.0); en.alarm(gd); gd.k.cd = 0.0
+	_altar_tick(gm, en, pl, g, pr, w, cam, 1.5); var halb := [float(fk.dealt.get("halberd", 0.0)), pl.launched or pl.pos.distance_to(Vector3(0, Caldera.MID_Y, -6.0)) > 0.5]
+	all_off.call(); pl.reset(0.0, -36.0, PI); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP
+	var gd2 := _altar_demon(en, "dm_guard", Vector3(0.0, Caldera.MID_Y, -13.0), 0.0); en.alarm(gd2); gd2.k.cd2 = 0.0
+	_altar_tick(gm, en, pl, g, pr, w, cam, 3.0); var spear := [int(fk.sent.get("spear", 0)), float(fk.dealt.get("spear", 0.0))]
+	check("an imp darts about you in the air (over the lava, never down in it) with fire bolts; a guard close by sweeps its fire halberd (34, and it throws you back); from afar it throws a burning spear that falls as it flies",
+		imp_got == [true, true, true] and absf(float(halb[0]) - Hellfolk.HALBERD.dmg) < 1.0 and halb[1] and int(spear[0]) >= 1, [imp_got, halb, spear])
+	all_off.call(); pl.reset(0.0, -14.0, PI); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP; gm.burn_t = 0.0
+	var ad := _altar_demon(en, "dm_adept", Vector3(0.0, Caldera.MID_Y, 6.0), PI); en.alarm(ad); ad.k.cd = 0.0
+	_altar_tick(gm, en, pl, g, pr, w, cam, 2.0); var seal := [float(fk.dealt.get("rune", 0.0)), gm.burn_t > 0.0]
+	_altar_tick(gm, en, pl, g, pr, w, cam, 5.0); var ember := int(fk.sent.get("ember", 0))
+	var ad_at := ad.pos; pl.pos = ad.pos + Vector3(0, 0, -3.0); ad.k.blink = 0.0; _altar_tick(gm, en, pl, g, pr, w, cam, 0.5); var stepped := ad.pos.distance_to(ad_at) > 3.0
+	check("a blood-moon adept: a burning seal drawn under you bursts a moment later (40, and sets you alight); a slow ember after you; come too close and it steps away in a burst of flame",
+		absf(float(seal[0]) - Hellfolk.SEAL.dmg) < 1.0 and seal[1] and ember >= 1 and stepped, [seal, ember, stepped])
+	all_off.call(); pl.reset(0.0, -10.0, PI); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP
+	var sn := _altar_demon(en, "dm_sniper", Vector3(0.0, Caldera.MID_Y, 22.0), PI); en.alarm(sn); sn.k.cd = 0.0
+	_altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var sn_aims := sn.laser != null and sn.laser.visible
+	_altar_tick(gm, en, pl, g, pr, w, cam, 1.5); var lance := float(fk.dealt.get("lance", 0.0))
+	check("a brimstone sniper: a red line on you while it aims (1.8 s), then the lance (50, and it knocks you back)", sn_aims and absf(lance - Hellfolk.LANCE.dmg) < 1.0, [sn_aims, lance])
+	all_off.call(); pl.reset(0.0, -14.0, PI); pl.pos.y = Caldera.MID_Y; pl.hp = Player.MAX_HP
+	var wd := _altar_demon(en, "dm_warden", Vector3(0.0, Caldera.MID_Y, 6.0), PI); en.alarm(wd); wd.k.cd2 = 0.0; wd.k.cd = 9.0
+	var d0 := pl.pos.distance_to(wd.pos); _altar_tick(gm, en, pl, g, pr, w, cam, 2.0); var hook := [int(fk.sent.get("hook", 0)), float(fk.dealt.get("hook", 0.0)), pl.pos.distance_to(wd.pos) < d0 - 4.0]
+	wd.k.cd = 0.0; pl.pos = wd.pos + Vector3(0, 0, -2.0); pl.vel = Vector3.ZERO; _altar_tick(gm, en, pl, g, pr, w, cam, 1.2); var slam := float(fk.dealt.get("slam", 0.0))
+	check("a chain warden (the elite): heavy plates (a shot to the body does three quarters); its hook from afar, a red line on you first, drags you in to it (30); close in, the slam of its mace (55, thrown out)",
+		absf(float(wd.parts[1].mult) - Hellfolk.ARMOUR) < 1e-6 and int(hook[0]) >= 1 and absf(float(hook[1]) - Hellfolk.HOOK.dmg) < 1.0 and hook[2] and absf(slam - Hellfolk.SLAM.dmg) < 1.0, [hook, slam])
+	# ---- the inquisitor, the tide, the clear ----
+	all_off.call(); gm.begin(16); A = w.altar
+	var inq: Enemies.Foe = gm.boss; Store.save.money = 0; var owned0: int = (Store.save.owned as Array).size()
+	pl.reset(0.0, -30.0, 0.0); pl.pos.y = Caldera.MID_Y; _altar_tick(gm, en, pl, g, pr, w, cam, 1.0); var calm := not bool(inq.k.get("roused", false))
+	pl.pos = Vector3(0.0, Caldera.GAL_Y, 32.0); pl.pos = Vector3(0.0, Caldera.GAL_Y, 49.5) + Vector3(-12.0, 0, -0.5); Store.settings.dev = true; Store.settings.god = true
+	_altar_tick(gm, en, pl, g, pr, w, cam, 1.5); var roused := bool(inq.k.get("roused", false))
+	var sent1 := int(fk.sent.get("fan", 0)) + int(fk.sent.get("judge", 0)) + int(fk.sent.get("rune", 0)); var perch1 := inq.pos
+	en.damage(inq, inq.max_hp * 0.45, inq.pos + Vector3(0, 1.5, 0), Vector3.FORWARD, false); _altar_tick(gm, en, pl, g, pr, w, cam, 9.0)
+	var p2 := [int(inq.k.phase), en.list.filter(func(e): return e.extra and e.type == "dm_imp").size() > 0, int(fk.sent.get("fan", 0)) + int(fk.sent.get("judge", 0)) + int(fk.sent.get("rune", 0)) > sent1, inq.pos.distance_to(perch1) > 3.0]
+	var extra_pay := int(Store.save.money)
+	for e in en.list.duplicate():
+		if e.extra: en.damage(e, 1e6, e.pos, Vector3.UP, false)
+	var extra_free := int(Store.save.money) == extra_pay and gm.kills == 0
+	en.damage(inq, inq.max_hp * 0.3, inq.pos + Vector3(0, 1.5, 0), Vector3.FORWARD, false); _altar_tick(gm, en, pl, g, pr, w, cam, 5.0)
+	var p3 := [int(inq.k.phase), absf(inq.pos.y - Caldera.MID_Y) < 0.3 and Vector2(inq.pos.x, inq.pos.z).length() < Caldera.DAIS_A, A.tide_on, absf(A.lava_y - Caldera.TIDE_Y) < 0.01]
+	var fl_ok: bool = A.floats.all(func(f): return bool(f.up)) and A.floats.all(func(f): var m := Caldera.at_deg(float(f.deg), 21.0, 0.0); return absf(Phys.ground_at(m.x, 8.0, m.z, 0.3) - Caldera.MID_Y) < 0.01)
+	var st_under: bool = A.stones.all(func(s0): return float(s0.top) < A.lava_y)
+	check("the inquisitor looks down from the north gallery till you come near (or wound him, or the tide comes); then lances and brands; at 60% he steps from perch to perch with fans of fire and calls imps (they count and pay for nothing); at 30% he calls the tide and comes down on to the sanctum",
+		calm and roused and p2 == [2, true, true, true] and extra_free and p3 == [3, true, true, true], [calm, roused, p2, extra_free, p3])
+	check("the magma tide: the lava rises (to 1.85 m) over the trench's stones, and four floating slabs of obsidian come up out of it on the diagonals between the sanctum and the ring, stood on at 7 m", fl_ok and st_under and A.floats.size() == 4, [fl_ok, st_under])
+	Store.settings.dev = false; Store.settings.god = false
+	en.damage(inq, inq.hp + 10.0, inq.pos + Vector3(0, 1.5, 0), Vector3.FORWARD, false)
+	var fall := [gm.boss == null, lt.pending() != null, int(Store.save.money), gm.ended]
+	var left := en.list.filter(func(e): return e.alive and not e.extra).size()
+	for e in en.list.duplicate():
+		if e.alive and not e.extra: en.damage(e, e.hp + 10.0, e.pos, Vector3.FORWARD, false)
+	var potions: int = lt.list.size(); var waits: bool = not gm.ended and gm._chest_wait
+	for c in lt.chests: c.open = true
+	gm.open_chest(); _altar_tick(gm, en, pl, g, pr, w, cam, Game.PARTY + 0.5, lt)
+	check("the inquisitor down: 80,000, his chest where he fell; the stage is won once all 38 are down and the chest is open (6-B cleared, a gun for good); every third demon down left a health potion where it fell",
+		fall == [true, true, 80000, false] and left == 37 and waits and gm.ended and gm.result == "clear" and (Store.save.cleared as Array).has(16) and (Store.save.owned as Array).size() == owned0 + 1 and potions >= 10, [fall, left, waits, gm.result, potions])
+	# ---- its screens ----
+	gm.begin(16)
+	var tmB := TacMap.new(); tmB.game = gm; tmB.cam = cam; tmB.f_mono = SystemFont.new(); tmB.f_bold = SystemFont.new(); tmB.setup(16)
+	var rcB := MapRec.new(); tmB.draw(rcB, Vector2(600, 600)); var legB: Array = tmB.legend(true).map(func(it): return str(it[1]))
+	check("its map: drawn round, the three tiers named, the gates, the start and the inquisitor marked, a mark for each of the 38; the legend names the five kinds, the boss, the gates, the chains, the hellfire rings, the cooling circle and the troughs",
+		rcB.dots() == 38 and ["상층 · 감시 회랑", "중층 · 심연 제단", "하층 · 유황 협곡", "차원문", "고문관", "시작 · 서쪽 용광로", "N ↑", "20m"].all(func(t): return rcB.texts.has(t))
+		and ["흑요석 임프 · 날아다님", "악마 경비병", "혈월 주술사", "유황 저격병 · 회랑과 첨탑", "사슬 감시자 · 정예", "보스 · 심연의 고문관", "혈약의 차원문 · 체력 35로 회랑까지"].all(func(t): return legB.has(t)), [rcB.dots(), legB])
+	check("its briefing: alone with your guns (총을 든 나 혼자); the three team battles on the caldera named and coming in the next update; the boss line says where the inquisitor is",
+		Ui.ALTAR_MODES.size() == 4 and Ui.ALTAR_MODES[0][0] == "solo" and gm.boss_msg.contains("심연의 고문관") and gm.boss_msg.contains("북쪽 감시 회랑"), gm.boss_msg)
+	var snd_bad := []; var snd_re := RegEx.new(); snd_re.compile("Snd\\.play\\(\"([a-z_0-9]+)\"")
+	for path: String in ["res://scripts/caldera.gd", "res://scripts/hellfolk.gd"]:
+		for m9: RegExMatch in snd_re.search_all(FileAccess.get_file_as_string(path)):
+			if not ResourceLoader.exists("res://sounds/%s.wav" % m9.get_string(1)): snd_bad.push_back(m9.get_string(1))
+	check("every sound the caldera and its demons play is there", snd_bad.is_empty(), snd_bad)
+	fk.clear(); pr.clear(); Store.save = save0; Store.settings.dev = false; Store.settings.god = false; randomize()
+	gm.begin(1)
+
 func _reward_card(gm: Game, en: Enemies, pl: Player) -> void:
 	var keep: Dictionary = (Store.save as Dictionary).duplicate(true); var keep_feed: Callable = gm.feed
 	var M := HudMain.new(); M.f_title = load("res://fonts/blackhansans_BlackHanSans-Regular.ttf"); M.f_bold = load("res://fonts/ibmplexsanskr_IBMPlexSansKR-SemiBold.ttf"); M.f_mono = load("res://fonts/ibmplexmono_IBMPlexMono-SemiBold.ttf")

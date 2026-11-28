@@ -29,6 +29,7 @@ const BOSS := {
 	15: {"type": "bdrone", "name": "최첨단 감시 드론 B-3", "josa": "이", "scale": 1.0, "hp": 9000, "dmgMul": 1.0},   # (4-3: in the ship's main hall)
 	5: {"type": "thug", "name": "무장 두목", "josa": "이", "scale": 1.4, "hp": 2600, "dmgMul": 1.0, "kit": "lmg"},
 	10: {"type": "archmage", "name": "대마법사", "josa": "가", "scale": 1.0, "hp": 6500, "dmgMul": 1.0},   # (stood by ElfWood on top of its tower)
+	16: {"type": "inquisitor", "name": "심연의 고문관", "josa": "이", "scale": 1.0, "hp": 8000, "dmgMul": 1.0},   # (stood by Caldera on the north gallery)
 }
 
 var world: World; var player: Player; var enemies: Enemies; var guns: Guns; var proj: Proj; var loot: Loot; var fx: Fx
@@ -70,6 +71,9 @@ var calm := 0   # animals you have ridden: tamed, and counted as dealt with
 var infected := false
 var infect_t := 0.0
 var poison_t := 0.0
+var burn_t := 0.0; var _burn_tick := 0.0   # (6-B) set alight: it burns on you till it goes out, or you wade through a quench trough
+var _heal_due := false   # (6-B) a health potion owed: the next demon to fall over solid ground leaves it
+const BURN := {"dps": 8.0, "max": 6.0, "every": 0.5}
 var antidotes := 0
 var inject_on := false
 var inject_t := 0.0
@@ -88,6 +92,16 @@ func _say(c: Callable, a: Array) -> void:
 func say_banner(title: String, sub: String, sec: float) -> void: _say(banner, [title, sub, sec])
 func say_feed(text: String) -> void: _say(feed, [text, 0])
 func say_hint(text: String, sec: float) -> void: _say(hint, [text, sec])
+
+## (6-B) set alight for t seconds (a burn already on you goes on as long as the longer of the two, six seconds at most)
+func set_burn(t_: float) -> void:
+	if ended or (Store.settings.dev and Store.settings.god): return
+	if burn_t <= 0.0: _burn_tick = float(BURN.every)
+	burn_t = minf(float(BURN.max), maxf(burn_t, t_))
+## (6-B) through a quench trough: the burning is out
+func quench() -> void:
+	if burn_t <= 0.0: return
+	burn_t = 0.0; Snd.play("rd_cool"); say_hint("연금술 냉각 수조 · 화상이 꺼졌습니다", 1.8)
 
 func layout() -> Array:
 	if stage == Store.ST_TOY: return Toys.order_for(Store.save.loadout, Store.save.toy_order)   # every toy gun in hand (keys 1-9): your weapon layout's first, in its order
@@ -119,6 +133,8 @@ func begin(stage_: int) -> void:
 	fk.wood = world.wood
 	if world.wood != null: world.wood.player = player; world.wood.game = self; world.wood.enemies = enemies; world.wood.fx = fx; world.wood.proj = proj; world.wood.rm = rm
 	if world.plain != null: world.plain.fx = fx; world.plain.rm = rm
+	if world.altar != null: world.altar.player = player; world.altar.game = self; world.altar.enemies = enemies; world.altar.fx = fx; world.altar.proj = proj; world.altar.rm = rm
+	fk.altar = world.altar
 	if world.ship != null: world.ship.player = player; world.ship.game = self; world.ship.enemies = enemies; world.ship.fx = fx
 	player.toss_ceil = Lab.CEIL if world.lab != null else INF
 	if world.lab != null: world.lab.player = player; world.lab.game = self
@@ -130,7 +146,7 @@ func begin(stage_: int) -> void:
 	player.reset(world.start.x, world.start.z, world.start.yaw); player.invuln = 1.5
 	if stage == Store.ST_TOY: player.pos.y = 42.0; player.grounded = false; player.chute = true   # you come down into the room under a parachute
 	if world.start.has("y"): player.pos.y = float(world.start.y)   # (a start that is not on the ground: 6-1's terrace)
-	infected = false; infect_t = 0.0; poison_t = 0.0; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
+	infected = false; infect_t = 0.0; poison_t = 0.0; burn_t = 0.0; _heal_due = false; antidotes = 1 if stage == 2 else 0; inject_on = false; inject_t = 0.0; player.stun_t = 0.0; player.no_hp = stage == 2
 	kills = 0; ended = false; result = ""; _result_t = -1.0; _chest_wait = false; deployed = false; party_t = 0.0
 	flask_cd = 0.0; flasks = 0
 	# 1-2 crowds the middle of the docks: its enemies stand where they stand for a drop at the south edge, and you always come
@@ -144,7 +160,7 @@ func begin(stage_: int) -> void:
 		var c = open_spot(Phys.HALF - 6.0, Phys.HALF - 6.0)
 		if c != null: set_drop(c)
 	var B: Dictionary = BOSS.get(stage, {})
-	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else (" 탑 꼭대기 천문대에 있습니다" if world.wood != null else (" 메인홀에 있습니다" if world.ship != null else " 어딘가에 있습니다"))) + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
+	boss_msg = ("보스 " + B.name + B.josa + (" 10번 우리에 있습니다" if world.lab != null else (" 탑 꼭대기 천문대에 있습니다" if world.wood != null else (" 메인홀에 있습니다" if world.ship != null else (" 북쪽 감시 회랑에서 내려다봅니다" if world.altar != null else " 어딘가에 있습니다")))) + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(boss_pay(B)))) if not B.is_empty() else ""
 	if Store.ship(stage) == "bridge":   # 4-2: the gold bee is what the stage is about (paying as a commander does: ten times a robot)
 		var bee: Dictionary = Robots.ROBOTS.gdrone; boss_msg = str(bee.name) + "이 운전실에 있습니다" + (" · 다시 하기라 보상은 없습니다" if replay else " · " + Store.won(int(bee.get("money", 1000)) * 10 * Store.PAY))
 	if tm != null: boss_msg = tm.mode.brief_line() + (" · 다시 하기라 보상은 없습니다" if replay else "")
@@ -195,9 +211,10 @@ func populate() -> void:
 			var o := {"yaw": SR.rng(0, TAU), "y": p.get("y", 0.0)}; o.merge(opts, true)
 			var e := enemies.spawn(type, p.x, p.z, o); e.sid = n[0]; n[0] += 1; return e
 		return null
-	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null or world.plain != null or world.road != null:
-		if (world.wood != null or world.plain != null or world.road != null) and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves; 6-2's landmarks and you)
+	if world.lab != null or world.safari != null or world.ship != null or world.toy != null or world.wood != null or world.plain != null or world.road != null or world.altar != null:
+		if (world.wood != null or world.plain != null or world.road != null or world.altar != null) and rm != null: rm.setup()   # (a team battle: the two sides, not the wood's own elves; 6-2's landmarks and you)
 		elif world.wood != null: world.wood.populate(put)   # (stage 6-1: the elves at their posts, the Archmage on top of the tower)
+		elif world.altar != null: world.altar.populate(put)   # (stage 6-B: the demons at their posts, the inquisitor on the north gallery)
 		elif world.lab != null: world.lab.populate(put, SR, BOSS[stage])
 		elif world.ship != null: world.ship.populate(put, SR, BOSS.get(stage, {}))
 		elif world.toy != null and tm != null: tm.mode.populate()   # (a team mode: the two sides, not the hundred toys)
@@ -295,7 +312,7 @@ func update(dt: float) -> void:
 	flask_cd = maxf(0.0, flask_cd - dt)
 	# the enemies' way to you, every 0.3 s as the browser game's: at most 3 ms of the search a frame (a fast computer does it
 	# all at once, as there; a slow one over a few frames, the enemies keeping the last way meanwhile), the next once it is done
-	if world.toy == null and world.wood == null and world.plain == null and world.road == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
+	if world.toy == null and world.wood == null and world.plain == null and world.road == null and world.altar == null:   # (stage 5's toys and stage 6's peoples find their own ways: nobody there reads this search)
 		flow_t -= dt
 		if flow_t <= 0.0 and not Phys.flow_busy: flow_t = 0.3; Phys.flow_start(player.pos.x, player.pos.z)
 		if Phys.flow_busy: Phys.flow_step(flow_budget)
@@ -323,6 +340,10 @@ func update(dt: float) -> void:
 	if not ended and infected and not inject_on:
 		infect_t -= dt
 		if infect_t <= 0.0: infect_t = 0.0; over("zombie")
+	if burn_t > 0.0:   # (6-B) what burns on you: a little every half second, till it goes out
+		burn_t = maxf(0.0, burn_t - dt); _burn_tick -= dt
+		if ended: burn_t = 0.0
+		elif _burn_tick <= 0.0: _burn_tick = float(BURN.every); player.hurt(float(BURN.dps) * float(BURN.every), player.pos, "fire")
 	if not ended and poison_t > 0.0 and not inject_on:
 		poison_t = maxf(0.0, poison_t - dt)
 		if poison_t <= 0.0: over("poison")
@@ -443,6 +464,11 @@ func on_kill(e: Enemies.Foe, weak: bool) -> void:
 	elif e.self_det: _say(feed, ["스파이더 마인이 터졌습니다" if e.type == "mine" else "자폭맨이 터졌습니다", 0, true])
 	elif e.no_pay and e.animal: _say(feed, ["타고 있던 " + str(e.T.name) + ("이" if Animals.batchim(str(e.T.name)) else "가") + " 쓰러졌습니다", 0, true])
 	else: _say(feed, [(str(e.T.name) if (e.animal or e.folk) else STAGES[stage].label) + (" · 머리 명중" if weak else " 처치"), pay, weak])
+	if world.altar != null and goal > 0:   # (6-B) the rune chains beat faster as the demons fall; at half of them down the lava rises
+		world.altar.pulse = clampf(float(kills) / float(goal), 0.0, 1.0)
+		if kills * 2 >= goal: world.altar.rise()
+		if kills % 3 == 0: _heal_due = true   # every third of them leaves a health potion where it fell (over the lava: the next one does)
+		if _heal_due and not e.boss and Phys.ground_at(e.pos.x, e.pos.y + 0.6, e.pos.z, 0.2) > world.altar.lava_y + 0.5: _heal_due = false; loot.drop("hp", e.pos.x, e.pos.z, e.pos.y)
 	var left := goal - kills - calm; var S: Dictionary = STAGES[stage]
 	if not e.boss and (left == 50 or left == 25 or left == 10): _say(banner, ["%d%s 남음" % [left, S.unit], "화살표가 남은 적 쪽을 가리킵니다" if (left == 10 and Store.ship(stage) in ["", "corr"]) else "가방 " + Store.won(Store.save.money), 1.8])
 	if kills + calm >= goal and goal > 0: finish()
@@ -500,7 +526,7 @@ func open_chest() -> void:
 func finish() -> void:
 	if ended: return
 	if loot.pending() != null:   # the way out waits for the chest
-		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if world.ship != null else "상자를 열면 탑을 떠납니다" if world.wood != null else "상자를 열어야 헬기가 옵니다", 3.0])
+		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0; _say(banner, ["보물상자를 여세요", "상자를 열면 우주선을 빠져나갑니다" if world.ship != null else "상자를 열면 탑을 떠납니다" if world.wood != null else "상자를 열면 칼데라를 떠납니다" if world.altar != null else "상자를 열어야 헬기가 옵니다", 3.0])
 		return
 	if party_t > 0.0:   # what the chest gave is still on the screen: the clear comes after it (update)
 		if not _chest_wait: _chest_wait = true; player.invuln = 1e9; enemies.animals.bleed_stop(true); player.fear_t = 0.0; infected = false; infect_t = 0.0; poison_t = 0.0
@@ -514,7 +540,7 @@ func finish() -> void:
 	var key := "t%d" % stage; var t := int(stats.time)
 	if not Store.save.best.has(key) or t < int(Store.save.best[key]): Store.save.best[key] = t
 	Store.persist(); Snd.play("clear")
-	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", ("탑의 마력이 잦아듭니다 · " if world.wood != null else "헬기가 데리러 옵니다 · ") + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
+	_say(banner, ["스테이지 " + Store.STAGE_TAG[stage] + " 클리어", ("탑의 마력이 잦아듭니다 · " if world.wood != null else ("심연의 불길이 잦아듭니다 · " if world.altar != null else "헬기가 데리러 옵니다 · ")) + ("다시 하기라 보상 없음" if replay else "가방 " + Store.won(Store.save.money)), 2.5])
 	result = "clear"; _result_kind = "clear"; _result_t = 1.7
 
 ## 6-A won: its spoils (already kept), shown big over the fight and said again on the result sheet

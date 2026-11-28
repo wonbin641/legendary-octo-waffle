@@ -467,7 +467,7 @@ func enter_play(intro := false) -> void:
 	if cu_light != null: cu_light.visible = false
 	guns.look_mode = look_mode; apply_settings(); hudd.reset(); reward.stop(); ui.in_stage = true
 	if world.ship != null: world.ship.on_cut = _boss_cut
-	if intro and world.toy == null and world.wood == null and world.plain == null and world.road == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
+	if intro and world.toy == null and world.wood == null and world.plain == null and world.road == null and world.altar == null:   # (the toy room has its own way in: you come down under a parachute; stage 6 begins where you stand)
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_intro(game.stage, _go_play)
 	else: _go_play()
 
@@ -487,7 +487,7 @@ func _back_to_play() -> void:
 	_set_state("playing"); player.invuln = maxf(player.invuln, 1.0); request_lock()
 
 func _on_result(kind: String) -> void:
-	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null and world.plain == null and world.road == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
+	if kind == "clear" and state == "playing" and world.toy == null and world.wood == null and world.plain == null and world.road == null and world.altar == null:   # out by helicopter (the lab's door, the ship's airlock), then the result
 		_set_state("cutscene"); cut.touch = look_mode == "touch"; cut.start_outro(func() -> void: _show_result("clear")); return
 	_show_result(kind)
 
@@ -685,6 +685,7 @@ func _tick(dt: float) -> void:
 	if world.wood: world.wood.update(dt, player)   # (stage 6-1: the wind path, the moonwell, the portals and the rest)
 	if world.plain: world.plain.update(dt)   # (6-2: the landmarks' fires, smoke, turning crystals and falls)
 	if world.road: world.road.update(dt, player)   # (6-A: the lava's swell, the seals)
+	if world.altar: world.altar.update(dt, player)   # (6-B: the lava and its tide, the gates, the chains, the braziers, the ash)
 	guns.update(dt); enemies.update(dt, time); proj.update(dt); loot.update(dt); game.update(dt); fx.update(dt)
 	world.update_world(dt, time, player.pos.x, player.pos.z)
 	if world.lab != null: world.lab.anim(dt, time)

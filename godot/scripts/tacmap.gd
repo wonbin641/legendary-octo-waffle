@@ -22,6 +22,8 @@ const THEME := {
 	11: {"bg": "26331f", "grid": [230, 240, 200, 0.06], "block": "777366", "blockHi": "9a968a", "wall": "8a7f6a", "label": "네 깃발 평원"},
 	# stage 6-A, the road to the fallen tower: the camp's grass, ash, obsidian over the lava (two bands, see _draw_road)
 	13: {"bg": "1a1214", "grid": [255, 200, 180, 0.06], "block": "4a4250", "blockHi": "6e6478", "wall": "9a8ea6", "label": "타락한 마탑의 진격로"},
+	# stage 6-B, the obsidian altar: the lava's glow, black glass in three rings round the middle (drawn round, see _draw_caldera)
+	16: {"bg": "1a0d0c", "grid": [255, 200, 180, 0.05], "block": "3a3442", "blockHi": "5a5266", "wall": "9a8ea6", "label": "심연의 흑요석 제단"},
 }
 ## what each dot colour means, per stage; the legend under the map is built from the same table
 const KINDS := {
@@ -37,6 +39,7 @@ const KINDS := {
 	10: [["elf_ranger", "ff5260", "석궁병"], ["elf_blade", "ff9a3a", "바람검사"], ["elf_sniper", "ffd23a", "저격수 · 나무 위"], ["elf_mage", "ff7ad9", "비전술사"]],
 	11: [],   # (6-2 has no foes of the old kinds: its legend is the battle's)
 	13: [],   # (6-A: the party and the demons, its legend is the raid's)
+	16: [["dm_imp", "ff9a3a", "흑요석 임프 · 날아다님"], ["dm_guard", "ff5260", "악마 경비병"], ["dm_adept", "ff7ad9", "혈월 주술사"], ["dm_sniper", "ffd23a", "유황 저격병 · 회랑과 첨탑"], ["dm_warden", "c58bff", "사슬 감시자 · 정예"]],
 }
 const MAP_KIND := {"cctv": "cctv", "patrol": "patrol", "droneA": "droneA", "mine": "mine", "gdrone": "midboss", "bdrone": "boss"}
 const MELEE_KITS := ["saber", "saber2", "bat", "bomber", "dagger"]
@@ -53,7 +56,7 @@ var H := 68.0; var CX := 0.0; var CZ := 0.0
 
 static func _colors() -> Dictionary:
 	if COLOR.is_empty():
-		for st in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+		for st in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16]:
 			for k: Array in KINDS[st]: COLOR[k[0]] = Color(str(k[1]))
 	return COLOR
 
@@ -61,6 +64,7 @@ static func half_of(st: int) -> float:
 	if st == Store.ST_ELF: return ElfWood.HALF   # (its map is folded in two: see _draw_strip)
 	if st == Store.ST_PLAIN: return BannerPlain.HALF
 	if st == Store.ST_ROAD: return DemonRoad.X1   # (folded in two as 6-1's: see _draw_road)
+	if st == Store.ST_ALTAR: return Caldera.RIM_R + 2.0
 	return Lab.HALF + 2.0 if (st == 3 or st == 8) else (146.0 if st == 4 else (180.0 if st == 7 else (ToyRoom.HALF + 2.0 if st == Store.ST_TOY else 68.0)))
 
 func setup(st: int) -> void:
@@ -104,6 +108,7 @@ func draw(ci, size: Vector2) -> void:
 	if S < 8.0: return
 	if stage == Store.ST_ELF: _draw_strip(ci, r); return
 	if stage == Store.ST_ROAD: _draw_road(ci, r); return
+	if stage == Store.ST_ALTAR: _draw_caldera(ci, r); return
 	var o := r.position; var k := S / (2.0 * (H + PAD)); var kb := S / 1024.0; var u := S / 600.0
 	var X := func(x: float) -> float: return o.x + (x - CX + H + PAD) * k
 	var Z := func(z: float) -> float: return o.y + (z - CZ + H + PAD) * k
@@ -512,6 +517,97 @@ func _draw_road(ci, r: Rect2) -> void:
 	var arrow := PackedVector2Array([rot.call(Vector2(11, 0)), rot.call(Vector2(-7, 7)), rot.call(Vector2(-3, 0)), rot.call(Vector2(-7, -7))])
 	ci.draw_colored_polygon(arrow, ME); arrow.push_back(arrow[0]); ci.draw_polyline(arrow, Color("0d1220"), 1.5 * u)
 
+# ---------------- stage 6-B: the caldera, drawn round ----------------
+## The three rings from above: the gallery's two halves and the spires at their ends (up), the ring's four arcs, the
+## bridges and the sanctum (the middle), the stones of the trench (down), the lava under it all. Each tier its own shade,
+## lighter the higher; the gates, chains, troughs and rings marked; the demons, the inquisitor and you over it
+func _draw_caldera(ci, r: Rect2) -> void:
+	var S := r.size.x; var o := r.position; var k := S / (2.0 * (H + PAD)); var kb := S / 1024.0; var u := S / 600.0
+	var T: Dictionary = THEME[stage]; var w: World = game.world
+	var live: bool = w != null and Store.map_of(game.stage) == stage and w.altar != null
+	var at := func(x: float, z: float) -> Vector2: return Vector2(o.x + (x + H + PAD) * k, o.y + (z + H + PAD) * k)
+	var c0 := at.call(0.0, 0.0) as Vector2
+	var arc := func(r0: float, r1: float, a0: float, a1: float, col: Color) -> void:
+		var n := maxi(4, int((a1 - a0) / 3.0)); var pts := PackedVector2Array()
+		for i in n + 1: var a := deg_to_rad(lerpf(a0, a1, float(i) / n)); pts.push_back(c0 + Vector2(cos(a), sin(a)) * r1 * k)
+		for i in n + 1: var a := deg_to_rad(lerpf(a1, a0, float(i) / n)); pts.push_back(c0 + Vector2(cos(a), sin(a)) * r0 * k)
+		ci.draw_colored_polygon(pts, col)
+	ci.draw_rect(r, Color(str(T.bg)))
+	var tide: bool = live and w.altar.tide > 0.5
+	_radial(ci, c0, (Caldera.RIM_R + 1.0) * k, [[0.0, Color("7a2a0e")], [0.6, Color("5a1c0a")], [1.0, Color("3a1008")]])   # the lava
+	arc.call(Caldera.RIM_R, Caldera.RIM_R + 2.0, 0.0, 360.0, Color("2b2228"))   # the caldera's wall
+	# down: the trench's stones (under the lava once the tide is up)
+	if live:
+		for st: Dictionary in w.altar.stones:
+			var sp := at.call((st.at as Vector3).x, (st.at as Vector3).z) as Vector2
+			var rr := float(st.r) * k; var hexs := PackedVector2Array()   # (a stone: six-sided, as its pillar is cut)
+			for j in 6: hexs.push_back(sp + Vector2(cos(j * TAU / 6.0), sin(j * TAU / 6.0)) * rr)
+			if tide: hexs.push_back(hexs[0]); ci.draw_polyline(hexs, Color(0.9, 0.4, 0.2, 0.35), 1.0 * u)
+			else: ci.draw_colored_polygon(hexs, Color("4a3c36"))
+	# the middle: the ring's arcs, the foundries, the bridges, the sanctum and its cooling circle
+	var mid := Color("3e3846"); var hi := Color("5a5266")
+	for side: String in Caldera.ARCS:
+		var m := float(Caldera.ARCS[side]); arc.call(Caldera.RING_R0, Caldera.RING_R1, m - 45.0 + Caldera.GAP_DEG * 0.5, m + 45.0 - Caldera.GAP_DEG * 0.5, mid)
+		var d := Caldera.at_deg(m, 1.0, 0.0); var tn := Vector3(-d.z, 0, d.x) * Caldera.BRIDGE_W * 0.5
+		var a0 := d * (Caldera.DAIS_A - 0.3); var a1 := d * (Caldera.RING_R0 + 0.6)
+		ci.draw_colored_polygon(PackedVector2Array([at.call((a0 - tn).x, (a0 - tn).z), at.call((a1 - tn).x, (a1 - tn).z), at.call((a1 + tn).x, (a1 + tn).z), at.call((a0 + tn).x, (a0 + tn).z)]), Color("55575c"))
+	var R := Caldera.DAIS_A / cos(PI / 8.0); var oct := PackedVector2Array()
+	for j in 8: var a := deg_to_rad(22.5 + j * 45.0); oct.push_back(c0 + Vector2(cos(a), sin(a)) * R * k)
+	ci.draw_colored_polygon(oct, mid); oct.push_back(oct[0]); ci.draw_polyline(oct, Color(1.0, 0.3, 0.2, 0.55), 1.2 * u)
+	ci.draw_circle(c0, Caldera.COOL_R * k, Color(0.42, 0.85, 1.0, 0.45))
+	if live:
+		for f: Dictionary in w.altar.floats:   # the tide's slabs, once they are up
+			if not bool(f.up) and w.altar.tide < 0.5: continue
+			var d := Caldera.at_deg(float(f.deg), 1.0, 0.0); var tn := Vector3(-d.z, 0, d.x) * Caldera.FLOAT_W * 0.5; var a0 := d * Caldera.FLOAT_IN; var a1 := d * Caldera.FLOAT_OUT
+			ci.draw_colored_polygon(PackedVector2Array([at.call((a0 - tn).x, (a0 - tn).z), at.call((a1 - tn).x, (a1 - tn).z), at.call((a1 + tn).x, (a1 + tn).z), at.call((a0 + tn).x, (a0 + tn).z)]), mid)
+		for side: String in Caldera.FOUNDRY:
+			var fc: Vector3 = Caldera.FOUNDRY[side]; var p := at.call(fc.x - 4.5, fc.z - 6.5) as Vector2
+			ci.draw_rect(Rect2(p, Vector2(9.0, 13.0) * k), hi); ci.draw_rect(Rect2(at.call(fc.x - 4.5, fc.z - 1.3), Vector2(9.0, 2.6) * k), Color("2a2430"))
+		for q: Vector3 in w.altar.troughs: ci.draw_rect(Rect2(at.call(q.x - 0.5, q.z - 1.5), Vector2(1.0, 3.0) * k), Color("3ad0ff"))
+		for sp: Dictionary in w.altar.openings: ci.draw_rect(Rect2(at.call(float(sp.x0), float(sp.z0)), Vector2(float(sp.x1) - float(sp.x0), float(sp.z1) - float(sp.z0)) * k), mid)
+	# up: the gallery's two halves and the spires at their ends, the hellfire rings on its edge
+	var top := Color("6e6478")
+	for side: String in Caldera.GALLERY: arc.call(Caldera.GAL_R0, Caldera.GAL_R1, float(Caldera.GALLERY[side][0]), float(Caldera.GALLERY[side][1]), top)
+	if live:
+		for sp: Dictionary in w.altar.spires:
+			var b: Dictionary = sp.box; ci.draw_rect(Rect2(at.call(float(b.x0), float(b.z0)), Vector2(float(b.x1) - float(b.x0), float(b.z1) - float(b.z0)) * k), Color("8a7f96"))
+		for q: Dictionary in w.altar.amps: ci.draw_arc(at.call((q.at as Vector3).x, (q.at as Vector3).z), 1.5 * k + 1.5 * u, 0, TAU, 16, Color("ffb347"), 1.6 * u)
+		for c: Dictionary in w.altar.chains: ci.draw_circle(at.call((c.at as Vector3).x, (c.at as Vector3).z), 2.2 * u, Color("c9c2b8"))
+		for g: String in Caldera.GATES:
+			var gp := at.call((Caldera.GATES[g] as Vector3).x, (Caldera.GATES[g] as Vector3).z) as Vector2; var gt := at.call((Caldera.GATE_TO[g] as Vector3).x, (Caldera.GATE_TO[g] as Vector3).z) as Vector2
+			ci.draw_dashed_line(gp, gt, Color(1.0, 0.2, 0.25, 0.6), 1.4 * u, 4.0 * u)
+			ci.draw_circle(gp, 4.0 * u, Color(1.0, 0.15, 0.2, 0.85)); _tag(ci, "차원문", gp.x + 14.0 * u, gp.y, u, Color("ff8a90"), "left")
+	# the tiers' names; the start
+	_tag(ci, "상층 · 감시 회랑", c0.x, (at.call(0.0, -51.0) as Vector2).y, u, Color("d8d0e4"))
+	_tag(ci, "중층 · 심연 제단", c0.x, (at.call(0.0, -36.0) as Vector2).y, u, Color("c4bccc"))
+	_tag(ci, "하층 · 유황 협곡" + (" (잠김)" if tide else ""), c0.x, (at.call(0.0, -24.5) as Vector2).y, u, Color("ffb090") if tide else Color("b0a49a"))
+	var edge := PAD * k + 8.0 * u; var bar := 20.0
+	ci.draw_rect(Rect2(o.x + edge, o.y + edge, 40.0 * u, 22.0 * u), CHIP); _text(ci, f_mono, "N ↑", o.x + edge + 20.0 * u, o.y + edge + 11.5 * u, roundi(13.0 * u), INKC)
+	var bw2 := bar * k + 16.0 * u; var sc_x := o.x + S - edge - bw2
+	ci.draw_rect(Rect2(sc_x, o.y + S - edge - 30.0 * u, bw2, 30.0 * u), CHIP); ci.draw_rect(Rect2(sc_x + bw2 - 8.0 * u - bar * k, o.y + S - edge - 9.0 * u, bar * k, 2.5 * u), INKC)
+	_text(ci, f_mono, "%dm" % int(bar), sc_x + bw2 - 8.0 * u, o.y + S - edge - 19.0 * u, roundi(11.0 * u), INKC, "right")
+	if not live: return
+	var s0: Dictionary = w.start; var spp := at.call(s0.x, s0.z) as Vector2
+	ci.draw_circle(spp, 9.0 * u, Color(242 / 255.0, 163 / 255.0, 58 / 255.0, 0.18)); ci.draw_arc(spp, 9.0 * u, 0, TAU, 32, SODIUM, 2.0 * u)
+	_tag(ci, "시작 · 서쪽 용광로", spp.x, spp.y + 16.0 * u, u, SODIUM)
+	for e: Enemies.Foe in game.enemies.list:
+		if not e.alive: continue
+		var ep := at.call(e.pos.x, e.pos.z) as Vector2
+		if e.boss:
+			ci.draw_circle(ep, 7.0 * u, Color("ff2d3d")); ci.draw_arc(ep, 7.0 * u, 0, TAU, 28, Color.WHITE, 1.6 * u); _tag(ci, "고문관", ep.x, ep.y - 13.0 * u, u, Color.WHITE)
+		else:
+			var rr := (4.2 if e.type == "dm_warden" else 3.2) * u
+			ci.draw_circle(ep, rr, enemy_color(e))
+			if e.alert: ci.draw_arc(ep, rr + 2.0 * u, 0, TAU, 24, Color.WHITE, 1.2 * u)
+	var pl: Player = game.player; var pp := at.call(pl.pos.x, pl.pos.z) as Vector2; var ang := atan2(-cos(pl.yaw), -sin(pl.yaw))
+	var fov := deg_to_rad(cam.fov if cam != null else 75.0) * 0.6; var cone := PackedVector2Array([pp]); var cc := PackedColorArray([Color(ME, 0.45)])
+	for i in 17:
+		var a := ang - fov / 2.0 + fov * i / 16.0; cone.push_back(pp + Vector2(cos(a), sin(a)) * 60.0 * u); cc.push_back(Color(ME, 0.0))
+	ci.draw_polygon(cone, cc)
+	var rot := func(p: Vector2) -> Vector2: return pp + p.rotated(ang) * u
+	var arrow := PackedVector2Array([rot.call(Vector2(11, 0)), rot.call(Vector2(-7, 7)), rot.call(Vector2(-3, 0)), rot.call(Vector2(-7, -7))])
+	ci.draw_colored_polygon(arrow, ME); arrow.push_back(arrow[0]); ci.draw_polyline(arrow, Color("0d1220"), 1.5 * u)
+
 # ---------------- the legend ----------------
 ## the legend's items: [kind, text, colour, letter]; drawn by legend_icon
 func legend(live: bool) -> Array:
@@ -519,6 +615,15 @@ func legend(live: bool) -> Array:
 	out.push_back(["me", "나 · 바라보는 방향", ME, ""])
 	var lz := "출입문 · 시작하는 곳" if lab else (("에어록 · 시작하는 곳" if part == "corr" else "시작하는 곳 · 문 앞 복도") if stage == 4 else ("헬기에서 내리는 곳 · 오른쪽 아래 구석" if stage == Store.ST_ARMED else ("내리는 곳" if stage == Store.ST_TOY else "헬기에서 내리는 곳")))
 	if stage == Store.ST_ELF: lz = "시작하는 곳 · 서쪽 끝 (위 줄 왼쪽에서 아래 줄 오른쪽으로)"
+	if stage == Store.ST_ALTAR:   # 6-B: the demons, the inquisitor, what the place does
+		out.push_back(["lz", "시작하는 곳 · 서쪽 영혼 용광로", SODIUM, ""])
+		for kd: Array in KINDS[16]: out.push_back(["en", kd[2], Color(str(kd[1])), ""])
+		out.push_back(["bo", "보스 · 심연의 고문관", Color("ff2d3d"), ""])
+		out.push_back(["en", "혈약의 차원문 · 체력 35로 회랑까지", Color("ff2630"), ""]); out.push_back(["en", "영혼 포집 쇠사슬 · 점프 유지로 등반", Color("c9c2b8"), ""])
+		out.push_back(["al", "지옥불 증폭 화로 · 통과한 총알 +20%·화염", Color("ffb347"), ""]); out.push_back(["en", "냉각진 · 기관총 열 1.5배 빨리 식음", Color(0.42, 0.85, 1.0), ""])
+		out.push_back(["cr", "냉각 수조 · 화상 해제", Color("3ad0ff"), ""])
+		if live: out.push_back(["al", "흰 테두리 · 나를 쫓는 중", Color.WHITE, ""])
+		return out
 	if stage == Store.ST_ROAD:   # 6-A: the party, the demons, the camp's things, the seals, the altar's circles
 		out.push_back(["en", "파티 (나머지 셋)", Color("5f9cff"), ""]); out.push_back(["en", "악마", Color("ff5260"), ""]); out.push_back(["en", "거점 · 쓰러지면 여기서", Color("c9a85a"), ""])
 		out.push_back(["en", "룬 제단 · 축복의 마법진", Color("8ff7ea"), ""]); out.push_back(["cr", "보급 상자", Color("e0b050"), ""]); out.push_back(["al", "붉은 선 · 아직 닫힌 봉인", Color("ff3a4a"), ""])

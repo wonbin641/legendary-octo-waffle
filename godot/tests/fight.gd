@@ -17,7 +17,7 @@ extends Node
 # the least each fight must come to (about half what the bot does now: a fight that kills next to nothing fails), and the
 # moments a stage is built round that it must reach: bitten and an antidote injected, a cage opening, the siege. The ship's
 # doors and key lie past where the bot falls (about 14 s in, at the start passage), so stage 4 counts its kills only
-const MIN_KILLS := {1: 5, 6: 4, 5: 10, 2: 3, 3: 3, 7: 4, 8: 6, 4: 2, 9: 1, 10: 7}
+const MIN_KILLS := {1: 5, 6: 4, 5: 10, 2: 3, 3: 3, 7: 4, 8: 6, 4: 2, 9: 1, 10: 7, 16: 4}
 const MOMENTS := {2: ["infected", "antidote"], 3: ["cage"], 7: ["stampede"], 8: ["cage"]}
 const SECONDS := {8: 200.0}   # 3-2 lets its animals out one at a time, the first ones tame: it takes longer to be bitten
 const SECONDS_ELSE := 80.0
@@ -33,7 +33,7 @@ func check(name: String, ok: bool, info = "") -> void:
 # the pieces, each played in a game of its own: a fight in each stage (9: stage 5, the toy room, in its first mode; 10:
 # stage 6-1, the elves' Silverwood), 6-1's two team battles, 6-2 twice, 6-A's raid and its keys, 6-1's battle keys, the toy
 # flamethrower, falling
-const PIECES := ["fight 1", "fight 6", "fight 5", "fight 2", "fight 3", "fight 7", "fight 8", "fight 4", "fight 9", "fight 10",
+const PIECES := ["fight 1", "fight 6", "fight 5", "fight 2", "fight 3", "fight 7", "fight 8", "fight 4", "fight 9", "fight 10", "fight 16",
 	"realm sanctum elf 150", "realm siege orc 200", "plain elf 420 end", "plain dwarf 300 part", "raid elf 700", "raidkeys", "keys", "flame", "death"]
 # a piece's seed, where it is not the usual one (7000 + the stage; 7300 + the mode; 7400 + the people) but that plus this.
 # Each piece is the same fight on every run and every computer, but how well the bot does is luck: measured over ten seeds,
@@ -131,6 +131,7 @@ func _fight(st: int) -> void:
 	var hp0: float = pl.hp; var kills0: int = g.kills; var shots0: int = 0; var hits0: int = 0   # the stage starts its counts from nothing
 	var hurt := false; var walked := 0.0; var last := Vector3(pl.pos); var stuck_t := 0.0; var path_t := 0.0; var path := Vector2.ZERO
 	var side := KEY_A; var side_t := 0.0; var ticks := 0; var aim_err := 0.0; var aim_n := 0; var gave_up := ""; var moments := {}
+	var ledges := st == Store.ST_ALTAR   # (6-B: tiers over lava; a person does not walk off their edges, nor jump a lip with nothing past it)
 	for i in int(SECONDS.get(st, SECONDS_ELSE) / DT):
 		if g.ended or main.state != "playing": break
 		ticks += 1
@@ -146,9 +147,10 @@ func _fight(st: int) -> void:
 			_turn(pl, dy, dp)
 			var err := Vector2(dy, dp).length(); aim_err += err; aim_n += 1
 			_fire(err < clampf(0.7 * float(t.R) / maxf(to.length(), 0.5), 0.004, 0.05))   # only when the sight is on the body
-			_key(KEY_W, to.length() > 26.0)   # close in on far ones
+			_key(KEY_W, to.length() > 26.0 and not (ledges and _drop_ahead(pl, 0.0)))   # close in on far ones (6-B: not off an edge into the lava)
 			side_t -= DT
 			if side_t <= 0.0: side_t = 1.4; _key(side, false); side = KEY_D if side == KEY_A else KEY_A
+			if ledges and _drop_ahead(pl, -PI / 2.0 if side == KEY_D else PI / 2.0): _key(side, false); side = KEY_D if side == KEY_A else KEY_A; side_t = 1.4   # (6-B: the other way, from the edge)
 			_key(side, true)
 		else:
 			_fire(false); _key(KEY_A, false); _key(KEY_D, false)
@@ -156,12 +158,14 @@ func _fight(st: int) -> void:
 			if path_t <= 0.0: path_t = 0.5; path = _path_to_nearest(en, pl)
 			if path != Vector2.ZERO:
 				var want := atan2(-path.x, -path.y); _turn(pl, wrapf(want - pl.yaw, -PI, PI), -pl.pitch)
-				_key(KEY_W, true)
+				_key(KEY_W, not (ledges and _drop_ahead(pl, 0.0)))
 			else: _key(KEY_W, false)
-		# stuck against something: jump
+		# stuck against something: jump (6-B: not over a lip with the lava past it)
 		if (pl.pos as Vector3).distance_to(last) < 0.02 and keys.get(KEY_W, false): stuck_t += DT
 		else: stuck_t = 0.0
-		if stuck_t > 0.6: _tap(KEY_SPACE); stuck_t = 0.0
+		if stuck_t > 0.6:
+			stuck_t = 0.0
+			if not (ledges and _drop_ahead(pl, 0.0)): _tap(KEY_SPACE)
 		walked += Vector2(pl.pos.x - last.x, pl.pos.z - last.z).length(); last = Vector3(pl.pos)
 		main.tick(DT)
 		if pl.hp < hp0 - 0.5 or g.infected or g.poison_t > 0.0 or (g.ended and g.result != "clear"): hurt = true   # (a stage cleared is not being hurt)
@@ -332,6 +336,14 @@ func _death_stops() -> void:
 	main.command("menu")
 
 ## at a hand's speed: no more than about 6 radians a second, as mouse movement in pixels
+## whether the ground falls away (more than a metre and a half) within 2.6 m the way the bot faces, turned by `off`
+func _drop_ahead(pl, off: float) -> bool:
+	var a: float = pl.yaw + off; var f := Vector3(-sin(a), 0, -cos(a))
+	for d: float in [0.7, 1.4, 2.0, 2.6]:
+		var q: Vector3 = pl.pos + f * d
+		if Phys.ground_at(q.x, pl.pos.y + 0.9, q.z, 0.2) < pl.pos.y - 1.5: return true
+	return false
+
 func _turn(pl, dyaw: float, dpitch: float) -> void:
 	var s: float = pl.sens * 0.0021 * pl.sens_mul
 	var lim := 6.0 * DT

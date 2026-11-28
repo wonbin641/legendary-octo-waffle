@@ -102,6 +102,7 @@ const GLOW_STOPS := {
 	"down": [[0.0, Color(0, 0, 0, 0.35)], [0.5, Color(0, 0, 0, 0.5)], [1.0, Color(0.05, 0.02, 0.02, 0.85)]],
 	"watch": [[0.0, Color(1, 0.85, 0.5, 0)], [0.6, Color(1, 0.85, 0.5, 0.0)], [1.0, Color(1, 0.75, 0.35, 0.4)]],
 	"wind": [[0.0, Color(70 / 255.0, 1, 150 / 255.0, 0)], [0.5, Color(70 / 255.0, 1, 150 / 255.0, 0)], [1.0, Color(70 / 255.0, 1, 150 / 255.0, 0.24)]],
+	"burn": [[0.0, Color(1, 110 / 255.0, 20 / 255.0, 0)], [0.5, Color(1, 110 / 255.0, 20 / 255.0, 0)], [1.0, Color(1, 90 / 255.0, 10 / 255.0, 0.5)]],
 }
 
 ## a radial glow over the whole view, as the browser's "radial-gradient(ellipse at center, ...)", from its stops in GLOW_STOPS
@@ -143,6 +144,7 @@ func draw(ci) -> void:
 		T = minf(g.infect_t, g.poison_t) if (inf and poi) else (g.infect_t if inf else g.poison_t)
 		_glow(ci, "toxic", 0.55 + sin(t * 9.0) * 0.25 + maxf(0.0, 5.0 - T) * 0.06)
 	if pl.stun_t > 0.0: _glow(ci, "stun", clampf(pl.stun_t, 0.0, 1.0) * (0.75 + sin(t * 7.0) * 0.15))
+	if g.burn_t > 0.0: _glow(ci, "burn", 0.5 + sin(t * 8.0) * 0.18)   # (6-B: set alight: the edges of the view flicker orange)
 	if g.tm != null and pl.out: _glow(ci, "down", 1.0)   # down: the view darkens
 	if g.tm != null and g.tm.key == "freeze" and str(g.tm.mode.phase) in ["open", "look"]: _glow(ci, "watch", 0.6 + 0.4 * sin(t * 5.0))
 	_scope_and_cross(ci, s, c, W, guns, pl)
@@ -181,6 +183,8 @@ func draw(ci) -> void:
 		var msg := (what + (" · 해독약 버튼을 누르세요" if touch else " · F 키로 해독약 사용")) if g.antidotes > 0 else what + " · 해독약이 없습니다! 상자를 부수세요"
 		var bfs := int(clampf(s.x * 0.12, 48, 84) * pulse)
 		_t(ci, f_title, "%.1f" % maxf(0.0, T), c.x, s.y * 0.30, bfs, Color("9be88f"), "center"); _t(ci, f_mono, msg, c.x, s.y * 0.30 + bfs * 1.1, 13, Color("d9f5d2"), "center")
+	if g.burn_t > 0.0:   # (6-B) what burns on you, and how long it has left
+		_t(ci, f_bold, "화상 %.1f초 · 냉각 수조를 지나면 꺼집니다" % g.burn_t, c.x, c.y + 78, 13, Color("ffb070"), "center")
 	if toy_on:   # the toy room: the clock and the boards, the tape, the paper map, the battery, the tray are ToyHud's own controls
 		if toy.nodes.is_empty(): toy.draw_all(ci, s, touch)   # (...or, with no HUD to hold them, drawn here in one go)
 		return

@@ -215,13 +215,14 @@ func _heat_update(dt: float) -> void:
 		if (cur != "lmg" and pending == null) or (slots.size() < 2 and s.hot_t > 6.0): s.hot = false
 	else:
 		s.cool_t -= dt
-		if s.cool_t <= 0.0: s.heat = maxf(0.0, s.heat - dt * 0.2)
+		if s.cool_t <= 0.0: s.heat = maxf(0.0, s.heat - dt * 0.2 * (Caldera.COOL_K if world.altar != null and world.altar.cooling(player.pos) else 1.0))   # (6-B: the cooling circle cools it half as fast again)
 	s.smoke_t = 2.5 if s.hot else maxf(0.0, s.smoke_t - dt)
 
 # ---------- firing ----------
 func fire(exact = null) -> void:   # exact: a direction to send the shot along as it is (no spread, no aim help): the corpse shot
 	var W := w(); var s := st()
 	if none or busy > 0.0 or melee_on or switch_t > 0.0 or reload_t > 0.0 or cooldown > 0.0 or player.out: return
+	if world.altar != null and world.altar.climbing(): return   # (6-B: both hands on a soul chain)
 	if player.sprinting: player.sprint_lock = 0.25
 	if s.mag <= 0:
 		Snd.play("empty"); cooldown = 0.3
@@ -255,12 +256,14 @@ func fire(exact = null) -> void:   # exact: a direction to send the shot along a
 				var at: Vector3 = o + d * eh.t
 				var dmg: float = W.dmg * ((eh.enemy.head_x if eh.enemy.head_x > 0.0 else float(W.head)) if eh.weak else float(eh.mult))
 				if W.has("falloff"): dmg *= lerpf(1.0, 0.35, clampf((eh.t - W.falloff[0]) / (W.falloff[1] - W.falloff[0]), 0.0, 1.0))
+				var amp := world.altar.amp_ray(o, d, eh.t) if world.altar != null else 1.0   # (6-B: through a hellfire ring: a fifth harder, and it burns)
+				dmg *= amp
 				if eh.get("bomb", false) and eh.enemy.alive: enemies.blow_vest(eh.enemy, d); killed = true
 				else:
 					enemies.cause = cur if toy else ""   # (stage 5: what the toy in hand leaves on what it hits)
 					if enemies.damage(eh.enemy, dmg, at, d, eh.weak): killed = true
 					enemies.cause = ""
-				if W.get("flame", false) and eh.enemy.alive: enemies.ignite(eh.enemy)   # and sets it alight: it burns on for a while
+				if (W.get("flame", false) or amp > 1.0) and eh.enemy.alive: enemies.ignite(eh.enemy)   # and sets it alight: it burns on for a while
 				hit_any = true
 				if eh.weak: head = true
 				if toy: hit_snd = _toy_hit(muz, at, k, hit_snd)
@@ -268,6 +271,7 @@ func fire(exact = null) -> void:   # exact: a direction to send the shot along a
 			else:
 				var at := o + d * s_t
 				if k == 0 and world.wood != null: world.wood.shot_by(o, d, s_t)   # (stage 6-1: a shot that misses sets the lanterns by its way swinging)
+				if k == 0 and world.altar != null: world.altar.shot_by(o, d, s_t)   # (6-B: a brazier knocked over, a cap burst, a cactus shattered)
 				if s_hit and s_box != null and s_box.kind == "wood" and s_box.ref != null: world.damage_crate(s_box.ref, W.dmg, at)
 				if s_hit and k < 4 and s_box != null and s_box.kind == "metal" and randf() < 0.5: Snd.play("metal", 1.0, at)
 				if s_hit and k < 4 and fx and not toy:   # where it struck: sparks (more off metal), a little dust (more off concrete)

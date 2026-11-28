@@ -85,6 +85,7 @@ func rocket_centre(e) -> Vector3:
 	return Vector3(e.pos.x, e.pos.y + (0.0 if e.fly else e.H * 0.55), e.pos.z)
 
 func _crates_near(c: Vector3, radius: float) -> void:
+	if world.altar != null: world.altar.puffed(c, radius)   # (6-B: a blast knocks the braziers over, bursts the caps, shatters the cacti)
 	for cr in world.crates.duplicate():
 		if not cr.dead and Vector3(cr.x, cr.y + 0.6, cr.z).distance_to(c) < radius: world.damage_crate(cr, 100, Vector3(cr.x, cr.y + 0.6, cr.z))
 

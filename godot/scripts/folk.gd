@@ -16,6 +16,13 @@ const KINDS := {
 	"elf_sniper": {"race": "elf", "name": "엘프 저격수", "hp": 110, "speed": 3.0, "r": 0.34, "h": 1.85, "money": 1600, "sight": 70.0},
 	"elf_mage": {"race": "elf", "name": "엘프 비전술사", "hp": 170, "speed": 3.0, "r": 0.34, "h": 1.85, "money": 1800, "sight": 50.0},
 	"archmage": {"race": "elf", "name": "대마법사", "hp": 6500, "speed": 3.2, "r": 0.42, "h": 2.15, "money": 2000, "sight": 70.0},
+	# 6-B's demons (Hellfolk): r and h at their body's own size (each kind is drawn at its own: Hellfolk.LOOK)
+	"dm_imp": {"race": "demon", "name": "흑요석 임프", "hp": 100, "speed": 5.5, "r": 0.5, "h": 2.1, "money": 1200, "sight": 36.0},
+	"dm_guard": {"race": "demon", "name": "악마 경비병", "hp": 300, "speed": 4.2, "r": 0.4, "h": 2.1, "money": 1600, "sight": 34.0},
+	"dm_adept": {"race": "demon", "name": "혈월 주술사", "hp": 200, "speed": 3.4, "r": 0.38, "h": 2.1, "money": 1800, "sight": 40.0},
+	"dm_sniper": {"race": "demon", "name": "유황 저격병", "hp": 160, "speed": 3.0, "r": 0.38, "h": 2.1, "money": 2000, "sight": 46.0},
+	"dm_warden": {"race": "demon", "name": "사슬 감시자", "hp": 1100, "speed": 3.8, "r": 0.42, "h": 2.1, "money": 3000, "sight": 36.0},
+	"inquisitor": {"race": "demon", "name": "심연의 고문관", "hp": 8000, "speed": 3.4, "r": 0.42, "h": 2.1, "money": 2000, "sight": 70.0},
 }
 const BOLT := {"speed": 54.0, "dmg": 11.0}; const TRICK := {"speed": 52.0, "dmg": 22.0, "warn": 0.55}
 const ARROW := {"speed": 105.0, "dmg": 70.0, "draw": 1.7, "rest": 3.2}
@@ -25,6 +32,9 @@ const MAX_SHOTS := 48
 
 var en: Enemies; var player: Player; var game; var world: World; var fx: Fx; var proj: Proj
 var wood: ElfWood = null     # 6-1's own things: mirror trunks, ferns and mist to hide in, the amplifying circle
+var hell := Hellfolk.new()   # 6-B's demons (their minds; their shots fly here)
+var altar: Caldera = null:   # 6-B's own things: the ash to hide in, the briars that feed them, the lava
+	set(v): altar = v; hell.altar = v
 var shots: Array = []        # what is in the air: {kind, pos, vel, dmg, life, n, r, splash, turn, node, amp}
 var lines: Array = []        # ways shown before a shot: {a, b, life, node}
 var runes: Array = []        # circles on the floor about to burst: {at, r, t, dmg, node}
@@ -33,7 +43,10 @@ var _mats := {}; var _box: BoxMesh; var _orb: SphereMesh; var _disc: MeshInstanc
 var dealt := {}              # what each way of hurting you has cost you this stage: {"bolt": hp, "cut": hp, ...} (the checks read it)
 var sent := {}               # ...and how many of each were sent your way
 
+func _init() -> void: hell.fk = self
+
 func clear() -> void:
+	hell.clear()
 	if root != null and is_instance_valid(root): root.queue_free()   # (what was in the air, the lines and the runes go with it)
 	shots.clear(); lines.clear(); runes.clear(); root = null; boss = null; beam_on = false; dealt.clear(); sent.clear(); _later.clear(); _beam_nodes.clear()
 
@@ -56,6 +69,7 @@ const SKIN := "f1e3d0"; const HAIR := ["e4e9ef", "ecd893", "c9d6c2"]
 func _hpart(o: Vector3, r: float, mult := 1.0, weak := false) -> Dictionary: return {"o": o, "r": r, "mult": mult, "weak": weak, "bomb": false}
 
 func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
+	if str(KINDS[type].get("race", "")) == "demon": hell.build(e, type, opts); return
 	e.folk = true; e.g = Node3D.new(); e.g.rotation_order = EULER_ORDER_YXZ; en.add_child(e.g)
 	var v := int(opts.get("v", 0)); var hair: String = HAIR[v % 3]
 	var coat := "2f6b4f"; var trim := "6b4a2c"; var legc := "3b3226"; var big := type == "archmage"
@@ -102,6 +116,7 @@ func build(e: Enemies.Foe, type: String, opts: Dictionary) -> void:
 func sees(e: Enemies.Foe, dist: float) -> bool:
 	if not e.los or dist > float(e.T.sight) * (1.3 if e.alert else 1.0): return false
 	if wood != null and wood.hides(player, dist): return false
+	if altar != null and altar.hides(player, dist): return false
 	return true
 
 func _wake(e: Enemies.Foe) -> void:
@@ -110,11 +125,13 @@ func _wake(e: Enemies.Foe) -> void:
 		if o != e and o.alive and not o.alert and o.folk and Vector2(o.pos.x - e.pos.x, o.pos.z - e.pos.z).length() < 15.0 and absf(o.pos.y - e.pos.y) < 6.0: en.alarm(o)
 
 func on_hurt(e: Enemies.Foe, _dir: Vector3) -> void:
+	if e.k.has("dm"): hell.on_hurt(e, _dir); return
 	e.k.wait = false; e.k.seen_t = 2.0
 	if e.type == "elf_mage" and float(e.k.blink) <= 2.5: e.k.blink = 0.0   # (struck: away, if the step is ready soon)
 
 # ---------------- their turn ----------------
 func update(e: Enemies.Foe, dt: float, dist: float, to: Vector2, face_yaw: float) -> void:
+	if e.k.has("dm"): hell.update(e, dt, dist, to, face_yaw); return
 	var k := e.k; var seen := sees(e, dist)
 	k.seen_t = maxf(0.0, float(k.seen_t) - dt)
 	if seen: k.seen_t = 1.2
@@ -342,7 +359,12 @@ func _fan(e: Enemies.Foe, n: int) -> void:
 		shoot("bolt", from, (d * cos(a) + side * sin(a)).normalized() * 40.0, 18.0 * e.dmg_mul, 0, "fan")
 	Snd.play("elf_bolt", 1.0, from)
 
+## one of them falls (its own way: a demon in embers and ash)
+func fell(e: Enemies.Foe) -> void:
+	if e.k.has("dm"): hell.fell(e)
+
 func boss_down(e: Enemies.Foe) -> void:
+	if e.k.has("dm"): hell.boss_down(e); return
 	beam_on = false; _beam_show(false); boss = null
 	for r: Dictionary in runes:
 		if is_instance_valid(r.node): (r.node as Node3D).queue_free()
@@ -371,12 +393,14 @@ func _beam_show(on: bool) -> void:
 	for i in 2: (_beam_nodes[i] as Node3D).visible = on and i < beam_arms
 
 ## a circle drawn on the floor: it bursts when its time is up
-func _rune(at: Vector3, r: float, fuse: float, dmg: float) -> void:
+## more: {col (its colour), burn (seconds it sets you alight for), snd (the sound it is drawn with)}
+func _rune(at: Vector3, r: float, fuse: float, dmg: float, more := {}) -> void:
 	var gy := Phys.ground_at(at.x, at.y + 0.5, at.z, 0.3)
 	var n := MeshInstance3D.new(); var m := MeshKit.new(); m.disc(0, 0, 0, 1.0, Color.WHITE, 24, 0.86); m.disc(0, 0, 0, 0.5, Color.WHITE, 5, 0.44)
-	n.mesh = m.mesh(); n.material_override = _mat("rune", Color(1.0, 0.82, 0.35, 0.9)); n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var col: Color = more.get("col", Color(1.0, 0.82, 0.35, 0.9))
+	n.mesh = m.mesh(); n.material_override = _mat("rune" + col.to_html(), col); n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_root().add_child(n); n.position = Vector3(at.x, gy + 0.06, at.z); n.scale = Vector3(r, 1.0, r)
-	runes.push_back({"at": Vector3(at.x, gy, at.z), "r": r, "t": fuse, "dmg": dmg, "node": n}); Snd.play("elf_rune", 0.7, at); sent["rune"] = int(sent.get("rune", 0)) + 1
+	runes.push_back({"at": Vector3(at.x, gy, at.z), "r": r, "t": fuse, "dmg": dmg, "node": n, "col": col, "burn": float(more.get("burn", 0.0))}); Snd.play(str(more.get("snd", "elf_rune")), 0.7, at); sent["rune"] = int(sent.get("rune", 0)) + 1
 
 # ---------------- what flies ----------------
 var _later: Array = []   # things to do in a moment: {t, f}
@@ -397,41 +421,50 @@ func line(a: Vector3, b: Vector3, life: float, col: Color) -> void:
 	_root().add_child(n); _stretch(n, a, b, 0.035); lines.push_back({"a": a, "b": b, "life": life, "node": n})
 
 ## src: what it counts as in `dealt` and `sent` (a fan's bolt is a bolt to look at, the Archmage's fan to count)
-func shoot(kind: String, from: Vector3, vel: Vector3, dmg: float, bounces := 0, src := "") -> void:
+## (6-B's) more: {grav (it falls), burn (it sets you alight), shove (it throws you back), pull (it drags you to `from`)}
+const SHOT_COL := {"bolt": Color(0.75, 1.0, 0.95, 0.95), "arrow": Color(1.0, 0.97, 0.8, 0.95), "fire": Color(1.0, 0.5, 0.12, 0.95), "lance": Color(1.0, 0.3, 0.1, 0.95),
+	"spear": Color(1.0, 0.55, 0.15, 0.95), "hook": Color(0.75, 0.72, 0.7, 0.95), "orb": Color(0.72, 0.5, 1.0, 0.95), "ember": Color(1.0, 0.42, 0.1, 0.95)}
+func shoot(kind: String, from: Vector3, vel: Vector3, dmg: float, bounces := 0, src := "", more := {}) -> void:
 	if shots.size() >= MAX_SHOTS: return
 	if src == "": src = kind
 	sent[src] = int(sent.get(src, 0)) + 1
-	var n := MeshInstance3D.new(); n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if kind == "orb":
+	var n := MeshInstance3D.new(); n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; var round := kind == "orb" or kind == "ember"
+	if round:
 		if _orb == null: _orb = SphereMesh.new(); _orb.radius = 0.32; _orb.height = 0.64; _orb.radial_segments = 10; _orb.rings = 5
-		n.mesh = _orb; n.material_override = _mat("orb", Color(0.72, 0.5, 1.0, 0.95))
+		n.mesh = _orb; n.material_override = _mat(kind, SHOT_COL[kind])
 	else:
-		n.mesh = _unit_box(); n.material_override = _mat(kind, Color(0.75, 1.0, 0.95, 0.95) if kind == "bolt" else Color(1.0, 0.97, 0.8, 0.95))
+		n.mesh = _unit_box(); n.material_override = _mat(kind, SHOT_COL.get(kind, SHOT_COL.arrow))
 	_root().add_child(n)
-	var s := {"kind": kind, "pos": from, "vel": vel, "dmg": dmg, "life": float(ORB.life) if kind == "orb" else 2.6, "n": bounces, "r": 0.0, "splash": float(ORB.splash) if kind == "orb" else 0.0,
-		"turn": float(ORB.turn) if kind == "orb" else 0.0, "node": n, "amp": false, "src": src, "speed": vel.length()}
+	var s := {"kind": kind, "pos": from, "vel": vel, "dmg": dmg, "life": float(ORB.life) if round else 2.6, "n": bounces, "r": 0.0, "splash": float(ORB.splash) if round else 0.0,
+		"turn": float(ORB.turn) if round else 0.0, "node": n, "amp": false, "src": src, "speed": vel.length()}
+	if kind == "ember": s.scale = 0.7
+	s.merge(more, true)
 	shots.push_back(s); _place(s)
 
 func _place(s: Dictionary) -> void:
 	var n: MeshInstance3D = s.node; var p: Vector3 = s.pos; var v: Vector3 = s.vel
-	if s.kind == "orb": n.position = p; var k := 1.0 + (0.5 if bool(s.amp) else 0.0); n.scale = Vector3.ONE * k
+	if s.kind == "orb" or s.kind == "ember": n.position = p; var k := (1.0 + (0.5 if bool(s.amp) else 0.0)) * float(s.get("scale", 1.0)); n.scale = Vector3.ONE * k
 	else:
-		var len := 1.5 if s.kind == "arrow" else 1.1
+		var len := 1.5 if s.kind == "arrow" or s.kind == "lance" else (1.3 if s.kind == "spear" else (0.5 if s.kind == "hook" else 1.1))
 		_stretch(n, p - v.normalized() * len, p, 0.05 * (1.6 if bool(s.amp) else 1.0))
 
 func _gone(s: Dictionary) -> void:
 	if is_instance_valid(s.node): (s.node as Node3D).queue_free()
 
 func _burst(s: Dictionary, at: Vector3) -> void:
-	if fx != null: fx.sparks(at, 8 if s.kind == "orb" else 4, [0.72, 0.55, 1.0] if s.kind == "orb" else [0.7, 1.0, 0.95], 3.0)
+	var hot: bool = s.kind == "fire" or s.kind == "lance" or s.kind == "spear" or s.kind == "ember"
+	if fx != null: fx.sparks(at, 8 if s.kind == "orb" or s.kind == "ember" else 4, [0.72, 0.55, 1.0] if s.kind == "orb" else ([1.0, 0.55, 0.15] if hot else [0.7, 1.0, 0.95]), 3.0)
 	if float(s.splash) > 0.0:
-		Snd.play("elf_pop", 1.0, at)
+		Snd.play("rm_burn" if hot else "elf_pop", 1.0, at)
 		if fx != null:
-			for i in 10: fx.glow(at, Vector3(randf_range(-1, 1), randf_range(-0.4, 1), randf_range(-1, 1)).normalized() * randf_range(2.0, 5.0), 0.5, 0.5, 0.05, Color(0.72, 0.5, 1.0, 0.8), 0.0, 2.0)
+			for i in 10: fx.glow(at, Vector3(randf_range(-1, 1), randf_range(-0.4, 1), randf_range(-1, 1)).normalized() * randf_range(2.0, 5.0), 0.5, 0.5, 0.05, Color(1.0, 0.45, 0.1, 0.8) if hot else Color(0.72, 0.5, 1.0, 0.8), 0.0, 2.0)
 		var d := _chest().distance_to(at)
-		if d < float(s.splash): _hurt(str(s.src), float(s.dmg) * clampf(1.2 - d / float(s.splash), 0.3, 1.0), at, "body")
+		if d < float(s.splash):
+			_hurt(str(s.src), float(s.dmg) * clampf(1.2 - d / float(s.splash), 0.3, 1.0), at, "body")
+			if float(s.get("burn", 0.0)) > 0.0: hell._burn(float(s.burn))
 
 func tick(dt: float) -> void:
+	hell.tick(dt)
 	for i in range(_later.size() - 1, -1, -1):
 		_later[i].t = float(_later[i].t) - dt
 		if float(_later[i].t) <= 0.0: var f: Callable = _later[i].f; _later.remove_at(i); f.call()
@@ -445,9 +478,12 @@ func tick(dt: float) -> void:
 		if is_instance_valid(r.node): (r.node as Node3D).rotation.y += dt * 3.0
 		if float(r.t) <= 0.0:
 			var at: Vector3 = r.at
-			if Vector2(player.pos.x - at.x, player.pos.z - at.z).length() < float(r.r) and absf(player.pos.y - at.y) < 1.6: _hurt("rune", float(r.dmg), at, "fire")
+			if Vector2(player.pos.x - at.x, player.pos.z - at.z).length() < float(r.r) and absf(player.pos.y - at.y) < 1.6:
+				_hurt("rune", float(r.dmg), at, "fire")
+				if float(r.get("burn", 0.0)) > 0.0: hell._burn(float(r.burn))
 			if fx != null:
-				for j in 14: var a := j * TAU / 14.0; fx.glow(at + Vector3(cos(a) * float(r.r) * 0.6, 0.2, sin(a) * float(r.r) * 0.6), Vector3(cos(a) * 1.5, randf_range(3.0, 7.0), sin(a) * 1.5), 0.6, 0.5, 0.05, Color(1.0, 0.82, 0.35, 0.9), 0.0, 2.0)
+				var rc: Color = r.get("col", Color(1.0, 0.82, 0.35, 0.9))
+				for j in 14: var a := j * TAU / 14.0; fx.glow(at + Vector3(cos(a) * float(r.r) * 0.6, 0.2, sin(a) * float(r.r) * 0.6), Vector3(cos(a) * 1.5, randf_range(3.0, 7.0), sin(a) * 1.5), 0.6, 0.5, 0.05, rc, 0.0, 2.0)
 			Snd.play("elf_pop", 1.0, at)
 			if is_instance_valid(r.node): (r.node as Node3D).queue_free()
 			runes.remove_at(i)
@@ -457,6 +493,7 @@ func tick(dt: float) -> void:
 	for i in range(shots.size() - 1, -1, -1):
 		var s: Dictionary = shots[i]; s.life = float(s.life) - dt
 		var v: Vector3 = s.vel; var p: Vector3 = s.pos
+		if s.has("grav"): v.y -= float(s.grav) * dt; s.vel = v   # (a thrown spear falls)
 		if float(s.turn) > 0.0:   # it follows you: it slows to turn (so it cannot circle you for ever) and comes on again once it points at you
 			var want := (chest - p).normalized(); var cur := v.normalized(); var ang := cur.angle_to(want)
 			if ang > 0.001: cur = cur.slerp(want, minf(1.0, float(s.turn) * dt / ang))
@@ -469,7 +506,13 @@ func tick(dt: float) -> void:
 		var dy := q.y - player.pos.y; var reach := 0.42 + float(s.r) + (0.25 if s.kind == "orb" else 0.0)
 		if Vector2(q.x - player.pos.x, q.z - player.pos.z).length() < reach and dy > -0.1 and dy < 1.95:
 			if float(s.splash) > 0.0: _burst(s, q)
-			else: _hurt(str(s.src), float(s.dmg), p - d * 2.0, "head" if dy > 1.5 else "body")
+			else:
+				_hurt(str(s.src), float(s.dmg), p - d * 2.0, "head" if dy > 1.5 else "body")
+				if float(s.get("burn", 0.0)) > 0.0: hell._burn(float(s.burn))
+				if float(s.get("shove", 0.0)) > 0.0: player.launch(Vector3(d.x, 0.0, d.z).normalized() * float(s.shove) + Vector3(0, 2.0, 0))
+				if float(s.get("pull", 0.0)) > 0.0 and s.get("from") != null and (s.from as Enemies.Foe).alive:   # a hook: it drags you in to whoever threw it
+					var to: Vector3 = (s.from as Enemies.Foe).pos - player.pos; var flat := Vector3(to.x, 0, to.z)
+					player.launch(flat.normalized() * minf(float(s.pull), flat.length() * 2.2) + Vector3(0, 4.0, 0)); Snd.play("rd_chain", 1.0)
 			_gone(s); shots.remove_at(i); continue
 		# the world
 		if Phys.raycast_static(p, d, len):

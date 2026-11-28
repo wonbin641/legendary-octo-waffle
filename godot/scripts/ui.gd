@@ -21,7 +21,7 @@ const NOTE := {1: "밀수 조직원 100명 · 총소리를 들으면 몰려옵�
 const NODE_AT := {1: [0.08, 0.17], 2: [0.248, 0.17], 3: [0.416, 0.17], 4: [0.584, 0.17], 9: [0.752, 0.17], 10: [0.92, 0.17],
 	6: [0.08, 0.50], 5: [0.08, 0.82], 7: [0.416, 0.50], 8: [0.416, 0.82], 14: [0.584, 0.50], 15: [0.584, 0.82], 11: [0.92, 0.50], 12: [0.92, 0.82], 13: [0.752, 0.50], 16: [0.752, 0.82]}
 const TRACKS := [[1, 2], [2, 3], [3, 4], [4, 9], [9, 10], [1, 6], [6, 5], [3, 7], [7, 8], [4, 14], [14, 15], [10, 11], [11, 12], [11, 13], [13, 16]]
-const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11, 13]   # stages the Godot version can play so far
+const BUILT := [1, 6, 5, 2, 3, 7, 8, 4, 14, 15, 9, 10, 11, 13, 16]   # stages the Godot version can play so far
 const RACE_SHORT := {"elf": "엘", "dwarf": "드", "orc": "오", "demon": "악"}
 
 var f_title: Font; var f_body: Font; var f_bold: Font; var f_mono: Font
@@ -1152,8 +1152,9 @@ func _pack_size() -> Vector2:
 ## what is inside springs out) and builds the room for it
 var _torn := ""
 func _mode_buttons(stage: int) -> void:
-	clear(br_modes); br_modes.visible = stage == Store.ST_TOY or stage == Store.ST_ELF or stage == Store.ST_PLAIN or stage == Store.ST_ROAD
+	clear(br_modes); br_modes.visible = stage == Store.ST_TOY or stage == Store.ST_ELF or stage == Store.ST_PLAIN or stage == Store.ST_ROAD or stage == Store.ST_ALTAR
 	if stage == Store.ST_ELF: _realm_buttons(); return
+	if stage == Store.ST_ALTAR: _altar_buttons(); return
 	if stage == Store.ST_PLAIN or stage == Store.ST_ROAD: _realm_buttons(false); return   # (6-2: no modes, only your people and your bomb; 6-A: the one of the party you start as)
 	if stage != Store.ST_TOY: return
 	var cur_mode := ToyMatch.picked(); var ps := _pack_size()
@@ -1250,6 +1251,18 @@ func _realm_buttons(modes := true) -> void:
 			var b := btn(t, "primary" if k == dk else "ghost", func() -> void: _pick_setting("raidDiff", k))
 			b.disabled = not open; b.set_meta("pick", k); f.add_child(b)
 		box.add_child(lbl(ModeRaid.diff_line(dk), f_body, 12, INK, true))
+
+## stage 6-B's choices on the briefing: alone with your guns (the team battles on the caldera come in the next update)
+const ALTAR_MODES := [["solo", "총을 든 나 혼자"], ["sanctum", "성소 각인전 (5:5)"], ["siege", "비전 핵 공성전 (5:5)"], ["plain", "건물 소환전"]]
+func _altar_buttons() -> void:
+	var box := vbox(8); box.size_flags_horizontal = Control.SIZE_EXPAND_FILL; br_modes.add_child(box)
+	box.add_child(lbl("작전", f_mono, 11, STEEL))
+	var f := _flow(); f.alignment = FlowContainer.ALIGNMENT_BEGIN; f.add_theme_constant_override("h_separation", 8); box.add_child(f)
+	for it: Array in ALTAR_MODES:
+		var solo: bool = it[0] == "solo"
+		var b := btn(str(it[1]) + ("" if solo else " · 다음 업데이트"), "primary" if solo else "ghost", func() -> void: pass)
+		b.disabled = not solo; b.set_meta("pick", it[0]); f.add_child(b)
+	box.add_child(lbl("악마 41과 심연의 고문관 · 모두 쓰러뜨리면 클리어 · 절반을 쓰러뜨리면 용암 조석(하층이 잠기고 대각선에 발판 넷)\n혈약의 차원문은 체력 35로 감시 회랑까지 · 쇠사슬은 점프를 누르고 있으면 등반 · 증폭 화로를 지난 총알은 20% 더 세고 불이 붙습니다", f_body, 12, INK, true))
 
 func _pick_setting(key: String, v: String) -> void:
 	if str(Store.settings.get(key, "")) == v: return

@@ -434,6 +434,7 @@ func kill(e: Foe, weak: bool, dir) -> void:
 	e.fall_dir = 1.0 if e.type == "zombie" else -1.0; e.downed = false
 	if e.type == "rc": toys.rc_burst(e)   # its battery bursts (and its rider, if any, comes down onto the floor)
 	if e.toy: toys.brk.fell(e, weak, dir, seen)   # (stage 5: each kind of toy falls its own way)
+	if e.folk: folk.fell(e)   # (6-B: a demon goes up in embers and ash)
 	if e.type == "mine": robots.mine_blast(e.pos, 0.0 if e.self_det else 0.06)   # a spider mine goes off
 	if e.robot:
 		e.vanish = true
@@ -534,7 +535,10 @@ func bake_far(e: Foe, only: Material = null) -> void:   # (only: just the meshes
 			items.push_back([mi.mesh, s, t]); key += "%d/%d/%s;" % [mi.mesh.get_instance_id(), s, t]
 	if items.is_empty(): return
 	if not _far_meshes.has(key):
-		var vs := PackedVector3Array(); var ns := PackedVector3Array(); var cs := PackedColorArray(); var uvs := PackedVector2Array(); var idx := PackedInt32Array()
+		var vs := PackedVector3Array(); var ns := PackedVector3Array(); var cs := PackedColorArray(); var uvs := PackedVector2Array(); var uv2s := PackedVector2Array(); var idx := PackedInt32Array()
+		var has_uv2 := false   # (the art paper's bodies keep their pattern and glow group in the second uv: kept far off too)
+		for it in items:
+			if (it[0] as ArrayMesh).surface_get_format(it[1]) & Mesh.ARRAY_FORMAT_TEX_UV2: has_uv2 = true
 		for it in items:
 			var arr: Array = (it[0] as Mesh).surface_get_arrays(it[1]); var t: Transform3D = it[2]; var nb := t.basis.inverse().transposed(); var off := vs.size()
 			var v0: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
@@ -546,12 +550,16 @@ func bake_far(e: Foe, only: Material = null) -> void:   # (only: just the meshes
 			cs.append_array(arr[Mesh.ARRAY_COLOR])
 			if arr[Mesh.ARRAY_TEX_UV] != null: uvs.append_array(arr[Mesh.ARRAY_TEX_UV])
 			else: uvs.resize(vs.size())
+			if has_uv2:
+				if arr[Mesh.ARRAY_TEX_UV2] != null: uv2s.append_array(arr[Mesh.ARRAY_TEX_UV2])
+				else: uv2s.resize(vs.size())
 			if arr[Mesh.ARRAY_INDEX] != null:
 				for i: int in arr[Mesh.ARRAY_INDEX]: idx.push_back(i + off)
 			else:
 				for i in v0.size(): idx.push_back(i + off)
 		var out := []; out.resize(Mesh.ARRAY_MAX)
 		out[Mesh.ARRAY_VERTEX] = vs; out[Mesh.ARRAY_NORMAL] = ns; out[Mesh.ARRAY_COLOR] = cs; out[Mesh.ARRAY_TEX_UV] = uvs; out[Mesh.ARRAY_INDEX] = idx
+		if has_uv2: out[Mesh.ARRAY_TEX_UV2] = uv2s
 		var am := ArrayMesh.new(); am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out); _far_meshes[key] = am
 	e.far = MeshInstance3D.new(); e.far.name = "Far"; e.far.mesh = _far_meshes[key]; e.far.material_override = mat; e.far.visible = false; e.far.set_meta("body", true)
 	e.g.add_child(e.far); e.is_far = false
